@@ -4,7 +4,7 @@
 
 void PrintUsage()
 {
-    printf("Usage: s7pp <input file>\n");
+    printf("Usage: s7pp <input file> [output file]\n");
 }
 
 char* GetSource(const char* filename)
@@ -207,18 +207,26 @@ int main(int argc, char** argv)
 {
     s7_scheme* s7;
     s7 = s7_init();
-    if(argc != 2) {
+    if(argc < 2 || argc > 3) {
         PrintUsage();
         return 0;
+    }
+    FILE* out = stdout;
+    FILE* outfile = 0;
+    if(argc == 3) {
+        out = outfile = fopen(argv[2], "w");
     }
     char* filename = argv[1];
     char* source = GetSource(filename);
     if(!source) {
         PrintUsage();
+        if(outfile)
+            fclose(outfile);
         return -1;
     }
-    //s7_load(s7, argv[1]);
-    ParseSource(source, stdout, s7);
+    ParseSource(source, out, s7);
     ReleaseSource(source);
+    if(outfile)
+        fclose(outfile);
     return 0;
 }
