@@ -298,6 +298,10 @@
     #if _MSC_VER < 1900
       #define snprintf _snprintf
     #endif
+    #if _MSC_VER >= 1900
+      #define popen _popen
+      #define pclose _pclose
+    #endif
     #if _MSC_VER > 1200
       #define _CRT_SECURE_NO_DEPRECATE 1
       #define _CRT_NONSTDC_NO_DEPRECATE 1
@@ -37330,8 +37334,50 @@ system captures the output as a string and returns it."
 #endif
 }
 
+#if (MS_WINDOWS)
 
-#if (!MS_WINDOWS)
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <Windows.h>
+
+static s7_pointer c_directory_to_list(s7_scheme *sc, s7_pointer name)
+{
+  s7_pointer result;
+
+  if (!is_string(name))
+    method_or_bust(sc, name, sc->directory_to_list_symbol, list_1(sc, name), T_STRING, 0);
+
+  sc->w = sc->nil;
+  const char* dir = string_value(name);
+  WIN32_FIND_DATA findData;
+
+  //TODO: utf-8 support
+  HANDLE hand = FindFirstFileA(dir, &findData);
+  bool more = hand != INVALID_HANDLE_VALUE;
+
+  while(more)
+    {
+      sc->w = cons(sc, s7_make_string(sc, findData.cFileName), sc->w);
+      more = FindNextFileA(hand, &findData);
+    }
+
+  FindClose(hand);
+
+  result = sc->w;
+  sc->w = sc->nil;
+  return(result);
+}
+
+static s7_pointer g_directory_to_list(s7_scheme *sc, s7_pointer args)
+{
+  #define H_directory_to_list "(directory->list directory) returns the contents of the directory as a list of strings (filenames)."
+  #define Q_directory_to_list s7_make_signature(sc, 2, sc->is_pair_symbol, sc->is_string_symbol)
+  return(c_directory_to_list(sc, car(args)));
+}
+
+PF_TO_PF(directory_to_list, c_directory_to_list)
+
+#else
 #include <dirent.h>
 
 /* -------------------------------- directory->list -------------------------------- */
@@ -97250,8 +97296,8 @@ static void init_rootlet(s7_scheme *sc)
   sc->delete_file_symbol =           defun("delete-file",	delete_file,		1, 0, false);
   sc->getenv_symbol =                defun("getenv",		getenv,			1, 0, false);
   sc->system_symbol =                defun("system",		system,			1, 1, false);
-#if (!MS_WINDOWS)
   sc->directory_to_list_symbol =     defun("directory->list",   directory_to_list,	1, 0, false);
+#if (!MS_WINDOWS)
   sc->file_mtime_symbol =            defun("file-mtime",	file_mtime,		1, 0, false);
 #endif
 #endif
