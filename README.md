@@ -9,7 +9,9 @@ A simple text preprocessor that's designed to process text, evaluating s-express
 
 Takes `input file` and processes it, writing output to `output file` or stdout
 
-## Examples
+## Building
+
+Currently compilation is only setup for Windows/MSVC, you should be able to execute build.bat from a command line with cl.exe avaliable (i.e. x64 Native Tools Command Prompt for VS 2017), while compilation has not yet been tested on *nix, it should build anywhere that S7 and CRT is avaliable.
 
 ## Expansion Rules
 
@@ -32,3 +34,5 @@ When expanding an S-Expression after a `@`, it can be a symbol name, in which ca
 ### Output stringification
 
 When the returned value is a literal string or character, it is simply printed directly into an output. Lists are recursively evaluated using the same rules, with non-character, non-whitespace elements interspersed with space characters, and any other s7 object is converted to a string using standard s7 string conversion rules (s7_object_to_c_string)
+
+## Examples
