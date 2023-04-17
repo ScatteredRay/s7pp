@@ -49264,103 +49264,100 @@ s7_pointer s7_reverse(s7_scheme *sc, s7_pointer a) /* just pairs */
  *  (let ((lst (list 0))) (set! (cdr lst) lst) (reverse lst)) -> (#1=(0 . #1#) 0 0 0)
  */
 
+static s7_pointer string_reverse(s7_scheme *sc, s7_pointer p)
+{
+  s7_pointer np;
+  char *dest, *source = string_value(p);
+  s7_int len = string_length(p);
+  char *end = (char *)(source + len);
+  np = make_empty_string(sc, len, '\0');
+  dest = (char *)(string_value(np) + len);
+  while (source < end) *(--dest) = *source++;
+  return(np);
+}
+
+static s7_pointer byte_vector_reverse(s7_scheme *sc, s7_pointer p)
+{
+  s7_pointer np;
+  uint8_t *dest;
+  const uint8_t *source = byte_vector_bytes(p);
+  s7_int len = byte_vector_length(p);
+  const uint8_t *end = (const uint8_t *)(source + len);
+  np = make_simple_byte_vector(sc, len);
+  dest = (uint8_t *)(byte_vector_bytes(np) + len);
+  while (source < end) *(--dest) = *source++;
+  return(np);
+}
+
+static s7_pointer int_vector_reverse(s7_scheme *sc, s7_pointer p)
+{
+  s7_pointer np;
+  s7_int *dest, *source = int_vector_ints(p);
+  s7_int len = vector_length(p);
+  s7_int *end = (s7_int *)(source + len);
+  if (vector_rank(p) > 1)
+    np = g_make_vector_1(sc, set_plist_2(sc, g_vector_dimensions(sc, set_plist_1(sc, p)), int_zero), sc->make_int_vector_symbol);
+  else np = make_simple_int_vector(sc, len);
+  dest = (s7_int *)(int_vector_ints(np) + len);
+  while (source < end) *(--dest) = *source++;
+  return(np);
+}
+
+static s7_pointer float_vector_reverse(s7_scheme *sc, s7_pointer p)
+{
+  s7_pointer np;
+  s7_double *dest, *source = float_vector_floats(p);
+  s7_int len = vector_length(p);
+  s7_double *end = (s7_double *)(source + len);
+  if (vector_rank(p) > 1)
+    np = g_make_vector_1(sc, set_plist_2(sc, g_vector_dimensions(sc, set_plist_1(sc, p)), real_zero), sc->make_float_vector_symbol);
+  else np = make_simple_float_vector(sc, len);
+  dest = (s7_double *)(float_vector_floats(np) + len);
+  while (source < end) *(--dest) = *source++;
+  return(np);
+}
+
+static s7_pointer vector_reverse(s7_scheme *sc, s7_pointer p)
+{
+  s7_pointer np;
+  s7_pointer *dest, *source = vector_elements(p);
+  s7_int len = vector_length(p);
+  s7_pointer *end = (s7_pointer *)(source + len);
+  if (vector_rank(p) > 1)
+    np = g_make_vector(sc, set_plist_1(sc, g_vector_dimensions(sc, set_plist_1(sc, p))));
+  else np = make_simple_vector(sc, len);
+  dest = (s7_pointer *)(vector_elements(np) + len);
+  while (source < end) *(--dest) = *source++;
+  if (is_typed_vector(p))
+    {
+      set_typed_vector(np);
+      typed_vector_set_typer(np, typed_vector_typer(p));
+      if (has_simple_elements(p)) set_has_simple_elements(np);
+    }
+  return(np);
+}
+
 static s7_pointer reverse_p_p(s7_scheme *sc, s7_pointer p)
 {
   sc->temp3 = p;
   switch (type(p))
     {
-    case T_NIL:
-      return(sc->nil);
-
-    case T_PAIR:
-      return(s7_reverse(sc, p));
-
-    case T_STRING:
-      {
-	s7_pointer np;
-	char *dest, *source = string_value(p);
-	s7_int len = string_length(p);
-	char *end = (char *)(source + len);
-	np = make_empty_string(sc, len, '\0');
-	dest = (char *)(string_value(np) + len);
-	while (source < end) *(--dest) = *source++;
-	return(np);
-      }
-
-    case T_BYTE_VECTOR:
-      {
-	s7_pointer np;
-	uint8_t *dest;
-	const uint8_t *source = byte_vector_bytes(p);
-	s7_int len = byte_vector_length(p);
-	const uint8_t *end = (const uint8_t *)(source + len);
-	np = make_simple_byte_vector(sc, len);
-	dest = (uint8_t *)(byte_vector_bytes(np) + len);
-	while (source < end) *(--dest) = *source++;
-	return(np);
-      }
-
-    case T_INT_VECTOR:
-      {
-	s7_pointer np;
-	s7_int *dest, *source = int_vector_ints(p);
-	s7_int len = vector_length(p);
-	s7_int *end = (s7_int *)(source + len);
-	if (vector_rank(p) > 1)
-	  np = g_make_vector_1(sc, set_plist_2(sc, g_vector_dimensions(sc, set_plist_1(sc, p)), int_zero), sc->make_int_vector_symbol);
-	else np = make_simple_int_vector(sc, len);
-	dest = (s7_int *)(int_vector_ints(np) + len);
-	while (source < end) *(--dest) = *source++;
-	return(np);
-      }
-
-    case T_FLOAT_VECTOR:
-      {
-	s7_pointer np;
-	s7_double *dest, *source = float_vector_floats(p);
-	s7_int len = vector_length(p);
-	s7_double *end = (s7_double *)(source + len);
-	if (vector_rank(p) > 1)
-	  np = g_make_vector_1(sc, set_plist_2(sc, g_vector_dimensions(sc, set_plist_1(sc, p)), real_zero), sc->make_float_vector_symbol);
-	else np = make_simple_float_vector(sc, len);
-	dest = (s7_double *)(float_vector_floats(np) + len);
-	while (source < end) *(--dest) = *source++;
-	return(np);
-      }
-
-    case T_VECTOR:
-      {
-	s7_pointer np;
-	s7_pointer *dest, *source = vector_elements(p);
-	s7_int len = vector_length(p);
-	s7_pointer *end = (s7_pointer *)(source + len);
-	if (vector_rank(p) > 1)
-	  np = g_make_vector(sc, set_plist_1(sc, g_vector_dimensions(sc, set_plist_1(sc, p))));
-	else np = make_simple_vector(sc, len);
-	dest = (s7_pointer *)(vector_elements(np) + len);
-	while (source < end) *(--dest) = *source++;
-	if (is_typed_vector(p))
-	  {
-	    set_typed_vector(np);
-	    typed_vector_set_typer(np, typed_vector_typer(p));
-	    if (has_simple_elements(p)) set_has_simple_elements(np);
-	  }
-	return(np);
-      }
-
-    case T_HASH_TABLE:
-      return(hash_table_reverse(sc, p));
-
+    case T_NIL:          return(sc->nil);
+    case T_PAIR:         return(s7_reverse(sc, p));
+    case T_STRING:       return(string_reverse(sc, p));
+    case T_BYTE_VECTOR:  return(byte_vector_reverse(sc, p));
+    case T_INT_VECTOR:   return(int_vector_reverse(sc, p));
+    case T_FLOAT_VECTOR: return(float_vector_reverse(sc, p));
+    case T_VECTOR:       return(vector_reverse(sc, p));
+    case T_HASH_TABLE:   return(hash_table_reverse(sc, p));
     case T_C_OBJECT:
       check_method(sc, p, sc->reverse_symbol, set_plist_1(sc, p));
       if (!c_object_reverse(sc, p))
 	syntax_error_nr(sc, "attempt to reverse ~S?", 22, p);
       return((*(c_object_reverse(sc, p)))(sc, set_plist_1(sc, p)));
-
     case T_LET:
       check_method(sc, p, sc->reverse_symbol, set_plist_1(sc, p));
       error_nr(sc, sc->wrong_type_arg_symbol, set_elist_2(sc, wrap_string(sc, "can't reverse let: ~S", 21), p));
-
     default:
       return(method_or_bust_p(sc, p, sc->reverse_symbol, a_sequence_string));
     }
@@ -49564,6 +49561,11 @@ static s7_pointer g_reverse_in_place(s7_scheme *sc, s7_pointer args)
 	s7_pointer np = any_list_reverse_in_place(sc, sc->nil, p);
 	if (is_null(np))
 	  wrong_type_error_nr(sc, sc->reverseb_symbol, 1, car(args), wrap_string(sc, "a mutable, proper list", 22));
+	/* this is not ideal: car(args) here is the changed list: 
+	 *   (reverse! '(3 2 . 1) -> error: reverse! first argument, (3), is a pair but should be a mutable, proper list
+	 *   and (here) the real problem is that it is not a proper list: (reverse! '(3 2 1)) -> '(1 2 3)
+	 *   but (define L (immutable! (cons 3 (immutable! (cons 2 ()))))) (reverse! L) -> error: can't reverse! (3 2) (it is immutable)
+	 */
 	return(np);
       }
       /* (reverse! p) is supposed to change p directly and lisp programmers expect reverse! to be fast
@@ -49576,17 +49578,10 @@ static s7_pointer g_reverse_in_place(s7_scheme *sc, s7_pointer args)
        */
 
     case T_BYTE_VECTOR:
-    case T_STRING:
-      return(string_or_byte_vector_reverse_in_place(sc, p));
-
-    case T_INT_VECTOR:
-      return(int_vector_reverse_in_place(sc, p));
-
-    case T_FLOAT_VECTOR:
-      return(float_vector_reverse_in_place(sc, p));
-
-    case T_VECTOR:
-      return(vector_reverse_in_place(sc, p));
+    case T_STRING:       return(string_or_byte_vector_reverse_in_place(sc, p));
+    case T_INT_VECTOR:   return(int_vector_reverse_in_place(sc, p));
+    case T_FLOAT_VECTOR: return(float_vector_reverse_in_place(sc, p));
+    case T_VECTOR:       return(vector_reverse_in_place(sc, p));
 
     default:
       if (is_immutable(p))
