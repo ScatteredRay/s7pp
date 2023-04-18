@@ -42434,7 +42434,6 @@ static opt_info *alloc_opt_info(s7_scheme *sc);
 static bool bool_optimize(s7_scheme *sc, s7_pointer expr);
 static bool bool_optimize_nw(s7_scheme *sc, s7_pointer expr);
 static bool cell_optimize(s7_scheme *sc, s7_pointer expr);
-static void pc_fallback(s7_scheme *sc, int32_t new_pc) {sc->pc = new_pc;}
 
 static s7_pointer g_sort(s7_scheme *sc, s7_pointer args)
 {
@@ -42589,7 +42588,7 @@ static s7_pointer g_sort(s7_scheme *sc, s7_pointer args)
 				sort_func = (sc->sort_body_len == 2) ? opt_begin_bool_sort_b2 : opt_begin_bool_sort_b;
 			      else
 				{
-				  pc_fallback(sc, start);
+				  sc->pc = start;
 				  if (cell_optimize(sc, p))
 				    sort_func = opt_begin_bool_sort_p;
 				}}}}
@@ -58351,7 +58350,7 @@ static bool i_idp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 	  opc->v[0].fi = (func) ? ((func == abs_i_i) ? opt_i_i_f_abs : opt_i_i_f) : opt_i_7i_f;
 	  return_true(sc, car_x);
 	}
-      pc_fallback(sc, start);
+      sc->pc = start;
     }
   if (!is_t_ratio(cadr(car_x)))
     {
@@ -58378,7 +58377,7 @@ static bool i_idp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 	      opc->v[4].fd = sc->opts[start]->v[0].fd;
 	      return_true(sc, car_x);
 	    }
-	  pc_fallback(sc, start);
+	  sc->pc = start;
 	}}
   ipf = s7_i_7p_function(s_func);
   if (ipf)
@@ -58390,7 +58389,7 @@ static bool i_idp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 	  opc->v[4].fp = sc->opts[start]->v[0].fp;
 	  return_true(sc, car_x);
 	}
-      pc_fallback(sc, start);
+      sc->pc = start;
     }
   return_false(sc, car_x);
 }
@@ -58457,7 +58456,7 @@ static bool i_7pi_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 	      opc->v[5].fi = opc->v[4].o1->v[0].fi;
 	      return_true(sc, car_x);
 	    }
-	  pc_fallback(sc, start);
+	  sc->pc = start;
 	}}
   return_false(sc, car_x);
 }
@@ -58604,7 +58603,7 @@ static bool i_ii_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	      opc->v[5].fi = opc->v[4].o1->v[0].fi;
 	      return_true(sc, car_x);
 	    }
-	  pc_fallback(sc, start);
+	  sc->pc = start;
 	  return_false(sc, car_x);
 	}
 
@@ -58678,7 +58677,7 @@ static bool i_ii_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	      else opc->v[0].fi = opt_i_7ii_sf;
 	      return_true(sc, car_x);
 	    }
-	  pc_fallback(sc, start);
+	  sc->pc = start;
 	  return_false(sc, car_x);
 	}
 
@@ -58722,7 +58721,7 @@ static bool i_ii_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 			  }}}
 	      return_true(sc, car_x);
 	    }
-	  pc_fallback(sc, start);
+	  sc->pc = start;
 	  return_false(sc, car_x);
 	}
 
@@ -58738,7 +58737,7 @@ static bool i_ii_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	      opc->v[0].fi = (ifunc) ? opt_i_ii_ff : ((opc->v[3].i_7ii_f == quotient_i_7ii) ? opt_i_7ii_ff_quo : opt_i_7ii_ff);
 	      return_true(sc, car_x);
 	    }
-	  pc_fallback(sc, start);
+	  sc->pc = start;
 	}}
   return_false(sc, car_x);
 }
@@ -58774,7 +58773,7 @@ static bool i_iii_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 	      opc->v[5].fi = opc->v[4].o1->v[0].fi;
 	      return_true(sc, car_x);
 	    }}}
-  pc_fallback(sc, start);
+  sc->pc = start;
   return_false(sc, car_x);
 }
 
@@ -59023,7 +59022,7 @@ static bool i_7pii_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointe
 		  opc->v[9].fi = opc->v[8].o1->v[0].fi;
 		  return_true(sc, car_x);
 		}}
-	  pc_fallback(sc, start);
+	  sc->pc = start;
 	}}
   return_false(sc, car_x);
 }
@@ -59144,7 +59143,7 @@ static bool i_add_any_ok(s7_scheme *sc, opt_info *opc, s7_pointer car_x)
 	  else opc->v[0].fi = (head == sc->add_symbol) ? opt_i_add_any_f : opt_i_multiply_any_f;
       return_true(sc, car_x);
     }
-  pc_fallback(sc, start);
+  sc->pc = start;
   return_false(sc, car_x);
 }
 
@@ -59408,7 +59407,7 @@ static bool d_d_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer c
 	    opc->v[0].fd = opt_abs_d_ss_fvref;
 	  return_true(sc, car_x);
 	}
-      pc_fallback(sc, start);
+      sc->pc = start;
     }
   return_false(sc, car_x);
 }
@@ -59466,7 +59465,7 @@ static bool d_p_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer c
       opc->v[5].fp = opc->v[4].o1->v[0].fp;
       return_true(sc, car_x);
     }
-  pc_fallback(sc, start);
+  sc->pc = start;
   return_false(sc, car_x);
 }
 
@@ -59530,7 +59529,7 @@ static bool d_7pi_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 	  opc->v[11].fi = opc->v[10].o1->v[0].fi;
 	  return_true(sc, car_x);
 	}
-      pc_fallback(sc, start);
+      sc->pc = start;
       return_false(sc, car_x);
     }
 
@@ -59551,7 +59550,7 @@ static bool d_7pi_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 	  opc->v[9].fi = o2->v[0].fi;
 	  return_true(sc, car_x);
 	}}
-  pc_fallback(sc, start);
+  sc->pc = start;
   return_false(sc, car_x);
 }
 
@@ -59609,7 +59608,7 @@ static bool d_pd_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	      opc->v[11].fd = opc->v[10].o1->v[0].fd;
 	      return_true(sc, car_x);
 	    }
-	  pc_fallback(sc, start);
+	  sc->pc = start;
 	}}
   return_false(sc, car_x);
 }
@@ -59744,7 +59743,7 @@ static bool d_vd_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 		  opc->v[9].fd = sc->opts[start]->v[0].fd;
 		  return_true(sc, car_x);
 		}
-	      pc_fallback(sc, start);
+	      sc->pc = start;
 	    }}}
   return_false(sc, car_x);
 }
@@ -59818,7 +59817,7 @@ static bool d_id_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	  opc->v[5].fd = sc->opts[start]->v[0].fd;
 	  return_true(sc, car_x);
 	}
-      pc_fallback(sc, start);
+      sc->pc = start;
     }
   if (is_t_integer(cadr(car_x)))
     {
@@ -59830,7 +59829,7 @@ static bool d_id_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	  opc->v[5].fd = sc->opts[start]->v[0].fd;
 	  return_true(sc, car_x);
 	}
-      pc_fallback(sc, start);
+      sc->pc = start;
     }
   opc->v[8].o1 = sc->opts[sc->pc];
   if (int_optimize(sc, cdr(car_x)))
@@ -59843,7 +59842,7 @@ static bool d_id_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	  opc->v[0].fd = opt_d_id_ff;
 	  return_true(sc, car_x);
 	}
-      pc_fallback(sc, start);
+      sc->pc = start;
     }
   return_false(sc, car_x);
 }
@@ -60282,7 +60281,7 @@ static bool d_dd_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	  if ((opc->v[1].x == 1.0) && (func == subtract_d_dd)) opc->v[0].fd = opt_d_dd_1f_subtract;
 	  return_true(sc, car_x);
 	}
-      pc_fallback(sc, start);
+      sc->pc = start;
       return_false(sc, car_x);
     }
 
@@ -60329,7 +60328,7 @@ static bool d_dd_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	  else opc->v[0].fd = opt_d_7dd_sf;
 	  return_true(sc, car_x);
 	}
-      pc_fallback(sc, start);
+      sc->pc = start;
       return_false(sc, car_x);
     }
 
@@ -60459,7 +60458,7 @@ static bool d_dd_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	    }
 	  return_true(sc, car_x);
 	}}
-  pc_fallback(sc, start);
+  sc->pc = start;
   return_false(sc, car_x);
 }
 
@@ -60569,7 +60568,7 @@ static bool d_ddd_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 	      opc->v[0].fd = opt_d_ddd_ssf;
 	      return_true(sc, car_x);
 	    }
-	  pc_fallback(sc, start);
+	  sc->pc = start;
 	}
       if (float_optimize(sc, cddr(car_x)))
 	{
@@ -60581,7 +60580,7 @@ static bool d_ddd_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 	      opc->v[9].fd = opc->v[8].o1->v[0].fd;
 	      return_true(sc, car_x);
 	    }}
-      pc_fallback(sc, start);
+      sc->pc = start;
     }
   if (float_optimize(sc, cdr(car_x)))
     {
@@ -60601,7 +60600,7 @@ static bool d_ddd_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 		opc->v[0].fd = opt_d_ddd_fff_mul;
 	      return_true(sc, car_x);
 	    }}}
-  pc_fallback(sc, start);
+  sc->pc = start;
   return_false(sc, car_x);
 }
 
@@ -60769,7 +60768,7 @@ static bool d_7pid_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointe
 		  opc->v[0].fd = opt_d_7pid_ssf;
 		  return_true(sc, car_x);
 		}
-	      pc_fallback(sc, start);
+	      sc->pc = start;
 	    }
 	  if (int_optimize(sc, cddr(car_x)))
 	    {
@@ -60781,7 +60780,7 @@ static bool d_7pid_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointe
 		  opc->v[9].fd = opc->v[8].o1->v[0].fd;
 		  return_true(sc, car_x);
 		}}
-	  pc_fallback(sc, start);
+	  sc->pc = start;
 	}}
   return_false(sc, car_x);
 }
@@ -60856,7 +60855,7 @@ static bool d_7pii_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointe
 	      opc->v[9].fi = opc->v[8].o1->v[0].fi;
 	      return_true(sc, car_x);
 	    }}
-      pc_fallback(sc, start);
+      sc->pc = start;
     }
   return_false(sc, car_x);
 }
@@ -61034,7 +61033,7 @@ static bool opt_float_vector_set(s7_scheme *sc, opt_info *opc, s7_pointer v, s7_
 		  opc->v[0].fd = opt_d_7pid_ssf;
 		  return_true(sc, NULL);
 		}
-	      pc_fallback(sc, start);
+	      sc->pc = start;
 	    }
 	  if (int_optimize(sc, indexp1))
 	    {
@@ -61089,7 +61088,7 @@ static bool opt_float_vector_set(s7_scheme *sc, opt_info *opc, s7_pointer v, s7_
 			opc->v[0].fd = opt_d_7piid_sssf_unchecked;
 		      return_true(sc, NULL);
 		    }
-		  pc_fallback(sc, start);
+		  sc->pc = start;
 		}}
 	  if (int_optimize(sc, indexp1))
 	    {
@@ -61202,7 +61201,7 @@ static bool d_vid_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 			    }}}
 		  return_true(sc, car_x);
 		}}
-	  pc_fallback(sc, start);
+	  sc->pc = start;
 	}}
   return_false(sc, car_x);
 }
@@ -61241,7 +61240,7 @@ static bool d_vdd_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 		      opc->v[0].fd = opt_d_vdd_ff;
 		      return_true(sc, car_x);
 		    }}
-	      pc_fallback(sc, start);
+	      sc->pc = start;
 	    }}}
   return_false(sc, car_x);
 }
@@ -61329,7 +61328,7 @@ static bool d_add_any_ok(s7_scheme *sc, opt_info *opc, s7_pointer car_x)
 	  opc->v[0].fd = (head == sc->add_symbol) ? opt_d_add_any_f : opt_d_multiply_any_f;
 	  return_true(sc, car_x);
 	}}
-  pc_fallback(sc, start);
+  sc->pc = start;
   return_false(sc, car_x);
 }
 
@@ -61607,7 +61606,7 @@ static bool b_idp_ok(s7_scheme *sc, s7_pointer s_func, s7_pointer car_x, s7_poin
 		opc->v[11].fd = opc->v[10].o1->v[0].fd;
 		return_true(sc, car_x);
 	      }}}
-  pc_fallback(sc, cur_index);
+  sc->pc = cur_index;
 
   bpf = s7_b_p_function(s_func);
   if (!bpf) bpf7 = s7_b_7p_function(s_func);
@@ -61667,15 +61666,15 @@ static s7_pointer opt_arg_type(s7_scheme *sc, s7_pointer argp)
 			  int32_t start = sc->pc;
 			  if (int_optimize(sc, argp))
 			    {
-			      pc_fallback(sc, start);
+			      sc->pc = start;
 			      return(sc->is_integer_symbol);
 			    }
 			  if (float_optimize(sc, argp))
 			    {
-			      pc_fallback(sc, start);
+			      sc->pc = start;
 			      return(sc->is_float_symbol);
 			    }
-			  pc_fallback(sc, start);
+			  sc->pc = start;
 			}
 		      return(car(sig)); /* we want the function's return type in this context */
 		    }
@@ -61911,7 +61910,7 @@ static bool b_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	    }
 	  return_true(sc, car_x);
 	}
-      pc_fallback(sc, cur_index);
+      sc->pc = cur_index;
     }
   else
     if ((is_symbol(arg2)) &&
@@ -61929,7 +61928,7 @@ static bool b_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	    check_b_types(sc, opc, s_func, car_x, opt_b_pp_fs);
 	    return_true(sc, car_x);
 	  }
-	pc_fallback(sc, cur_index);
+	sc->pc = cur_index;
       }
   o1 = sc->opts[sc->pc];
   if (cell_optimize(sc, cdr(car_x)))
@@ -62042,7 +62041,7 @@ static bool b_dd_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	  opc->v[0].fb = opt_b_dd_sf;
 	  return_true(sc, car_x);
 	}}
-  pc_fallback(sc, cur_index);
+  sc->pc = cur_index;
   opc->v[10].o1 = sc->opts[sc->pc];
   if (float_optimize(sc, cdr(car_x)))
     {
@@ -62066,7 +62065,7 @@ static bool b_dd_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	  opc->v[0].fb = opt_b_dd_ff;
 	  return_true(sc, car_x);
 	}}
-  pc_fallback(sc, cur_index);
+  sc->pc = cur_index;
   return_false(sc, car_x);
 }
 
@@ -62449,7 +62448,7 @@ static bool p_p_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer c
 	  return_true(sc, car_x);
 	}}
 
-  pc_fallback(sc, start);
+  sc->pc = start;
   if ((is_safe_procedure(s_func)) && (c_function_is_aritable(s_func, 1)))
     {
       opc->v[2].call = cf_call(sc, car_x, s_func, 1);
@@ -62509,7 +62508,7 @@ static bool p_i_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer c
       opc->v[4].fi = sc->opts[pstart]->v[0].fi;
       return_true(sc, car_x);
     }
-  pc_fallback(sc, pstart);
+  sc->pc = pstart;
   return_false(sc, car_x);
 }
 
@@ -62551,7 +62550,7 @@ static bool p_ii_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	  opc->v[0].fp = opt_p_ii_fs;
 	  return_true(sc, car_x);
 	}
-      pc_fallback(sc, pstart);
+      sc->pc = pstart;
       return_false(sc, car_x);
     }
   opc->v[10].o1 = sc->opts[sc->pc];
@@ -62566,7 +62565,7 @@ static bool p_ii_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	  opc->v[0].fp = (ifunc == divide_p_ii) ? opt_p_ii_ff_divide : opt_p_ii_ff;
 	  return_true(sc, car_x);
 	}}
-  pc_fallback(sc, pstart);
+  sc->pc = pstart;
   return_false(sc, car_x);
 }
 
@@ -62602,7 +62601,7 @@ static bool p_d_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer c
       opc->v[4].fd = o1->v[0].fd;
       return_true(sc, car_x);
     }
-  pc_fallback(sc, pstart);
+  sc->pc = pstart;
   return_false(sc, car_x);
 }
 
@@ -62647,7 +62646,7 @@ static bool p_dd_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	  opc->v[0].fp = opt_p_dd_cs;
 	  return_true(sc, car_x);
 	}}
-  pc_fallback(sc, pstart);
+  sc->pc = pstart;
   return_false(sc, car_x);
 }
 
@@ -62884,13 +62883,13 @@ static bool p_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
       slot = opt_simple_symbol(sc, cadr(car_x));
       if (!slot)
 	{
-	  pc_fallback(sc, pstart);
+	  sc->pc = pstart;
 	  return_false(sc, car_x);
 	}
       if ((is_any_vector(slot_value(slot))) &&
 	  (vector_rank(slot_value(slot)) > 1))
 	{
-	  pc_fallback(sc, pstart);
+	  sc->pc = pstart;
 	  return_false(sc, car_x);
 	}
       opc->v[1].p = slot;
@@ -62906,7 +62905,7 @@ static bool p_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	      opc->v[0].fp = (func == set_car_p_pp) ? opt_set_car_pp_ss : ((opc->v[3].p_pp_f == s7_hash_table_ref) ? opt_p_pp_ss_href : opt_p_pp_ss);
 	      return_true(sc, car_x);
 	    }
-	  pc_fallback(sc, pstart);
+	  sc->pc = pstart;
 	  return_false(sc, car_x);
 	}
       if ((!is_pair(caddr(car_x))) ||
@@ -62968,7 +62967,7 @@ static bool p_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 			      }}
 		  return_true(sc, car_x);
 		}
-	      pc_fallback(sc, pstart);
+	      sc->pc = pstart;
 	      return_false(sc, car_x);
 	    }}
       if (cell_optimize(sc, cdr(car_x)))
@@ -62984,7 +62983,7 @@ static bool p_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 		  opc->v[5].fp = o1->v[0].fp;
 		  return_true(sc, car_x);
 		}
-	      pc_fallback(sc, pstart);
+	      sc->pc = pstart;
 	      return_false(sc, car_x);
 	    }
 	  if ((!is_pair(caddr(car_x))) ||
@@ -63027,7 +63026,7 @@ static bool p_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 
 	      return_true(sc, car_x);
 	    }}}
-  pc_fallback(sc, pstart);
+  sc->pc = pstart;
   return_false(sc, car_x);
 }
 
@@ -63080,7 +63079,7 @@ static bool p_call_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_poi
 		      opc->v[0].fp = opt_p_call_ss;
 		      return_true(sc, car_x);
 		    }
-		  pc_fallback(sc, pstart);
+		  sc->pc = pstart;
 		  return_false(sc, car_x);
 		}
 	      if (!is_pair(caddr(car_x)))
@@ -63098,7 +63097,7 @@ static bool p_call_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_poi
 		}}
 	  else
 	    {
-	      pc_fallback(sc, pstart);
+	      sc->pc = pstart;
 	      return_false(sc, car_x);
 	    }}
       opc->v[10].o1 = sc->opts[sc->pc];
@@ -63113,7 +63112,7 @@ static bool p_call_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_poi
 		  opc->v[0].fp = opt_p_call_fs;
 		  return_true(sc, car_x);
 		}
-	      pc_fallback(sc, pstart);
+	      sc->pc = pstart;
 	      return_false(sc, car_x);
 	    }
 	  opc->v[8].o1 = sc->opts[sc->pc];
@@ -63123,7 +63122,7 @@ static bool p_call_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_poi
 	      opc->v[0].fp = opt_p_call_ff;
 	      return_true(sc, car_x);
 	    }}}
-  pc_fallback(sc, pstart);
+  sc->pc = pstart;
   return_false(sc, car_x);
 }
 
@@ -63505,7 +63504,7 @@ static bool p_ppi_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 	  opc->v[5].fi = sc->opts[start]->v[0].fi;
 	  return_true(sc, car_x);
 	}}
-  pc_fallback(sc, start);
+  sc->pc = start;
   return_false(sc, car_x);
 }
 
@@ -63618,7 +63617,7 @@ static bool p_ppp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 		  opc->v[0].fp = opt_p_ppp_ssf;
 		  return_true(sc, car_x);
 		}
-	      pc_fallback(sc, start);
+	      sc->pc = start;
 	    }}
       if ((is_proper_quote(sc, arg2)) &&
 	  (is_symbol(arg3)))
@@ -63686,7 +63685,7 @@ static bool p_ppp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 		    }
 		  return_true(sc, car_x);
 		}}}}
-  pc_fallback(sc, start);
+  sc->pc = start;
   return_false(sc, car_x);
 }
 
@@ -63738,7 +63737,7 @@ static bool p_call_ppp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_po
 		      (is_normal_vector(slot_value(slot))) && (vector_rank(slot_value(slot)) != 2))
 		    return_false(sc, car_x);
 		}
-	      else return_false(sc, car_x); /* no need for pc_fallback here, I think */
+	      else return_false(sc, car_x); /* no need for sc->pc = start here, I think */
 	    }
 	  else
 	    {
@@ -63778,7 +63777,7 @@ static bool p_call_ppp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_po
 			    opc->v[6].fi = o1->v[0].fi;
 			    return_true(sc, car_x);
 			  }
-			pc_fallback(sc, start1);
+			sc->pc = start1;
 			if (cell_optimize(sc, cdddr(car_x)))
 			  {
 			    opc->v[4].call = cf_call(sc, car_x, s_func, 3);
@@ -63807,7 +63806,7 @@ static bool p_call_ppp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_po
 		  opc->v[11].fp = o3->v[0].fp;
 		  return_true(sc, car_x);
 		}}}}
-  pc_fallback(sc, start);
+  sc->pc = start;
   return_false(sc, car_x);
 }
 
@@ -63993,7 +63992,7 @@ static bool p_implicit_ok(s7_scheme *sc, s7_pointer s_slot, s7_pointer car_x, in
 		  opc->v[4].p_pii_f = vector_ref_p_pii_direct;
 		  return_true(sc, car_x);
 		}}
-	  pc_fallback(sc, start);
+	  sc->pc = start;
 	}
 
       #define P_IMPLICIT_CALL_O1 4
@@ -64250,7 +64249,7 @@ static bool check_type_uncertainty(s7_scheme *sc, s7_pointer target, s7_pointer 
       if (counts <= 2)
 	{
 	  set_has_low_count(code);
-	  pc_fallback(sc, start_pc);
+	  sc->pc = start_pc;
 	  if (cell_optimize(sc, cddr(car_x)))
 	    {
 	      opc->v[0].fp = opt_set_p_p_f;
@@ -66391,52 +66390,40 @@ static bool float_optimize_1(s7_scheme *sc, s7_pointer expr)
       switch (len)
 	{
 	case 1:
-	  if (d_ok(sc, opc, s_func))
-	    return(true);
-	  break;
+	  return(d_ok(sc, opc, s_func));
 
 	case 2:                            /* (f v) or (f d): (env e) or (abs x) */
-	  if ((d_d_ok(sc, opc, s_func, car_x)) ||
-	      (d_v_ok(sc, opc, s_func, car_x)) ||
-	      (d_p_ok(sc, opc, s_func, car_x)))
-	    return(true);
-	  break;
+	  return((d_d_ok(sc, opc, s_func, car_x)) ||
+		 (d_v_ok(sc, opc, s_func, car_x)) ||
+		 (d_p_ok(sc, opc, s_func, car_x)));
 
 	case 3:
-	  if ((d_dd_ok(sc, opc, s_func, car_x)) ||
-	      (d_id_ok(sc, opc, s_func, car_x)) ||
-	      (d_vd_ok(sc, opc, s_func, car_x)) ||
-	      (d_pd_ok(sc, opc, s_func, car_x)) ||
-	      (d_ip_ok(sc, opc, s_func, car_x)) ||
-	      (d_7pi_ok(sc, opc, s_func, car_x)))
-	    return(true);
-	  break;
+	  return((d_dd_ok(sc, opc, s_func, car_x)) ||
+		 (d_id_ok(sc, opc, s_func, car_x)) ||
+		 (d_vd_ok(sc, opc, s_func, car_x)) ||
+		 (d_pd_ok(sc, opc, s_func, car_x)) ||
+		 (d_ip_ok(sc, opc, s_func, car_x)) ||
+		 (d_7pi_ok(sc, opc, s_func, car_x)));
 
 	case 4:
-	  if ((d_ddd_ok(sc, opc, s_func, car_x)) ||
-	      (d_7pid_ok(sc, opc, s_func, car_x)) ||
-	      (d_vid_ok(sc, opc, s_func, car_x)) ||
-	      (d_vdd_ok(sc, opc, s_func, car_x)) ||
-	      (d_7pii_ok(sc, opc, s_func, car_x)))
-	    return(true);
-	  break;
+	  return((d_ddd_ok(sc, opc, s_func, car_x)) ||
+		 (d_7pid_ok(sc, opc, s_func, car_x)) ||
+		 (d_vid_ok(sc, opc, s_func, car_x)) ||
+		 (d_vdd_ok(sc, opc, s_func, car_x)) ||
+		 (d_7pii_ok(sc, opc, s_func, car_x)));
 
 	case 5:
-	  if ((d_dddd_ok(sc, opc, s_func, car_x)) ||
-	      (d_7piid_ok(sc, opc, s_func, car_x)) ||
-	      (d_7piii_ok(sc, opc, s_func, car_x)))
-	    return(true);
-	  break;
+	  return((d_dddd_ok(sc, opc, s_func, car_x)) ||
+		 (d_7piid_ok(sc, opc, s_func, car_x)) ||
+		 (d_7piii_ok(sc, opc, s_func, car_x)));
 
 	case 6:
 	  if (d_7piiid_ok(sc, opc, s_func, car_x))
 	    return(true);
-	  /* break; */
+	  /* fall through */
 
 	default:
-	  if (d_add_any_ok(sc, opc, car_x))
-	    return(true);
-	  break;
+	  return(d_add_any_ok(sc, opc, car_x));
 	}}
   else
     {
@@ -66488,37 +66475,29 @@ static bool int_optimize_1(s7_scheme *sc, s7_pointer expr)
       switch (len)
 	{
 	case 2:
-	  if (i_idp_ok(sc, opc, s_func, car_x))
-	    return(true);
-	  break;
+	  return(i_idp_ok(sc, opc, s_func, car_x));
 
 	case 3:
-	  if ((i_ii_ok(sc, opc, s_func, car_x)) ||
-	      (i_7pi_ok(sc, opc, s_func, car_x)))
-	    return(true);
-	  break;
+	  return((i_ii_ok(sc, opc, s_func, car_x)) ||
+		 (i_7pi_ok(sc, opc, s_func, car_x)));
 
 	case 4:
-	  if ((i_iii_ok(sc, opc, s_func, car_x)) ||
-	      (i_7pii_ok(sc, opc, s_func, car_x)))
-	    return(true);
-	  break;
+	  return((i_iii_ok(sc, opc, s_func, car_x)) ||
+		 (i_7pii_ok(sc, opc, s_func, car_x)));
 
 	case 5:
 	  {
 	    int32_t pstart = sc->pc;
 	    if (i_7piii_ok(sc, opc, s_func, car_x))
 	      return(true);
-	    pc_fallback(sc, pstart);
+	    sc->pc = pstart;
 	  }
-	  /* break; */
+	  /* fall through */
 
 	default:
-	  if (((head == sc->add_symbol) ||
-	       (head == sc->multiply_symbol)) &&
-	      (i_add_any_ok(sc, opc, car_x)))
-	    return(true);
-	  break;
+	  return(((head == sc->add_symbol) ||
+		  (head == sc->multiply_symbol)) &&
+		 (i_add_any_ok(sc, opc, car_x)));
 	}}
   else
     {
@@ -66539,6 +66518,145 @@ static bool int_optimize_1(s7_scheme *sc, s7_pointer expr)
 }
 
 static bool int_optimize(s7_scheme *sc, s7_pointer expr) {return((int_optimize_1(sc, expr)) && (sc->pc < OPTS_SIZE));}
+
+/* cell_optimize... */
+static bool p_2x_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer car_x, int32_t pstart, s7_pointer expr)
+{
+  s7_pointer sig = c_function_signature(s_func);
+  if (is_symbol(cadr(car_x)))
+    {
+      if ((is_pair(sig)) && (is_pair(cdr(sig))) && (is_pair(cddr(sig))) && (caddr(sig) == sc->is_integer_symbol))
+	{
+	  if (p_pi_ok(sc, opc, s_func, sig, car_x))
+	    return(true);
+	  
+	  if ((car(sig) == sc->is_float_symbol) ||
+	      (car(sig) == sc->is_real_symbol))
+	    {
+	      s7_d_7pi_t f = s7_d_7pi_function(s_func);
+	      if (f)
+		{
+		  sc->pc = pstart - 1;
+		  if (float_optimize(sc, expr))
+		    {
+		      opc->v[O_WRAP].fd = opc->v[0].fd;
+		      opc->v[0].fp = d_to_p;
+		      return(true);
+		    }}}
+	  sc->pc = pstart;
+	}}
+  {
+    s7_i_ii_t ifunc = s7_i_ii_function(s_func);
+    sc->pc = pstart - 1;
+    if ((ifunc) &&
+	(int_optimize(sc, expr)))
+      {
+	opc->v[O_WRAP].fi = opc->v[0].fi;
+	opc->v[0].fp = i_to_p;
+	if (opc->v[O_WRAP].fi == opt_i_ii_ss_add)
+	  opc->v[0].fp = opt_p_ii_ss_add;
+	return(true);
+      }}
+  sc->pc = pstart;
+  return((p_ii_ok(sc, opc, s_func, car_x, pstart)) ||
+	 (p_dd_ok(sc, opc, s_func, car_x, pstart)) ||
+	 (p_pp_ok(sc, opc, s_func, car_x, pstart)) ||
+	 (p_call_pp_ok(sc, opc, s_func, car_x, pstart)));
+}
+
+static bool p_3x_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer car_x, int32_t pstart, s7_pointer expr)
+{
+  s7_pointer sig = c_function_signature(s_func);
+  if (is_symbol(cadr(car_x)))
+    {
+      if ((is_pair(sig)) && (is_pair(cdr(sig))) && (is_pair(cddr(sig))) &&
+	  (caddr(sig) == sc->is_integer_symbol))
+	{
+	  if (p_pii_ok(sc, opc, s_func, car_x))
+	    return(true);
+	  if (p_pip_ok(sc, opc, s_func, car_x))
+	    return(true);
+	  
+	  if (((car(sig) == sc->is_float_symbol) ||
+	       (car(sig) == sc->is_real_symbol)) &&
+	      (s7_d_7pid_function(s_func)) &&
+	      (d_7pid_ok(sc, opc, s_func, car_x)))
+	    {
+	      /* if d_7pid is ok, we need d_to_p for cell_optimize */
+	      opc->v[O_WRAP].fd = opc->v[0].fd;
+	      opc->v[0].fp = d_to_p;
+	      return(true);
+	    }
+	  
+	  sc->pc = pstart - 1;
+	  if ((car(sig) == sc->is_integer_symbol) &&
+	      (s7_i_7pii_function(s_func)) &&
+	      (i_7pii_ok(sc, alloc_opt_info(sc), s_func, car_x)))
+	    {
+	      opc->v[O_WRAP].fi = opc->v[0].fi;
+	      opc->v[0].fp = i_to_p;
+	      return(true);
+	    }
+	  sc->pc = pstart;
+	}}
+  return((p_ppi_ok(sc, opc, s_func, car_x)) ||
+	 (p_ppp_ok(sc, opc, s_func, car_x)) ||
+	 (p_call_ppp_ok(sc, opc, s_func, car_x)));
+}
+
+static bool p_4x_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer car_x, int32_t pstart, s7_pointer expr)
+{
+  s7_pointer head = car(car_x);
+  s7_int len = s7_list_length(sc, car_x);
+
+  if ((is_target_or_its_alias(head, s_func, sc->float_vector_set_symbol)) &&
+      (d_7piid_ok(sc, opc, s_func, car_x)))
+    {
+      opc->v[O_WRAP].fd = opc->v[0].fd;
+      opc->v[0].fp = d_to_p;         /* as above, if d_7piid is ok, we need d_to_p for cell_optimize */
+      return(true);
+    }
+  if ((is_target_or_its_alias(head, s_func, sc->float_vector_ref_symbol)) &&
+      (d_7piii_ok(sc, opc, s_func, car_x)))
+    {
+      opc->v[O_WRAP].fd = opc->v[0].fd;
+      opc->v[0].fp = d_to_p;
+      return(true);
+    }
+  if (i_7piii_ok(sc, opc, s_func, car_x))
+    {
+      opc->v[O_WRAP].fi = opc->v[0].fi;
+      opc->v[0].fp = i_to_p;
+      return(true);
+    }
+  if (is_target_or_its_alias(head, s_func, sc->int_vector_set_symbol))
+    return_false(sc, car_x);
+  if (p_piip_ok(sc, opc, s_func, car_x))
+    return(true);
+  sc->pc = pstart;
+  if (s_func == global_value(sc->vector_ref_symbol))
+    {
+      s7_pointer obj;
+      if (!is_symbol(cadr(car_x))) return_false(sc, car_x);
+      obj = lookup_unexamined(sc, cadr(car_x)); /* was lookup_from (to avoid the unbound variable check) */
+      if ((!obj) || (!is_any_vector(obj)) || (vector_rank(obj) != 3))
+	return_false(sc, car_x);
+    }
+  return(p_call_any_ok(sc, opc, s_func, car_x, len));
+}
+
+static bool p_5x_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer car_x, int32_t pstart, s7_pointer expr)
+{
+  s7_pointer head = car(car_x);
+  if ((is_target_or_its_alias(head, s_func, sc->float_vector_set_symbol)) &&
+      (d_7piiid_ok(sc, opc, s_func, car_x)))
+    {
+      opc->v[O_WRAP].fd = opc->v[0].fd;
+      opc->v[0].fp = d_to_p;
+      return(true);
+    }
+  return(false);
+}
 
 static bool cell_optimize_1(s7_scheme *sc, s7_pointer expr)
 {
@@ -66567,158 +66685,23 @@ static bool cell_optimize_1(s7_scheme *sc, s7_pointer expr)
 
   if (is_c_function(s_func))
     {
-      s7_pointer sig = c_function_signature(s_func);
       opt_info *opc = alloc_opt_info(sc);
-      int32_t pstart = sc->pc;
-
       switch (len)
 	{
-	case 1:
-	  if (p_ok(sc, opc, s_func, car_x))
-	    return(true);
-	  break;
+	case 1: return(p_ok(sc, opc, s_func, car_x));
 
-	case 2:
-	  if ((p_i_ok(sc, opc, s_func, car_x, sc->pc)) ||
-	      (p_d_ok(sc, opc, s_func, car_x, sc->pc)) ||
-	      (p_p_ok(sc, opc, s_func, car_x)))
-	    return(true);
-	  break;
+	case 2: return((p_i_ok(sc, opc, s_func, car_x, sc->pc)) ||
+		       (p_d_ok(sc, opc, s_func, car_x, sc->pc)) ||
+		       (p_p_ok(sc, opc, s_func, car_x)));
 
-	case 3:
-	  if (is_symbol(cadr(car_x)))
-	    {
-	      if ((is_pair(sig)) && (is_pair(cdr(sig))) && (is_pair(cddr(sig))) && (caddr(sig) == sc->is_integer_symbol))
-		{
-		  if (p_pi_ok(sc, opc, s_func, sig, car_x))
-		    return(true);
+	case 3: return(p_2x_ok(sc, opc, s_func, car_x, sc->pc, expr));
+	case 4: return(p_3x_ok(sc, opc, s_func, car_x, sc->pc, expr));
+	case 5: return(p_4x_ok(sc, opc, s_func, car_x, sc->pc, expr));
 
-		  if ((car(sig) == sc->is_float_symbol) ||
-		      (car(sig) == sc->is_real_symbol))
-		    {
-		      s7_d_7pi_t f = s7_d_7pi_function(s_func);
-		      if (f)
-			{
-			  sc->pc = pstart - 1;
-			  if (float_optimize(sc, expr))
-			    {
-			      opc->v[O_WRAP].fd = opc->v[0].fd;
-			      opc->v[0].fp = d_to_p;
-			      return(true);
-			    }}}
-		  pc_fallback(sc, pstart);
-		}}
-	  {
-	    s7_i_ii_t ifunc = s7_i_ii_function(s_func);
-	    sc->pc = pstart - 1;
-	    if ((ifunc) &&
-		(int_optimize(sc, expr)))
-	      {
-		opc->v[O_WRAP].fi = opc->v[0].fi;
-		opc->v[0].fp = i_to_p;
-		if (opc->v[O_WRAP].fi == opt_i_ii_ss_add)
-		  opc->v[0].fp = opt_p_ii_ss_add;
-		return(true);
-	      }}
-	  pc_fallback(sc, pstart);
+	case 6: if (p_5x_ok(sc, opc, s_func, car_x, sc->pc, expr)) return(true); 
+	  /* fall through */
 
-	  if ((p_ii_ok(sc, opc, s_func, car_x, pstart)) ||
-	      (p_dd_ok(sc, opc, s_func, car_x, pstart)) ||
-	      (p_pp_ok(sc, opc, s_func, car_x, pstart)) ||
-	      (p_call_pp_ok(sc, opc, s_func, car_x, pstart)))
-	    return(true);
-	  break;
-
-	case 4:
-	  if (is_symbol(cadr(car_x)))
-	    {
-	      if ((is_pair(sig)) && (is_pair(cdr(sig))) && (is_pair(cddr(sig))) &&
-		  (caddr(sig) == sc->is_integer_symbol))
-		{
-		  if (p_pii_ok(sc, opc, s_func, car_x))
-		    return(true);
-		  if (p_pip_ok(sc, opc, s_func, car_x))
-		    return(true);
-
-		  if (((car(sig) == sc->is_float_symbol) ||
-		       (car(sig) == sc->is_real_symbol)) &&
-		      (s7_d_7pid_function(s_func)) &&
-		      (d_7pid_ok(sc, opc, s_func, car_x)))
-		    {
-		      /* if d_7pid is ok, we need d_to_p for cell_optimize */
-		      opc->v[O_WRAP].fd = opc->v[0].fd;
-		      opc->v[0].fp = d_to_p;
-		      return(true);
-		    }
-
-		  sc->pc = pstart - 1;
-		  if ((car(sig) == sc->is_integer_symbol) &&
-		      (s7_i_7pii_function(s_func)) &&
-		      (i_7pii_ok(sc, alloc_opt_info(sc), s_func, car_x)))
-		    {
-		      opc->v[O_WRAP].fi = opc->v[0].fi;
-		      opc->v[0].fp = i_to_p;
-		      return(true);
-		    }
-		  pc_fallback(sc, pstart);
-		}}
-	  if ((p_ppi_ok(sc, opc, s_func, car_x)) ||
-	      (p_ppp_ok(sc, opc, s_func, car_x)) ||
-	      (p_call_ppp_ok(sc, opc, s_func, car_x)))
-	    return(true);
-	  break;
-
-	case 5:
-	  if ((is_target_or_its_alias(head, s_func, sc->float_vector_set_symbol)) &&
-	      (d_7piid_ok(sc, opc, s_func, car_x)))
-	    {
-	      opc->v[O_WRAP].fd = opc->v[0].fd;
-	      opc->v[0].fp = d_to_p;         /* as above, if d_7piid is ok, we need d_to_p for cell_optimize */
-	      return(true);
-	    }
-	  if ((is_target_or_its_alias(head, s_func, sc->float_vector_ref_symbol)) &&
-	      (d_7piii_ok(sc, opc, s_func, car_x)))
-	    {
-	      opc->v[O_WRAP].fd = opc->v[0].fd;
-	      opc->v[0].fp = d_to_p;
-	      return(true);
-	    }
-	  if (i_7piii_ok(sc, opc, s_func, car_x))
-	    {
-	      opc->v[O_WRAP].fi = opc->v[0].fi;
-	      opc->v[0].fp = i_to_p;
-	      return(true);
-	    }
-	  if (is_target_or_its_alias(head, s_func, sc->int_vector_set_symbol))
-	    return_false(sc, car_x);
-	  if (p_piip_ok(sc, opc, s_func, car_x))
-	    return(true);
-	  pc_fallback(sc, pstart);
-	  if (s_func == global_value(sc->vector_ref_symbol))
-	    {
-	      s7_pointer obj;
-	      if (!is_symbol(cadr(car_x))) return_false(sc, car_x);
-	      obj = lookup_unexamined(sc, cadr(car_x)); /* was lookup_from (to avoid the unbound variable check) */
-	      if ((!obj) || (!is_any_vector(obj)) || (vector_rank(obj) != 3))
-		return_false(sc, car_x);
-	    }
-	  if (p_call_any_ok(sc, opc, s_func, car_x, len))
-	    return(true);
-	  break;
-
-	case 6:
-	  if ((is_target_or_its_alias(head, s_func, sc->float_vector_set_symbol)) &&
-	      (d_7piiid_ok(sc, opc, s_func, car_x)))
-	    {
-	      opc->v[O_WRAP].fd = opc->v[0].fd;
-	      opc->v[0].fp = d_to_p;
-	      return(true);
-	    }
-
-	default:  /* >3D vector-set etc */
-	  if (p_call_any_ok(sc, opc, s_func, car_x, len))
-	    return(true);
-	  break;
+	default: return(p_call_any_ok(sc, opc, s_func, car_x, len)); /* >3D vector-set etc */
 	}}
   else
     {
@@ -66798,17 +66781,17 @@ static bool bool_optimize_nw_1(s7_scheme *sc, s7_pointer expr)
 		if ((sig1 == sc->is_integer_symbol) &&
 		    (b_ii_ok(sc, opc, s_func, car_x, arg1, arg2)))
 		  return(true);
-		pc_fallback(sc, cur_index);
+		sc->pc = cur_index;
 		if (b_pi_ok(sc, opc, s_func, car_x, arg2))
 		  return(true);
-		pc_fallback(sc, cur_index);
+		sc->pc = cur_index;
 	      }
 
 	    if ((sig1 == sc->is_float_symbol) &&
 		(sig2 == sc->is_float_symbol) &&
 		(b_dd_ok(sc, opc, s_func, car_x, arg1, arg2)))
 	      return(true);
-	    pc_fallback(sc, cur_index);
+	    sc->pc = cur_index;
 
 	    bpf = s7_b_pp_function(s_func);
 	    if (!bpf) bpf7 = s7_b_7pp_function(s_func);
@@ -66836,7 +66819,7 @@ static bool bool_optimize(s7_scheme *sc, s7_pointer expr)
   if (WITH_GMP) return(false);
   if (bool_optimize_nw(sc, expr))
     return(true);
-  pc_fallback(sc, start);
+  sc->pc = start;
   wrapper = sc->opts[start];
   if (!cell_optimize(sc, expr))
     return_false(sc, NULL);
@@ -66876,21 +66859,21 @@ static s7_pfunc s7_optimize_1(s7_scheme *sc, s7_pointer expr, bool nv)
     {
       if (int_optimize(sc, expr))
 	return((nv) ? opt_int_any_nv : opt_wrap_int);
-      pc_fallback(sc, 0);
+      sc->pc = 0;
       set_no_int_opt(expr);
     }
   if (!no_float_opt(expr))
     {
       if (float_optimize(sc, expr))
 	return_success(sc, (nv) ? opt_float_any_nv : opt_wrap_float, expr);
-      pc_fallback(sc, 0);
+      sc->pc = 0;
       set_no_float_opt(expr);
     }
   if (!no_bool_opt(expr))
     {
       if (bool_optimize_nw(sc, expr))
 	return_success(sc, (nv) ? opt_bool_any_nv : opt_wrap_bool, expr);
-      pc_fallback(sc, 0);
+      sc->pc = 0;
       set_no_bool_opt(expr);
     }
   if (cell_optimize(sc, expr))
@@ -71166,12 +71149,12 @@ static opt_t optimize_func_three_args(s7_scheme *sc, s7_pointer expr, s7_pointer
 	      if ((is_ok_lambda(sc, body_lambda)) &&
 		  (is_ok_lambda(sc, error_lambda)) &&
 		  (is_null(cadr(body_lambda))) &&
-		  (((is_symbol(cadr(error_lambda))) &&              /* (lambda args ... */
+		  (((is_symbol(cadr(error_lambda))) &&                /* (lambda args ... */
 		    (!is_probably_constant(cadr(error_lambda)))) ||
-		   ((is_pair(cadr(error_lambda))) &&                /* (lambda (type info) ... */
+		   ((is_pair(cadr(error_lambda))) &&                  /* (lambda (type info) ... */
 		    (is_pair(cdadr(error_lambda))) &&
 		    (is_null(cddadr(error_lambda))) &&
-		    (!is_probably_constant(caadr(error_lambda))) && /* (lambda (pi ...) ...) */
+		    (!is_probably_constant(caadr(error_lambda))) &&   /* (lambda (pi ...) ...) */
 		    (!is_probably_constant(cadadr(error_lambda))))))
 		{
 		  s7_pointer error_result = caddr(error_lambda);
@@ -72383,7 +72366,7 @@ static s7_pointer check_lambda_star_args(s7_scheme *sc, s7_pointer args, s7_poin
 
   if (!is_list(args))
     {
-      if (is_constant(sc, args))                                   /* (lambda* :a ...) or (define* (f . :a) ...) */
+      if (is_constant(sc, args))                                /* (lambda* :a ...) or (define* (f . :a) ...) */
 	error_nr(sc, sc->syntax_error_symbol,
 		 set_elist_3(sc, wrap_string(sc, "lambda* parameter is a constant: (~S ~S ...)", 44), car(form), cadr(form)));
       if (is_symbol(args)) set_local(args);
@@ -72398,30 +72381,30 @@ static s7_pointer check_lambda_star_args(s7_scheme *sc, s7_pointer args, s7_poin
       if (is_pair(car_w))
 	{
 	  has_defaults = true;
-	  if (is_constant(sc, car(car_w)))                         /* (lambda* ((:a 1)) ...) */
+	  if (is_constant(sc, car(car_w)))                      /* (lambda* ((:a 1)) ...) */
 	    error_nr(sc, sc->syntax_error_symbol,
 		     set_elist_4(sc, wrap_string(sc, "lambda* parameter ~S is a constant: (~S ~S ...)", 47),
 				 car(car_w), car(form), cadr(form)));
-	  if (symbol_is_in_arg_list(caar(w), cdr(w)))              /* (lambda* ((a 1) a) ...) */
+	  if (symbol_is_in_arg_list(caar(w), cdr(w)))           /* (lambda* ((a 1) a) ...) */
 	    error_nr(sc, sc->syntax_error_symbol,
 		     set_elist_4(sc, wrap_string(sc, "lambda* parameter ~S occurs twice in the argument list: (~S ~S ...)", 67),
 				 car(car_w), car(form), cadr(form)));
 	  if (!is_pair(cdr(car_w)))
 	    {
-	      if (is_null(cdr(car_w)))                            /* (lambda* ((a)) ...) */
+	      if (is_null(cdr(car_w)))                          /* (lambda* ((a)) ...) */
 		error_nr(sc, sc->syntax_error_symbol,
 			 set_elist_4(sc, wrap_string(sc, "lambda* parameter ~S default value missing in (~S ~S ...)", 57),
 				     car_w, car(form), cadr(form)));
-	      error_nr(sc, sc->syntax_error_symbol,               /* (lambda* ((a . 0.0)) a) */
+	      error_nr(sc, sc->syntax_error_symbol,             /* (lambda* ((a . 0.0)) a) */
 		       set_elist_4(sc, wrap_string(sc, "lambda* parameter ~S is a dotted pair in (~S ~S ...)", 52),
 				   car_w, car(form), cadr(form)));
 	    }
-	  if ((is_pair(cadr(car_w))) &&                           /* (lambda* ((a (quote . -1))) ...) */
+	  if ((is_pair(cadr(car_w))) &&                         /* (lambda* ((a (quote . -1))) ...) */
 	      (s7_list_length(sc, cadr(car_w)) < 0))
 	    error_nr(sc, sc->syntax_error_symbol,
 		     set_elist_4(sc, wrap_string(sc, "lambda* parameter ~S default value is not a proper list in (~S ~S ...)", 70),
 				 car_w, car(form), cadr(form)));
-	  if (is_not_null(cddr(car_w)))                           /* (lambda* ((a 0.0 'hi)) a) */
+	  if (is_not_null(cddr(car_w)))                         /* (lambda* ((a 0.0 'hi)) a) */
 	    error_nr(sc, sc->syntax_error_symbol,
 		     set_elist_4(sc, wrap_string(sc, "lambda* parameter ~S has multiple default values in (~S ~S ...)", 63),
 				 car_w, car(form), cadr(form)));
@@ -72434,14 +72417,14 @@ static s7_pointer check_lambda_star_args(s7_scheme *sc, s7_pointer args, s7_poin
 	    if (is_constant(sc, car_w))
 	      {
 		if (car_w != sc->allow_other_keys_keyword)
-		  error_nr(sc, sc->syntax_error_symbol,      /* (lambda* (pi) ...) */
+		  error_nr(sc, sc->syntax_error_symbol,         /* (lambda* (pi) ...) */
 			   set_elist_4(sc, wrap_string(sc, "lambda* parameter ~S is a constant: (~S ~S ...)", 47),
 				       car_w, car(form), cadr(form)));
-		if (is_not_null(cdr(w)))                    /* (lambda* (:allow-other-keys x) x) */
+		if (is_not_null(cdr(w)))                        /* (lambda* (:allow-other-keys x) x) */
 		  error_nr(sc, sc->syntax_error_symbol,
 			   set_elist_3(sc, wrap_string(sc, ":allow-other-keys should be the last parameter: (~S ~S ...)", 59),
 				       car(form), cadr(form)));
-		if (w == top)                               /* (lambda* (:allow-other-keys) 1) */
+		if (w == top)                                   /* (lambda* (:allow-other-keys) 1) */
 		  error_nr(sc, sc->syntax_error_symbol,
 			   set_elist_3(sc, wrap_string(sc, ":allow-other-keys can't be the only parameter: (~S ~S ...)", 58),
 				       car(form), cadr(form)));
@@ -72480,7 +72463,7 @@ static s7_pointer check_lambda_star_args(s7_scheme *sc, s7_pointer args, s7_poin
 	  }}
   if (is_not_null(w))
     {
-      if (is_constant(sc, w))                                     /* (lambda* (a . 0.0) a) or (lambda* (a . :b) a) */
+      if (is_constant(sc, w))                                   /* (lambda* (a . 0.0) a) or (lambda* (a . :b) a) */
 	error_nr(sc, sc->syntax_error_symbol,
 		 set_elist_4(sc, wrap_string(sc, "lambda* :rest parameter ~S is a constant, (~S ~S ...)", 53),
 			     w, car(form), cadr(form)));
@@ -82037,7 +82020,7 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool saf
 	  }
 	if (is_pair(p))
 	  {
-	    pc_fallback(sc, 0);
+	    sc->pc = 0;
 	    set_no_float_opt(code);
 	  }
 	else
@@ -96290,7 +96273,7 @@ int main(int argc, char **argv)
  * tgen      11.2   11.4   12.0   12.1   12.2   12.1
  * tall      15.6   15.6   15.6   15.6   15.6   15.1
  * calls     36.7   37.5   37.0   37.5   37.7   37.0
- * sg        ----   ----   55.9   55.8   55.8   55.3
+ * sg        ----   ----   55.9   55.8   55.8   55.1
  * lg        ----   ----  105.2  106.4  106.4  107.1
  * tbig     177.4  175.8  156.5  148.1  148.1  145.9
  * ------------------------------------------------------
