@@ -13153,6 +13153,9 @@ bool s7_is_ratio(s7_pointer p)
 
 static s7_int c_gcd(s7_int u, s7_int v)
 {
+  /* #if __cplusplus\n return std::gcd(u, v);\n #else... but this requires #include <algorithm> (else gcd is not defined in std::)
+   *   and C++'s gcd returns negative results sometimes -- isn't gcd defined to be positive?  std::gcd is ca 25% faster than the code below.
+   */
   s7_int a, b;
   if ((u == s7_int_min) || (v == s7_int_min))
     {
