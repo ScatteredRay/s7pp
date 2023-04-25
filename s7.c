@@ -8259,7 +8259,7 @@ s7_pointer s7_gc_unprotect_via_stack(s7_scheme *sc, s7_pointer x)
 
 #define gc_protect_via_stack(Sc, Obj) push_stack_no_let_no_code(Sc, OP_GC_PROTECT, Obj)
 #define gc_protect_2_via_stack(Sc, X, Y) do {push_stack_no_let_no_code(Sc, OP_GC_PROTECT, X); stack_protected2(Sc) = Y;} while (0)
-#define gc_protect_3_via_stack(Sc, X, Y, Z) do {push_stack_no_let_no_code(Sc, OP_GC_PROTECT, X); stack_protected2(Sc) = Y; stack_protected3(sc) = Z;} while (0)
+/* #define gc_protect_3_via_stack(Sc, X, Y, Z) do {push_stack_no_let_no_code(Sc, OP_GC_PROTECT, X); stack_protected2(Sc) = Y; stack_protected3(sc) = Z;} while (0) */
 /* often X and Y are fx_calls, so push X, then set Y */
 
 
@@ -17412,6 +17412,7 @@ static s7_pointer g_sinh(s7_scheme *sc, s7_pointer args)
 
 static s7_double sinh_d_d(s7_double x) {return(sinh(x));}
 static s7_pointer sinh_p_d(s7_scheme *sc, s7_double x) {return(make_real(sc, sinh(x)));}
+  /* so sinh in a do-loop with 0 arg may return 0.0 because sinh_p_d does not check if x=0 */
 
 
 /* -------------------------------- cosh -------------------------------- */
@@ -67111,7 +67112,7 @@ static s7_pointer seq_init(s7_scheme *sc, s7_pointer seq)
   return(sc->F);
 }
 
-#define MUTLIM 32 /* was 1000 */
+#define MUTLIM 32 /* was 1000, sets when (in vector-length) to start using a mutated real, rather than make_real during the loop through the vector */
 
 static s7_pointer clear_for_each(s7_scheme *sc)
 {
@@ -87988,7 +87989,9 @@ static void op_c_na(s7_scheme *sc)  /* (set-cdr! lst ()) */
   for (s7_pointer args = cdr(sc->code), p = new_args; is_pair(args); args = cdr(args), p = cdr(p))
     set_car(p, fx_call(sc, args));
   unstack(sc);
+  sc->temp3 = new_args; /* desperation? */
   sc->value = fn_proc(sc->code)(sc, new_args);
+  sc->temp3 = sc->unused;
 }
 
 static void op_c_a(s7_scheme *sc)
@@ -96280,4 +96283,6 @@ int main(int argc, char **argv)
  * lg        ----   ----  105.2  106.4  106.4  107.1
  * tbig     177.4  175.8  156.5  148.1  148.1  145.9
  * ------------------------------------------------------
+ *
+ * op_c_na unstack delayed if splice_in_values??
  */
