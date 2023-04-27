@@ -8258,9 +8258,8 @@ s7_pointer s7_gc_unprotect_via_stack(s7_scheme *sc, s7_pointer x)
 #endif
 
 #define gc_protect_via_stack(Sc, Obj) push_stack_no_let_no_code(Sc, OP_GC_PROTECT, Obj)
-#define gc_protect_2_via_stack(Sc, X, Y) do {push_stack_no_let_no_code(Sc, OP_GC_PROTECT, X); stack_protected2(Sc) = Y;} while (0)
+#define gc_protect_2_via_stack(Sc, X, Y) do {push_stack_no_let_no_code(Sc, OP_GC_PROTECT, X); stack_protected2(Sc) = Y;} while (0) /* often X and Y are fx_calls, so push X, then set Y */
 /* #define gc_protect_3_via_stack(Sc, X, Y, Z) do {push_stack_no_let_no_code(Sc, OP_GC_PROTECT, X); stack_protected2(Sc) = Y; stack_protected3(sc) = Z;} while (0) */
-/* often X and Y are fx_calls, so push X, then set Y */
 
 
 /* -------------------------------- symbols -------------------------------- */
@@ -43130,11 +43129,8 @@ static s7_pointer g_set_hash_table_key_typer(s7_scheme *sc, s7_pointer args)
 	{
 	  hash_table_set_key_typer(h, sc->T);
 	  if (hash_table_value_typer(h) == sc->T)
-	    {
-	      /* clear_is_typed_hash_table(h); */
-	      clear_has_simple_keys(h);
-	      /* clear_has_hash_key_type?? looks redundant */
-	    }}}
+	    clear_has_simple_keys(h); 	      /* not clear_is_typed_hash_table(h); and clear_has_hash_key_type?? looks redundant */
+	}}
   else
     {
       check_hash_table_typer(sc, sc->hash_table_key_typer_symbol, h, typer);
@@ -43155,10 +43151,8 @@ static s7_pointer g_set_hash_table_value_typer(s7_scheme *sc, s7_pointer args)
 	{
 	  hash_table_set_value_typer(h, sc->T);
 	  if (hash_table_key_typer(h) == sc->T)
-	    {
-	      /* clear_is_typed_hash_table(h); */
-	      clear_has_simple_values(h);
-	    }}}
+	    clear_has_simple_values(h); /* not clear_is_typed_hash_table(h); */
+	}}
   else
     {
       check_hash_table_typer(sc, sc->hash_table_value_typer_symbol, h, typer);
@@ -43860,9 +43854,9 @@ static hash_entry_t *hash_equal_any(s7_scheme *sc, s7_pointer table, s7_pointer 
   s7_int hash = hash_loc(sc, table, key);
   s7_int loc = hash & hash_table_mask(table);
   for (hash_entry_t *x = hash_table_element(table, loc); x; x = hash_entry_next(x))
-    if (hash_entry_raw_hash(x) == hash)
-      if (equal(sc, key, hash_entry_key(x), NULL))
-	return(x);
+    if ((hash_entry_raw_hash(x) == hash) &&
+	(equal(sc, key, hash_entry_key(x), NULL)))
+      return(x);
   return(sc->unentry);
 }
 
@@ -43940,9 +43934,9 @@ static hash_entry_t *hash_closure(s7_scheme *sc, s7_pointer table, s7_pointer ke
       s7_int hash = hash_loc(sc, table, key);
       s7_int loc = hash & hash_mask;
       for (hash_entry_t *x = hash_table_element(table, loc); x; x = hash_entry_next(x))
-	if (hash_entry_raw_hash(x) == hash)
-	  if (is_true(sc, s7_call(sc, f, set_plist_2(sc, key, hash_entry_key(x)))))
-	    return(x);
+	if ((hash_entry_raw_hash(x) == hash) &&
+	    (is_true(sc, s7_call(sc, f, set_plist_2(sc, key, hash_entry_key(x))))))
+	  return(x);
       return(sc->unentry);
     }
   return(hash_equal(sc, table, key));
@@ -45186,14 +45180,12 @@ static s7_pointer g_function(s7_scheme *sc, s7_pointer args)
       if (!is_symbol(sym))
 	wrong_type_error_nr(sc, sc->_function__symbol, 2, sym, sc->type_names[T_SYMBOL]);
     }
-
   if (e == sc->rootlet)
     return(sc->F);
   if (!((is_funclet(e)) || (is_maclet(e))))
     e = let_outlet(e);
   if (is_null(cdr(args)))
     return(let_to_function(sc, e));
-
   if ((e == sc->rootlet) || (!is_let(e)))
     return(sc->F);
   if (!((is_funclet(e)) || (is_maclet(e))))
@@ -45376,10 +45368,10 @@ s7_pointer s7_make_function_star(s7_scheme *sc, const char *name, s7_function fn
 	      c_function_set_allow_other_keys(func); /* local_args is local, so it can't carry the bit */
 	      n_args--;
 	      c_function_optional_args(func) = n_args;
-	      c_function_max_args(func) = n_args; /* apparently not counting keywords */
+	      c_function_max_args(func) = n_args;    /* apparently not counting keywords */
 	    }
 	  else
-	    if (is_pair(arg)) /* there is a default */
+	    if (is_pair(arg))                        /* there is a default */
 	      {
 		names[i] = symbol_to_keyword(sc, car(arg));
 		defaults[i] = cadr(arg);
@@ -45406,8 +45398,8 @@ s7_pointer s7_make_function_star(s7_scheme *sc, const char *name, s7_function fn
 s7_pointer s7_make_safe_function_star(s7_scheme *sc, const char *name, s7_function fnc, const char *arglist, const char *doc)
 {
   s7_pointer func = s7_make_function_star(sc, name, fnc, arglist, doc);
-  set_full_type(func, full_type(func) | T_SAFE_PROCEDURE);   /* don't step on the c_func_has_simple_defaults flag */
-  if (is_c_function_star(func))                        /* thunk -> c_function */
+  set_full_type(func, full_type(func) | T_SAFE_PROCEDURE); /* don't step on the c_func_has_simple_defaults flag */
+  if (is_c_function_star(func))                            /* thunk -> c_function */
     c_function_call_args(func) = semipermanent_list(sc, c_function_optional_args(func));
   return(func);
 }
@@ -47275,9 +47267,9 @@ static bool hash_table_equal_1(s7_scheme *sc, s7_pointer x, s7_pointer y, shared
 	hash_entry_t *xe;
 
 	for (xe = hash_table_element(y, loc); xe; xe = hash_entry_next(xe))
-	  if (hash_entry_raw_hash(xe) == hash)
-	    if (eqf(sc, hash_entry_key(xe), key, nci))
-	      break;
+	  if ((hash_entry_raw_hash(xe) == hash) &&
+	      (eqf(sc, hash_entry_key(xe), key, nci)))
+	    break;
 	if (!xe)
 	  return(false);
 	if (!eqf(sc, hash_entry_value(p), hash_entry_value(xe), nci))
@@ -87964,7 +87956,7 @@ static bool op_safe_c_pa(s7_scheme *sc)
 
 static void op_safe_c_pa_1(s7_scheme *sc)
 {
-  sc->args = sc->value; /* fx* might change sc->value?? */
+  sc->args = sc->value;                                /* fx* might change sc->value? */
   set_car(sc->t2_2, fx_call(sc, cddr(sc->code)));
   set_car(sc->t2_1, sc->args);
   sc->value = fn_proc(sc->code)(sc, sc->t2_1);
@@ -88437,7 +88429,7 @@ static token_t read_block_comment(s7_scheme *sc, s7_pointer pt)
   return(token(sc));
 }
 
-static token_t read_bang_comment(s7_scheme *sc, s7_pointer pt)
+static token_t read_excl_comment(s7_scheme *sc, s7_pointer pt)
 {
   /* block comments in #! ... !#
    * this is needed when an input file is treated as a script:
@@ -88577,7 +88569,7 @@ static token_t read_sharp(s7_scheme *sc, s7_pointer pt)
       return(TOKEN_ATOM);
 
     case '!':  /*  I don't think #! is special anymore -- maybe remove this code? */
-      return(read_bang_comment(sc, pt));
+      return(read_excl_comment(sc, pt));
 
     case '|': 
       return(read_block_comment(sc, pt));
@@ -96284,5 +96276,4 @@ int main(int argc, char **argv)
  * tbig     177.4  175.8  156.5  148.1  148.1  145.9
  * ------------------------------------------------------
  *
- * op_c_na unstack delayed if splice_in_values??
  */
