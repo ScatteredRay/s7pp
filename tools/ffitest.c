@@ -688,7 +688,7 @@ static s7_pointer wd1_inner_fn(s7_scheme *s, s7_pointer args)
 int main(int argc, char **argv)
 {
   s7_scheme *sc;
-  s7_pointer p, p1;
+  s7_pointer p, p1, perm1, perm2;
   s7_int i, gc_loc;
   char *s1, *s2;
 
@@ -1151,6 +1151,7 @@ int main(int argc, char **argv)
   s7_gc_unprotect_at(sc, gc_loc);
 
   p = s7_make_permanent_string(sc, "asdf");
+  perm1 = p;
   if (!s7_is_string(p))
     {fprintf(stderr, "%d: %s is not a string?\n", __LINE__, s1 = TO_STR(p)); free(s1);}
   if (s7_string_length(p) != 4)
@@ -1611,7 +1612,7 @@ int main(int argc, char **argv)
     if (val != 21)
       fprintf(stderr, "plus1: %" ld64 "\n", val);
 
-    p = s7_make_c_object_without_gc(sc, dax_type_tag, (void *)malloc(sizeof(dax)));
+    p = s7_make_c_object_without_gc(sc, dax_type_tag, perm2 = (void *)malloc(sizeof(dax)));
     {
       dax *o;
       o = (dax *)malloc(sizeof(dax));
@@ -2798,6 +2799,8 @@ int main(int argc, char **argv)
   s7_make_continuation(sc);
 
   s7_quit(sc);
+  free(perm1);
+  free(perm2);
   s7_free(sc);
 
   return(0);

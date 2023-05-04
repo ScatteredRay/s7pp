@@ -4895,7 +4895,6 @@ static void init_never_unheaped(void)
   for (int i = 0; i < NUM_TYPES; i++) never_unheaped[i] = false;
   never_unheaped[T_BACRO] = true;
   never_unheaped[T_BACRO_STAR] = true;
-  never_unheaped[T_BYTE_VECTOR] = true;
   never_unheaped[T_CATCH] = true;
   never_unheaped[T_CLOSURE] = true;
   never_unheaped[T_CLOSURE_STAR] = true;
@@ -4904,11 +4903,9 @@ static void init_never_unheaped(void)
   never_unheaped[T_C_OBJECT] = true;
   never_unheaped[T_C_POINTER] = true;
   never_unheaped[T_DYNAMIC_WIND] = true;
-  never_unheaped[T_FLOAT_VECTOR] = true;
   never_unheaped[T_FREE] = true;
   never_unheaped[T_GOTO] = true;
   never_unheaped[T_HASH_TABLE] = true;
-  never_unheaped[T_INT_VECTOR] = true;
   never_unheaped[T_ITERATOR] = true;
   never_unheaped[T_MACRO] = true;
   never_unheaped[T_MACRO_STAR] = true;
@@ -17074,6 +17071,12 @@ static s7_double tan_d_d(s7_double x) {return(tan(x));}
 
 
 /* -------------------------------- asin -------------------------------- */
+#if (defined(__GNUC__))
+  #define s7_complex_i 1.0i
+#else
+  #define s7_complex_i _Complex_I /* a float, but we want a double */
+#endif
+
 static s7_pointer c_asin(s7_scheme *sc, s7_double x)
 {
   s7_double absx = fabs(x), recip;
@@ -17084,7 +17087,7 @@ static s7_pointer c_asin(s7_scheme *sc, s7_double x)
 
   /* otherwise use maxima code: */
   recip = 1.0 / absx;
-  result = (M_PI / 2.0) - (_Complex_I * clog(absx * (1.0 + (sqrt(1.0 + recip) * csqrt(1.0 - recip)))));
+  result = (M_PI / 2.0) - (s7_complex_i * clog(absx * (1.0 + (sqrt(1.0 + recip) * csqrt(1.0 - recip)))));
   return((x < 0.0) ? c_complex_to_s7(sc, -result) : c_complex_to_s7(sc, result));
 }
 
@@ -17172,8 +17175,8 @@ static s7_pointer c_acos(s7_scheme *sc, s7_double x)
   /* else follow maxima again: */
   recip = 1.0 / absx;
   if (x > 0.0)
-    result = _Complex_I * clog(absx * (1.0 + (sqrt(1.0 + recip) * csqrt(1.0 - recip))));
-  else result = M_PI - _Complex_I * clog(absx * (1.0 + (sqrt(1.0 + recip) * csqrt(1.0 - recip))));
+    result = s7_complex_i * clog(absx * (1.0 + (sqrt(1.0 + recip) * csqrt(1.0 - recip))));
+  else result = M_PI - s7_complex_i * clog(absx * (1.0 + (sqrt(1.0 + recip) * csqrt(1.0 - recip))));
   return(c_complex_to_s7(sc, result));
 }
 
@@ -40860,7 +40863,6 @@ static s7_pointer g_make_vector_1(s7_scheme *sc, s7_pointer args, s7_pointer cal
     {
       if (!(is_pair(x)))
 	return(method_or_bust(sc, x, caller, args, wrap_string(sc, "an integer or a list of integers", 32), 1));
-
       if (!s7_is_integer(car(x)))
 	wrong_type_error_nr(sc, caller, 1, car(x), sc->type_names[T_INTEGER]);
       len = (is_null(cdr(x))) ? s7_integer_clamped_if_gmp(sc, car(x)) : multivector_length(sc, x, caller);
@@ -95997,8 +95999,11 @@ void s7_free(s7_scheme *sc)
 
   if (sc->autoload_names) free(sc->autoload_names);
   if (sc->autoload_names_sizes) free(sc->autoload_names_sizes);
-  if (sc->autoloaded_already) free(sc->autoloaded_already);
-
+  if (sc->autoloaded_already)
+    {
+      for (i = 0; i < sc->autoload_names_loc; i++) if (sc->autoloaded_already[i]) free(sc->autoloaded_already[i]);
+      free(sc->autoloaded_already);
+    }
   for (block_t *top = sc->block_lists[TOP_BLOCK_LIST]; top; top = block_next(top))
     if (block_data(top))
       free(block_data(top));
@@ -96058,7 +96063,11 @@ void s7_free(s7_scheme *sc)
   if (sc->c_object_types)
     {
       for (i = 0; i < sc->num_c_object_types; i++)
-	free(sc->c_object_types[i]);
+	{
+	  c_object_t *c_type = sc->c_object_types[i];
+	  if (c_type->scheme_name) {free(c_type->scheme_name); c_type->scheme_name = NULL;}
+	  free(c_type);
+	}
       free(sc->c_object_types);
     }
   free(sc);
