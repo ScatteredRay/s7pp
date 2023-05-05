@@ -21,6 +21,8 @@ s7 is a Scheme interpreter.
 
 [SchemeMosaic](http://xelf.me/scheme-mosaic.html) (David O'Toole)
 
+[libs7](https://github.com/obazl/libs7/) (Gregg Reynolds)
+
 [Common Music](http://commonmusic.sourceforge.net/) (Rick Taube)
 
 docker container: docker run -it schemers/s7:head (Lassi Kortela)

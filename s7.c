@@ -397,7 +397,7 @@
     #ifndef __SUNPRO_C
       #if defined(__sun) && defined(__SVR4)
         #undef _Complex_I
-        #define _Complex_I 1.0fi
+        #define _Complex_I 1.0i
       #endif
     #endif
   #endif
@@ -406,9 +406,15 @@
     #if (!(defined(__cplusplus))) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 7)) && !defined(__INTEL_COMPILER)
       #define CMPLX(x, y) __builtin_complex ((double) (x), (double) (y))
     #else
-      #define CMPLX(r, i) ((r) + ((i) * _Complex_I))
+      #define CMPLX(r, i) ((r) + ((i) * (s7_complex)_Complex_I))
     #endif
   #endif
+#endif
+
+#if (defined(__GNUC__))
+  #define s7_complex_i 1.0i
+#else
+  #define s7_complex_i (s7_complex)_Complex_I /* a float, but we want a double */
 #endif
 
 #include "s7.h"
@@ -13046,16 +13052,16 @@ static double s7_round(double number) {return((number < 0.0) ? ceil(number - 0.5
 
   static s7_complex ctan(s7_complex z)   {return(csin(z) / ccos(z));}
   static s7_complex ctanh(s7_complex z)  {return(csinh(z) / ccosh(z));}
-  static s7_complex casin(s7_complex z)  {return(-_Complex_I * clog(_Complex_I * z + csqrt(1.0 - z * z)));}
-  static s7_complex cacos(s7_complex z)  {return(-_Complex_I * clog(z + _Complex_I * csqrt(1.0 - z * z)));}
-  static s7_complex catan(s7_complex z)  {return(_Complex_I * clog((_Complex_I + z) / (_Complex_I - z)) / 2.0);}
+  static s7_complex casin(s7_complex z)  {return(-s7_complex_i * clog(s7_complex_i * z + csqrt(1.0 - z * z)));}
+  static s7_complex cacos(s7_complex z)  {return(-s7_complex_i * clog(z + s7_complex_i * csqrt(1.0 - z * z)));}
+  static s7_complex catan(s7_complex z)  {return(s7_complex_i * clog((s7_complex_i + z) / (s7_complex_i - z)) / 2.0);}
   static s7_complex casinh(s7_complex z) {return(clog(z + csqrt(1.0 + z * z)));}
   static s7_complex cacosh(s7_complex z) {return(clog(z + csqrt(z * z - 1.0)));}
   static s7_complex catanh(s7_complex z) {return(clog((1.0 + z) / (1.0 - z)) / 2.0);}
 #else
 
 #if (!defined(__FreeBSD__)) || (__FreeBSD__ < 12)
-static s7_complex clog(s7_complex z) {return(log(fabs(cabs(z))) + carg(z) * _Complex_I);}
+static s7_complex clog(s7_complex z) {return(log(fabs(cabs(z))) + carg(z) * s7_complex_i);}
 static s7_complex cpow(s7_complex x, s7_complex y)
 {
   s7_double r = cabs(x);
@@ -13064,23 +13070,23 @@ static s7_complex cpow(s7_complex x, s7_complex y)
   s7_double yim = cimag(y);
   s7_double nr = exp(yre * log(r) - yim * theta);
   s7_double ntheta = yre * theta + yim * log(r);
-  return(nr * cos(ntheta) + (nr * sin(ntheta)) * _Complex_I);
+  return(nr * cos(ntheta) + (nr * sin(ntheta)) * s7_complex_i);
 }
 #endif
 #if (!defined(__FreeBSD__)) || (__FreeBSD__ < 9) /* untested -- this orignally looked at __FreeBSD_version which apparently no longer exists */
-  static s7_complex cexp(s7_complex z) {return(exp(creal(z)) * cos(cimag(z)) + (exp(creal(z)) * sin(cimag(z))) * _Complex_I);}
+  static s7_complex cexp(s7_complex z) {return(exp(creal(z)) * cos(cimag(z)) + (exp(creal(z)) * sin(cimag(z))) * s7_complex_i);}
 #endif
 
 #if (!defined(__FreeBSD__)) || (__FreeBSD__ < 10)
-  static s7_complex csin(s7_complex z)   {return(sin(creal(z)) * cosh(cimag(z)) + (cos(creal(z)) * sinh(cimag(z))) * _Complex_I);}
-  static s7_complex ccos(s7_complex z)   {return(cos(creal(z)) * cosh(cimag(z)) + (-sin(creal(z)) * sinh(cimag(z))) * _Complex_I);}
-  static s7_complex csinh(s7_complex z)  {return(sinh(creal(z)) * cos(cimag(z)) + (cosh(creal(z)) * sin(cimag(z))) * _Complex_I);}
-  static s7_complex ccosh(s7_complex z)  {return(cosh(creal(z)) * cos(cimag(z)) + (sinh(creal(z)) * sin(cimag(z))) * _Complex_I);}
+  static s7_complex csin(s7_complex z)   {return(sin(creal(z)) * cosh(cimag(z)) + (cos(creal(z)) * sinh(cimag(z))) * s7_complex_i);}
+  static s7_complex ccos(s7_complex z)   {return(cos(creal(z)) * cosh(cimag(z)) + (-sin(creal(z)) * sinh(cimag(z))) * s7_complex_i);}
+  static s7_complex csinh(s7_complex z)  {return(sinh(creal(z)) * cos(cimag(z)) + (cosh(creal(z)) * sin(cimag(z))) * s7_complex_i);}
+  static s7_complex ccosh(s7_complex z)  {return(cosh(creal(z)) * cos(cimag(z)) + (sinh(creal(z)) * sin(cimag(z))) * s7_complex_i);}
   static s7_complex ctan(s7_complex z)   {return(csin(z) / ccos(z));}
   static s7_complex ctanh(s7_complex z)  {return(csinh(z) / ccosh(z));}
-  static s7_complex casin(s7_complex z)  {return(-_Complex_I * clog(_Complex_I * z + csqrt(1.0 - z * z)));}
-  static s7_complex cacos(s7_complex z)  {return(-_Complex_I * clog(z + _Complex_I * csqrt(1.0 - z * z)));}
-  static s7_complex catan(s7_complex z)  {return(_Complex_I * clog((_Complex_I + z) / (_Complex_I - z)) / 2.0);}
+  static s7_complex casin(s7_complex z)  {return(-s7_complex_i * clog(s7_complex_i * z + csqrt(1.0 - z * z)));}
+  static s7_complex cacos(s7_complex z)  {return(-s7_complex_i * clog(z + s7_complex_i * csqrt(1.0 - z * z)));}
+  static s7_complex catan(s7_complex z)  {return(s7_complex_i * clog((s7_complex_i + z) / (s7_complex_i - z)) / 2.0);}
   static s7_complex catanh(s7_complex z) {return(clog((1.0 + z) / (1.0 - z)) / 2.0);}
   static s7_complex casinh(s7_complex z) {return(clog(z + csqrt(1.0 + z * z)));}
   static s7_complex cacosh(s7_complex z) {return(clog(z + csqrt(z * z - 1.0)));}
@@ -13090,7 +13096,7 @@ static s7_complex cpow(s7_complex x, s7_complex y)
 
 #else  /* not HAVE_COMPLEX_NUMBERS */
   typedef double s7_complex;
-  #define _Complex_I 1
+  #define _Complex_I 1.0
   #define creal(x) x
   #define cimag(x) x
   #define csin(x) sin(x)
@@ -17071,12 +17077,6 @@ static s7_double tan_d_d(s7_double x) {return(tan(x));}
 
 
 /* -------------------------------- asin -------------------------------- */
-#if (defined(__GNUC__))
-  #define s7_complex_i 1.0i
-#else
-  #define s7_complex_i _Complex_I /* a float, but we want a double */
-#endif
-
 static s7_pointer c_asin(s7_scheme *sc, s7_double x)
 {
   s7_double absx = fabs(x), recip;
@@ -96001,7 +96001,8 @@ void s7_free(s7_scheme *sc)
   if (sc->autoload_names_sizes) free(sc->autoload_names_sizes);
   if (sc->autoloaded_already)
     {
-      for (i = 0; i < sc->autoload_names_loc; i++) if (sc->autoloaded_already[i]) free(sc->autoloaded_already[i]);
+      for (i = 0; i < sc->autoload_names_loc; i++) 
+	if (sc->autoloaded_already[i]) free(sc->autoloaded_already[i]);
       free(sc->autoloaded_already);
     }
   for (block_t *top = sc->block_lists[TOP_BLOCK_LIST]; top; top = block_next(top))
@@ -96284,5 +96285,4 @@ int main(int argc, char **argv)
  * lg        ----   ----  105.2  106.4  106.4  107.1
  * tbig     177.4  175.8  156.5  148.1  148.1  145.9
  * ------------------------------------------------------
- *
  */
