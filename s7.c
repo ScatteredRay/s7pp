@@ -115,7 +115,8 @@
  * -O3 is often slower than -O2 (at least according to callgrind)
  * -march=native seems to improve tree-vectorization which is important in Snd
  * -ffast-math makes a mess of NaNs, and does not appear to be faster
- * -fno-math-errno -fno-signed-zeros appear to be slightly faster, and I don't see any errors
+ *   -fno-math-errno -fno-signed-zeros appear to be slightly faster, and I don't see any errors
+ *   I also tried -fno-signaling-nans -fno-trapping-math -fassociative-math, but at least one of them is much slower
  * this code doesn't compile anymore in gcc 4.3
  */
 
@@ -48433,6 +48434,11 @@ static s7_pointer copy_hash_table(s7_scheme *sc, s7_pointer source)
       if (has_simple_keys(source)) set_has_simple_keys(new_hash);
       if (has_simple_values(source)) set_has_simple_values(new_hash);
     }
+  if (is_weak_hash_table(source)) /* 16-May-23, should reverse return a weak-hash-table? */
+    {
+      set_weak_hash_table(new_hash);
+      weak_hash_iters(new_hash) = 0;
+    }
   s7_gc_unprotect_at(sc, gc_loc);
   return(new_hash);
 }
@@ -49845,6 +49851,11 @@ static s7_pointer hash_table_append(s7_scheme *sc, s7_pointer args)
       set_is_typed_hash_table(new_hash);
       hash_table_set_key_typer(new_hash, key_typer);
       hash_table_set_value_typer(new_hash, value_typer);
+    }
+  if (is_weak_hash_table(car(args))) /* 16-May-23, args gc protected above */
+    {
+      set_weak_hash_table(new_hash);
+      weak_hash_iters(new_hash) = 0;
     }
   set_plist_2(sc, sc->nil, sc->nil);
   unstack(sc);
@@ -75223,6 +75234,8 @@ static void op_let_no_vars(s7_scheme *sc)
 static void op_let_one_new(s7_scheme *sc)
 {
   sc->code = cdr(sc->code);
+  /* check_stack_size(sc) -- needed if we're in an infinite loop -- maybe let it trigger "stack too big" instead */
+  /*   e.g. (let ((set! let*)) (let* set! ((x 1234) (y 1/2)) (let ((<1> (list 1 #f))) (set! (<1> 1) ...)))) */
   push_stack_no_args(sc, OP_LET_ONE_NEW_1, cdr(sc->code));
   sc->code = opt2_pair(sc->code);
 }
