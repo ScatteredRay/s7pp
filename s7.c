@@ -44997,6 +44997,12 @@ static s7_pointer hash_table_reverse(s7_scheme *sc, s7_pointer old_hash)
   for (s7_int i = 0; i < len; i++)
     for (hash_entry_t *x = old_lists[i]; x; x = hash_entry_next(x))
       s7_hash_table_set(sc, new_hash, hash_entry_value(x), hash_entry_key(x));
+
+  if (is_weak_hash_table(old_hash)) /* 17-May-23, not sure it makes sense to reverse a weak-hash-table but... */
+    {
+      set_weak_hash_table(new_hash);
+      weak_hash_iters(new_hash) = 0;
+    }
   s7_gc_unprotect_at(sc, gc_loc);
   return(new_hash);
 }
@@ -48434,7 +48440,7 @@ static s7_pointer copy_hash_table(s7_scheme *sc, s7_pointer source)
       if (has_simple_keys(source)) set_has_simple_keys(new_hash);
       if (has_simple_values(source)) set_has_simple_values(new_hash);
     }
-  if (is_weak_hash_table(source)) /* 16-May-23, should reverse return a weak-hash-table? */
+  if (is_weak_hash_table(source)) /* 16-May-23 */
     {
       set_weak_hash_table(new_hash);
       weak_hash_iters(new_hash) = 0;
@@ -49852,7 +49858,7 @@ static s7_pointer hash_table_append(s7_scheme *sc, s7_pointer args)
       hash_table_set_key_typer(new_hash, key_typer);
       hash_table_set_value_typer(new_hash, value_typer);
     }
-  if (is_weak_hash_table(car(args))) /* 16-May-23, args gc protected above */
+  if (is_weak_hash_table(car(args))) /* 16-May-23, args gc protected above, should we limit weak-hash result to pure weak-hash args? */
     {
       set_weak_hash_table(new_hash);
       weak_hash_iters(new_hash) = 0;
