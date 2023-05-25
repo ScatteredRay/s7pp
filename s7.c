@@ -36350,7 +36350,7 @@ is #t, the string is also sent to the current-output-port."
 	return(pt);                          /*   but this means some error checks are skipped? */
     }
   sc->format_column = 0;
-  if (!((is_boolean(pt)) ||               /* #f or #t */
+  if (!((is_boolean(pt)) ||                  /* #f or #t */
 	((is_output_port(pt)) &&             /* (current-output-port) or call-with-open-file arg, etc */
 	 (!port_is_closed(pt)))))
     return(method_or_bust(sc, pt, sc->format_symbol, args, an_output_port_string, 1));
@@ -72377,7 +72377,6 @@ static void check_lambda_args(s7_scheme *sc, s7_pointer args, int32_t *arity, s7
 static s7_pointer check_lambda_star_args(s7_scheme *sc, s7_pointer args, s7_pointer body, s7_pointer form) /* checks closure*, macro*, and bacro* */
 {
   s7_pointer top, v, w;
-  int32_t i;
   bool has_defaults;
 
   if (!is_list(args))
@@ -72391,7 +72390,7 @@ static s7_pointer check_lambda_star_args(s7_scheme *sc, s7_pointer args, s7_poin
 
   has_defaults = false;
   top = args;
-  for (i = 0, v = args, w = args; is_pair(w); i++, v = w, w = cdr(w))
+  for (v = args, w = args; is_pair(w); v = w, w = cdr(w))
     {
       s7_pointer car_w = car(w);
       if (is_pair(car_w))
