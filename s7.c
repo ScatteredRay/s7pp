@@ -53284,6 +53284,7 @@ static s7_pointer fx_T(s7_scheme *sc, s7_pointer arg) {return(T_lookup(sc, T_Sym
 static s7_pointer fx_U(s7_scheme *sc, s7_pointer arg) {return(U_lookup(sc, T_Sym(arg), arg));}
 static s7_pointer fx_V(s7_scheme *sc, s7_pointer arg) {return(V_lookup(sc, T_Sym(arg), arg));}
 static s7_pointer fx_c_nc(s7_scheme *sc, s7_pointer arg) {return(fc_call(sc, arg));}
+static s7_pointer fx_c_0c(s7_scheme *sc, s7_pointer arg) {return(fn_proc(arg)(sc, sc->nil));}
 static s7_pointer fx_cons_cc(s7_scheme *sc, s7_pointer arg) {return(cons(sc, cadr(arg), caddr(arg)));}
 static s7_pointer fx_curlet(s7_scheme *sc, s7_pointer arg) {return(sc->curlet);}
 
@@ -53772,6 +53773,14 @@ fx_iterate_s_any(fx_iterate_s, s_lookup)
 fx_iterate_s_any(fx_iterate_o, o_lookup)
 fx_iterate_s_any(fx_iterate_T, T_lookup)
 
+static s7_pointer fx_read_char_0(s7_scheme *sc, s7_pointer arg)
+{
+  s7_pointer port = input_port_if_not_loading(sc);
+  if (!port) return(eof_object);
+  if (!is_input_port(port))
+    return(method_or_bust_p(sc, port, sc->read_char_symbol, an_input_port_string));
+  return(chars[port_read_character(port)(sc, port)]);
+}
 
 static s7_pointer fx_length_s(s7_scheme *sc, s7_pointer arg) {return(s7_length(sc, lookup(sc, cadr(arg))));}
 static s7_pointer fx_length_t(s7_scheme *sc, s7_pointer arg) {return(s7_length(sc, t_lookup(sc, cadr(arg), arg)));}
@@ -56421,7 +56430,11 @@ static s7_function fx_choose(s7_scheme *sc, s7_pointer holder, s7_pointer cur_en
     {
       switch (optimize_op(arg))
 	{
-	case HOP_SAFE_C_NC:
+	case HOP_SAFE_C_NC: /* includes 0-arg cases
+			     * newline/current-input|output-port, [make-]hash-table?, read-line, [float-]vector/list, gensym
+			     */
+	  if (fn_proc(arg) == g_read_char) return(fx_read_char_0);
+	  if (cdr(arg) == sc->nil) return(fx_c_0c);
 #if (!WITH_GMP)
 	  if (fn_proc(arg) == g_add_i_random) return(fx_add_i_random);
 #endif
@@ -80637,7 +80650,7 @@ static goto_t op_dox_no_body_1(s7_scheme *sc, s7_pointer slots, s7_pointer end, 
 {
   s7_function endf = fx_proc(end);
   s7_pointer endp = car(end);
-  if (endf == fx_c_nc)
+  if ((endf == fx_c_nc) || (endf == fx_c_0c))
     {
       endf = fn_proc(endp);
       endp = cdr(endp);
@@ -80646,7 +80659,7 @@ static goto_t op_dox_no_body_1(s7_scheme *sc, s7_pointer slots, s7_pointer end, 
     {
       s7_function f = fx_proc(slot_expression(stepper)); /* e.g. fx_add_s1 */
       s7_pointer a = car(slot_expression(stepper));
-      if (f == fx_c_nc)
+      if ((f == fx_c_nc) || (f == fx_c_0c))
 	{
 	  f = fn_proc(a);
 	  a = cdr(a);
@@ -96249,7 +96262,7 @@ int main(int argc, char **argv)
 #endif
 
 /* ------------------------------------------------------
- *            20.9   21.0   22.0   23.0   23.2   23.3
+ *            20.9   21.0   22.0   23.0   23.2   23.4
  * ------------------------------------------------------
  * tpeak      115    114    108    105    105    102
  * tref       691    687    463    459    459    459
@@ -96270,11 +96283,11 @@ int main(int argc, char **argv)
  * titer     2865   2842   2641   2509   2509   2465
  * tload     ----   ----   3046   2404   2537   2530
  * tmat      3065   3042   2524   2578   2569   2585
- * tb        2735   2681   2612   2604   2601   2632
+ * tb        2735   2681   2612   2604   2601   2630
  * tsort     3105   3104   2856   2804   2804   2828
  * tobj      4016   3970   3828   3577   3603   3572
  * teq       4068   4045   3536   3486   3486   3588
- * tio       3816   3752   3683   3620   3620   3623
+ * tio       3816   3752   3683   3620   3620   3616
  * tmac      3950   3873   3033   3677   3682   3688
  * tclo      4787   4735   4390   4384   4384   4450
  * tcase     4960   4793   4439   4430   4426   4445
@@ -96293,14 +96306,14 @@ int main(int argc, char **argv)
  * tset      ----   ----   ----   6260   6258   6293
  * tari      13.0   12.7   6827   6543   6541   6491
  * trec      6936   6922   6521   6588   6588   6581
- * tleft     10.4   10.2   7657   7479   7479   7626
+ * tleft     10.4   10.2   7657   7479   7479   7611
  * tgc       11.9   11.1   8177   7857   7897   7957
  * thash     11.8   11.7   9734   9479   9479   9484
  * cb        11.2   11.0   9658   9564   9559   9632
  * tgen      11.2   11.4   12.0   12.1   12.2   12.1
- * tall      15.6   15.6   15.6   15.6   15.6   15.1
- * calls     36.7   37.5   37.0   37.5   37.7   37.0
- * sg        ----   ----   55.9   55.8   55.8   55.1
+ * tall      15.6   15.6   15.6   15.6   15.6   15.2
+ * calls     36.7   37.5   37.0   37.5   37.7   37.5
+ * sg        ----   ----   55.9   55.8   55.8   55.9
  * lg        ----   ----  105.2  106.4  106.4  107.1
  * tbig     177.4  175.8  156.5  148.1  148.1  145.8
  * ------------------------------------------------------
