@@ -53469,6 +53469,7 @@ static s7_pointer fx_add_i_random(s7_scheme *sc, s7_pointer arg)
 static s7_pointer fx_add_sf(s7_scheme *sc, s7_pointer arg) {return(g_add_xf(sc, lookup(sc, cadr(arg)), real(opt2_con(cdr(arg))), 1));}
 static s7_pointer fx_add_fs(s7_scheme *sc, s7_pointer arg) {return(g_add_xf(sc, lookup(sc, opt2_sym(cdr(arg))), real(cadr(arg)), 2));}
 static s7_pointer fx_add_tf(s7_scheme *sc, s7_pointer arg) {return(g_add_xf(sc, t_lookup(sc, cadr(arg), arg), real(opt2_con(cdr(arg))), 1));}
+static s7_pointer fx_add_ft(s7_scheme *sc, s7_pointer arg) {return(g_add_xf(sc, t_lookup(sc, opt2_sym(cdr(arg)), arg), real(cadr(arg)), 2));}
 
 #define fx_add_si_any(Name, Lookup) \
   static s7_pointer Name(s7_scheme *sc, s7_pointer arg) \
@@ -56430,11 +56431,8 @@ static s7_function fx_choose(s7_scheme *sc, s7_pointer holder, s7_pointer cur_en
     {
       switch (optimize_op(arg))
 	{
-	case HOP_SAFE_C_NC: /* includes 0-arg cases
-			     * newline/current-input|output-port, [make-]hash-table?, read-line, [float-]vector/list, gensym
-			     */
-	  if (fn_proc(arg) == g_read_char) return(fx_read_char_0);
-	  if (cdr(arg) == sc->nil) return(fx_c_0c);
+	case HOP_SAFE_C_NC: /* includes 0-arg cases, newline/current-input|output-port, [make-]hash-table?, read-line, [float-]vector/list, gensym */
+	  if (cdr(arg) == sc->nil) return((fn_proc(arg) == g_read_char) ? fx_read_char_0 : fx_c_0c);
 #if (!WITH_GMP)
 	  if (fn_proc(arg) == g_add_i_random) return(fx_add_i_random);
 #endif
@@ -57424,6 +57422,7 @@ static bool fx_tree_in(s7_scheme *sc, s7_pointer tree, s7_pointer var1, s7_point
 	{
 	  if ((car(p) == sc->cons_symbol) && (is_unchanged_global(sc->cons_symbol))) return(with_fx(tree, fx_cons_ct));
 	  if (fx_proc(tree) == fx_multiply_is) return(with_fx(tree, fx_multiply_it));
+	  if (fx_proc(tree) == fx_add_fs) return(with_fx(tree, fx_add_ft));
 	  if (fx_proc(tree) == fx_c_cs)
 	    {
 	      if (is_global_and_has_func(car(p), s7_p_pp_function))
