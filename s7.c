@@ -83086,10 +83086,7 @@ static s7_pointer lambda_star_set_args(s7_scheme *sc)
 		  s7_pointer sym = keyword_symbol(arg_val);
 		  if (lambda_star_argument_set_value(sc, sym, cadr(arg_vals), slot, true) == sc->no_value)
 		    {
-		      /* if default value is a key, go ahead and use this value.
-		       *    (define* (f (a :b)) a) (f :c)
-		       * this has become much trickier than I anticipated...
-		       */
+		      /* if default value is a key, go ahead and use this value. (define* (f (a :b)) a) (f :c), this has become much trickier than I anticipated... */
 		      if (allow_other_keys)
 			/* in CL: (defun hi (&key (a 1) &allow-other-keys) a) (hi :b :a :a 3) -> 3
 			 * in s7: (define* (hi (a 1) :allow-other-keys) a)    (hi :b :a :a 3) -> 3
@@ -83112,7 +83109,7 @@ static s7_pointer lambda_star_set_args(s7_scheme *sc)
 		}
 	      slot = next_slot(slot);
 	    }
-	  else                                  /* not a key/value pair */
+	  else /* not a key/value pair */
 	    {
 	      if (is_checked_slot(slot))
 		error_nr(sc, sc->wrong_type_arg_symbol, set_elist_3(sc, parameter_set_twice_string, slot_symbol(slot), sc->args));
@@ -88109,7 +88106,7 @@ static bool op_pair_pair(s7_scheme *sc)
       return(false);
     }
   if (sc->stack_end >= (sc->stack_resize_trigger - 8))
-    check_for_cyclic_code(sc, sc->code); /* calls resize_stack */
+    check_for_cyclic_code(sc, sc->code);       /* calls resize_stack */
   push_stack_no_args_direct(sc, OP_EVAL_ARGS); /* eval args goes immediately to cdr(sc->code) */
   /* don't put check_stack_size here! */
   push_stack_no_args(sc, OP_EVAL_ARGS, car(sc->code));
@@ -91779,8 +91776,8 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 
 	case OP_LAMBDA:                sc->value = op_lambda(sc, sc->code);           continue;
 	case OP_LAMBDA_UNCHECKED:      sc->value = op_lambda_unchecked(sc, sc->code); continue;
-	case OP_LAMBDA_STAR:           op_lambda_star(sc);           continue;
-	case OP_LAMBDA_STAR_UNCHECKED: op_lambda_star_unchecked(sc); continue;
+	case OP_LAMBDA_STAR:           op_lambda_star(sc);                            continue;
+	case OP_LAMBDA_STAR_UNCHECKED: op_lambda_star_unchecked(sc);                  continue;
 
 
 	case OP_CASE:                     /* car(sc->code) is the selector */
@@ -95193,7 +95190,7 @@ static void init_rootlet(s7_scheme *sc)
   sc->catch_symbol =                 semisafe_defun("catch",	catch,			3, 0, false);
   sc->throw_symbol =                 unsafe_defun("throw",	throw,			1, 0, true);
   sc->error_symbol =                 unsafe_defun("error",	error,			1, 0, true); /* was 0,0 -- 1-Aug-22 */
-  /* not safe in catch if macro as error handler, (define-macro (m . args) `(apply ,(car args) ',(cadr args))) (catch #t (lambda () (error abs -1)) m) */
+  /* unsafe example: catch if macro as error handler, (define-macro (m . args) `(apply ,(car args) ',(cadr args))) (catch #t (lambda () (error abs -1)) m) */
   sc->stacktrace_symbol =            defun("stacktrace",	stacktrace,		0, 5, false);
 
   /* sc->values_symbol = */          unsafe_defun("values",	values,			0, 0, true); /* values_symbol set above for signatures, not semisafe! */
@@ -96260,60 +96257,60 @@ int main(int argc, char **argv)
 #endif
 #endif
 
-/* ------------------------------------------------------
- *            20.9   21.0   22.0   23.0   23.2   23.4
- * ------------------------------------------------------
- * tpeak      115    114    108    105    105    102
- * tref       691    687    463    459    459    459
- * index     1026   1016    973    967    967    970
- * tmock     1177   1165   1057   1019   1019   1026
- * tvect     2519   2464   1772   1669   1669   1647
- * timp      2637   2575   1930   1694   1694   1709
- * texit     ----   ----   1778   1741   1741   1765
- * s7test    1873   1831   1818   1829   1829   1854
- * thook     ----   ----   2590   2030   2028   2046
- * tauto     ----   ----   2562   2048   2048   2062
- * lt        2187   2172   2150   2185   2185   2195
- * dup       3805   3788   2492   2239   2236   2240
- * tcopy     8035   5546   2539   2375   2375   2379
- * tread     2440   2421   2419   2408   2403   2417
- * fbench    2688   2583   2460   2430   2430   2458
- * trclo     2735   2574   2454   2445   2445   2461
- * titer     2865   2842   2641   2509   2509   2465
- * tload     ----   ----   3046   2404   2537   2530
- * tmat      3065   3042   2524   2578   2569   2585
- * tb        2735   2681   2612   2604   2601   2630
- * tsort     3105   3104   2856   2804   2804   2828
- * tobj      4016   3970   3828   3577   3603   3572
- * teq       4068   4045   3536   3486   3486   3588
- * tio       3816   3752   3683   3620   3620   3616
- * tmac      3950   3873   3033   3677   3682   3688
- * tclo      4787   4735   4390   4384   4384   4450
- * tcase     4960   4793   4439   4430   4426   4445
- * tlet      7775   5640   4450   4427   4422   4452
- * tfft      7820   7729   4755   4476   4475   4510
- * tstar     6139   5923   5519   4449   4449   4556
- * tmap      8869   8774   4489   4541   4541   4618
- * tshoot    5525   5447   5183   5055   5055   5048
- * tstr      6880   6342   5488   5162   5165   5194
- * tform     5357   5348   5307   5316   5321   5393
- * tnum      6348   6013   5433   5396   5396   5409
- * tlamb     6423   6273   5720   5560   5552   5620
- * tmisc     8869   7612   6435   6076   6074   6224
- * tgsl      8485   7802   6373   6282   6282   6228
- * tlist     7896   7546   6558   6240   6240   6281
- * tset      ----   ----   ----   6260   6258   6293
- * tari      13.0   12.7   6827   6543   6541   6491
- * trec      6936   6922   6521   6588   6588   6581
- * tleft     10.4   10.2   7657   7479   7479   7611
- * tgc       11.9   11.1   8177   7857   7897   7957
- * thash     11.8   11.7   9734   9479   9479   9484
- * cb        11.2   11.0   9658   9564   9559   9632
- * tgen      11.2   11.4   12.0   12.1   12.2   12.1
- * tall      15.6   15.6   15.6   15.6   15.6   15.2
- * calls     36.7   37.5   37.0   37.5   37.7   37.5
- * sg        ----   ----   55.9   55.8   55.8   55.9
- * lg        ----   ----  105.2  106.4  106.4  107.1
- * tbig     177.4  175.8  156.5  148.1  148.1  145.8
- * ------------------------------------------------------
+/* --------------------------------------------------
+ *            20.9   21.0   22.0   23.0  23.4   23.5
+ * --------------------------------------------------
+ * tpeak      115    114    108    105    102   
+ * tref       691    687    463    459    459
+ * index     1026   1016    973    967    970
+ * tmock     1177   1165   1057   1019   1026
+ * tvect     2519   2464   1772   1669   1647
+ * timp      2637   2575   1930   1694   1709
+ * texit     ----   ----   1778   1741   1765
+ * s7test    1873   1831   1818   1829   1854
+ * thook     ----   ----   2590   2030   2046
+ * tauto     ----   ----   2562   2048   2062
+ * lt        2187   2172   2150   2185   2195
+ * dup       3805   3788   2492   2239   2240
+ * tcopy     8035   5546   2539   2375   2379
+ * tread     2440   2421   2419   2408   2417
+ * fbench    2688   2583   2460   2430   2458
+ * trclo     2735   2574   2454   2445   2461
+ * titer     2865   2842   2641   2509   2465
+ * tload     ----   ----   3046   2404   2530
+ * tmat      3065   3042   2524   2578   2585
+ * tb        2735   2681   2612   2604   2630
+ * tsort     3105   3104   2856   2804   2828
+ * tobj      4016   3970   3828   3577   3572
+ * teq       4068   4045   3536   3486   3588
+ * tio       3816   3752   3683   3620   3616
+ * tmac      3950   3873   3033   3677   3688
+ * tclo      4787   4735   4390   4384   4450
+ * tcase     4960   4793   4439   4430   4445
+ * tlet      7775   5640   4450   4427   4452
+ * tfft      7820   7729   4755   4476   4510
+ * tstar     6139   5923   5519   4449   4556
+ * tmap      8869   8774   4489   4541   4618
+ * tshoot    5525   5447   5183   5055   5048
+ * tstr      6880   6342   5488   5162   5194
+ * tform     5357   5348   5307   5316   5393
+ * tnum      6348   6013   5433   5396   5409
+ * tlamb     6423   6273   5720   5560   5620
+ * tmisc     8869   7612   6435   6076   6224
+ * tgsl      8485   7802   6373   6282   6228
+ * tlist     7896   7546   6558   6240   6281
+ * tset      ----   ----   ----   6260   6293
+ * tari      13.0   12.7   6827   6543   6491
+ * trec      6936   6922   6521   6588   6581
+ * tleft     10.4   10.2   7657   7479   7611
+ * tgc       11.9   11.1   8177   7857   7957
+ * thash     11.8   11.7   9734   9479   9484
+ * cb        11.2   11.0   9658   9564   9632
+ * tgen      11.2   11.4   12.0   12.1   12.1
+ * tall      15.6   15.6   15.6   15.6   15.2
+ * calls     36.7   37.5   37.0   37.5   37.5
+ * sg        ----   ----   55.9   55.8   55.9
+ * lg        ----   ----  105.2  106.4  107.1
+ * tbig     177.4  175.8  156.5  148.1  145.8
+ * ---------------------------------------------
  */
