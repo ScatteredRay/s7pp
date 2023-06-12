@@ -46299,7 +46299,7 @@ static s7_pointer closure_arity_to_cons(s7_scheme *sc, s7_pointer x, s7_pointer 
   if (closure_arity_unknown(x))
     closure_set_arity(x, s7_list_length(sc, x_args));
   len = closure_arity(x);
-  if (len < 0)                               /* dotted list => rest arg, (length '(a b . c)) is -2 */
+  if (len < 0)                              /* dotted list => rest arg, (length '(a b . c)) is -2 */
     return(cons(sc, make_integer(sc, -len), max_arity));
   return(cons(sc, make_integer(sc, len), make_integer_unchecked(sc, len)));
 }
@@ -46415,7 +46415,7 @@ static bool closure_is_aritable(s7_scheme *sc, s7_pointer x, s7_pointer x_args, 
 
   if (args == 0)
     return(!is_pair(x_args));
-  if (is_symbol(x_args))                    /* any number of args is ok */
+  if (is_symbol(x_args))                /* any number of args is ok */
     return(true);
 
   len = closure_arity(x);
@@ -46424,9 +46424,9 @@ static bool closure_is_aritable(s7_scheme *sc, s7_pointer x, s7_pointer x_args, 
       len = s7_list_length(sc, x_args);
       closure_set_arity(x, len);
     }
-  if (len < 0)                               /* dotted list => rest arg, (length '(a b . c)) is -2 */
-    return((-len) <= args);                  /*   so we have enough to take care of the required args */
-  return(args == len);                       /* in a normal lambda list, there are no other possibilities */
+  if (len < 0)                          /* dotted list => rest arg, (length '(a b . c)) is -2 */
+    return((-len) <= args);             /*   so we have enough to take care of the required args */
+  return(args == len);                  /* in a normal lambda list, there are no other possibilities */
 }
 
 static bool closure_star_is_aritable(s7_scheme *sc, s7_pointer x, s7_pointer x_args, int32_t args)
@@ -47258,8 +47258,7 @@ static bool hash_table_equal_1(s7_scheme *sc, s7_pointer x, s7_pointer y, shared
 	    if (!eqf(sc, hash_entry_value(p), hash_entry_value(y_val), nci))
 	      return(false);
 	  }
-      /* if we get here, every key/value in x has a corresponding key/value in y, and the number of entries match,
-       *   so surely the tables are equal??
+      /* if we get here, every key/value in x has a corresponding key/value in y, and the number of entries match, so surely the tables are equal??
        * if ci not null or hash-table-checker is equal/eqivalent, can't use hf?
        */
       return(true);
@@ -48155,39 +48154,39 @@ static bool random_state_equal(s7_scheme *sc, s7_pointer x, s7_pointer y, shared
 static void init_equals(void)
 {
   for (int32_t i = 0; i < NUM_TYPES; i++) {equals[i] = eq_equal; equivalents[i] = eq_equal;}
-  equals[T_SYMBOL] =       eq_equal;
-  equals[T_C_POINTER] =    c_pointer_equal;
-  equals[T_UNSPECIFIED] =  unspecified_equal;
-  equals[T_UNDEFINED] =    undefined_equal;
-  equals[T_STRING] =       string_equal;
-  equals[T_SYNTAX] =       syntax_equal;
-  equals[T_C_OBJECT] =     c_objects_are_equal;
-  equals[T_RANDOM_STATE] = random_state_equal;
-  equals[T_ITERATOR] =     iterator_equal;
-  equals[T_INPUT_PORT] =   port_equal;
-  equals[T_OUTPUT_PORT] =  port_equal;
-  equals[T_MACRO] =        closure_equal;
-  equals[T_MACRO_STAR] =   closure_equal;
-  equals[T_BACRO] =        closure_equal;
-  equals[T_BACRO_STAR] =   closure_equal;
-  equals[T_CLOSURE] =      closure_equal;
-  equals[T_CLOSURE_STAR] = closure_equal;
-  equals[T_HASH_TABLE] =   hash_table_equal;
-  equals[T_LET] =          let_equal;
-  equals[T_PAIR] =         pair_equal;
-  equals[T_VECTOR] =       vector_equal;
-  equals[T_INT_VECTOR] =   int_vector_equal;
-  equals[T_BYTE_VECTOR] =  byte_vector_equal;
-  equals[T_FLOAT_VECTOR] = float_vector_equal;
-  equals[T_INTEGER] =      integer_equal;
-  equals[T_RATIO] =        fraction_equal;
-  equals[T_REAL] =         real_equal;
-  equals[T_COMPLEX] =      complex_equal;
+  equals[T_SYMBOL] =            eq_equal;
+  equals[T_C_POINTER] =         c_pointer_equal;
+  equals[T_UNSPECIFIED] =       unspecified_equal;
+  equals[T_UNDEFINED] =         undefined_equal;
+  equals[T_STRING] =            string_equal;
+  equals[T_SYNTAX] =            syntax_equal;
+  equals[T_C_OBJECT] =          c_objects_are_equal;
+  equals[T_RANDOM_STATE] =      random_state_equal;
+  equals[T_ITERATOR] =          iterator_equal;
+  equals[T_INPUT_PORT] =        port_equal;
+  equals[T_OUTPUT_PORT] =       port_equal;
+  equals[T_MACRO] =             closure_equal;
+  equals[T_MACRO_STAR] =        closure_equal;
+  equals[T_BACRO] =             closure_equal;
+  equals[T_BACRO_STAR] =        closure_equal;
+  equals[T_CLOSURE] =           closure_equal;
+  equals[T_CLOSURE_STAR] =      closure_equal;
+  equals[T_HASH_TABLE] =        hash_table_equal;
+  equals[T_LET] =               let_equal;
+  equals[T_PAIR] =              pair_equal;
+  equals[T_VECTOR] =            vector_equal;
+  equals[T_INT_VECTOR] =        int_vector_equal;
+  equals[T_BYTE_VECTOR] =       byte_vector_equal;
+  equals[T_FLOAT_VECTOR] =      float_vector_equal;
+  equals[T_INTEGER] =           integer_equal;
+  equals[T_RATIO] =             fraction_equal;
+  equals[T_REAL] =              real_equal;
+  equals[T_COMPLEX] =           complex_equal;
 #if WITH_GMP
-  equals[T_BIG_INTEGER] =  big_integer_equal;
-  equals[T_BIG_RATIO] =    big_ratio_equal;
-  equals[T_BIG_REAL] =     big_real_equal;
-  equals[T_BIG_COMPLEX] =  big_complex_equal;
+  equals[T_BIG_INTEGER] =       big_integer_equal;
+  equals[T_BIG_RATIO] =         big_ratio_equal;
+  equals[T_BIG_REAL] =          big_real_equal;
+  equals[T_BIG_COMPLEX] =       big_complex_equal;
 #endif
   equivalents[T_SYMBOL] =       symbol_equivalent;
   equivalents[T_C_POINTER] =    c_pointer_equivalent;
@@ -48576,11 +48575,11 @@ static s7_pointer copy_to_same_type(s7_scheme *sc, s7_pointer dest, s7_pointer s
     {
     case T_PAIR:
       {
-	s7_pointer pd, ps;
+	s7_pointer pd = dest, ps = source;
 	s7_int i;
-	for (ps = source, i = 0; i < source_start; i++)
+	for (i = 0; i < source_start; i++)
 	  ps = cdr(ps);
-	for (pd = dest, i = 0; i < dest_start; i++)
+	for (i = 0; i < dest_start; i++)
 	  pd = cdr(pd);
 	for (; (i < dest_end) && is_pair(ps) && is_pair(pd); i++, ps = cdr(ps), pd = cdr(pd))
 	  set_car(pd, car(ps));
@@ -49570,12 +49569,11 @@ static s7_pointer g_reverse_in_place(s7_scheme *sc, s7_pointer args)
       {
 	s7_pointer np = any_list_reverse_in_place(sc, sc->nil, p);
 	if (is_null(np))
-	  wrong_type_error_nr(sc, sc->reverseb_symbol, 1, car(args), wrap_string(sc, "a mutable, proper list", 22));
-	/* this is not ideal: car(args) here is the changed list: 
-	 *   (reverse! '(3 2 . 1) -> error: reverse! first argument, (3), is a pair but should be a mutable, proper list
-	 *   and (here) the real problem is that it is not a proper list: (reverse! '(3 2 1)) -> '(1 2 3)
-	 *   but (define L (immutable! (cons 3 (immutable! (cons 2 ()))))) (reverse! L) -> error: can't reverse! (3 2) (it is immutable)
-	 */
+	  {
+	    if (!s7_is_proper_list(sc, p))
+	      wrong_type_error_nr(sc, sc->reverseb_symbol, 1, car(args), wrap_string(sc, "a proper list", 13));
+	    wrong_type_error_nr(sc, sc->reverseb_symbol, 1, car(args), wrap_string(sc, "a mutable proper list", 21));
+	  }
 	return(np);
       }
       /* (reverse! p) is supposed to change p directly and lisp programmers expect reverse! to be fast
@@ -69271,6 +69269,7 @@ static s7_pointer unbound_variable(s7_scheme *sc, s7_pointer sym)
        */
       s7_pointer args = (sc->args) ? sc->args : sc->nil;
       s7_pointer result = sc->undefined;
+      /* fprintf(stderr, "%d current_let: %s\n", __LINE__, display(current_let)); */
       sc->temp7 = cons_unchecked(sc, current_let, cons_unchecked(sc, code,         /* perhaps elist_7 except we use elist_3 above? */
                     cons_unchecked(sc, args, list_4(sc, value, cur_code, x, z)))); /* not s7_list (debugger checks) */
       if (!is_pair(cur_code))
@@ -69281,11 +69280,13 @@ static s7_pointer unbound_variable(s7_scheme *sc, s7_pointer sym)
 	}
 
 #if (!DISABLE_AUTOLOAD)
+      /* fprintf(stderr, "%d autoload_names: %p\n", sc->is_autoloading, sc->autoload_names); */
       if ((sc->is_autoloading) &&
 	  (sc->autoload_names)) /* created by s7_autoload_set_names which requires alphabetization by the caller (e.g. snd-xref.c) */
 	{
 	  bool loaded = false;
 	  const char *file = find_autoload_name(sc, sym, &loaded, true);
+	  /* fprintf(stderr, "file: %s, %d\n", file, loaded); */
 	  if ((file) && (!loaded))
 	    {
 	      /* if we've already loaded this file, we can get the library (e) from a table [(file lib) ...]
@@ -69303,14 +69304,21 @@ static s7_pointer unbound_variable(s7_scheme *sc, s7_pointer sym)
 	      result = s7_symbol_value(sc, sym); /* calls lookup, does not trigger unbound_variable search */
 	      if ((result == sc->undefined) && (e) && (is_let(e)))
 		{
+		  /* the current_let refs here are trying to handle local autoloads, but that is problematic -- we'd need to
+		   *   save the autoload curlet when autoload is called, and hope the current reference can still access that let?
+		   *   but if the same symbol is autloaded in several lets, we are in trouble.  I think I'll just assume rootlet,
+		   *   even though that is not very elegant.  Actually in the libgsl case, we're trying to export a name from *libgsl*;
+		   *   should that be done with define rather than autoload?
+		   */
 		  result = let_ref(sc, e, sym);  /* add '(sym . result) to current_let (was sc->nil, s7_load can set sc->curlet to sc->nil) */
 		  if (result != sc->undefined)
-		    s7_define(sc, current_let, sym, result);
+		    s7_define(sc, sc->nil /* current_let */, sym, result);
 		}}}
 #endif
       if (result == sc->undefined)
 	{
 #if (!DISABLE_AUTOLOAD)
+	  /* fprintf(stderr, "%d %d autoload_table: %d\n", __LINE__, sc->is_autoloading, is_hash_table(sc->autoload_table)); */
 	  /* check the *autoload* hash table */
 	  if ((sc->is_autoloading) &&
 	      (is_hash_table(sc->autoload_table)))
@@ -69337,8 +69345,9 @@ static s7_pointer unbound_variable(s7_scheme *sc, s7_pointer sym)
 	      if ((result == sc->undefined) && (e) && (is_let(e))) /* added 31-Mar-23 to match sc->autoload_names case above */
 		{
 		  result = let_ref(sc, e, sym);
+		  /* fprintf(stderr, "%d %s %s\n", __LINE__, display(result), display(current_let)); */
 		  if (result != sc->undefined)
-		    s7_define(sc, current_let, sym, result);       /* as above, was sc->nil -- s7_load above can set sc->curlet to sc->nil */
+		    s7_define(sc, sc->nil /* current_let */, sym, result); /* as above, was sc->nil -- s7_load above can set sc->curlet to sc->nil */
 		}}
 #endif
 	  /* check *unbound-variable-hook* */
