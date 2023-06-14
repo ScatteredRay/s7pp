@@ -52567,7 +52567,6 @@ s7_pointer s7_apply_function(s7_scheme *sc, s7_pointer fnc, s7_pointer args)
   push_stack_direct(sc, OP_EVAL_DONE);
   sc->code = fnc;
   sc->args = (needs_copied_args(sc->code)) ? copy_proper_list(sc, args) : args;
-  /* fprintf(stderr, "apply %s %s\n", display(sc->code), display(sc->args)); */
   eval(sc, OP_APPLY);
   /* we're limited in choices here -- the caller might be (say) car(sc->t1_1) = fn_proc(...) where the fn_proc
    *   happens to fallback on a method -- we can't just push OP_APPLY and drop back into the evaluator normally.
@@ -69269,7 +69268,6 @@ static s7_pointer unbound_variable(s7_scheme *sc, s7_pointer sym)
        */
       s7_pointer args = (sc->args) ? sc->args : sc->nil;
       s7_pointer result = sc->undefined;
-      /* fprintf(stderr, "%d current_let: %s\n", __LINE__, display(current_let)); */
       sc->temp7 = cons_unchecked(sc, current_let, cons_unchecked(sc, code,         /* perhaps elist_7 except we use elist_3 above? */
                     cons_unchecked(sc, args, list_4(sc, value, cur_code, x, z)))); /* not s7_list (debugger checks) */
       if (!is_pair(cur_code))
@@ -69280,13 +69278,11 @@ static s7_pointer unbound_variable(s7_scheme *sc, s7_pointer sym)
 	}
 
 #if (!DISABLE_AUTOLOAD)
-      /* fprintf(stderr, "%d autoload_names: %p\n", sc->is_autoloading, sc->autoload_names); */
       if ((sc->is_autoloading) &&
 	  (sc->autoload_names)) /* created by s7_autoload_set_names which requires alphabetization by the caller (e.g. snd-xref.c) */
 	{
 	  bool loaded = false;
 	  const char *file = find_autoload_name(sc, sym, &loaded, true);
-	  /* fprintf(stderr, "file: %s, %d\n", file, loaded); */
 	  if ((file) && (!loaded))
 	    {
 	      /* if we've already loaded this file, we can get the library (e) from a table [(file lib) ...]
@@ -69306,9 +69302,9 @@ static s7_pointer unbound_variable(s7_scheme *sc, s7_pointer sym)
 		{
 		  /* the current_let refs here are trying to handle local autoloads, but that is problematic -- we'd need to
 		   *   save the autoload curlet when autoload is called, and hope the current reference can still access that let?
-		   *   but if the same symbol is autloaded in several lets, we are in trouble.  I think I'll just assume rootlet,
-		   *   even though that is not very elegant.  Actually in the libgsl case, we're trying to export a name from *libgsl*;
-		   *   should that be done with define rather than autoload?
+		   *   but if the same symbol is autloaded in several lets, we are in trouble, and how to handle a function that
+		   *   has an autoload?  I think I'll just assume rootlet, even though that is not very elegant.  Actually in the 
+		   *   libgsl case, we're trying to export a name from *libgsl* -- should that be done with define rather than autoload?
 		   */
 		  result = let_ref(sc, e, sym);  /* add '(sym . result) to current_let (was sc->nil, s7_load can set sc->curlet to sc->nil) */
 		  if (result != sc->undefined)
@@ -69318,7 +69314,6 @@ static s7_pointer unbound_variable(s7_scheme *sc, s7_pointer sym)
       if (result == sc->undefined)
 	{
 #if (!DISABLE_AUTOLOAD)
-	  /* fprintf(stderr, "%d %d autoload_table: %d\n", __LINE__, sc->is_autoloading, is_hash_table(sc->autoload_table)); */
 	  /* check the *autoload* hash table */
 	  if ((sc->is_autoloading) &&
 	      (is_hash_table(sc->autoload_table)))
@@ -69345,7 +69340,6 @@ static s7_pointer unbound_variable(s7_scheme *sc, s7_pointer sym)
 	      if ((result == sc->undefined) && (e) && (is_let(e))) /* added 31-Mar-23 to match sc->autoload_names case above */
 		{
 		  result = let_ref(sc, e, sym);
-		  /* fprintf(stderr, "%d %s %s\n", __LINE__, display(result), display(current_let)); */
 		  if (result != sc->undefined)
 		    s7_define(sc, sc->nil /* current_let */, sym, result); /* as above, was sc->nil -- s7_load above can set sc->curlet to sc->nil */
 		}}
