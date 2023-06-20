@@ -31469,6 +31469,16 @@ static s7_pointer vector_iterate(s7_scheme *sc, s7_pointer obj)
 
 static s7_pointer closure_iterate(s7_scheme *sc, s7_pointer obj)
 {
+  /* this can be confusing: below a hash-table is the "function", and a function is the "iterator" only because with-let exports +iterator+=#t -> infinite loop!
+       (with-let (let ((+iterator+ #t)) (lambda () #<eof>))
+         (for-each 
+          (make-hash-table)       ; (hash-table) -- ((hash-table) ()) is #f (not an error)
+             ;(vector 1)          ; error: vector-ref second argument, (), is nil but should be an integer
+             ;(vector)            ; error: for-each #(): 1 argument? -- hmm?? bad error message!
+             ;(list)              ; for-each first argument, (), is nil but should be a procedure or something applicable
+          (lambda args args)      ; function as iterator because local +iterator+ above is #t, never returns #<eof> (always () because iterator func takes no args)
+             ;(lambda (asd) ()))) ; error: make-iterator argument, #<lambda (asd)>, is a function but should be a thunk
+   */
   s7_pointer result = s7_call(sc, iterator_sequence(obj), sc->nil);
   /* this can't use s7_apply_function -- we need to catch the error handler's longjmp here */
   if (result == ITERATOR_END)
@@ -31644,7 +31654,7 @@ s7_pointer s7_make_iterator(s7_scheme *sc, s7_pointer e)
       iterator_next(iter) = float_vector_iterate;
       break;
 
-    case T_NIL: /* (make-iterator #()) -> #<iterator: vector>, so I guess () should also work */
+    case T_NIL: /* (make-iterator #()) -> #<iterator: vector>, so I guess () should also work, but see above -- the error message in for-each is bad */
       iterator_length(iter) = 0;
       iterator_next(iter) = iterator_finished;
       clear_iter_ok(iter);
