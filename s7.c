@@ -31470,14 +31470,22 @@ static s7_pointer vector_iterate(s7_scheme *sc, s7_pointer obj)
 static s7_pointer closure_iterate(s7_scheme *sc, s7_pointer obj)
 {
   /* this can be confusing: below a hash-table is the "function", and a function is the "iterator" only because with-let exports +iterator+=#t -> infinite loop!
-       (with-let (let ((+iterator+ #t)) (lambda () #<eof>))
+       (with-let 
+         (let ((+iterator+ #t))
+           (lambda () #<eof>))    ; this works because a function has an associated let??  with-let first arg should be a let.
          (for-each 
           (make-hash-table)       ; (hash-table) -- ((hash-table) ()) is #f (not an error)
              ;(vector 1)          ; error: vector-ref second argument, (), is nil but should be an integer
-             ;(vector)            ; error: for-each #(): 1 argument? -- hmm?? bad error message!
+             ;(vector)            ; error: for-each first argument #() called with 1 argument?
              ;(list)              ; for-each first argument, (), is nil but should be a procedure or something applicable
           (lambda args args)      ; function as iterator because local +iterator+ above is #t, never returns #<eof> (always () because iterator func takes no args)
-             ;(lambda (asd) ()))) ; error: make-iterator argument, #<lambda (asd)>, is a function but should be a thunk
+             ;(lambda (asd) ())   ; error: make-iterator argument, #<lambda (asd)>, is a function but should be a thunk
+          ))
+   * similarly:
+       (with-let 
+         (let ((+documentation+ "hiho")) (curlet))
+         (define (f) 1)                         ; (define (f) "a string" 1) would return doc as "a string"
+         (display (documentation f)) (newline)) ; "hiho" -- should we block +documentation+ in with-let?
    */
   s7_pointer result = s7_call(sc, iterator_sequence(obj), sc->nil);
   /* this can't use s7_apply_function -- we need to catch the error handler's longjmp here */
@@ -31654,7 +31662,7 @@ s7_pointer s7_make_iterator(s7_scheme *sc, s7_pointer e)
       iterator_next(iter) = float_vector_iterate;
       break;
 
-    case T_NIL: /* (make-iterator #()) -> #<iterator: vector>, so I guess () should also work, but see above -- the error message in for-each is bad */
+    case T_NIL: /* (make-iterator #()) -> #<iterator: vector>, so I guess () should also work */
       iterator_length(iter) = 0;
       iterator_next(iter) = iterator_finished;
       clear_iter_ok(iter);
@@ -67543,7 +67551,7 @@ Each object can be a list, string, vector, hash-table, or any other sequence."
   if ((!arity_ok) &&
       (!s7_is_aritable(sc, f, len)))
     error_nr(sc, sc->wrong_number_of_args_symbol,
-	     set_elist_4(sc, wrap_string(sc, "for-each ~A: ~A argument~P?", 27), f, wrap_integer(sc, len), wrap_integer(sc, len)));
+	     set_elist_4(sc, wrap_string(sc, "for-each first argument ~A called with ~A argument~P?", 53), f, wrap_integer(sc, len), wrap_integer(sc, len)));
 
   if (for_each_arg_is_null(sc, cdr(args))) return(sc->unspecified);
 
@@ -77751,7 +77759,7 @@ static s7_pointer fx_with_let_s(s7_scheme *sc, s7_pointer arg)
 	error_nr(sc, sc->wrong_type_arg_symbol, set_elist_2(sc, wrap_string(sc, "with-let takes an environment argument: ~A", 42), car(code)));
     }
   val = let_ref(sc, e, sym); /* (with-let e s) -> (let-ref e s), "s" unevalled? */
-  if (val == sc->undefined)
+  if (val == sc->undefined)  /* but sym can have the value #<undefined>! (with-let (inlet 'x #<undefined>) x) */
     {
       if ((e == sc->s7_starlet) && (is_slot(global_slot(sym)))) /* (let () (define (func) (with-let *s7* letrec*)) (func) (func)), .5 tlet */
 	return(global_value(sym));                              /* perhaps the e=*s7* check is not needed */
