@@ -46852,7 +46852,7 @@ static s7_pointer g_set_setter(s7_scheme *sc, s7_pointer args)
       break;
 
     case T_C_FUNCTION: case T_C_FUNCTION_STAR: case T_C_RST_NO_REQ_FUNCTION:
-      if (p == global_value(sc->setter_symbol))
+      if (p == global_value(sc->setter_symbol))      /* (immutable? (setter setter)) is #t, but we aren't checking immutable? here -- maybe we should? */
 	immutable_object_error_nr(sc, set_elist_2(sc, wrap_string(sc, "can't set (setter setter) to ~S", 31), setter));
       c_function_set_setter(p, setter);
       if ((is_any_closure(setter)) ||
@@ -93090,10 +93090,12 @@ static s7_pointer sl_set_gc_stats(s7_scheme *sc, s7_pointer sym, s7_pointer val)
   if (!s7_is_integer(val))
     s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_BOOLEAN]);
   sc->gc_stats = s7_integer_clamped_if_gmp(sc, val);
-  if (sc->gc_stats < 16) /* gc_stats is uint32_t */
-    return(val);
-  sc->gc_stats = 0;
-  s7_starlet_out_of_range_error_nr(sc, sym, val, wrap_string(sc, "it should be between 0 and 15", 29));
+  if (sc->gc_stats >= 16) /* gc_stats is uint32_t */
+    {
+      sc->gc_stats = 0;
+      s7_starlet_out_of_range_error_nr(sc, sym, val, wrap_string(sc, "it should be between 0 and 15", 29));
+    }
+  return(val);
 }
 
 static s7_pointer sl_set_gc_info(s7_scheme *sc, s7_pointer sym, s7_pointer val) /* ticks_per_second is not settable */
@@ -95232,7 +95234,11 @@ static void init_rootlet(s7_scheme *sc)
   sc->funclet_symbol =               defun("funclet",		funclet,		1, 0, false);
   sc->_function__symbol =            defun("*function*",        function,	        0, 2, false);
   sc->dilambda_symbol =              defun("dilambda",          dilambda,               2, 0, false);
-  s7_typed_dilambda(sc, "setter", g_setter, 1, 1, g_set_setter, 2, 1, H_setter, Q_setter, NULL);
+  {
+    s7_pointer get_func;
+    get_func = s7_typed_dilambda(sc, "setter", g_setter, 1, 1, g_set_setter, 2, 1, H_setter, Q_setter, NULL);
+    set_immutable(c_function_setter(get_func));
+  }
   sc->arity_symbol =                 defun("arity",		arity,			1, 0, false);
   sc->is_aritable_symbol =           defun("aritable?",	        is_aritable,		2, 0, false);
 
@@ -96282,59 +96288,59 @@ int main(int argc, char **argv)
 #endif
 
 /* --------------------------------------------------
- *            20.9   21.0   22.0   23.0  23.4   23.5
+ *            20.9   21.0   22.0   23.0   23.5   23.6
  * --------------------------------------------------
  * tpeak      115    114    108    105    102    102
- * tref       691    687    463    459    459    459
- * index     1026   1016    973    967    970    970
- * tmock     1177   1165   1057   1019   1026   1026
- * tvect     2519   2464   1772   1669   1647   1647
- * timp      2637   2575   1930   1694   1709   1707
- * texit     ----   ----   1778   1741   1765   1765
- * s7test    1873   1831   1818   1829   1854   1847
- * thook     ----   ----   2590   2030   2046   2045
- * tauto     ----   ----   2562   2048   2062   2063
- * lt        2187   2172   2150   2185   2195   2200
- * dup       3805   3788   2492   2239   2240   2240
- * tcopy     8035   5546   2539   2375   2379   2379
- * tread     2440   2421   2419   2408   2417   2418
- * fbench    2688   2583   2460   2430   2458   2459
- * trclo     2735   2574   2454   2445   2461   2461
- * titer     2865   2842   2641   2509   2465   2465
- * tload     ----   ----   3046   2404   2530   2530
- * tmat      3065   3042   2524   2578   2585   2585
- * tb        2735   2681   2612   2604   2630   2630
- * tsort     3105   3104   2856   2804   2828   2828
- * tobj      4016   3970   3828   3577   3572   3575
- * teq       4068   4045   3536   3486   3588   3588
- * tio       3816   3752   3683   3620   3616   3616
- * tmac      3950   3873   3033   3677   3688   3688
- * tclo      4787   4735   4390   4384   4450   4450
- * tcase     4960   4793   4439   4430   4445   4447
- * tlet      7775   5640   4450   4427   4452   4452
- * tfft      7820   7729   4755   4476   4510   4512
- * tstar     6139   5923   5519   4449   4556   4554
- * tmap      8869   8774   4489   4541   4618   4618
- * tshoot    5525   5447   5183   5055   5048   5047
- * tstr      6880   6342   5488   5162   5194   5197
- * tform     5357   5348   5307   5316   5393   5398
- * tnum      6348   6013   5433   5396   5409   5410
- * tlamb     6423   6273   5720   5560   5620   5622
- * tmisc     8869   7612   6435   6076   6224   6223
- * tgsl      8485   7802   6373   6282   6228   6228
- * tlist     7896   7546   6558   6240   6281   6280
- * tset      ----   ----   ----   6260   6293   6289
- * tari      13.0   12.7   6827   6543   6491   6490
- * trec      6936   6922   6521   6588   6581   6581
- * tleft     10.4   10.2   7657   7479   7611   7611
- * tgc       11.9   11.1   8177   7857   7957   7958
- * thash     11.8   11.7   9734   9479   9484   9483
- * cb        11.2   11.0   9658   9564   9632   9632
- * tgen      11.2   11.4   12.0   12.1   12.1   12.1
- * tall      15.6   15.6   15.6   15.6   15.2   15.1
- * calls     36.7   37.5   37.0   37.5   37.5   37.1
- * sg        ----   ----   55.9   55.8   55.9   55.4
- * lg        ----   ----  105.2  106.4  107.1  107.2
- * tbig     177.4  175.8  156.5  148.1  145.8  145.8
- * ---------------------------------------------
+ * tref       691    687    463    459    459
+ * index     1026   1016    973    967    970
+ * tmock     1177   1165   1057   1019   1026
+ * tvect     2519   2464   1772   1669   1647
+ * timp      2637   2575   1930   1694   1707
+ * texit     ----   ----   1778   1741   1765
+ * s7test    1873   1831   1818   1829   1847
+ * thook     ----   ----   2590   2030   2045
+ * tauto     ----   ----   2562   2048   2063
+ * lt        2187   2172   2150   2185   2200
+ * dup       3805   3788   2492   2239   2240
+ * tcopy     8035   5546   2539   2375   2379
+ * tread     2440   2421   2419   2408   2418
+ * fbench    2688   2583   2460   2430   2459
+ * trclo     2735   2574   2454   2445   2461
+ * titer     2865   2842   2641   2509   2465
+ * tload     ----   ----   3046   2404   2530
+ * tmat      3065   3042   2524   2578   2585
+ * tb        2735   2681   2612   2604   2630
+ * tsort     3105   3104   2856   2804   2828
+ * tobj      4016   3970   3828   3577   3575
+ * teq       4068   4045   3536   3486   3588
+ * tio       3816   3752   3683   3620   3616
+ * tmac      3950   3873   3033   3677   3688
+ * tclo      4787   4735   4390   4384   4450
+ * tcase     4960   4793   4439   4430   4447
+ * tlet      7775   5640   4450   4427   4452
+ * tfft      7820   7729   4755   4476   4512
+ * tstar     6139   5923   5519   4449   4554
+ * tmap      8869   8774   4489   4541   4618
+ * tshoot    5525   5447   5183   5055   5047
+ * tstr      6880   6342   5488   5162   5197
+ * tform     5357   5348   5307   5316   5398
+ * tnum      6348   6013   5433   5396   5410
+ * tlamb     6423   6273   5720   5560   5622
+ * tmisc     8869   7612   6435   6076   6223
+ * tgsl      8485   7802   6373   6282   6228
+ * tlist     7896   7546   6558   6240   6280
+ * tset      ----   ----   ----   6260   6289
+ * tari      13.0   12.7   6827   6543   6490
+ * trec      6936   6922   6521   6588   6581
+ * tleft     10.4   10.2   7657   7479   7611
+ * tgc       11.9   11.1   8177   7857   7958
+ * thash     11.8   11.7   9734   9479   9483
+ * cb        11.2   11.0   9658   9564   9632
+ * tgen      11.2   11.4   12.0   12.1   12.1
+ * tall      15.6   15.6   15.6   15.6   15.1
+ * calls     36.7   37.5   37.0   37.5   37.1
+ * sg        ----   ----   55.9   55.8   55.4
+ * lg        ----   ----  105.2  106.4  107.2
+ * tbig     177.4  175.8  156.5  148.1  145.8
+ * ------------------------------------------------
  */
