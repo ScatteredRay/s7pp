@@ -46549,10 +46549,11 @@ static int32_t arity_to_int(s7_scheme *sc, s7_pointer x)
       return((args < 0) ? MAX_ARITY : args);
 
     case T_C_MACRO:  return(c_macro_max_args(x));
-    case T_C_OBJECT: return(MAX_ARITY);
-      /* do vectors et al make sense here? */
+    /* case T_C_OBJECT: return(MAX_ARITY); */ /* this currently can't be called */
+    /* vectors et al don't make sense here -- this is called only in g_set_setter below where it is restricted to is_any_procedure (type>=T_CLOSURE) */
     }
-  return(-1);
+  if (S7_DEBUGGING) fprintf(stderr, "%s -1\n", __func__);
+  return(-1); /* unreachable I think */
 }
 
 
@@ -46817,7 +46818,7 @@ static s7_pointer symbol_set_setter(s7_scheme *sc, s7_pointer sym, s7_pointer ar
 		       set_elist_2(sc, wrap_string(sc, "symbol setter function, ~A, should take 2 or 3 arguments", 56), func));
 	}}
   if (slot == global_slot(sym))
-    s7_set_setter(sc, sym, func); /* special GC protection for global vars */
+    s7_set_setter(sc, sym, func);   /* special GC protection for global vars */
   else slot_set_setter(slot, func); /* func might be #f */
   if (func != sc->F)
     slot_set_has_setter(slot);
