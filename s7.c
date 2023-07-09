@@ -51690,7 +51690,7 @@ static bool catch_eval_function(s7_scheme *sc, s7_int i, s7_pointer type, s7_poi
 }
 
 static bool catch_barrier_function(s7_scheme *sc, s7_int i, s7_pointer type, s7_pointer info, bool *reset_hook)
-{ /* can this happen?? read/eval set op_barrier */
+{ /* can this happen? is it doing the right thing? read/eval/call_begin_hook push_stack op_barrier but only s7_read includes a port (this is not hit in s7test.scm) */
   if (SHOW_EVAL_OPS) fprintf(stderr, "catcher: %s\n", __func__);
   if (is_input_port(stack_args(sc->stack, i)))
     {
@@ -89000,15 +89000,12 @@ static s7_pointer read_expression(s7_scheme *sc)
 	case TOKEN_COMMA:
 	  push_stack_no_let_no_code(sc, OP_READ_UNQUOTE, sc->nil);
 	  sc->tok = token(sc);
-	  switch (sc->tok)
+	  if (sc->tok == TOKEN_RIGHT_PAREN)
+	    read_expression_read_error_nr(sc);
+	  if (sc->tok == TOKEN_EOF)
 	    {
-	    case TOKEN_EOF:
 	      pop_stack(sc);
 	      read_error_nr(sc, "stray comma at the end of the input?");
-	    case TOKEN_RIGHT_PAREN:
-	      read_expression_read_error_nr(sc);
-	    default:
-	      break;
 	    }
 	  break;
 
@@ -89031,7 +89028,7 @@ static s7_pointer read_expression(s7_scheme *sc)
 	case TOKEN_DOT:                                        /* (catch #t (lambda () (+ 1 . . )) (lambda args 'hiho)) */
 	  back_up_stack(sc);
 	  {int32_t c; do {c = inchar(current_input_port(sc));} while ((c != ')') && (c != EOF));}
-	  read_error_nr(sc, "stray dot in list?");           /* (+ 1 . . ) */
+	  read_error_nr(sc, "stray dot in list?");             /* (+ 1 . . ) */
 
 	case TOKEN_RIGHT_PAREN:                                /* (catch #t (lambda () '(1 2 . )) (lambda args 'hiho)) */
 	  back_up_stack(sc);
@@ -93198,12 +93195,14 @@ static s7_pointer s7_starlet_set_1(s7_scheme *sc, s7_pointer sym, s7_pointer val
   switch (s7_starlet_symbol(sym))
     {
     case SL_ACCEPT_ALL_KEYWORD_ARGUMENTS:
-      if (is_boolean(val)) {sc->accept_all_keyword_arguments = s7_boolean(sc, val); return(val);}
-      s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_BOOLEAN]);
+      if (!is_boolean(val)) s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_BOOLEAN]);
+      sc->accept_all_keyword_arguments = s7_boolean(sc, val); 
+      return(val);
 
     case SL_AUTOLOADING:
-      if (is_boolean(val)) {sc->is_autoloading = s7_boolean(sc, val); return(val);}
-      s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_BOOLEAN]);
+      if (!is_boolean(val)) s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_BOOLEAN]);
+      sc->is_autoloading = s7_boolean(sc, val); 
+      return(val);
 
     case SL_BIGNUM_PRECISION:
       return(sl_set_bignum_precision(sc, sym, val));
@@ -93221,15 +93220,12 @@ static s7_pointer s7_starlet_set_1(s7_scheme *sc, s7_pointer sym, s7_pointer val
       return(val);
 
     case SL_DEFAULT_RANDOM_STATE:
-      if (is_random_state(val))
-	{
+      if (!is_random_state(val)) s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_RANDOM_STATE]);
 #if (!WITH_GMP)
-	  random_seed(sc->default_random_state) = random_seed(val);
-	  random_carry(sc->default_random_state) = random_carry(val);
+      random_seed(sc->default_random_state) = random_seed(val);
+      random_carry(sc->default_random_state) = random_carry(val);
 #endif
-	  return(val);
-	}
-      s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_RANDOM_STATE]);
+      return(val);
 
     case SL_DEFAULT_RATIONALIZE_ERROR:
       sc->default_rationalize_error = s7_real(sl_real_geq_0(sc, sym, val));
@@ -93240,8 +93236,9 @@ static s7_pointer s7_starlet_set_1(s7_scheme *sc, s7_pointer sym, s7_pointer val
       return(val);
 
     case SL_EXPANSIONS:
-      if (is_boolean(val)) {sc->is_expanding = s7_boolean(sc, val); return(val);}
-      s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_BOOLEAN]);
+      if (!is_boolean(val)) s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_BOOLEAN]);
+      sc->is_expanding = s7_boolean(sc, val); 
+      return(val);
 
     case SL_FILE_NAMES: case SL_FILENAMES: sl_unsettable_error_nr(sc, sym);
 
@@ -93285,9 +93282,8 @@ static s7_pointer s7_starlet_set_1(s7_scheme *sc, s7_pointer sym, s7_pointer val
       return(val);
 
     case SL_HISTORY_ENABLED:       /* (set! (*s7* 'history-enabled) #f|#t) */
-      if (is_boolean(val))
-	return(s7_make_boolean(sc, s7_set_history_enabled(sc, s7_boolean(sc, val))));
-      s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_BOOLEAN]);
+      if (!is_boolean(val)) s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_BOOLEAN]);
+      return(s7_make_boolean(sc, s7_set_history_enabled(sc, s7_boolean(sc, val))));
 
     case SL_HISTORY_SIZE:
       iv = s7_integer_clamped_if_gmp(sc, sl_integer_geq_0(sc, sym, val));
@@ -93326,15 +93322,17 @@ static s7_pointer s7_starlet_set_1(s7_scheme *sc, s7_pointer sym, s7_pointer val
       sl_unsettable_error_nr(sc, sym);
 
     case SL_MUFFLE_WARNINGS:
-      if (is_boolean(val)) {sc->muffle_warnings = s7_boolean(sc, val); return(val);}
-      s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_BOOLEAN]);
+      if (!is_boolean(val)) s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_BOOLEAN]);
+      sc->muffle_warnings = s7_boolean(sc, val); 
+      return(val);
 
     case SL_NUMBER_SEPARATOR:   /* I think no PL uses the separator in output */
       return(sl_set_number_separator(sc, sym, val));
 
     case SL_OPENLETS:
-      if (is_boolean(val)) {sc->has_openlets = s7_boolean(sc, val); return(val);}
-      s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_BOOLEAN]);
+      if (!is_boolean(val)) s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_BOOLEAN]);
+      sc->has_openlets = s7_boolean(sc, val); 
+      return(val);
 
     case SL_OUTPUT_PORT_DATA_SIZE:
       sc->output_port_data_size = s7_integer_clamped_if_gmp(sc, sl_integer_gt_0(sc, sym, val));
@@ -93372,12 +93370,14 @@ static s7_pointer s7_starlet_set_1(s7_scheme *sc, s7_pointer sym, s7_pointer val
       sl_unsettable_error_nr(sc, sym);
 
     case SL_UNDEFINED_CONSTANT_WARNINGS:
-      if (is_boolean(val)) {sc->undefined_constant_warnings = s7_boolean(sc, val); return(val);}
-      s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_BOOLEAN]);
+      if (!is_boolean(val)) s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_BOOLEAN]);
+      sc->undefined_constant_warnings = s7_boolean(sc, val); 
+      return(val);
 
     case SL_UNDEFINED_IDENTIFIER_WARNINGS:
-      if (is_boolean(val)) {sc->undefined_identifier_warnings = s7_boolean(sc, val); return(val);}
-      s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_BOOLEAN]);
+      if (!is_boolean(val)) s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_BOOLEAN]);
+      sc->undefined_identifier_warnings = s7_boolean(sc, val); 
+      return(val);
 
     case SL_VERSION:
       sl_unsettable_error_nr(sc, sym);
@@ -93434,29 +93434,29 @@ static void init_s7_starlet_immutable_field(void)
 
 static const char *decoded_name(s7_scheme *sc, const s7_pointer p)
 {
-  if (p == sc->value)           return("sc->value");
-  if (p == sc->args)            return("sc->args");
-  if (p == sc->code)            return("sc->code");
-  if (p == sc->cur_code)        return("sc->cur_code");
-  if (p == sc->curlet)          return("sc->curlet");
-  if (p == sc->nil)             return("()");
-  if (p == sc->T)               return("#t");
-  if (p == sc->F)               return("#f");
-  if (p == eof_object)          return("eof_object");
-  if (p == sc->undefined)       return("undefined");
-  if (p == sc->unspecified)     return("unspecified");
-  if (p == sc->no_value)        return("no_value");
-  if (p == sc->unused)          return("#<unused>");
-  if (p == sc->symbol_table)    return("symbol_table");
-  if (p == sc->rootlet)         return("rootlet");
-  if (p == sc->s7_starlet)      return("*s7*"); /* this is the function */
-  if (p == sc->unlet)           return("unlet");
-  if (p == sc->error_port)      return("error_port");
-  if (p == sc->owlet)           return("owlet");
-  if (p == sc->standard_input)  return("*stdin*");
-  if (p == sc->standard_output) return("*stdout*");
-  if (p == sc->standard_error)  return("*stderr*");
-  if (p == sc->else_symbol)     return("else_symbol");
+  if (p == sc->value)               return("sc->value");
+  if (p == sc->args)                return("sc->args");
+  if (p == sc->code)                return("sc->code");
+  if (p == sc->cur_code)            return("sc->cur_code");
+  if (p == sc->curlet)              return("sc->curlet");
+  if (p == sc->nil)                 return("()");
+  if (p == sc->T)                   return("#t");
+  if (p == sc->F)                   return("#f");
+  if (p == eof_object)              return("eof_object");
+  if (p == sc->undefined)           return("undefined");
+  if (p == sc->unspecified)         return("unspecified");
+  if (p == sc->no_value)            return("no_value");
+  if (p == sc->unused)              return("#<unused>");
+  if (p == sc->symbol_table)        return("symbol_table");
+  if (p == sc->rootlet)             return("rootlet");
+  if (p == sc->s7_starlet)          return("*s7*"); /* this is the function */
+  if (p == sc->unlet)               return("unlet");
+  if (p == sc->error_port)          return("error_port");
+  if (p == sc->owlet)               return("owlet");
+  if (p == sc->standard_input)      return("*stdin*");
+  if (p == sc->standard_output)     return("*stdout*");
+  if (p == sc->standard_error)      return("*stderr*");
+  if (p == sc->else_symbol)         return("else_symbol");
   if (p == current_input_port(sc))  return("current-input-port");
   if (p == current_output_port(sc)) return("current-output-port");
   return((p == sc->stack) ? "stack" : NULL);
