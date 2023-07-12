@@ -7888,8 +7888,7 @@ static inline void remove_from_heap(s7_scheme *sc, s7_pointer x)
       /* these need to be GC-protected! */
       add_semipermanent_object(sc, x);
       return;
-    default:
-      break;
+    default: break;
     }
   petrify(sc, x);
 }
@@ -15571,8 +15570,7 @@ static s7_pointer make_atom(s7_scheme *sc, char *q, int32_t radix, bool want_sym
 		  }
 		break;
 
-	      default:
-		break;
+	      default: break;
 	      }
 	    return((want_symbol) ? make_symbol_with_strlen(sc, q) : sc->F);
 	  }}
@@ -45139,7 +45137,7 @@ static s7_pointer procedure_type_to_symbol(s7_scheme *sc, int32_t type)
     case T_MACRO_STAR:   return(sc->macro_star_symbol);
     case T_BACRO:        return(sc->bacro_symbol);
     case T_BACRO_STAR:   return(sc->bacro_star_symbol);
-    default: if (S7_DEBUGGING) fprintf(stderr, "%s[%d] wants %d symbol\n", __func__, __LINE__, type);
+    default: if (S7_DEBUGGING) fprintf(stderr, "%s[%d] wants %d symbol\n", __func__, __LINE__, type); /* break; ? */
     }
   return(sc->lambda_symbol);
 }
@@ -45170,6 +45168,7 @@ static s7_pointer g_procedure_source(s7_scheme *sc, s7_pointer args)
   if (!is_procedure(p))
     sole_arg_wrong_type_error_nr(sc, sc->procedure_source_symbol, p, a_procedure_or_a_macro_string);
   return(sc->nil);
+  /* perhaps include file/line? perhaps some way to return comments in code -- source code as string exactly as in file? */
 }
 
 
@@ -45699,8 +45698,7 @@ static s7_pointer g_signature(s7_scheme *sc, s7_pointer args)
 	  }}
       break;
 
-    default:
-      break;
+    default: break;
     }
   return(sc->F);
 }
@@ -47760,8 +47758,7 @@ static bool iterator_equal_1(s7_scheme *sc, s7_pointer x, s7_pointer y, shared_i
     case T_CLOSURE: case T_CLOSURE_STAR:
       return(x_seq == y_seq); /* or closure_equal/equivalent? */
 
-    default:
-      break;
+    default: break;
     }
   return(false);
 }
@@ -66849,8 +66846,7 @@ static bool bool_optimize_nw_1(s7_scheme *sc, s7_pointer expr)
 	      }}
 	  break;
 
-	default:
-	  break;
+	default: break;
 	}}
   return_false(sc, car_x);
 }
@@ -69638,8 +69634,7 @@ static int32_t combine_ops(s7_scheme *sc, s7_pointer expr, combine_op_t cop, s7_
 	}
       return(OP_SAFE_C_PP);
 
-    default:
-      break;
+    default: break;
     }
   return(OP_UNOPT);
 }
@@ -71899,8 +71894,7 @@ static opt_t optimize_syntax(s7_scheme *sc, s7_pointer expr, s7_pointer func, in
       e = cons(sc, sc->if_keyword, e);
       break;
 
-    default:
-      break;
+    default: break;
     }
 
   sc->temp9 = e;
@@ -89537,8 +89531,7 @@ static bool op_unknown_s(s7_scheme *sc)
     case T_MACRO:      return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_D, f)));
     case T_MACRO_STAR: return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_STAR_D, f)));
 
-    default:
-      break;
+    default: break;
     }
   if ((is_symbol(car(code))) &&
       (!is_slot(s7_slot(sc, car(code)))))
@@ -89614,8 +89607,7 @@ static bool op_unknown_a(s7_scheme *sc)
 	return(fixup_unknown_op(sc, code, f, OP_IMPLICIT_LET_REF_A));
       }
 
-    default:
-      break;
+    default: break;
     }
   if ((is_symbol(car(code))) &&
       (!is_slot(s7_slot(sc, car(code)))))
@@ -89748,8 +89740,7 @@ static bool op_unknown_gg(s7_scheme *sc)
     case T_MACRO:      return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_D, f)));
     case T_MACRO_STAR: return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_STAR_D, f)));
 
-    default:
-      break;
+    default: break;
     }
   if ((is_symbol(car(code))) &&
       (!is_slot(s7_slot(sc, car(code)))))
@@ -89824,8 +89815,7 @@ static bool op_unknown_ns(s7_scheme *sc)
     case T_MACRO_STAR: return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_STAR_D, f)));
 
       /* PERHAPS: vector, but need op_implicit_vector_ns? */
-    default:
-      break;
+    default: break;
     }
   return(unknown_unknown(sc, sc->code, OP_CLEAR_OPTS));
 }
@@ -89900,8 +89890,7 @@ static bool op_unknown_aa(s7_scheme *sc)
     case T_MACRO:      return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_D, f)));
     case T_MACRO_STAR: return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_STAR_D, f)));
 
-    default:
-      break;
+    default: break;
     }
   if ((is_symbol(car(code))) &&
       (!is_slot(s7_slot(sc, car(code)))))
@@ -90029,8 +90018,7 @@ static bool op_unknown_na(s7_scheme *sc)
     case T_MACRO_STAR: return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_STAR_D, f)));
       /* implicit vector doesn't happen */
 
-    default:
-      break;
+    default: break;
     }
   /* closure happens if wrong-number-of-args passed -- probably no need for op_s_na */
   /* PERHAPS: vector */
@@ -91244,7 +91232,7 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	    {
 	    case goto_do_end_clauses: goto DO_END_CLAUSES;
 	    case goto_do_unchecked:   goto DO_UNCHECKED;
-	    default: goto EVAL;
+	    default:                  goto EVAL;
 	    }
 
 	case OP_DOX:
@@ -92173,8 +92161,7 @@ static void save_holder_data(s7_scheme *sc, s7_pointer p)
       mark_stack_holdees(sc, continuation_stack(p), continuation_stack_top(p));
       break;
 
-    default: /* includes T_C_OBJECT */
-      break;
+    default: break; /* includes T_C_OBJECT */
     }
 }
 
@@ -96344,4 +96331,6 @@ int main(int argc, char **argv)
  * lg        ----   ----  105.2  106.4  107.2
  * tbig     177.4  175.8  156.5  148.1  145.8
  * ------------------------------------------------
+ *
+ * (apply f (map...)) e.g. f=append -> use safe_list for map output list here? also for (<safe-func> (map...))
  */
