@@ -22,6 +22,9 @@
 ;;;  
 ;;;  There are examples scattered around this file, and a lot more
 ;;;  in s7test.scm.
+;;;
+;;; currently it is possible to (set! ((*mock-vector* 'mock-vector-class) 'write) hash-table-set!) [or (set! (v 'write) hash-table-set!) I think]
+;;;   should we call the s7.html vars-immutable (and immutable!) on this internal let?
 
 (provide 'mockery.scm)
 
