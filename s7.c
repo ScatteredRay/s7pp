@@ -9826,21 +9826,25 @@ static s7_pointer inlet_chooser(s7_scheme *sc, s7_pointer f, int32_t args, s7_po
       ((args % 2) == 0))
     {
       for (s7_pointer p = cdr(expr); is_pair(p); p = cddr(p))
-	if (!is_symbol_and_keyword(car(p)))
-	  {
-	    s7_pointer sym;
-	    if (!is_proper_quote(sc, car(p)))             /* 'abs etc, but tricky: ':abs */
-	      return(f);
-	    sym = cadar(p);
-	    if ((!is_symbol(sym)) ||
-		(is_possibly_constant(sym)) ||            /* define-constant etc */
-		(is_syntactic_symbol(sym))  ||            /* (inlet 'if 3) */
-		((is_slot(global_slot(sym))) &&
-		 (is_syntax_or_qq(global_value(sym)))) || /* (inlet 'quasiquote 1) */
-		(sym == sc->let_ref_fallback_symbol) ||
-		(sym == sc->let_set_fallback_symbol))
-	      return(f);
-	  }
+	{
+	  s7_pointer sym;
+	  if (is_symbol_and_keyword(car(p)))                  /* (inlet :if ...) */
+	    sym = keyword_symbol(car(p));
+	  else
+	    {
+	      if (!is_proper_quote(sc, car(p))) return(f);    /* (inlet abs ...) */
+	      sym = cadar(p);                                 /* looking for (inlet 'a ...) */
+	      if (!is_symbol(sym)) return(f);                 /* (inlet '(a . 3) ...) */
+	      if (is_keyword(sym)) sym = keyword_symbol(sym); /* (inlet ':abs ...) */
+	    }
+	  if ((is_possibly_constant(sym)) ||                  /* (inlet 'define-constant ...) or (inlet 'pi ...) */
+	      (is_syntactic_symbol(sym))  ||                  /* (inlet 'if 3) */
+	      ((is_slot(global_slot(sym))) &&
+	       (is_syntax_or_qq(global_value(sym)))) ||       /* (inlet 'quasiquote 1) */
+	      (sym == sc->let_ref_fallback_symbol) ||
+	      (sym == sc->let_set_fallback_symbol))
+	    return(f);
+	}
       return(sc->simple_inlet);
     }
   return(f);
@@ -96333,4 +96337,5 @@ int main(int argc, char **argv)
  * ------------------------------------------------
  *
  * (apply f (map...)) e.g. f=append -> use safe_list for map output list here? also for (<safe-func> (map...))
+ * safety>0 error check for bad arity if built-in method set (set! (lt 'write) hash-table-set!) etc
  */
