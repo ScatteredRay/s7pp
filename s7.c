@@ -41159,7 +41159,7 @@ static s7_pointer g_make_byte_vector(s7_scheme *sc, s7_pointer args)
    return(g_make_vector_1(sc, set_plist_2(sc, p, init), sc->make_byte_vector_symbol));
 
   p = make_simple_byte_vector(sc, len);
-  if ((len > 0) && (is_pair(cdr(args))))
+  if (len > 0) /* make-byte-vector 2) should return #u(0 0) so we always need to fill */
     local_memset((void *)(byte_vector_bytes(p)), ib, len);
   return(p);
 }
@@ -92907,7 +92907,7 @@ static s7_pointer s7_starlet(s7_scheme *sc, s7_int choice)
     case SL_ROOTLET_SIZE:                  return(make_integer(sc, sc->rootlet_entries));
     case SL_SAFETY:                        return(make_integer(sc, sc->safety));
     case SL_STACK:                         return(sl_stack_entries(sc, sc->stack, current_stack_top(sc)));
-    case SL_STACKTRACE_DEFAULTS:           return(sc->stacktrace_defaults);
+    case SL_STACKTRACE_DEFAULTS:           return(copy_proper_list(sc, sc->stacktrace_defaults)); /* if not copied, we can set! entries directly to garbage */
     case SL_STACK_SIZE:                    return(make_integer(sc, sc->stack_size));
     case SL_STACK_TOP:                     return(make_integer(sc, (sc->stack_end - sc->stack_start) / 4));
     case SL_UNDEFINED_CONSTANT_WARNINGS:   return(s7_make_boolean(sc, sc->undefined_constant_warnings));
