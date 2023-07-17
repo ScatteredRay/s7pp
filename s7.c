@@ -88986,6 +88986,7 @@ static s7_pointer read_expression(s7_scheme *sc)
 	  break;
 
 	case TOKEN_QUOTE:
+	  check_stack_size(sc); /* no speed diff in tload.scm which looks like the worst case */
 	  push_stack_no_let_no_code(sc, OP_READ_QUOTE, sc->nil);
 	  sc->tok = token(sc);
 	  break;

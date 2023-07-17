@@ -25,6 +25,13 @@
 ;;;
 ;;; currently it is possible to (set! ((*mock-vector* 'mock-vector-class) 'write) hash-table-set!) [or (set! (v 'write) hash-table-set!) I think]
 ;;;   should we call the s7.html vars-immutable (and immutable!) on this internal let?
+;;;
+;;; also we omit a variety of built-in functions that can work on the underlying value.
+;;;   given (define v #(0 1)) and (define mv ((*mock-vector* 'mock-vector) 0 1))
+;;;     (arity v): '(1 . 536870912), (arity mv): '(1 . 1)
+;;;     (signature v): '(#t vector? . #1=(integer? . #1#)), (signature mv): '(#t let? . #1=(symbol? . #1#))
+;;;     object->let but this needs to be omitted for debugging
+;;;     and many where the error message is different (should pretty-print know about these?)
 
 (provide 'mockery.scm)
 
