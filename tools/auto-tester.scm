@@ -26,7 +26,9 @@
                    1893513180 1631296680 2131995753 2083801278 1873196400 1554115554)
 		  ;; possibly problematic: 2083801278
 		(random 20))))
-    (random-state seed carry)))
+    (if (provided? 'gmp) 
+	(random-state seed)
+	(random-state seed carry))))
 
 (unless (file-exists? "~/cl/tmp1.r5rs")
   (system "touch ~/cl/tmp1.r5rs"))
@@ -106,6 +108,11 @@
   (define-constant mock-c-pointer (*mock-c-pointer* 'mock-c-pointer))
   (define-constant mock-port (*mock-port* 'mock-port))
   (define-constant mock-random-state (*mock-random-state* 'mock-random-state)))
+
+;(define-constant _mv_ (if with-mock-data (mock-vector 1 2) (vector 1 2)))
+;(define-constant _v_ #(1 2))
+(define-constant _mv_ (if with-mock-data (mock-number 1) 1))
+(define-constant _v_ 1)
 
 (set! (*s7* 'safety) 1) ; protect copy (in define-expansion evaluation) from circular lists
 
@@ -467,6 +474,28 @@
 	  (error 'wrong-number-of-args "no value")
 	  (set! (_h_ (car key/value)) (cadr key/value))))))
 
+(define (checked-stacktrace . args)
+  (string? (apply stacktrace args)))
+(define (checked-random . args)
+  (number? (apply random args)))
+(define (checked-random-state . args)
+  (random-state? (apply random-state args)))
+(define (checked-random-state->list . args)
+  (list? (apply random-state->list args)))
+(define (checked-make-string . args)
+  (let-temporarily ((*s7* max-string-length 12))
+    (string? (apply make-string args))))
+(define (checked-current-input-port . args)
+  (input-port? (apply current-input-port args)))
+(define (checked-current-error-port . args)
+  (input-port? (apply current-error-port args)))
+(define (checked-funclet . args)
+  (let? (apply funclet . args)))
+(define (checked-hash-code . args)
+  (integer? (apply hash-code args)))
+(define (checked-*function* . args)
+  (procedure? (apply *function* args)))
+
 (define (checked-read-char . args) (with-input-from-string "0123" (lambda () (apply read-char args))))
 (define (checked-read-byte . args) (with-input-from-string "0123" (lambda () (apply read-byte args))))
 (define (checked-read-line . args) (with-input-from-file "s7test.scm" (lambda () (apply read-line args))))
@@ -817,7 +846,7 @@
 
 (set! (hook-functions *read-error-hook*) ())
 
-
+(when (not (defined? 'loading-t718))
 (let ((functions (vector 'not '= '+ 'cdr 'real? 'rational? 'number? '> '- 'integer? 'apply 'subvector? 'subvector-position 'subvector-vector
 			  'abs '* 'null? 'imag-part '/ 'vector-set! 'equal? 'magnitude 'real-part 'pair? 'max 'nan? 'string->number 'list
 			  'negative? 'cons 'string-set! 'list-ref 'eqv? 'positive? '>= 'expt 'number->string 'zero? 'floor 'denominator 'integer->char
@@ -866,7 +895,8 @@
 			  'output-port? 'input-port?
 			  ;'provide
 			  'call-with-output-string
-			  'checked-hash-table
+			  'checked-hash-table 'checked-stacktrace 'checked-random 'checked-random-state 'checked-random-state->list 'checked-make-string
+			  'checked-current-input-port 'checked-current-error-port 'checked-funclet 'checked-hash-code
 			  'with-output-to-string
 			  'dilambda?
 			  'hook-functions
@@ -906,7 +936,7 @@
 			  'call-with-output-file 'with-output-to-file
 			  ;'read-char 'read-byte 'read-line 'read-string 'read ; stdin=>hangs
 			  'checked-read-char 'checked-read-line 'checked-read-string 'checked-read-byte ;'checked-read
-			  'checked-reverse! 'checked-port-line-number
+			  'checked-reverse! 'checked-port-line-number 'checked-*function*
 			  'close-input-port
 			  ;'current-input-port ;-- too many (read...)
 			  ;'set-current-input-port ; -- collides with rd8 etc
@@ -973,7 +1003,7 @@
 			  'apply-values
 			  'values
 			  'byte-vector-ref 'file-exists? 'make-int-vector 'string-downcase 'string-upcase
-			  'byte-vector 'equivalent?
+			  'byte-vector 'equivalent? 'make-byte-vector
 			  'c-pointer? 'int-vector-ref
 			  'float?
 			  'list-values 'byte-vector? 'openlet? 'iterator?
@@ -1034,20 +1064,19 @@
 
 			  'bignum 'symbol 'count-if 'pretty-print 'tree-member 'funclet? 'bignum? 'copy-tree 
 			  ;'dynamic-unwind ; many swaps that are probably confused
-                          ;'function-open-output 'function-close-output 'function-open-input 'function-get-output
+                          ;'function-open-output 'function-open-input 'function-get-output
 
 			  ))
 
-      (args (vector "-123" "1234" "-3/4" "-1" "1/2" "1+i" "1-i" "0+i" "0-i" "(expt 2 32)" "4294967297" "1001" "10001"
-
+      (args (reverse (vector "-123" "1234" "-3/4" "-1" "1/2" "1+i" "1-i" "0+i" "0-i" "(expt 2 32)" "4294967297" "1001" "10001"
 		    "3441313796169221281/1720656898084610641" "1855077841/1311738121" "4478554083/3166815962" "20057446674355970889/10028723337177985444"
 		    "(cosh 128)" "(cosh (bignum 128.0))" "(bignum -1/2)" "123456789.123456789" "(bignum 1234)" "(bignum 1234.1234)" "(bignum 1+i)"
 		    "(bignum +inf.0)" "(bignum +nan.0)" "(bignum -inf.0)" "(bignum 0+i)" "(bignum 0.0)" "(bignum 0-i)"
 		    "(expt 2 -32)" "1/2+1/3i"
 		    "=>"
 		    "\"ho\"" ":ho" "'ho" "(list 1)" "(list 1 2)" "(cons 1 2)" "()" "(list (list 1 2))" "(list (list 1))" "(list ())"
-		    "#f" "#t" "()" "#()" "\"\"" "#()" ; ":write" -- not this because sr2 calls write and this can be an arg to sublet redefining write
-		    ":readable" ":rest" ":allow-other-keys" ":a" ":frequency" ":scaler" ; for blocks5 s7test.scm
+		    "#f" "#t" "()" "#()" "\"\"" ; ":write" -- not this because sr2 calls write and this can be an arg to sublet redefining write
+		    ":readable" ":rest" ":allow-other-keys" ":display" ":write" ":if" ":a" ":frequency" ":scaler" ; for blocks5 s7test.scm
 		    "1/0+i" "0+0/0i" "0+1/0i" "1+0/0i" "0/0+0/0i" "0/0+i" "+nan.0-3i" "+inf.0-nan.0i"
 		    "cons" "\"ra\"" "''2" "'a" "_!asdf!_" "let-ref-fallback"
 
@@ -1213,7 +1242,7 @@
 		    "catch" "call-with-exit" "map" "for-each"
 		    ;"lambda*" "lambda" ;-- cyclic body etc
 		    "let" "let*" ;"do" 
-		    "set!" "with-let" ;"define" "define*" "define-macro" "define-macro*" "define-bacro" "define-bacro*"
+		    ;"set!" "with-let" ;"define" "define*" "define-macro" "define-macro*" "define-bacro" "define-bacro*"
 
 		    "(let ((L (list 1))) (set-cdr! L L) L)"
 		    "(let ((L (list 1 2))) (set-cdr! (cdr L) L) L)"
@@ -1266,6 +1295,7 @@
 		    (reader-cond ((provided? 'debugging) "(when ((*s7* 'heap-size) < (ash 1 21)) (heap-analyze) (heap-scan 47))")) ;(+ 1 (random 47))))"))
 
 		    "(map (lambda (x) (catch #t (lambda () (vector->list x)) (lambda (t i) 'err))) (list #(1 2) 1))"
+		    "(symbol-table)"
 
 		    "(cons-r 0 0 6)"
 		    "(list-r 0 0 6)"
@@ -1275,7 +1305,7 @@
 		    "(*s7* 'c-types)"
 		    ;"(copy (*s7* 'file-names))" ; one is *stdin* which can hang if read* gets it as the port
 		    ;"(*s7* 'gc-freed)" "(*s7* 'gc-total-freed)" "(*s7* 'free-heap-size)" ; variable
-		    ;"(*s7* 'gc-protected-objects)"  ; access + element set => not protected! perhaps copy it?
+		    "(copy (*s7* 'gc-protected-objects))"  ; access + element set => not protected! perhaps copy it?
 		    ;"(pp (*s7* 'memory-usage))"          ; variable
 		    ;"(*s7* 'most-negative-fixnum)"
 		    ;"(*s7* 'most-positive-fixnum)"
@@ -1301,9 +1331,10 @@
 		    "my-let" "my-with-baffle" "fvset" "htset"
 		    "(catch #t (lambda () (+ 1 #(2))) (lambda (type info) 0))"
 		    "~/cl/tmp1.r5rs"
+		    (reader-cond (with-mock-data "(if (> (random 1.0) 0.5) _v_ _mv_)"))
 
 		    #f #f #f ; cyclic here (see get-arg)
-		    ))
+		    )))
 
       (codes (vector
 	      (list (lambda (s) (string-append "(do ((x 0.0 (+ x 0.1)) (i 0 (+ i 1))) ((>= x .1) " s "))"))
@@ -1441,9 +1472,11 @@
                     (lambda (s) (string-append "(list (let ((old #f)) (dynamic-wind (lambda () (set! old (*s7* 'safety))) (lambda () " s ") (lambda () (set! (*s7* 'safety) old)))))")))
 ;;; (+ (dynamic-wind (lambda () #f) (lambda () (values 1 2 3)) (lambda () #f))): 6
 
+
+	      ;; perhaps function port (see _rd3_ for open-input-string), gmp?
 	      ))
 
-      (chars (vector #\( #\( #\) #\space))) ; #\' #\/ #\# #\, #\` #\@ #\. #\:))  ; #\\ #\> #\space))
+      (chars (vector #\( #\( #\) #\space))) ; #\' #\/ #\# #\, #\` #\@ #\. #\:))  ; #\\ #\> #\space
 
   (let ((clen (length chars))
 	(flen (length functions))
@@ -1451,7 +1484,7 @@
 	(codes-len (length codes))
 	(args-ran (+ 1 (random 5)))
 	(both-ran (+ 3 (random 8))))
-
+    
     (define (get-arg)
       (let ((str (args (random alen))))
 	(if (string? str) ; else #f -> cyclic struct
@@ -1471,7 +1504,7 @@
 
     (define (fix-op op)
       (case op
-	((set!) "set! _definee_") ;"set!")
+	;((set!) "set! _definee_") ;"set!") ; block set! of our vars??
 	((let) "let ()")   ; need to block infinite loops like (let abs () (abs))
 	((let*) "let* ()")
 	((do) "_do3_")
@@ -1878,3 +1911,14 @@
 	))
 
     (test-it)))
+)
+
+#|
+functions currently omitted (from functions vector):
+unlet owlet *read-error-hook* set-current-output-port immutable! set-cdr! system close-output-port exit symbol->dynamic-value 
+rootlet port-filename load string->keyword make-hook provide dynamic-unwind emergency-exit read set-current-error-port *autoload-hook* 
+gc abort open-output-file set-current-input-port pair-line-number pair-filename coverlet delete-file curlet
+
+[read-line] [funclet] [port-line-number] [read-string] [varlet] [random-state] [random] [hash-code] [random-state->list] [current-input-port] 
+[make-string] [symbol-table] [current-error-port] [eval] [read-byte] [stacktrace] [read-char] [reverse!] [procedure-source] [*function*]
+|#

@@ -96339,4 +96339,5 @@ int main(int argc, char **argv)
  *
  * (apply f (map...)) e.g. f=append -> use safe_list for map output list here? also for (<safe-func> (map...))
  * safety>0 error check for bad arity if built-in method set (set! (lt 'write) hash-table-set!) etc
+ *   built-in: is_slot(initial_slot(sym))? && is_procedure etc, inlet/let-set! 
  */
