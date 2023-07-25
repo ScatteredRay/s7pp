@@ -3156,7 +3156,7 @@ static void symbol_set_id(s7_pointer p, s7_int id)
 #if S7_DEBUGGING
 #define slot_set_value(slot, value) \
   do { \
-       if (is_immutable_slot(slot)) {fprintf(stderr, "setting immutable slot\n"); if (cur_sc->stop_at_error) abort();} \
+       if (is_immutable_slot(slot)) {fprintf(stderr, "setting immutable slot %s\n", symbol_name(slot_symbol(slot))); if (cur_sc->stop_at_error) abort();} \
        (T_Slt(slot))->object.slt.val = T_Nmv(value); \
      } while (0)
 #else
@@ -93097,13 +93097,12 @@ static s7_pointer sl_set_gc_info(s7_scheme *sc, s7_pointer sym, s7_pointer val) 
     }
   else
     if ((is_pair(val)) && (s7_is_integer(car(val))) &&
-	(is_pair(cdr(val))) && (s7_is_integer(cadr(val))) &&
-	(is_pair(cddr(val))) && (s7_is_integer(caddr(val))))
+	(is_pair(cdr(val))) && (s7_is_integer(cadr(val)))) /* caddr is ticks_per_second which can't sensibly be set */
       {
 	sc->gc_total_time = s7_integer(car(val));
 	sc->gc_calls = s7_integer(cadr(val));
       }
-    else s7_starlet_wrong_type_error_nr(sc, sym, val, wrap_string(sc, "#f or a list of three integers", 30));
+    else s7_starlet_wrong_type_error_nr(sc, sym, val, wrap_string(sc, "#f or a list of two or three integers (the third is ignored)", 60));
   return(sc->F);
 }
 
@@ -96338,6 +96337,7 @@ int main(int argc, char **argv)
  * ------------------------------------------------
  *
  * (apply f (map...)) e.g. f=append -> use safe_list for map output list here? also for (<safe-func> (map...))
+ *   but no savings if mapped func would have used the same safe_list?
  * safety>0 error check for bad arity if built-in method set (set! (lt 'write) hash-table-set!) etc
- *   built-in: is_slot(initial_slot(sym))? && is_procedure etc, inlet/let-set! 
+ *   built-in: is_slot(initial_slot(sym))? && is_procedure etc, see inlet/let-set! [let_set_1 but looks messy]
  */

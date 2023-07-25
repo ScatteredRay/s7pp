@@ -847,7 +847,7 @@
 (set! (hook-functions *read-error-hook*) ())
 
 (when (not (defined? 'loading-t718))
-(let ((functions (vector 'not '= '+ 'cdr 'real? 'rational? 'number? '> '- 'integer? 'apply 'subvector? 'subvector-position 'subvector-vector
+(let ((functions (reverse (vector 'not '= '+ 'cdr 'real? 'rational? 'number? '> '- 'integer? 'apply 'subvector? 'subvector-position 'subvector-vector
 			  'abs '* 'null? 'imag-part '/ 'vector-set! 'equal? 'magnitude 'real-part 'pair? 'max 'nan? 'string->number 'list
 			  'negative? 'cons 'string-set! 'list-ref 'eqv? 'positive? '>= 'expt 'number->string 'zero? 'floor 'denominator 'integer->char
 			  'string? 'min '<= 'char->integer 'cos 'rationalize 'cadr 'sin 'char=?
@@ -882,7 +882,8 @@
 			  'with-input-from-file 'type-of
 			  'vector-fill! 'vector-typer 'hash-table-key-typer 'hash-table-value-typer
 			  'peek-char
-			  'make-hash-table 'make-weak-hash-table 'weak-hash-table? ;'hash-code
+			  'make-hash-table 'make-weak-hash-table 'weak-hash-table? 
+			  'hash-code
 			  'macro?
 			  'quasiquote
 			  'immutable? 'char-position 'string-position
@@ -907,7 +908,7 @@
 			  'let 'let* 'letrec 'letrec*
 			  ;'lambda 'lambda*  ; these cause built-ins to become locals if with-method=#f?
 			  ;'macro 'macro* 'bacro 'bacro* ; -- same as lambda above
-			  ;'define* 'define-macro 'define-macro* 'define-bacro 'define-bacro*
+			  ;'define* 'define-macro 'define-macro* 'define-bacro 'define-bacro* 'define 'define-constant
 			  ;'multiple-value-bind ; (multiple-value-bind (if) ...) gets all kinds of trouble
 			  'call-with-values
 			  'object->let
@@ -915,7 +916,6 @@
 			  'open-input-string 'open-output-string
 			  'open-input-file
 			  'open-input-function 'open-output-function
-			  ;'define
 			  'newline
 			  ;'random-state ; pointless diffs
 			  'gensym
@@ -949,7 +949,6 @@
 			  'current-output-port
 			  'cutlet
 			  ;'set-current-error-port ;-- too many bogus eq? complaints
-			  ;'define-constant
 			  ;'curlet ; (length (curlet)) too many times
  			  ;'open-output-file
 			  ;'delete-file 'set-current-output-port
@@ -1064,11 +1063,11 @@
 
 			  'bignum 'symbol 'count-if 'pretty-print 'tree-member 'funclet? 'bignum? 'copy-tree 
 			  ;'dynamic-unwind ; many swaps that are probably confused
-                          ;'function-open-output 'function-open-input 'function-get-output
+                          ;'function-open-output 'function-open-input 'function-get-output 'function-close-output ;see s7test
 
-			  ))
+			  )))
 
-      (args (reverse (vector "-123" "1234" "-3/4" "-1" "1/2" "1+i" "1-i" "0+i" "0-i" "(expt 2 32)" "4294967297" "1001" "10001"
+      (args (vector "-123" "1234" "-3/4" "-1" "1/2" "1+i" "1-i" "0+i" "0-i" "(expt 2 32)" "4294967297" "1001" "10001"
 		    "3441313796169221281/1720656898084610641" "1855077841/1311738121" "4478554083/3166815962" "20057446674355970889/10028723337177985444"
 		    "(cosh 128)" "(cosh (bignum 128.0))" "(bignum -1/2)" "123456789.123456789" "(bignum 1234)" "(bignum 1234.1234)" "(bignum 1+i)"
 		    "(bignum +inf.0)" "(bignum +nan.0)" "(bignum -inf.0)" "(bignum 0+i)" "(bignum 0.0)" "(bignum 0-i)"
@@ -1300,15 +1299,14 @@
 		    "(cons-r 0 0 6)"
 		    "(list-r 0 0 6)"
 
-		    ;"(*s7* 'catches)"
+		    ;"(*s7* 'gc-info)"
 		    ;"(*s7* 'cpu-time)" ; variable
 		    "(*s7* 'c-types)"
 		    ;"(copy (*s7* 'file-names))" ; one is *stdin* which can hang if read* gets it as the port
 		    ;"(*s7* 'gc-freed)" "(*s7* 'gc-total-freed)" "(*s7* 'free-heap-size)" ; variable
 		    "(copy (*s7* 'gc-protected-objects))"  ; access + element set => not protected! perhaps copy it?
 		    ;"(pp (*s7* 'memory-usage))"          ; variable
-		    ;"(*s7* 'most-negative-fixnum)"
-		    ;"(*s7* 'most-positive-fixnum)"
+		    ;"(*s7* 'most-negative-fixnum)" "(*s7* 'most-positive-fixnum)"
 		    "(*s7* 'rootlet-size)"
 		    ;"(*s7* 'stack)" "(*s7* 'stack-size)" ; variable, and stack can contain e.g. #<unused>
 		    "(*s7* 'version)"
@@ -1317,8 +1315,7 @@
 		    "(let loop ((i 2)) (if (> i 0) (loop (- i 1)) i))"
 
 		    ;"(rootlet)" ;"(curlet)"
-		    ;"(make-simple-block 3)"
-		    ;"*s7*"
+		    ;"*s7*" ;variable
 
 		    "(symbol (make-string 130 #\\a))" "(symbol \"a\" \"b\")"
 		    "(symbol \"1\\\\\")" "#\\xff"  "#\\backspace" ":0" "(list (list 1 2) (cons 1 2))"
@@ -1334,9 +1331,9 @@
 		    (reader-cond (with-mock-data "(if (> (random 1.0) 0.5) _v_ _mv_)"))
 
 		    #f #f #f ; cyclic here (see get-arg)
-		    )))
+		    ))
 
-      (codes (vector
+      (codes (reverse (vector
 	      (list (lambda (s) (string-append "(do ((x 0.0 (+ x 0.1)) (i 0 (+ i 1))) ((>= x .1) " s "))"))
 		    (lambda (s) (string-append "(let ((x 0.1) (i 1)) " s ")")))
 	      (list (lambda (s) (string-append "(do ((x 0) (i 0 (+ i 1))) ((= i 1) x) (set! x " s "))"))
@@ -1474,7 +1471,7 @@
 
 
 	      ;; perhaps function port (see _rd3_ for open-input-string), gmp?
-	      ))
+	      )))
 
       (chars (vector #\( #\( #\) #\space))) ; #\' #\/ #\# #\, #\` #\@ #\. #\:))  ; #\\ #\> #\space
 
