@@ -10094,7 +10094,10 @@ static s7_pointer let_set_1(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7
       s7_pointer slot;
       if (is_constant_symbol(sc, symbol))  /* (let-set! (rootlet) 'pi #f) */
 	wrong_type_error_nr(sc, sc->let_set_symbol, 2, symbol, a_non_constant_symbol_string);
-
+      /* it would be nice if safety>0 to add an error check for bad arity if a built-in method is set (set! (lt 'write) hash-table-set!),
+       *   built_in being is_slot(initial_slot(sym)), but this function is called a ton, and this error can't easily be
+       *   checked by the optimizer (we see the names, but not the values, so bad arity check requires assumptions about those values).
+       */
       slot = global_slot(symbol);
       if (!is_slot(slot))
 	error_nr(sc, sc->wrong_type_arg_symbol,
@@ -95910,12 +95913,9 @@ s7_scheme *s7_init(void)
 #if S7_DEBUGGING
   s7_define_function(sc, "report-missed-calls", g_report_missed_calls, 0, 0, false, NULL);
   if (!s7_type_names[0]) {fprintf(stderr, "no type_names\n"); gdb_break();} /* squelch very stupid warnings! */
-  if (strcmp(op_names[HOP_SAFE_C_PP], "h_safe_c_pp") != 0)
-    fprintf(stderr, "c op_name: %s\n", op_names[HOP_SAFE_C_PP]);
-  if (strcmp(op_names[OP_SET_WITH_LET_2], "set_with_let_2") != 0)
-    fprintf(stderr, "set op_name: %s\n", op_names[OP_SET_WITH_LET_2]);
-  if (NUM_OPS != 924)
-    fprintf(stderr, "size: cell: %d, block: %d, max op: %d, opt: %d\n", (int)sizeof(s7_cell), (int)sizeof(block_t), NUM_OPS, (int)sizeof(opt_info));
+  if (strcmp(op_names[HOP_SAFE_C_PP], "h_safe_c_pp") != 0) fprintf(stderr, "c op_name: %s\n", op_names[HOP_SAFE_C_PP]);
+  if (strcmp(op_names[OP_SET_WITH_LET_2], "set_with_let_2") != 0) fprintf(stderr, "set op_name: %s\n", op_names[OP_SET_WITH_LET_2]);
+  if (NUM_OPS != 924) fprintf(stderr, "size: cell: %d, block: %d, max op: %d, opt: %d\n", (int)sizeof(s7_cell), (int)sizeof(block_t), NUM_OPS, (int)sizeof(opt_info));
   /* cell size: 48, 120 if debugging, block size: 40, opt: 128 or 280 */
 #endif
 
@@ -96338,6 +96338,5 @@ int main(int argc, char **argv)
  *
  * (apply f (map...)) e.g. f=append -> use safe_list for map output list here? also for (<safe-func> (map...))
  *   but no savings if mapped func would have used the same safe_list?
- * safety>0 error check for bad arity if built-in method set (set! (lt 'write) hash-table-set!) etc
- *   built-in: is_slot(initial_slot(sym))? && is_procedure etc, see inlet/let-set! [let_set_1 but looks messy]
+ * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  */
