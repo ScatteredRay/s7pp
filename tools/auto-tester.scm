@@ -1,5 +1,8 @@
 ;;; this is an extension of tauto.scm, an auto-tester
 
+(define-constant stable (symbol-table))
+(define-constant stable-len (length stable))
+
 (define with-mock-data #f)
 ;(set! (*s7* 'profile) 1)
 (when (provided? 'number-separator) (set! (*s7* 'number-separator) #\,))
@@ -400,7 +403,6 @@
 (define (s7-default-random-state) (*s7* 'default-random-state))
 (define (s7-cpu-time) (*s7* 'cpu-time))
 
-
 (define-macro (_mac_ x) `(+ ,x 1))
 (define-macro* (_mac*_ (x 1)) `(+ ,x 1))
 (define-macro* (_mac1*_ (x 1) :allow-other-keys) `(+ ,x 1))
@@ -759,6 +761,18 @@
 	,@args))))
 |#
 
+(define last-stable-f #f)
+(define-constant (_stable1_ . args)
+  (let ((f (stable (random stable-len))))
+    ;(format *stderr* "~S ~S~%" f args)
+    (set! last-stable-f f)
+    (f (apply f args))))
+
+(define-constant (_stable2_ . args)
+  (let* ((f last-stable-f)
+	 (val (apply f args)))
+    (f val)))
+    
 
 (define-constant ims (immutable! (string #\a #\b #\c)))
 (define-constant imbv (immutable! (byte-vector 0 1 2)))
@@ -847,7 +861,7 @@
 (set! (hook-functions *read-error-hook*) ())
 
 (when (not (defined? 'loading-t718))
-(let ((functions (reverse (vector 'not '= '+ 'cdr 'real? 'rational? 'number? '> '- 'integer? 'apply 'subvector? 'subvector-position 'subvector-vector
+(let ((functions (vector 'not '= '+ 'cdr 'real? 'rational? 'number? '> '- 'integer? 'apply 'subvector? 'subvector-position 'subvector-vector
 			  'abs '* 'null? 'imag-part '/ 'vector-set! 'equal? 'magnitude 'real-part 'pair? 'max 'nan? 'string->number 'list
 			  'negative? 'cons 'string-set! 'list-ref 'eqv? 'positive? '>= 'expt 'number->string 'zero? 'floor 'denominator 'integer->char
 			  'string? 'min '<= 'char->integer 'cos 'rationalize 'cadr 'sin 'char=?
@@ -943,14 +957,14 @@
                           ;'set-cdr!
                           ;'unlet ;-- spurious diffs
                           ;'port-line-number ;-- too many spurious diffs
-			  ;'load  ; -- (load (port-filename)) ;'current-error-port ;-- spurious output
+			  'load  ; -- (load (port-filename)) ;'current-error-port ;-- spurious output
 			  ;'close-output-port
 			  'hash-table ; -- handled as equivalent via checked-hash-table
 			  'current-output-port
 			  'cutlet
-			  ;'set-current-error-port ;-- too many bogus eq? complaints
+			  ;'set-current-error-port ;-- too many bogus eq? complaints (it returns previous port)
 			  ;'curlet ; (length (curlet)) too many times
- 			  ;'open-output-file
+ 			  ;'open-output-file -- horrible arbitrary undeletable files
 			  ;'delete-file 'set-current-output-port
 			  'autoload
 			  ;'varlet ;-- error exits, chaos in rootlet
@@ -964,11 +978,10 @@
 			  ;'funclet ; '*function* ; tons of output
 			  ;'random
 			  ;;; 'quote
-			  '*error-hook*
+			  '*error-hook* ;'*autoload-hook* 
 			  ;'cond-expand
 			  ;'random-state->list
-                          ;'pair-line-number
-			  ;'pair-filename ; -- too many uninteresting diffs
+                          ;'pair-line-number 'pair-filename ; -- too many uninteresting diffs
 			  'let-set!
 			  ;'coverlet ;-- blocks block's equivalent?
                           'help ;-- snd goes crazy
@@ -1012,7 +1025,7 @@
 			  's7-undefined-identifier-warnings
 			  's7-profile-info
 			  's7-autoloading?
-			  ;'s7-safety
+			  's7-safety
 			  's7-c-types
 			  's7-initial-string-port-length 's7-history-size
 			  's7-default-rationalize-error 's7-equivalent-float-epsilon
@@ -1065,7 +1078,7 @@
 			  ;'dynamic-unwind ; many swaps that are probably confused
                           ;'function-open-output 'function-open-input 'function-get-output 'function-close-output ;see s7test
 
-			  )))
+			  ))
 
       (args (vector "-123" "1234" "-3/4" "-1" "1/2" "1+i" "1-i" "0+i" "0-i" "(expt 2 32)" "4294967297" "1001" "10001"
 		    "3441313796169221281/1720656898084610641" "1855077841/1311738121" "4478554083/3166815962" "20057446674355970889/10028723337177985444"
@@ -1075,7 +1088,7 @@
 		    "=>"
 		    "\"ho\"" ":ho" "'ho" "(list 1)" "(list 1 2)" "(cons 1 2)" "()" "(list (list 1 2))" "(list (list 1))" "(list ())"
 		    "#f" "#t" "()" "#()" "\"\"" ; ":write" -- not this because sr2 calls write and this can be an arg to sublet redefining write
-		    ":readable" ":rest" ":allow-other-keys" ":display" ":write" ":if" ":a" ":frequency" ":scaler" ; for blocks5 s7test.scm
+		    ":readable" ":rest" ":allow-other-keys" ":display" ":write" ":if" "':abs" ":a" ":frequency" ":scaler" ; for blocks5 s7test.scm
 		    "1/0+i" "0+0/0i" "0+1/0i" "1+0/0i" "0/0+0/0i" "0/0+i" "+nan.0-3i" "+inf.0-nan.0i"
 		    "cons" "\"ra\"" "''2" "'a" "_!asdf!_" "let-ref-fallback"
 
@@ -1223,7 +1236,7 @@
 		      "(mock-char #\\b)"
 		      "(mock-symbol 'c)"
 		      "(mock-vector 1 2 3 4)"
-		      "(mock-hash-table 'b 2)"
+		      "(mock-hash-table 'b 2)" "(mock-hash-table 'b (mock-number 2))"
 		      "(mock-c-pointer -1)"
 		      ;"(mock-port (open-input-port \"s7test.scm\"))"
 		      "(mock-random-state 1234)"))
@@ -1294,21 +1307,21 @@
 		    (reader-cond ((provided? 'debugging) "(when ((*s7* 'heap-size) < (ash 1 21)) (heap-analyze) (heap-scan 47))")) ;(+ 1 (random 47))))"))
 
 		    "(map (lambda (x) (catch #t (lambda () (vector->list x)) (lambda (t i) 'err))) (list #(1 2) 1))"
-		    "(symbol-table)"
+		    ;"(symbol-table)" ; (make-list 123 (symbol-table))!
 
 		    "(cons-r 0 0 6)"
 		    "(list-r 0 0 6)"
 
 		    ;"(*s7* 'gc-info)"
-		    ;"(*s7* 'cpu-time)" ; variable
+		    "(begin (real? (*s7* 'cpu-time)))" ; variable
 		    "(*s7* 'c-types)"
 		    ;"(copy (*s7* 'file-names))" ; one is *stdin* which can hang if read* gets it as the port
 		    ;"(*s7* 'gc-freed)" "(*s7* 'gc-total-freed)" "(*s7* 'free-heap-size)" ; variable
 		    "(copy (*s7* 'gc-protected-objects))"  ; access + element set => not protected! perhaps copy it?
-		    ;"(pp (*s7* 'memory-usage))"          ; variable
+		    "(begin (let? (*s7* 'memory-usage)))"
 		    ;"(*s7* 'most-negative-fixnum)" "(*s7* 'most-positive-fixnum)"
 		    "(*s7* 'rootlet-size)"
-		    ;"(*s7* 'stack)" "(*s7* 'stack-size)" ; variable, and stack can contain e.g. #<unused>
+		    "(begin (list? (*s7* 'stack)))" "(begin (integer? (*s7* 'stack-size)))" ; variable, and stack can contain e.g. #<unused>
 		    "(*s7* 'version)"
 		    "(*s7* 'stacktrace-defaults)"
 
@@ -1333,7 +1346,7 @@
 		    #f #f #f ; cyclic here (see get-arg)
 		    ))
 
-      (codes (reverse (vector
+      (codes (vector
 	      (list (lambda (s) (string-append "(do ((x 0.0 (+ x 0.1)) (i 0 (+ i 1))) ((>= x .1) " s "))"))
 		    (lambda (s) (string-append "(let ((x 0.1) (i 1)) " s ")")))
 	      (list (lambda (s) (string-append "(do ((x 0) (i 0 (+ i 1))) ((= i 1) x) (set! x " s "))"))
@@ -1406,16 +1419,16 @@
                     (lambda (s) (string-append "(_wr4_ " s ")")))
 	      (list (lambda (s) (string-append "(vector " s ")"))
                     (lambda (s) (string-append "(apply vector (list " s "))")))
-;	      (list (lambda (s) (string-append "(string " s ")"))
-;                    (lambda (s) (string-append "(apply string (list " s "))")))
-;	      (list (lambda (s) (string-append "(float-vector " s ")"))
-;                    (lambda (s) (string-append "(apply float-vector (list " s "))")))
+	      (list (lambda (s) (string-append "(string " s ")"))
+                    (lambda (s) (string-append "(apply string (list " s "))")))
+	      (list (lambda (s) (string-append "(float-vector " s ")"))
+                    (lambda (s) (string-append "(apply float-vector (list " s "))")))
 	      (list (lambda (s) (string-append "(values " s ")"))
                     (lambda (s) (string-append "(apply values (list " s "))")))
 	      (list (lambda (s) (string-append "(vector (values " s "))"))
                     (lambda (s) (string-append "(apply vector (list " s "))")))
-;	      (list (lambda (s) (string-append "(vector 1 (values " s "))"))
-;                    (lambda (s) (string-append "(apply vector (list 1 " s "))")))
+	      (list (lambda (s) (string-append "(vector 1 (values " s "))"))
+                    (lambda (s) (string-append "(apply vector (list 1 " s "))")))
 	      (list (lambda (s) (string-append "(do ((i 0 (+ i 1))) ((= i 1)) " s ")"))
                     (lambda (s) (string-append "(let ((__x__ 1)) (do ((i 0 (+ i __x__))) ((= i __x__)) " s "))")))
 	      (list (lambda (s) (string-append "(cond ((eqv? x 0) " s "))"))
@@ -1467,11 +1480,15 @@
                     (lambda (s) (string-append "(list (let ((old #f)) (dynamic-wind (lambda () (set! old (*s7* 'openlets)) (set! (*s7* 'openlets) #f)) (lambda () " s ") (lambda () (set! (*s7* 'openlets) old)))))")))
 	      (list (lambda (s) (string-append "(list (let () (let-temporarily (((*s7* 'safety) 1)) " s ")))"))
                     (lambda (s) (string-append "(list (let ((old #f)) (dynamic-wind (lambda () (set! old (*s7* 'safety))) (lambda () " s ") (lambda () (set! (*s7* 'safety) old)))))")))
-;;; (+ (dynamic-wind (lambda () #f) (lambda () (values 1 2 3)) (lambda () #f))): 6
 
+	      (list (lambda (s) (string-append "(_stable1_ " s ")"))
+		    (lambda (s) (string-append "(_stable2_ " s ")")))
+
+;;; (+ (dynamic-wind (lambda () #f) (lambda () (values 1 2 3)) (lambda () #f))): 6
+	      
 
 	      ;; perhaps function port (see _rd3_ for open-input-string), gmp?
-	      )))
+	      ))
 
       (chars (vector #\( #\( #\) #\space))) ; #\' #\/ #\# #\, #\` #\@ #\. #\:))  ; #\\ #\> #\space
 
@@ -1824,6 +1841,7 @@
           'error)))
 
     (define (try-both str)
+      ;(format *stderr* "~A~%" str)
       ;(if (string-position " # " str) (format *stderr* "try-both: ~A~%" str))
       ;(if (> (random 1000) 990) (gc))
       (set! nostr estr)
