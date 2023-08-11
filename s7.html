@@ -2998,6 +2998,19 @@ inlet can also be used to copy an environment without accidentally invoking
 that environment's copy method.
 </p>
 
+<p>To implement read-time lets using #let(...):
+</p>
+<pre>
+(set! *#readers* 
+      (cons (cons #\l (lambda (str)
+			(and (string=? str "let") ; #let(...)
+			     (apply inlet (read)))))
+	    *#readers*))
+
+(display #let(:a 1)) (newline)
+(display #let(:a 1 :b "str")) (newline)
+</pre>
+
 <p>Here's an example of varlet: we want to define two functions that share a
 local variable:
 </p>
