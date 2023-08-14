@@ -95841,10 +95841,12 @@ s7_scheme *s7_init(void)
                                       (return                                                             \n\
                                         (cond ((null? (cdr clause)) val)                                  \n\
                                               ((eq? (cadr clause) '=>) ((eval (caddr clause)) val))       \n\
-                                              ((null? (cddr clause)) (cadr clause))                       \n\
-                                              (else (apply values (map quote (cdr clause)))))))))         \n\
+                                              (else (apply values (cdr clause))))))))                     \n\
+                                              ;  ((null? (cddr clause)) (cadr clause))                    \n\
+                                              ;  (else (apply values (map quote (cdr clause))))           \n\
                                 clauses)                                                                  \n\
                               (values))))"); /* this is not redundant */  /* map above ignores trailing cdr if improper */
+  /* was (return `(values ,@(cdr clause))) in snd-14, begin in snd-13 */
 
   s7_eval_c_string(sc, "(define make-hook                                                                 \n\
                           (let ((+documentation+ \"(make-hook . pars) returns a new hook (a function) that passes the parameters to its function list.\")) \n\

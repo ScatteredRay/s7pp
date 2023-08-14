@@ -5585,6 +5585,17 @@ the remainder of that clause is spliced into the code as if you had typed it fro
 <em class="gray">(1 2 5 6)</em>
 </pre>
 
+<p>Here is reader-if:
+</p>
+<pre>
+(define-expansion (reader-if test true . false)
+  (let ((test-val (eval test)))
+    (if test-val 
+	true 
+	(and (pair? false)
+	     (car false)))))
+</pre>
+
 
 <!-- from kanren
 (define-syntax conj*

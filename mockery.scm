@@ -25,6 +25,8 @@
 ;;;
 ;;; currently it is possible to (set! ((*mock-vector* 'mock-vector-class) 'write) hash-table-set!) [or (set! (v 'write) hash-table-set!) I think]
 ;;;   should we call the s7.html vars-immutable (and immutable!) on this internal let?
+;;; to create an immutable mock datum, call immutable! on its value:
+;;;   (define-constant L (let ((tmp ((*mock-pair* 'mock-pair) 1 2))) (immutable! (tmp 'value)) tmp))
 ;;;
 ;;; also we omit a variety of built-in functions that can work on the underlying value.
 ;;;   given (define v #(0 1)) and (define mv ((*mock-vector* 'mock-vector) 0 1))
@@ -188,6 +190,7 @@
 	  
 	  (curlet)))
 
+;;; perhaps mock-float-vector etc?
 
 #|
   ;; vector that grows to accommodate vector-set!
@@ -596,6 +599,7 @@
 
 		 'make-rectangular (with-mock-wrapper* #_complex)
 		 'complex          (with-mock-wrapper* #_complex)
+		 'bignum           (with-mock-wrapper* #_bignum)
 		 'random-state     (with-mock-wrapper* #_random-state)
 		 'ash              (with-mock-wrapper* #_ash)
 		 'logbit?          (with-mock-wrapper* #_logbit?)
@@ -642,6 +646,7 @@
 		 'subvector        (with-mock-wrapper* #_subvector)
 		 'read-string      (with-mock-wrapper* #_read-string)
 		 'length           (with-mock-wrapper #_length)
+		 'c-pointer        (with-mock-wrapper #_c-pointer)
 		 'class-name       '*mock-number*)))
 	  
 	  (define (mock-number x)
@@ -877,7 +882,7 @@
 	  (define (mock-pair . args)
 	    (openlet
 	     (sublet (*mock-pair* 'mock-pair-class)
-	       'value (copy args)
+	       'value (copy args) ; i.e. like list not cons
 	       'mock-type 'mock-pair?)))
 	  
 	  (set! mock-pair? (lambda (obj)

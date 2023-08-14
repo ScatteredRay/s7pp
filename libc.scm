@@ -46,7 +46,7 @@
         (define (hiho a) (assert (> a 2)) (+ a 1))
 
 	(define-expansion (comment . stuff)
-	  (reader-cond (#t (values))))
+	  (values)) ;was (reader-cond (#t (values)))!
 |#
 	(set! *libraries* (cons (cons "libc.scm" (curlet)) *libraries*))
 
