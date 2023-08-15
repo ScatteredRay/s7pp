@@ -68542,9 +68542,19 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
     case OP_EXPANSION:
       /* we get here if a reader-macro (define-expansion) returns multiple values.
        *    these need to be read in order into the current reader lists (we'll assume OP_READ_LIST is next in the stack.
-       *    and that it will be expecting the next arg entry in sc->value).
+       *    and that it will be expecting the next arg entry in sc->value; but it could be OP_LOAD_RETURN_IF_EOF if the expansion is at top level).
        */
       top -= 4;
+
+      if (SHOW_EVAL_OPS) fprintf(stderr, "%s[%d]: stack top: %" ld64 ", op: %s, args: %s\n", __func__, __LINE__, top, op_names[stack_op(sc->stack, top)], display(args));
+      if (stack_element(sc->stack, top) == (s7_pointer)OP_LOAD_RETURN_IF_EOF)
+	{
+	  /* expansion at top-level returned values, eval args in order */
+	  sc->code = args;
+	  push_stack_no_args_direct(sc, sc->begin_op);
+	  return(sc->code);
+	}
+
       for (x = args; is_not_null(cdr(x)); x = cdr(x))
 	stack_args(sc->stack, top) = cons(sc, car(x), stack_args(sc->stack, top));
       pop_stack(sc);               /* need GC protection in loop above, so do this afterwards */
@@ -77710,8 +77720,12 @@ static void op_finish_expansion(s7_scheme *sc)
   /* after the expander has finished, if a list was returned, we need to add some annotations.
    *   if the expander returned (values), the list-in-progress vanishes! (This mimics map and *#readers*).
    */
+  if (SHOW_EVAL_OPS) fprintf(stderr, "%s[%d]: op: %s, value: %s\n", __func__, __LINE__, op_names[stack_op(sc->stack, current_stack_top(sc) - 1)], display(sc->value));
   if (sc->value == sc->no_value)
-    sc->stack_end[-1] = (s7_pointer)OP_READ_NEXT;
+    {
+      if (stack_element(sc->stack, current_stack_top(sc) - 1) != (s7_pointer)OP_LOAD_RETURN_IF_EOF) /* latter op if empty expansion at top-level */
+	sc->stack_end[-1] = (s7_pointer)OP_READ_NEXT;
+    }
   else
     if (is_pair(sc->value))
       sc->value = copy_body(sc, sc->value);
@@ -89175,6 +89189,7 @@ static bool pop_read_list(s7_scheme *sc)
 
 static bool op_load_return_if_eof(s7_scheme *sc)
 {
+  if (SHOW_EVAL_OPS) fprintf(stderr, "op_load_return_if_eof: value: %s\n", display(sc->value));
   if (sc->tok != TOKEN_EOF)
     {
       push_stack_op_let(sc, OP_LOAD_RETURN_IF_EOF);
@@ -95463,7 +95478,7 @@ s7_scheme *s7_init(void)
   sc->F =           make_unique(sc, "#f",             T_BOOLEAN);
   sc->undefined =   make_unique(sc, "#<undefined>",   T_UNDEFINED);
   sc->unspecified = make_unique(sc, "#<unspecified>", T_UNSPECIFIED);
-  sc->no_value =    make_unique(sc, "#<unspecified>", T_UNSPECIFIED);
+  sc->no_value =    make_unique(sc, (SHOW_EVAL_OPS) ? "#<no-value>" : "#<unspecified>", T_UNSPECIFIED);
 
   unique_car(sc->nil) = sc->unspecified;
   unique_cdr(sc->nil) = sc->unspecified;
@@ -95841,12 +95856,11 @@ s7_scheme *s7_init(void)
                                       (return                                                             \n\
                                         (cond ((null? (cdr clause)) val)                                  \n\
                                               ((eq? (cadr clause) '=>) ((eval (caddr clause)) val))       \n\
+                                              ((null? (cddr clause)) (cadr clause))                       \n\
                                               (else (apply values (cdr clause))))))))                     \n\
-                                              ;  ((null? (cddr clause)) (cadr clause))                    \n\
-                                              ;  (else (apply values (map quote (cdr clause))))           \n\
                                 clauses)                                                                  \n\
                               (values))))"); /* this is not redundant */  /* map above ignores trailing cdr if improper */
-  /* was (return `(values ,@(cdr clause))) in snd-14, begin in snd-13 */
+  /* was (return `(values ,@(cdr clause))) snd-14, begin snd-13, snd-23 (else (apply values (map quote (cdr clause)))) */
 
   s7_eval_c_string(sc, "(define make-hook                                                                 \n\
                           (let ((+documentation+ \"(make-hook . pars) returns a new hook (a function) that passes the parameters to its function list.\")) \n\
@@ -96342,4 +96356,5 @@ int main(int argc, char **argv)
  * -------------------------------------------------
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
+ * t646/7 -> s7test, check cond-expand
  */
