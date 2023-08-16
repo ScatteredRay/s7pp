@@ -3503,15 +3503,10 @@ exactly like a normal macro,
 so you can use <code>(values '(define a 1) '(define b 2))</code> to
 splice multiple definitions at the macro invocation point.  
 If an expansion returns (values), nothing is spliced in.  This is
-mostly useful in <a href="#readercond">reader-cond</a> and the #; reader.
+mostly useful in <a href="#readercond">reader-cond</a> and the #; reader, but
+unfortunately, it is tricky to use.  The reader only knows about things globally defined
+when it encounters them, and a locally defined expansion is handled as a normal macro.
 </p>
-
-<pre class="indented">
-&gt; (define-expansion (comment str) (values))
-<em class="gray">comment</em>
-&gt; (+ 1 (comment "one") 2 (comment "two"))
-<em class="gray">3</em>
-</pre>
 
 <p>At the top-level (in the REPL), since there's nothing to splice into, you simply get your values back:
 </p>

@@ -96356,5 +96356,10 @@ int main(int argc, char **argv)
  * -------------------------------------------------
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
- * t646/7 -> s7test, check cond-expand
+ * the notion that exp can return nothing is not coherent; (display <exp> obj) as in comment shows we can't
+ *   tell whether obj is 1st or 2nd arg at opt time and it might change during exp calls; also local-exp-as-mac
+ *   probably can return nothing -- how to ensure only read-time and only exp? reader-cond(etc) could use hidden
+ *   (no-values) -- ugly.  Load file can change whether we're local or global.  This is a mess, but we need it.
+ * check make-hook in t725.
+ * check cond-expand, t647 reader bug (comment), safety for exp->mac?
  */

@@ -44,9 +44,6 @@
 				   (port-filename) (port-line-number) ',assertion)))
 	               (#t (values))))
         (define (hiho a) (assert (> a 2)) (+ a 1))
-
-	(define-expansion (comment . stuff)
-	  (values)) ;was (reader-cond (#t (values)))!
 |#
 	(set! *libraries* (cons (cons "libc.scm" (curlet)) *libraries*))
 
