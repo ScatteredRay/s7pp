@@ -15484,7 +15484,7 @@
 
 				   (check-built-in-used-as-parameter caller form))
 
-				 (when (eq? head 'define-macro)
+				 (when (eq? head 'define-macro) ; and define-expansion?
 				   (check-define-macro caller form env))
 
 				 (if (and (eq? head 'definstrument)

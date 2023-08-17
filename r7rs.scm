@@ -496,7 +496,7 @@
 ;; records
 (define-macro (define-record-type type make ? . fields)
   (let ((obj (gensym))
-	(typ (gensym))
+	(typ (gensym)) ; this means each call on this macro makes a new type
 	(args (map (lambda (field)
 		     (values (list 'quote (car field))
 			     (let ((par (memq (car field) (cdr make))))
@@ -528,6 +528,28 @@
 
 ;;; srfi 111:
 (define-record-type box-type (box value) box? (value unbox set-box!))
+
+;;; as per the comment above,
+;;; <1> (load "r7rs.scm")
+;;;   box-type
+;;; <2> (define b1 (box 32))
+;;;   (inlet '{gensym}-1 box-type 'value 32)
+;;; <3> (define-record-type box-type (box value) box? (value unbox set-box!))
+;;;   box-type
+;;; <4> (define b2 (box 32))
+;;;   (inlet '{gensym}-3 box-type 'value 32)
+;;; <5> (box? b1)
+;;;   #f
+;;; <6> (box? b2)
+;;;   #t
+;;; but, of course:
+;;; <7> (define b3 (box 32))
+;;;  (inlet '{gensym}-3 box-type 'value 32)
+;;; <8> (equal? b2 b3)
+;;;  #t
+;;; <9> (box? b3)
+;;;  #t
+
 
 #|
 ;(require stuff.scm)
