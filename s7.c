@@ -43272,7 +43272,7 @@ static hash_entry_t *hash_symbol(s7_scheme *sc, s7_pointer table, s7_pointer key
 
 
 /* ---------------- hash numbers ---------------- */
-static s7_int hash_float_location(s7_double x) {return(((is_NaN(x)) || (is_inf(x))) ? 0 : (s7_int)floor(fabs(x)));}
+static s7_int hash_float_location(s7_double x) {return(((is_NaN(x)) || (is_inf(x)) || (fabs(x) > DOUBLE_TO_INT64_LIMIT)) ? 0 : (s7_int)floor(fabs(x)));}
 
 static s7_int hash_map_int(s7_scheme *sc, s7_pointer table, s7_pointer key)     {return(s7_int_abs(integer(key)));}
 static s7_int hash_map_real(s7_scheme *sc, s7_pointer table, s7_pointer key)    {return(hash_float_location(real(key)));}
