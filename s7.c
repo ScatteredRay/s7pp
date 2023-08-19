@@ -9375,7 +9375,7 @@ static s7_pointer g_coverlet(s7_scheme *sc, s7_pointer args)
 
 
 /* -------------------------------- varlet -------------------------------- */
-static void check_let_fallback(s7_scheme *sc, s7_pointer symbol, s7_pointer let)
+static void check_let_fallback(s7_scheme *sc, const s7_pointer symbol, s7_pointer let)
 {
   if (symbol == sc->let_ref_fallback_symbol)
     set_has_let_ref_fallback(let);
@@ -9450,7 +9450,7 @@ s7_pointer s7_varlet(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7_pointe
   return(value);
 }
 
-static int32_t position_of(s7_pointer p, s7_pointer args)
+static int32_t position_of(const s7_pointer p, s7_pointer args)
 {
   int32_t i;
   for (i = 1; p != args; i++, args = cdr(args));
@@ -10017,7 +10017,7 @@ static s7_pointer g_let_ref(s7_scheme *sc, s7_pointer args)
   return(let_ref(sc, car(args), cadr(args)));
 }
 
-static s7_pointer slot_in_let(s7_scheme *sc, s7_pointer e, s7_pointer sym)
+static s7_pointer slot_in_let(s7_scheme *sc, s7_pointer e, const s7_pointer sym)
 {
   for (s7_pointer y = let_slots(e); tis_slot(y); y = next_slot(y))
     if (slot_symbol(y) == sym)
@@ -26942,7 +26942,7 @@ static s7_int sequence_length(s7_scheme *sc, s7_pointer lst)
 
 static s7_pointer s7_copy_1(s7_scheme *sc, s7_pointer caller, s7_pointer args);
 
-static void string_append_2(s7_scheme *sc, s7_pointer newstr, s7_pointer args, s7_pointer stop_arg, s7_pointer caller)
+static void string_append_2(s7_scheme *sc, s7_pointer newstr, s7_pointer args, const s7_pointer stop_arg, s7_pointer caller)
 {
   s7_int len;
   char *pos;
@@ -31814,7 +31814,7 @@ static s7_pointer g_iterator_sequence(s7_scheme *sc, s7_pointer args)
 
 #define INITIAL_SHARED_INFO_SIZE 8
 
-static int32_t shared_ref(shared_info_t *ci, s7_pointer p)
+static int32_t shared_ref(shared_info_t *ci, const s7_pointer p)
 {
   /* from print after collecting refs, not called by equality check, only called in object_to_port_with_circle_check_1 */
   s7_pointer *objs = ci->objs;
@@ -31829,7 +31829,7 @@ static int32_t shared_ref(shared_info_t *ci, s7_pointer p)
   return(0);
 }
 
-static void flip_ref(shared_info_t *ci, s7_pointer p)
+static void flip_ref(shared_info_t *ci, const s7_pointer p)
 {
   s7_pointer *objs = ci->objs;
   for (int32_t i = 0; i < ci->top; i++)
@@ -31840,7 +31840,7 @@ static void flip_ref(shared_info_t *ci, s7_pointer p)
       }
 }
 
-static int32_t peek_shared_ref_1(shared_info_t *ci, s7_pointer p)
+static int32_t peek_shared_ref_1(shared_info_t *ci, const s7_pointer p)
 {
   /* returns 0 if not found, otherwise the ref value for p */
   s7_pointer *objs = ci->objs;
@@ -34883,7 +34883,7 @@ static void c_object_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, use
 	}}
 }
 
-static void stack_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, use_write_t unused_use_write, shared_info_t *unused_ci)
+static void stack_to_port(s7_scheme *sc, const s7_pointer obj, s7_pointer port, use_write_t unused_use_write, shared_info_t *unused_ci)
 {
   if (obj == sc->stack)
     port_write_string(port)(sc, "#<current stack>", 16, port);
@@ -39450,7 +39450,7 @@ static vdims_t *make_wrap_only(s7_scheme *sc) /* this makes sc->wrap_only */
   return(v);
 }
 
-static vdims_t *make_vdims(s7_scheme *sc, bool elements_should_be_freed, s7_int dims, s7_int *dim_info)
+static vdims_t *make_vdims(s7_scheme *sc, bool elements_should_be_freed, s7_int dims, const s7_int *dim_info)
 {
   vdims_t *v;
   if ((dims == 1) && (!elements_should_be_freed))
@@ -41778,7 +41778,7 @@ static s7_pointer g_fv_set_unchecked(s7_scheme *sc, s7_pointer args)
   return(value);
 }
 
-static bool find_matching_ref(s7_scheme *sc, s7_pointer getter, s7_pointer expr)
+static bool find_matching_ref(s7_scheme *sc, const s7_pointer getter, s7_pointer expr)
 {
   /* expr: (*set! v i val), val exists (i.e. args=3, so cddddr is null) */
   s7_pointer v = cadr(expr), ind = caddr(expr);
@@ -44057,7 +44057,7 @@ s7_pointer s7_make_hash_table(s7_scheme *sc, s7_int size)
   return(table);
 }
 
-static bool compatible_types(s7_scheme *sc, s7_pointer eq_type, s7_pointer value_type)
+static bool compatible_types(s7_scheme *sc, const s7_pointer eq_type, const s7_pointer value_type)
 {
   if (eq_type == sc->T) return(true);
   if (eq_type == value_type) return(true);
@@ -56431,7 +56431,7 @@ static s7_p_ii_t s7_p_ii_function(s7_pointer f);
 
 #define is_global_and_has_func(P, Func) ((is_unchanged_global(P)) && (Func(global_value(P)))) /* Func = s7_p_pp_function and friends */
 
-static bool fx_matches(s7_pointer symbol, s7_pointer target_symbol) {return((symbol == target_symbol) && (is_unchanged_global(symbol)));}
+static bool fx_matches(s7_pointer symbol, const s7_pointer target_symbol) {return((symbol == target_symbol) && (is_unchanged_global(symbol)));}
 
 typedef bool (safe_sym_t)(s7_scheme *sc, s7_pointer sym, s7_pointer e);
 
@@ -57162,9 +57162,9 @@ static bool with_fx(s7_pointer p, s7_function f)
   return(true);
 }
 
-static bool o_var_ok(s7_pointer p, s7_pointer var1, s7_pointer var2, s7_pointer var3) {return((p != var1) && (p != var2) && (p != var3));}
+static bool o_var_ok(const s7_pointer p, const s7_pointer var1, const s7_pointer var2, const s7_pointer var3) {return((p != var1) && (p != var2) && (p != var3));}
 
-static bool fx_tree_out(s7_scheme *sc, s7_pointer tree, s7_pointer var1, s7_pointer var2, s7_pointer var3, bool unused_more_vars)
+static bool fx_tree_out(s7_scheme *sc, s7_pointer tree, const s7_pointer var1, const s7_pointer var2, const s7_pointer var3, bool unused_more_vars)
 {
   s7_pointer p = car(tree);
 #if 0
@@ -58999,7 +58999,7 @@ static bool opt_int_vector_set(s7_scheme *sc, int32_t otype, opt_info *opc, s7_p
   return_false(sc, v);
 }
 
-static bool is_target_or_its_alias(s7_pointer symbol, s7_pointer symfunc, s7_pointer target)
+static bool is_target_or_its_alias(const s7_pointer symbol, const s7_pointer symfunc, s7_pointer target)
 {
   return((symbol == target) || (symfunc == initial_value(target)));
 }
@@ -61598,7 +61598,7 @@ static bool opt_zero_mod(opt_info *o)
   return((x % o->v[2].i) == 0);
 }
 
-static bool b_idp_ok(s7_scheme *sc, s7_pointer s_func, s7_pointer car_x, s7_pointer arg_type)
+static bool b_idp_ok(s7_scheme *sc, s7_pointer s_func, s7_pointer car_x, const s7_pointer arg_type)
 {
   s7_b_p_t bpf = NULL;
   s7_b_7p_t bpf7 = NULL;
@@ -67299,13 +67299,10 @@ static s7_pointer g_for_each_closure(s7_scheme *sc, s7_pointer f, s7_pointer seq
 	    {
 	      if (!is_mappable(seq))
 		wrong_type_error_nr(sc, sc->for_each_symbol, 2, seq, a_sequence_string);
-	      sc->z = s7_make_iterator(sc, seq);
-	      seq = sc->z;
+	      seq = s7_make_iterator(sc, seq);
 	      set_stack_protected2_with(sc, seq, OP_MAP_UNWIND); /* GC protect new iterator */
 	    }
-	  else sc->z = T_Ext(seq);
 	  /* push_stack_no_let(sc, OP_GC_PROTECT, seq, f); */
-	  sc->z = sc->unused;
 	  if (func == opt_cell_any_nv)
 	    {
 	      opt_info *o = sc->opts[0];
@@ -67463,21 +67460,18 @@ static s7_pointer g_for_each_closure_2(s7_scheme *sc, s7_pointer f, s7_pointer s
 	  if ((is_pair(seq1)) && (is_pair(seq2)))
 	    {
 	      map_or_for_each_closure_pair_2(sc, func, seq1, seq2, slot1, slot2, true);
-	      set_curlet(sc, olde);
 	      res = sc->unspecified;
 	    }
 	  else
 	    if ((is_any_vector(seq1)) && (is_any_vector(seq2)))
 	      {
 		map_or_for_each_closure_vector_2(sc, func, seq1, seq2, slot1, slot2, true);
-		set_curlet(sc, olde);
 		res = sc->unspecified;
 	      }
 	    else
 	      if ((is_string(seq1)) && (is_string(seq2)))
 		{
 		  map_or_for_each_closure_string_2(sc, func, seq1, seq2, slot1, slot2, true);
-		  set_curlet(sc, olde);
 		  res = sc->unspecified;
 		}
 	  sc->map_call_ctr--;
@@ -72360,7 +72354,7 @@ static opt_t optimize(s7_scheme *sc, s7_pointer code, int32_t hop, s7_pointer e)
 }
 
 
-static bool symbol_is_in_arg_list(s7_pointer sym, s7_pointer lst)
+static bool symbol_is_in_arg_list(const s7_pointer sym, s7_pointer lst)
 {
   s7_pointer x;
   for (x = lst; is_pair(x); x = cdr(x))
@@ -72736,10 +72730,9 @@ static body_t form_is_safe(s7_scheme *sc, s7_pointer func, s7_pointer x, bool at
 	  if (!is_pair(cddr(x))) return(UNSAFE_BODY);
 	  if (is_pair(cadr(x)))
 	    {
-	      bool follow = false;
 	      s7_pointer vars = cadr(x);
 	      s7_pointer sp = vars;
-	      for (; is_pair(vars); vars = cdr(vars))
+	      for (bool follow = false; is_pair(vars); vars = cdr(vars))
 		{
 		  s7_pointer do_var = car(vars);
 		  if ((!is_pair(do_var)) ||
@@ -72937,7 +72930,7 @@ static bool tree_has_definers_or_binders(s7_scheme *sc, s7_pointer tree)
 	 (is_definer_or_binder(tree)));
 }
 
-static bool check_recur_if(s7_scheme *sc, s7_pointer name, int32_t vars, s7_pointer args, s7_pointer body)
+static bool check_recur_if(s7_scheme *sc, const s7_pointer name, int32_t vars, s7_pointer args, s7_pointer body)
 {
   s7_pointer test = cadr(body);
   if (is_fxable(sc, test))        /* if_(A)... */
@@ -73350,7 +73343,7 @@ static bool check_recur(s7_scheme *sc, s7_pointer name, int32_t vars, s7_pointer
   return(false);
 }
 
-static bool check_tc_when(s7_scheme *sc, s7_pointer name, int32_t vars, s7_pointer args, s7_pointer body)
+static bool check_tc_when(s7_scheme *sc, const s7_pointer name, int32_t vars, s7_pointer args, s7_pointer body)
 {
   s7_pointer test_expr = cadr(body);
   if (is_fxable(sc, test_expr))
@@ -73606,7 +73599,7 @@ static bool check_tc_cond(s7_scheme *sc, s7_pointer name, int32_t vars, s7_point
   return(false);
 }
 
-static bool check_tc_let(s7_scheme *sc, s7_pointer name, int32_t vars, s7_pointer args, s7_pointer body)
+static bool check_tc_let(s7_scheme *sc, const s7_pointer name, int32_t vars, s7_pointer args, s7_pointer body)
 {
   s7_pointer let_body = caddr(body); /* body: (let ((x (- y 1))) (if (<= x 0) 0 (f1 (- x 1)))) etc */
   if (((vars == 2) && ((car(let_body) == sc->if_symbol) || (car(let_body) == sc->when_symbol) || (car(let_body) == sc->unless_symbol))) ||
@@ -74291,7 +74284,7 @@ static void check_lambda_star(s7_scheme *sc)
 
 
 /* -------------------------------- case -------------------------------- */
-static inline bool is_undefined_feed_to(s7_scheme *sc, s7_pointer sym)
+static inline bool is_undefined_feed_to(s7_scheme *sc, const s7_pointer sym)
 {
   return((sym == sc->feed_to_symbol) &&
 	 ((symbol_ctr(sc->feed_to_symbol) == 0) || (s7_symbol_value(sc, sc->feed_to_symbol) == sc->undefined)));
@@ -74549,7 +74542,7 @@ static inline s7_pointer fx_case_a_i_s_a(s7_scheme *sc, s7_pointer code) /* inli
 }
 #endif
 
-static bool op_case_e_g_1(s7_scheme *sc, s7_pointer selector, bool ok)
+static bool op_case_e_g_1(s7_scheme *sc, const s7_pointer selector, bool ok)
 {
   s7_pointer x;
   if (ok)
@@ -79795,7 +79788,7 @@ static goto_t op_set2(s7_scheme *sc)
 
 
 /* -------------------------------- do -------------------------------- */
-static bool safe_stepper_expr(s7_pointer expr, s7_pointer var)
+static bool safe_stepper_expr(s7_pointer expr, const s7_pointer var)
 {
   /* for now, just look for stepper as last element of any list
    *    any embedded set is handled by do_is_safe, so we don't need to descend into the depths
@@ -80761,9 +80754,10 @@ static goto_t op_dox_no_body_1(s7_scheme *sc, s7_pointer slots, s7_pointer end, 
 	  slot_set_value(step2, fx_call(sc, expr2));
 	} while ((sc->value = endf(sc, endp)) == sc->F);
       sc->code = cdr(end);
-      if (!is_symbol(car(sc->code)))
+      if ((!is_symbol(car(sc->code))) || (is_pair(cdr(sc->code)))) /* might have more than one result expr: (define (f) (do ((x 0 (+ x 1)) (i 0 (+ i 1))) ((= i 1) x 3 4))) (f) */
 	return(goto_do_end_clauses);
       step1 = s7_slot(sc, car(sc->code));
+      if (!is_slot(step1)) unbound_variable_error_nr(sc, car(sc->code));
       sc->value = slot_value(step1);
       if (is_t_real(sc->value))
 	clear_mutable_number(sc->value);
@@ -83073,7 +83067,7 @@ static s7_pointer star_set(s7_scheme *sc, s7_pointer slot, s7_pointer val, bool 
   return(val);
 }
 
-static s7_pointer lambda_star_argument_set_value(s7_scheme *sc, s7_pointer sym, s7_pointer val, s7_pointer slot, bool check_rest)
+static s7_pointer lambda_star_argument_set_value(s7_scheme *sc, const s7_pointer sym, s7_pointer val, s7_pointer slot, bool check_rest)
 {
   if (val == sc->no_value) val = sc->unspecified;
   if (sym == slot_symbol(slot))
@@ -88449,14 +88443,13 @@ static token_t read_block_comment(s7_scheme *sc, s7_pointer pt)
    *   since we ignore everything until the |#, internal semicolon comments are ignored,
    *   meaning that ;|# is as effective as |#
    */
-  int32_t c;
   const char *str, *orig_str, *p, *pend;
   if (is_file_port(pt))
     {
       char last_char = ' ';
       while (true)
 	{
-	  c = fgetc(port_file(pt));
+	  int32_t c = fgetc(port_file(pt));
 	  if (c == EOF)
 	    error_nr(sc, sc->read_error_symbol,
 		     set_elist_1(sc, wrap_string(sc, "unexpected end of input while reading #|", 40)));
@@ -95832,6 +95825,8 @@ s7_scheme *s7_init(void)
                           (list (cons 'lambda (cons vars body)) expression))");
 
   s7_eval_c_string(sc, "(define-macro (cond-expand . clauses)                                             \n\
+                          (if (null? clauses)                                                             \n\
+                              (error 'syntax-error \"cond-expand: no clauses?\"))                         \n\
                           (letrec ((traverse (lambda (tree)                                               \n\
 		                               (if (pair? tree)                                           \n\
 			                           (cons (traverse (car tree))                            \n\
@@ -95842,15 +95837,19 @@ s7_scheme *s7_init(void)
 		                               (if (pair? clause)                                         \n\
                                                    (cons (traverse (car clause))                          \n\
 			                                 (case (cdr clause) ((()) '(#f)) (else)))         \n\
-                                                   (error 'read-error \"cond-expand: clause is not a pair\"))) \n\
+                                                   (error 'read-error \"cond-expand: clause is not a pair, ~S\" clause))) \n\
 		                             clauses))))");
 #endif
 
   s7_eval_c_string(sc, "(define-expansion (reader-cond . clauses)                                         \n\
+                          (if (null? clauses)                                                             \n\
+                              (error 'syntax-error \"reader-cond: no clauses?\"))                         \n\
                           (call-with-exit                                                                 \n\
                             (lambda (return)                                                              \n\
                               (for-each                                                                   \n\
                                 (lambda (clause)                                                          \n\
+                                  (if (not (pair? clause))                                                \n\
+                                      (error 'syntax-error \"reader-cond: clause is not a pair, ~S\" clause)) \n\
 	                          (let ((val (eval (car clause))))                                        \n\
                                     (when val                                                             \n\
                                       (return                                                             \n\
