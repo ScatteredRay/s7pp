@@ -27287,7 +27287,7 @@ static int32_t scheme_strcmp(s7_pointer s1, s7_pointer s2)
     {
       /* this algorithm from stackoverflow(?), with various changes (original did not work for large strings, etc) */
       size_t i = 0, last = len / sizeof(size_t);
-      for (size_t *ptr1 = (size_t *)str1, *ptr2 = (size_t *)str2; i < last; i++)
+      for (const size_t *ptr1 = (size_t *)str1, *ptr2 = (size_t *)str2; i < last; i++)
 	if (ptr1[i] != ptr2[i])
 	  break;
       for (size_t pos = i * sizeof(size_t); pos < len; pos++)
@@ -47498,7 +47498,7 @@ static bool vector_rank_match(s7_scheme *sc, s7_pointer x, s7_pointer y)
   return(true);
 }
 
-static bool iv_meq(s7_int *ex, s7_int *ey, s7_int len)
+static bool iv_meq(const s7_int *ex, const s7_int *ey, s7_int len)
 {
   s7_int i = 0, left = len - 8;
   while (i <= left)
@@ -68533,13 +68533,13 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
       pop_stack(sc);
       return(splice_in_values(sc, args));
 
+    case OP_EVAL_MACRO_MV: /* perhaps reader-cond expansion at eval-time (not at run-time) via ((let () reader-cond) ...)? */
     case OP_EXPANSION:
       /* we get here if a reader-macro (define-expansion) returns multiple values.
        *    these need to be read in order into the current reader lists (we'll assume OP_READ_LIST is next in the stack.
        *    and that it will be expecting the next arg entry in sc->value; but it could be OP_LOAD_RETURN_IF_EOF if the expansion is at top level).
        */
       top -= 4;
-
       if (SHOW_EVAL_OPS) fprintf(stderr, "%s[%d]: stack top: %" ld64 ", op: %s, args: %s\n", __func__, __LINE__, top, op_names[stack_op(sc->stack, top)], display(args));
       if (stack_element(sc->stack, top) == (s7_pointer)OP_LOAD_RETURN_IF_EOF)
 	{
@@ -68548,7 +68548,6 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 	  push_stack_no_args_direct(sc, sc->begin_op);
 	  return(sc->code);
 	}
-
       for (x = args; is_not_null(cdr(x)); x = cdr(x))
 	stack_args(sc->stack, top) = cons(sc, car(x), stack_args(sc->stack, top));
       pop_stack(sc);               /* need GC protection in loop above, so do this afterwards */
@@ -75133,7 +75132,7 @@ static bool op_let1(s7_scheme *sc)
       s7_pointer sym, args = cdr(y), sp;
       x = car(sc->code);
       sym = caar(x);
-      reuse_as_slot(y, sym, unchecked_car(y));
+      reuse_as_slot(y, sym, unchecked_car(y)); /* if car(y) is a multiple value, should we clear it? How did it get there? */
       symbol_set_local_slot(sym, id, y);
       let_set_slots(e, y);
       sp = y;
@@ -80754,7 +80753,8 @@ static goto_t op_dox_no_body_1(s7_scheme *sc, s7_pointer slots, s7_pointer end, 
 	  slot_set_value(step2, fx_call(sc, expr2));
 	} while ((sc->value = endf(sc, endp)) == sc->F);
       sc->code = cdr(end);
-      if ((!is_symbol(car(sc->code))) || (is_pair(cdr(sc->code)))) /* might have more than one result expr: (define (f) (do ((x 0 (+ x 1)) (i 0 (+ i 1))) ((= i 1) x 3 4))) (f) */
+      if (!is_pair(sc->code)) return(goto_start);                  /* no result: (define (f) (do ((x 0 (+ x 1)) (i 0 (+ i 1))) ((= i 1)))) (f) (f) */
+      if ((!is_symbol(car(sc->code))) || (is_pair(cdr(sc->code)))) /* more than one result: (define (f) (do ((x 0 (+ x 1)) (i 0 (+ i 1))) ((= i 1) x 3 4))) (f) */
 	return(goto_do_end_clauses);
       step1 = s7_slot(sc, car(sc->code));
       if (!is_slot(step1)) unbound_variable_error_nr(sc, car(sc->code));
