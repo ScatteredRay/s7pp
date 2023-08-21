@@ -68527,13 +68527,18 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
       return(args);
 
     case OP_DEACTIVATE_GOTO:  /* (+ (call-with-exit (lambda (ret) (values 1 2 3)))) */
-      call_exit_active(stack_args(sc->stack, top)) = false;
+      call_exit_active(stack_args(sc->stack, top)) = false; /* stack_args(sc->stack, top) is the goto */
 
     case OP_CATCH: case OP_CATCH_1: case OP_CATCH_2: case OP_CATCH_ALL: /* (+ (catch #t (lambda () (values 3 4)) (lambda args args))) */
       pop_stack(sc);
       return(splice_in_values(sc, args));
 
     case OP_EVAL_MACRO_MV: /* perhaps reader-cond expansion at eval-time (not at run-time) via ((let () reader-cond) ...)? */
+      {
+	s7_pointer s_op = stack_element(sc->stack, top - 4);
+	if ((s_op == (s7_pointer)OP_DO_STEP) || (s_op == (s7_pointer)OP_DEACTIVATE_GOTO))
+	  return(sc->F); /* tricky reader-cond as macro in do body returning values... or call-with-exit */
+      }
     case OP_EXPANSION:
       /* we get here if a reader-macro (define-expansion) returns multiple values.
        *    these need to be read in order into the current reader lists (we'll assume OP_READ_LIST is next in the stack.
@@ -81424,6 +81429,7 @@ static bool op_do_no_body_na_vars_step_1(s7_scheme *sc)
 
 static bool do_step1(s7_scheme *sc)
 {
+  /* fprintf(stderr, "%s[%d]: sc->args: %s\n", __func__, __LINE__, display(sc->args)); */
   while (true)
     {
       s7_pointer code;
@@ -81442,7 +81448,7 @@ static bool do_step1(s7_scheme *sc)
 	{
 	  sc->value = fx_call(sc, code);
 	  slot_set_pending_value(car(sc->args), sc->value); /* consistently slower if slot_simply_set... here? */
-	  sc->args = cdr(sc->args);                   /* go to next step var */
+	  sc->args = T_Lst(cdr(sc->args));           /* go to next step var */
 	}
       else
 	{
@@ -81461,17 +81467,18 @@ static bool op_do_step2(s7_scheme *sc)
   return(do_step1(sc));
 }
 
-static bool op_do_step(s7_scheme *sc)
+static bool op_do_step(s7_scheme *sc)     /* called only in eval OP_DO_STEP via op_do_end_false */
 {
   /* increment all vars, return to endtest
    *   these are also updated in parallel at the end, so we gather all the incremented values first
    * here we know car(sc->args) is not null, args is the list of steppable vars,
    *   any unstepped vars in the do var section are not in this list, so
-   *   (do ((i 0 (+ i 1)) (j 2)) ...) arrives here with sc->args: '(slot<((+ i 1)=expr, 0=pending_value>))
+   *  (do ((i 0 (+ i 1)) (j 2)) ...) arrives here with sc->args: '(slot<((+ i 1)=expr, 0=pending_value>)) -- is this comment correct?
    */
+  /* fprintf(stderr, "%s[%d]: sc->args: %s\n", __func__, __LINE__, display(sc->args)); */
   push_stack_direct(sc, OP_DO_END);
   sc->args = car(sc->args);                /* the var data lists */
-  sc->code = sc->args;                     /* save the top of the list */
+  sc->code = T_Lst(sc->args);              /* save the top of the list */
   return(do_step1(sc));
 }
 
@@ -82685,6 +82692,7 @@ static goto_t op_do_end_false(s7_scheme *sc)
 {
   if (!is_pair(sc->code))
     return((is_null(car(sc->args))) ? /* no steppers */ goto_do_end : fall_through);
+  /* fprintf(stderr, "%s[%d]: vars: %s\n", __func__, __LINE__, display(sc->args)); */
   if (is_null(car(sc->args)))
     push_stack_direct(sc, OP_DO_END);
   else push_stack_direct(sc, OP_DO_STEP);
