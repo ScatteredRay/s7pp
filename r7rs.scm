@@ -213,7 +213,7 @@
 	    files)))
 
 (set! *#readers* (cons (cons #\; (lambda (s) (read) (values))) *#readers*))
-;; I prefer (define-expansion (comment . stuff) (reader-cond (#t (values))))
+;; I prefer (define-expansion (comment . stuff) (values))
 ;;   or (format #f "~^ this is a comment ")
 
 

@@ -4683,10 +4683,11 @@ void s7_show_history(s7_scheme *sc)
 #endif
 }
 
-#define stack_code(Stack, Loc)  stack_element(Stack, Loc - 3)
-#define stack_let(Stack, Loc)   stack_element(Stack, Loc - 2)
-#define stack_args(Stack, Loc)  stack_element(Stack, Loc - 1)
-#define stack_op(Stack, Loc)    ((opcode_t)(stack_element(Stack, Loc)))
+#define stack_code(Stack, Loc)        stack_element(Stack, Loc - 3)
+#define stack_let(Stack, Loc)         stack_element(Stack, Loc - 2)
+#define stack_args(Stack, Loc)        stack_element(Stack, Loc - 1)
+#define stack_op(Stack, Loc)          ((opcode_t)(stack_element(Stack, Loc)))
+#define set_stack_op(Stack, Loc, Op)  stack_element(Stack, Loc) = (s7_pointer)(Op)
 
 void s7_show_stack(s7_scheme *sc);
 void s7_show_stack(s7_scheme *sc)
@@ -11759,7 +11760,7 @@ static bool check_for_dynamic_winds(s7_scheme *sc, s7_pointer c)
 
 	case OP_DYNAMIC_UNWIND:
 	case OP_DYNAMIC_UNWIND_PROFILE:
-	  stack_element(sc->stack, i) = (s7_pointer)OP_GC_PROTECT;
+	  set_stack_op(sc->stack, i, OP_GC_PROTECT);
 	  break;
 
 	case OP_LET_TEMP_UNWIND:
@@ -11965,7 +11966,7 @@ static void call_with_exit(s7_scheme *sc)
 
       case OP_DYNAMIC_UNWIND:
       case OP_DYNAMIC_UNWIND_PROFILE:
-	stack_element(sc->stack, i) = (s7_pointer)OP_GC_PROTECT;
+	set_stack_op(sc->stack, i, OP_GC_PROTECT);
 	dynamic_unwind(sc, stack_code(sc->stack, i), stack_args(sc->stack, i));
 	break;
 
@@ -51792,7 +51793,7 @@ static bool catch_dynamic_unwind_function(s7_scheme *sc, s7_int i, s7_pointer ty
 {
   /* if func has an error, s7_error will call it as it unwinds the stack -- an infinite loop. So, cancel the unwind first */
   if (SHOW_EVAL_OPS) fprintf(stderr, "catcher: %s\n", __func__);
-  stack_element(sc->stack, i) = (s7_pointer)OP_GC_PROTECT;
+  set_stack_op(sc->stack, i, OP_GC_PROTECT);
 
   /* we're in an error or throw, so there is no return value to report, but we need to decrement *debug-spaces* (if in debug)
    *    stack_let is the trace-in let at the point of the dynamic_unwind call
@@ -68340,19 +68341,17 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
       sc->w = sc->unused;
       return(car(x));
 
-      /* in the next set, the main evaluator branches blithely assume no multiple-values,
-       *   and if it happens anyway, we go to a different branch here
-       */
+      /* in the next set, the main evaluator branches blithely assume no multiple-values, and if it happens anyway, we go to a different branch here */
     case OP_ANY_CLOSURE_NP_2:
-      stack_element(sc->stack, top) = (s7_pointer)OP_ANY_CLOSURE_NP_MV;
+      set_stack_op(sc->stack, top, OP_ANY_CLOSURE_NP_MV);
       goto FP_MV;
 
     case OP_ANY_C_NP_2:
-      stack_element(sc->stack, top) = (s7_pointer)OP_ANY_C_NP_MV;
+      set_stack_op(sc->stack, top, OP_ANY_C_NP_MV);
       goto FP_MV;
 
     case OP_ANY_C_NP_1: case OP_ANY_CLOSURE_NP_1:
-      stack_element(sc->stack, top) = (s7_pointer)(stack_op(sc->stack, top) + 1); /* replace with mv version */
+      set_stack_op(sc->stack, top, stack_op(sc->stack, top) + 1); /* replace with mv version */
 
     case OP_ANY_C_NP_MV: case OP_ANY_CLOSURE_NP_MV:
     FP_MV:
@@ -68366,31 +68365,31 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
       return(args);
 
     case OP_SAFE_C_SSP_1:
-      stack_element(sc->stack, top) = (s7_pointer)OP_SAFE_C_SSP_MV;
+      set_stack_op(sc->stack, top, OP_SAFE_C_SSP_MV);
       return(args);
 
     case OP_SAFE_C_SP_1: case OP_SAFE_CONS_SP_1: case OP_SAFE_ADD_SP_1: case OP_SAFE_MULTIPLY_SP_1:
-      stack_element(sc->stack, top) = (s7_pointer)OP_SAFE_C_SP_MV;
+      set_stack_op(sc->stack, top, OP_SAFE_C_SP_MV);
       return(args);
 
     case OP_SAFE_C_PS_1:
-      stack_element(sc->stack, top) = (s7_pointer)OP_SAFE_C_PS_MV;
+      set_stack_op(sc->stack, top, OP_SAFE_C_PS_MV);
       return(args);
 
     case OP_SAFE_C_PC_1:
-      stack_element(sc->stack, top) = (s7_pointer)OP_SAFE_C_PC_MV;
+      set_stack_op(sc->stack, top, OP_SAFE_C_PC_MV);
       return(args);
 
     case OP_SAFE_C_PA_1:
-      stack_element(sc->stack, top) = (s7_pointer)OP_SAFE_C_PA_MV;
+      set_stack_op(sc->stack, top, OP_SAFE_C_PA_MV);
       return(args);
 
     case OP_C_P_1: case OP_SAFE_C_P_1:
-      stack_element(sc->stack, top) = (s7_pointer)OP_C_P_MV;
+      set_stack_op(sc->stack, top, OP_C_P_MV);
       return(args);
 
     case OP_C_AP_1:
-      stack_element(sc->stack, top) = (s7_pointer)OP_C_AP_MV;
+      set_stack_op(sc->stack, top, OP_C_AP_MV);
       /* sc->value = args; */ /* removed 29-Mar-22 -- seems redundant */
       return(args);
 
@@ -68405,15 +68404,15 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 	       set_elist_3(sc, too_many_arguments_string, stack_code(sc->stack, top), sc->value));
 
     case OP_SAFE_C_PP_1:
-      stack_element(sc->stack, top) = (s7_pointer)OP_SAFE_C_PP_3_MV;
+      set_stack_op(sc->stack, top, OP_SAFE_C_PP_3_MV);
       return(args);
 
     case OP_SAFE_C_PP_5:
-      stack_element(sc->stack, top) = (s7_pointer)OP_SAFE_C_PP_6_MV;
+      set_stack_op(sc->stack, top, OP_SAFE_C_PP_6_MV);
       return(args);
 
     case OP_SAFE_C_3P_1: case OP_SAFE_C_3P_2: case OP_SAFE_C_3P_3:
-      stack_element(sc->stack, top) = (s7_pointer)(stack_op(sc->stack, top) +  3);
+      set_stack_op(sc->stack, top, stack_op(sc->stack, top) +  3);
     case OP_SAFE_C_3P_1_MV: case OP_SAFE_C_3P_2_MV: case OP_SAFE_C_3P_3_MV:
       return(cons(sc, sc->unused, copy_proper_list(sc, args)));
 
@@ -68535,9 +68534,23 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 
     case OP_EVAL_MACRO_MV: /* perhaps reader-cond expansion at eval-time (not at run-time) via ((let () reader-cond) ...)? */
       {
-	s7_pointer s_op = stack_element(sc->stack, top - 4);
-	if ((s_op == (s7_pointer)OP_DO_STEP) || (s_op == (s7_pointer)OP_DEACTIVATE_GOTO))
-	  return(sc->F); /* tricky reader-cond as macro in do body returning values... or call-with-exit */
+	opcode_t s_op = stack_op(sc->stack, top - 4);
+	if ((s_op == OP_DO_STEP) || (s_op == OP_DEACTIVATE_GOTO) || (s_op == OP_LET1))
+	  return(args); /* tricky reader-cond as macro in do body returning values... or call-with-exit */
+#if 0
+	/* if eval_args2 here, how to maintain the current evaluation? (to get a correct error message primarily) */
+	if (s_op == OP_EVAL_ARGS2)
+	  {
+	    sc->w = args;
+	    for (x = args; is_not_null(cdr(x)); x = cdr(x))
+	      stack_args(sc->stack, top - 4) = cons(sc, car(x), stack_args(sc->stack, top - 4));
+	    sc->w = sc->unused;
+	    fprintf(stderr, "eval_args2: sc->code: %s, sc->args %s, sc->value: %s, args: %s, last_args: %s\n", 
+		    display(sc->code), display(sc->args), display(sc->value), display(args), display(stack_args(sc->stack, top - 4)));
+	    return(car(x));
+	  }
+#endif
+	/* fall through */
       }
     case OP_EXPANSION:
       /* we get here if a reader-macro (define-expansion) returns multiple values.
@@ -68546,7 +68559,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
        */
       top -= 4;
       if (SHOW_EVAL_OPS) fprintf(stderr, "%s[%d]: stack top: %" ld64 ", op: %s, args: %s\n", __func__, __LINE__, top, op_names[stack_op(sc->stack, top)], display(args));
-      if (stack_element(sc->stack, top) == (s7_pointer)OP_LOAD_RETURN_IF_EOF)
+      if (stack_op(sc->stack, top) == OP_LOAD_RETURN_IF_EOF)
 	{
 	  /* expansion at top-level returned values, eval args in order */
 	  sc->code = args;
@@ -68562,7 +68575,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
       if (stack_op(sc->stack, (top - 4)) == OP_NO_VALUES)
  	error_nr(sc, sc->error_symbol,
 		 set_elist_1(sc, wrap_string(sc, "function-port should not return multiple-values", 47)));
-      stack_element(sc->stack, top) = (s7_pointer)OP_SPLICE_VALUES; /* tricky -- continue from eval_done with the current splice */
+      set_stack_op(sc->stack, top, OP_SPLICE_VALUES); /* tricky -- continue from eval_done with the current splice */
       stack_args(sc->stack, top) = args;
       push_stack_op(sc, OP_EVAL_DONE);
       return(args);
@@ -77720,7 +77733,7 @@ static void op_finish_expansion(s7_scheme *sc)
   if (SHOW_EVAL_OPS) fprintf(stderr, "%s[%d]: op: %s, value: %s\n", __func__, __LINE__, op_names[stack_op(sc->stack, current_stack_top(sc) - 1)], display(sc->value));
   if (sc->value == sc->no_value)
     {
-      if (stack_element(sc->stack, current_stack_top(sc) - 1) != (s7_pointer)OP_LOAD_RETURN_IF_EOF) /* latter op if empty expansion at top-level */
+      if (stack_op(sc->stack, current_stack_top(sc) - 1) != OP_LOAD_RETURN_IF_EOF) /* latter op if empty expansion at top-level */
 	sc->stack_end[-1] = (s7_pointer)OP_READ_NEXT;
     }
   else
@@ -95867,7 +95880,9 @@ s7_scheme *s7_init(void)
                                               (else (apply values (cdr clause))))))))                     \n\
                                 clauses)                                                                  \n\
                               (values))))"); /* this is not redundant */  /* map above ignores trailing cdr if improper */
-  /* was (return `(values ,@(cdr clause))) snd-14, begin snd-13, snd-23 (else (apply values (map quote (cdr clause)))) */
+  /*   was (return `(values ,@(cdr clause))) snd-14, begin snd-13, snd-23 (else (apply values (map quote (cdr clause)))) */
+  /* we need "values" (not "begin") to make sure all entries are plugged in at the source location? but that's not how "cond" works */
+  /*   maybe a better name: reader-cond-values? or reader-values or splicing-cond? */
 
   s7_eval_c_string(sc, "(define make-hook                                                                 \n\
                           (let ((+documentation+ \"(make-hook . pars) returns a new hook (a function) that passes the parameters to its function list.\")) \n\
@@ -96363,10 +96378,5 @@ int main(int argc, char **argv)
  * -------------------------------------------------
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
- * the notion that exp can return nothing is not coherent; (display <exp> obj) as in comment shows we can't
- *   tell whether obj is 1st or 2nd arg at opt time and it might change during exp calls; also local-exp-as-mac
- *   probably can return nothing -- how to ensure only read-time and only exp? reader-cond(etc) could use hidden
- *   (no-values) -- ugly.  Load file can change whether we're local or global.  This is a mess, but we need it.
- * safety for exp->mac?
- *  check-define-macro in lint
+ * safety for exp->mac? check-define-macro in lint
  */

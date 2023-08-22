@@ -95,9 +95,11 @@
 (require case.scm)
 (define match?  ((funclet 'case*) 'case*-match?))
 
+#|
 (when (provided? 'pure-s7)
   (define (set-current-input-port port) (set! (current-input-port) port))
   (define (set-current-output-port port) (set! (current-output-port) port)))
+|#
 
 (when with-mock-data
   (load "mockery.scm")
@@ -114,8 +116,15 @@
 
 ;(define-constant _mv_ (if with-mock-data (mock-vector 1 2) (vector 1 2)))
 ;(define-constant _v_ #(1 2))
-(define-constant _mv_ (if with-mock-data (mock-number 1) 1))
-(define-constant _v_ 1)
+;(define-constant _mv_ (if with-mock-data (mock-number 1) 1))
+;(define-constant _v_ 1)
+
+;(define-constant _mv_ (if with-mock-data (let ((L1 (mock-pair 1 2))) (immutable! (L1 'value))) (immutable! (list 1 2))))
+;(define-constant _v_ (immutable! (list 1 2)))
+
+(define-constant _mv_ (if with-mock-data (let ((L1 (mock-hash-table 'a 2))) (immutable! (L1 'value))) (immutable! (hash-table 'a 2))))
+(define-constant _v_ (immutable! (hash-table 'a 2)))
+
 
 (set! (*s7* 'safety) 1) ; protect copy (in define-expansion evaluation) from circular lists
 
@@ -533,13 +542,13 @@
 	 (lambda ()
 	   (set! _old_port_ (current-output-port))
 	   (set! _port_ (open-output-string))
-	   (set-current-output-port _port_))
+	   (set! (current-output-port) _port_))
 	 (lambda ()
 	   ,@args
 	   (get-output-string _port_ #t))
 	 (lambda ()
 	   (close-output-port _port_)
-	   (set-current-output-port _old_port_)))))
+	   (set! (current-output-port) _old_port_)))))
 
 (define-expansion (_cw_ . args)
   `(call-with-exit (lambda (_x_) (_x_ ,@args))))
@@ -651,13 +660,15 @@
   `(let ((old-port (current-input-port)))
      (dynamic-wind
 	 (lambda ()
-	   (set-current-input-port (open-input-file "/home/bil/cl/all-lg-results")))
+	   (set! (current-input-port) (open-input-file "/home/bil/cl/all-lg-results")))
 	 (lambda ()
 	   ,@args)
 	 (lambda ()
-	   (close-input-port (current-input-port))
-	   (set-current-input-port old-port)))))
+	   (unless (port-closed? (current-input-port))
+	     (close-input-port (current-input-port)))
+	   (set! (current-input-port) old-port)))))
 
+#|
 (define-expansion (_wr1_ . args)
   `(let ((port #f))
      (dynamic-wind
@@ -673,6 +684,7 @@
   `(call-with-output-string
      (lambda (port)
        (write (car (list ,@args)) port))))
+|#
 
 (define-expansion (_wr3_ . args)
   `(format #f "~W" (car (list ,@args))))
@@ -918,7 +930,7 @@
 			  'c-pointer->list 'c-pointer-info 'c-pointer-type 'c-pointer-weak1 'c-pointer-weak2
 			  ;'show-profile
 
-			  ;'make-hook
+			  'make-hook
 			  'let 'let* 'letrec 'letrec*
 			  ;'lambda 'lambda*  ; these cause built-ins to become locals if with-method=#f?
 			  ;'macro 'macro* 'bacro 'bacro* ; -- same as lambda above
@@ -974,7 +986,7 @@
 			  'checked-procedure-source
 			  ;'owlet ;too many uninteresting diffs
 			  ;'gc  ; slower? and can be trouble if called within an expression
-			  ;'reader-cond ;-- cond test clause can involve unbound vars: (null? i) for example
+			  ;'reader-cond ;-- cond test clause can involve unbound vars: (null? i) for example, and the bugs of eval-time reader-cond are too annoying
 			  ;'funclet ; '*function* ; tons of output
 			  ;'random
 			  ;;; 'quote
@@ -1304,7 +1316,7 @@
 		    "(begin (list? (*s7* 'catches)))"
 		    "(begin (integer? (*s7* 'stack-top)))"
 		    ;"(begin (list? (*s7* 'stacktrace-defaults)))"
-		    (reader-cond ((provided? 'debugging) "(when ((*s7* 'heap-size) < (ash 1 21)) (heap-analyze) (heap-scan 47))")) ;(+ 1 (random 47))))"))
+		    ;(reader-cond ((provided? 'debugging) "(when ((*s7* 'heap-size) < (ash 1 21)) (heap-analyze) (heap-scan 47))")) ;(+ 1 (random 47))))"))
 
 		    "(map (lambda (x) (catch #t (lambda () (vector->list x)) (lambda (t i) 'err))) (list #(1 2) 1))"
 		    ;"(symbol-table)" ; (make-list 123 (symbol-table))!
@@ -1413,16 +1425,16 @@
                     (lambda (s) (string-append "(_rd8_ " s ")")))
 	      (list (lambda (s) (string-append "(format #f \"~S\" (list " s "))"))
 		    (lambda (s) (string-append "(object->string (list " s "))")))
-	      (list (lambda (s) (string-append "(_wr1_ " s ")"))
-                    (lambda (s) (string-append "(_wr2_ " s ")")))
+;	      (list (lambda (s) (string-append "(_wr1_ " s ")"))
+;                    (lambda (s) (string-append "(_wr2_ " s ")")))
 	      (list (lambda (s) (string-append "(_wr3_ " s ")"))
                     (lambda (s) (string-append "(_wr4_ " s ")")))
 	      (list (lambda (s) (string-append "(vector " s ")"))
                     (lambda (s) (string-append "(apply vector (list " s "))")))
-	      (list (lambda (s) (string-append "(string " s ")"))
-                    (lambda (s) (string-append "(apply string (list " s "))")))
-	      (list (lambda (s) (string-append "(float-vector " s ")"))
-                    (lambda (s) (string-append "(apply float-vector (list " s "))")))
+	      (list (lambda (s) (string-append "(hash-table 'a " s ")"))
+                    (lambda (s) (string-append "(apply hash-table (list 'a " s "))")))
+	      (list (lambda (s) (string-append "(byte-vector " s ")"))
+                    (lambda (s) (string-append "(apply byte-vector (list " s "))")))
 	      (list (lambda (s) (string-append "(values " s ")"))
                     (lambda (s) (string-append "(apply values (list " s "))")))
 	      (list (lambda (s) (string-append "(vector (values " s "))"))
@@ -1459,10 +1471,10 @@
 		    (lambda (s) (string-append "(let ((one 1)) (cond (one => (lambda (i) " s ")) (else 'oops)))")))
 	      (list (lambda (s) (string-append "(catch #t (lambda () (let-temporarily ((x (list " s "))) x)) (lambda (type info) 'error))"))
 		    (lambda (s) (string-append "(catch #t (lambda () (let ((x (list " s "))) x)) (lambda (type info) 'error))")))
-	      (list (lambda (s) (string-append "(do ((i 0 (+ i 1))) ((= i 100)) " s ")"))
-                    (lambda (s) (string-append "(do ((j 0 (+ j 1))) ((= j 1)) (do ((i 0 (+ i 1))) ((= i 100)) " s "))")))
-	      (list (lambda (s) (string-append "(do ((i 0 (+ i 1))) ((= i 100)) (apply values " s " ()))"))
-                    (lambda (s) (string-append "(do ((j 0 (+ j 1))) ((= j 1)) (do ((i 0 (+ i 1))) ((= i 100)) (apply values " s " ())))")))
+	      (list (lambda (s) (string-append "(do ((i 0 (+ i 1))) ((= i 1)) " s ")"))
+                    (lambda (s) (string-append "(do ((j 0 (+ j 1))) ((= j 1)) (do ((i 0 (+ i 1))) ((= i 1)) " s "))")))
+	      (list (lambda (s) (string-append "(do ((i 0 (+ i 1))) ((= i 1)) (apply values " s " ()))"))
+                    (lambda (s) (string-append "(do ((j 0 (+ j 1))) ((= j 1)) (do ((i 0 (+ i 1))) ((= i 1)) (apply values " s " ())))")))
 	      (list (let ((last-s "#f")) (lambda (s) (let ((res (string-append "(if (car (list " last-s ")) (begin " s "))"))) (set! last-s s) res)))
                     (let ((last-s "#f")) (lambda (s) (let ((res (string-append "(if (not (car (list " last-s "))) #<unspecified> (begin " s "))"))) (set! last-s s) res))))
 
@@ -1651,7 +1663,7 @@
 				       (equivalent? val1 val3)
 				       (equivalent? val1 val4))))
 			 (equal? val1 "0")
-			 (string-position "set! _definee_" str)
+			 ;(string-position "set! _definee_" str)
 			 (and (iterator? _definee_)
 			      (string-position "_definee_" str)))
 	       (let ((errstr (and (or (eq? val1 'error)
@@ -1741,7 +1753,7 @@
 				(eqv? len1 (length val4)))
 			   (and (string? val1)
 				(string->number val1))
-			   (string-position "set! _definee_" str)
+			   ;(string-position "set! _definee_" str)
 			   (and (iterator? _definee_)
 				(string-position "_definee_" str)))
 		 (when (string-position "_definee_" str) (format *stderr* "_definee_: ~W~%" old-definee))
@@ -1775,7 +1787,7 @@
 	     (unless (or (and (eq? val1 val2)
 			      (eq? val1 val3)
 			      (eq? val1 val4))
-			 (string-position "set! _definee_" str)
+			 ;(string-position "set! _definee_" str)
 			 (and (iterator? _definee_)
 			      (string-position "_definee_" str)))
 	       (when (string-position "_definee_" str) (format *stderr* "_definee_: ~W~%" old-definee))
