@@ -94282,8 +94282,16 @@ static void init_features(s7_scheme *sc)
 {
   s7_provide(sc, "s7");
   s7_provide(sc, "s7-" S7_VERSION);
-  s7_provide(sc, "ratio");
+  s7_provide(sc, "ratios"); /* changed from ratio 22-Aug-23; r7rs uses the plural */
 
+#if HAVE_COMPLEX_NUMBERS
+  s7_provide(sc, "complex-numbers");
+#endif
+#if WITH_GMP
+  s7_provide(sc, "gmp");
+#else
+  s7_provide(sc, "ieee-float"); /* why would anyone care? -- this is for r7rs -- why singular this time? */
+#endif
 #if WITH_PURE_S7
   s7_provide(sc, "pure-s7");
 #endif
@@ -94301,9 +94309,6 @@ static void init_features(s7_scheme *sc)
 #endif
 #if S7_DEBUGGING
   s7_provide(sc, "debugging");
-#endif
-#if HAVE_COMPLEX_NUMBERS
-  s7_provide(sc, "complex-numbers");
 #endif
 #if WITH_NUMBER_SEPARATOR
   s7_provide(sc, "number-separator");
@@ -95858,8 +95863,12 @@ s7_scheme *s7_init(void)
 		                               (if (pair? clause)                                         \n\
                                                    (cons (traverse (car clause))                          \n\
 			                                 (case (cdr clause) ((()) '(#f)) (else)))         \n\
-                                                   (error 'read-error \"cond-expand: clause is not a pair, ~S\" clause))) \n\
+                                                   (error 'syntax-error \"cond-expand: clause is not a pair, ~S\" clause))) \n\
 		                             clauses))))");
+  /* cond-expand should expand into an expansion (or inline macro?) so that if there's no else clause, we can add (else (values))
+   *   r7rs says: "If none of the <feature requirement>s evaluate to #t, then if there is an else clause, its <expression>s are included. Otherwise, the cond-expand has no effect."
+   *   The code above returns #<unspecified>, but I read that prose to say that (begin 23 (cond-expand (surreals 1) (foonly 2))) should evaluate to 23.
+   */
 #endif
 
   s7_eval_c_string(sc, "(define-expansion (reader-cond . clauses)                                         \n\
