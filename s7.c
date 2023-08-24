@@ -9460,8 +9460,8 @@ static int32_t position_of(const s7_pointer p, s7_pointer args)
 
 static s7_pointer g_varlet(s7_scheme *sc, s7_pointer args)   /* varlet = with-let + define */
 {
-  #define H_varlet "(varlet let ...) adds its arguments (a let, a cons: symbol . value, or two arguments, the symbol and its value) \
-to the let let, and returns let.  (varlet (curlet) 'a 1) adds 'a to the current environment with the value 1."
+  #define H_varlet "(varlet target-let ...) adds its arguments (a let, a cons: symbol . value, or two arguments, the symbol and its value) \
+to the let target-let, and returns target-let.  (varlet (curlet) 'a 1) adds 'a to the current environment with the value 1."
   #define Q_varlet s7_make_circular_signature(sc, 2, 4, sc->is_let_symbol, \
                      s7_make_signature(sc, 2, sc->is_let_symbol, sc->is_null_symbol), \
                        s7_make_signature(sc, 3, sc->is_pair_symbol, sc->is_symbol_symbol, sc->is_let_symbol), \
