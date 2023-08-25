@@ -1,10 +1,3 @@
-(when (provided? 'pure-s7)
-  (define (vector-fill! vect val . args)
-    (if (vector? vect)
-	(apply fill! vect val args)
-	(error 'wrong-type-arg "vector-fill! argument should be a vector: ~A" str))))
-
-
 (set! (*s7* 'heap-size) (* 12 1024000))
 
 (define (reader)
@@ -51,6 +44,8 @@
       (format *stderr* "~A: ~A~%" (car (counts i)) (cdr (counts i))))))
 
 ;;; ----------------------------------------
+
+(define global-val 0) ; for reader-cond in s7test.scm
 
 (let ()
   (define (walk p counts)
@@ -112,7 +107,7 @@
 	  (display "oops")))
     (for-each (lambda (key&value)
 		(unless (= (car key&value) (cdr key&value))
-		  (display "oops"))) ;(format *stderr* "hash iter ~A~%" key&value)))
+		    (display "oops"))) ;(format *stderr* "hash iter ~A~%" key&value)))
 	      (make-iterator int-hash p))
     (set! int-hash #f)))
 

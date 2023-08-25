@@ -6094,6 +6094,7 @@ so the read-time decision involves normal Scheme evaluation.
 </p>
 
 
+<blockquote>
 <div class="indented">
 <p>In the section about cond-expand, the r7rs spec says "If none of the &lt;feature requirement&gt;s evaluate to #t, 
 then if there is an else clause, its &lt;expression&gt;s are included. Otherwise, the cond-expand has no effect."
@@ -6102,14 +6103,17 @@ and <code>(abs -1 (cond-expand (surreals 1)))</code> should be 1.  Currently s7 
 first, and an error, "abs: too many arguments: (abs -1 #&lt;unspecified&gt;)" for the second. 
 reader-cond behaves in a way that fits the r7rs spec: <code>(begin 23 (reader-cond ((provided? 'surreals) 1)))</code>
 returns 23, and <code>(abs -1 (reader-cond ((provided? 'surreals) 1)))</code> returns 1, but these examples make
-me unhappy.  Maybe reader-cond (and expansions in general) should not magically evaporate in such cases.
+me unhappy.  Even worse: <code>(define (f a (reader-cond ((provided? 'surreals) b))) a)</code> which adds
+the argument "b" if surreals are provided.
+Maybe reader-cond (and expansions in general) should not magically evaporate in such cases.
+</p>
 <!--
 There's no statement in the r7rs spec that cond-expand can only happen at top-level, and in s7 you can load a
 file into any environment, so there's no way to tell if some code is being spliced in at the top-level, even if
 it's at the top level of the file's code, so it doesn't help to try to restrict reader-cond in that way.
 -->
 </div>
-
+</blockquote>
 
 <p>Then there's the case case: a case clause without a result appears to be an error in r7rs.
 But the notation used to indicate that is the same as that used for begin,

@@ -2017,6 +2017,8 @@ static void init_types(void)
   #define T_Pos(P) check_nref(P,                     __func__, __LINE__)                /* not free */
   #define T_Prc(P) check_ref14(P,                    __func__, __LINE__)                /* any procedure (3-arg setters) or #f|#t */
   #define T_Prt(P) check_ref3(P,                     __func__, __LINE__)                /* input|output_port */
+  #define T_Pri(P) check_ref3i(P,                    __func__, __LINE__)                /* input_port or #f */
+  #define T_Pro(P) check_ref3o(P,                    __func__, __LINE__)                /* output_port or #f */
   #define T_Ptr(P) check_ref(P, T_C_POINTER,         __func__, __LINE__, NULL, NULL)
   #define T_Ran(P) check_ref(P, T_RANDOM_STATE,      __func__, __LINE__, NULL, NULL)
   #define T_Rel(P) check_ref(P, T_REAL,              __func__, __LINE__, NULL, NULL)
@@ -2074,6 +2076,8 @@ static void init_types(void)
   #define T_Pos(P)  P
   #define T_Prc(P)  P
   #define T_Prt(P)  P
+  #define T_Pri(P)  P
+  #define T_Pro(P)  P
   #define T_Ptr(P)  P
   #define T_Ran(P)  P
   #define T_Rel(P)  P
@@ -2279,9 +2283,9 @@ static void init_types(void)
  */
 
 #define T_LOADER_PORT                  T_LOCATION
-#define is_loader_port(p)              has_type_bit(T_Prt(p), T_LOADER_PORT)
-#define set_loader_port(p)             set_type_bit(T_Prt(p), T_LOADER_PORT)
-#define clear_loader_port(p)           clear_type_bit(T_Prt(p), T_LOADER_PORT)
+#define is_loader_port(p)              has_type_bit(T_Pri(p), T_LOADER_PORT)
+#define set_loader_port(p)             set_type_bit(T_Pri(p), T_LOADER_PORT)
+#define clear_loader_port(p)           clear_type_bit(T_Pri(p), T_LOADER_PORT)
 /* this bit marks a port used by the loader so that random load-time reads do not screw up the load process */
 
 #define T_HAS_SETTER                   T_LOCATION
@@ -3402,10 +3406,10 @@ static s7_pointer slot_expression(s7_pointer p)    \
 #define port_string_or_function(p)     port_port(p)->orig_str
 #define port_set_string_or_function(p, S) port_port(p)->orig_str = S
 
-#define current_input_port(Sc)         Sc->input_port
-#define set_current_input_port(Sc, P)  Sc->input_port = P
-#define current_output_port(Sc)        Sc->output_port
-#define set_current_output_port(Sc, P) Sc->output_port = P
+#define current_input_port(Sc)         T_Pri(Sc->input_port)
+#define set_current_input_port(Sc, P)  Sc->input_port = T_Pri(P)
+#define current_output_port(Sc)        T_Pro(Sc->output_port)
+#define set_current_output_port(Sc, P) Sc->output_port = T_Pro(P)
 
 #define port_read_character(p)         port_port(p)->pf->read_character
 #define port_read_line(p)              port_port(p)->pf->read_line
@@ -5168,6 +5172,22 @@ static s7_pointer check_ref3(s7_pointer p, const char *func, int32_t line)
   uint8_t typ = unchecked_type(p);
   if ((typ != T_INPUT_PORT) && (typ != T_OUTPUT_PORT) && (typ != T_FREE))
     complain("%s%s[%d]: not a port, but %s (%s)%s\n", p, func, line, typ);
+  return(p);
+}
+
+static s7_pointer check_ref3i(s7_pointer p, const char *func, int32_t line)
+{
+  uint8_t typ = unchecked_type(p);
+  if ((typ != T_INPUT_PORT) && (p != cur_sc->F))
+    complain("%s%s[%d]: not an input port, but %s (%s)%s\n", p, func, line, typ);
+  return(p);
+}
+
+static s7_pointer check_ref3o(s7_pointer p, const char *func, int32_t line)
+{
+  uint8_t typ = unchecked_type(p);
+  if ((typ != T_OUTPUT_PORT) && (p != cur_sc->F))
+    complain("%s%s[%d]: not an output port, but %s (%s)%s\n", p, func, line, typ);
   return(p);
 }
 
@@ -12006,7 +12026,7 @@ static void call_with_exit(s7_scheme *sc)
       case OP_GET_OUTPUT_STRING:
       case OP_UNWIND_OUTPUT:
 	{
-	  s7_pointer x = T_Prt(stack_code(sc->stack, i));  /* "code" = port that we opened */
+	  s7_pointer x = T_Pro(stack_code(sc->stack, i));  /* "code" = port that we opened */
 	  s7_close_output_port(sc, x);
 	  x = stack_args(sc->stack, i);                    /* "args" = port that we shadowed, if not #<unused> */
 	  if (x != sc->unused)
@@ -12015,9 +12035,9 @@ static void call_with_exit(s7_scheme *sc)
 	break;
 
       case OP_UNWIND_INPUT:
-	s7_close_input_port(sc, stack_code(sc->stack, i));       /* "code" = port that we opened */
+	s7_close_input_port(sc, T_Pri(stack_code(sc->stack, i))); /* "code" = port that we opened */
 	if (stack_args(sc->stack, i) != sc->unused)
-	  set_current_input_port(sc, stack_args(sc->stack, i));  /* "args" = port that we shadowed */
+	  set_current_input_port(sc, stack_args(sc->stack, i));   /* "args" = port that we shadowed */
 	break;
 
       case OP_EVAL_DONE: /* goto called in a method -- put off the inner eval return(s) until we clean up the stack */
@@ -51661,7 +51681,7 @@ static bool catch_dynamic_wind_function(s7_scheme *sc, s7_int i, s7_pointer type
 
 static bool catch_out_function(s7_scheme *sc, s7_int i, s7_pointer type, s7_pointer info, bool *reset_hook)
 {
-  s7_pointer x = T_Prt(stack_code(sc->stack, i));     /* "code" = port that we opened */
+  s7_pointer x = T_Pro(stack_code(sc->stack, i));     /* "code" = port that we opened */
   if (SHOW_EVAL_OPS) fprintf(stderr, "catcher: %s\n", __func__);
   s7_close_output_port(sc, x);
   x = stack_args(sc->stack, i);                       /* "args" = port that we shadowed, if not #<unused> */
@@ -51673,7 +51693,7 @@ static bool catch_out_function(s7_scheme *sc, s7_int i, s7_pointer type, s7_poin
 static bool catch_in_function(s7_scheme *sc, s7_int i, s7_pointer type, s7_pointer info, bool *reset_hook)
 {
   if (SHOW_EVAL_OPS) fprintf(stderr, "catcher: %s\n", __func__);
-  s7_close_input_port(sc, stack_code(sc->stack, i));            /* "code" = port that we opened */
+  s7_close_input_port(sc, T_Pri(stack_code(sc->stack, i)));     /* "code" = port that we opened */
   if (stack_args(sc->stack, i) != sc->unused)
     set_current_input_port(sc, stack_args(sc->stack, i));       /* "args" = port that we shadowed */
   return(false);
@@ -68537,16 +68557,20 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 	opcode_t s_op = stack_op(sc->stack, top - 4);
 	if ((s_op == OP_DO_STEP) || (s_op == OP_DEACTIVATE_GOTO) || (s_op == OP_LET1))
 	  return(args); /* tricky reader-cond as macro in do body returning values... or call-with-exit */
-#if 0
-	/* if eval_args2 here, how to maintain the current evaluation? (to get a correct error message primarily) */
+#if 1
+	/* if eval_args2 here, how to maintain the current evaluation?
+	 *   (+ (reader-cond (#t 1 (values 2 3) 4))) -> 10
+         *   (+ (((vector reader-cond) 0) (#t 1 (values 2 3) 4))) -> 5 [10 if this block of code is included, s7test is ok with this code]
+	 */
 	if (s_op == OP_EVAL_ARGS2)
 	  {
 	    sc->w = args;
 	    for (x = args; is_not_null(cdr(x)); x = cdr(x))
 	      stack_args(sc->stack, top - 4) = cons(sc, car(x), stack_args(sc->stack, top - 4));
 	    sc->w = sc->unused;
-	    fprintf(stderr, "eval_args2: sc->code: %s, sc->args %s, sc->value: %s, args: %s, last_args: %s\n", 
-		    display(sc->code), display(sc->args), display(sc->value), display(args), display(stack_args(sc->stack, top - 4)));
+	    /* fprintf(stderr, "eval_args2: sc->code: %s, sc->args %s, sc->value: %s, args: %s, last_args: %s\n", 
+	     *         display(sc->code), display(sc->args), display(sc->value), display(args), display(stack_args(sc->stack, top - 4)));
+	     */
 	    return(car(x));
 	  }
 #endif

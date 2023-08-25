@@ -88,8 +88,8 @@
   (with-let (rootlet) ; force this to be top-level even in repl
     (define-expansion (lint-format str caller . args)
       `(begin
-	 (format outport "lint.scm line ~A~%" ,(port-line-number))
-	 (lint-format-1 ,str ,caller ,@args)))))
+	 (format (*lint* 'outport) "lint.scm line ~A~%" ,(port-line-number))
+	 ((*lint* 'lint-format-1) ,str ,caller ,@args)))))
 
 (if (and (provided? 'debugging) need-lint-line-numbers)
     (with-let (rootlet)
@@ -97,10 +97,10 @@
 	`(begin
 	   (format ,port "lint.scm line ~A~%" ,(port-line-number))
 	   (format ,port ,@args))))
+
     (with-let (rootlet)
       (define-expansion (out-format port . args)
 	`(format ,port ,@args))))
-
 
 (define var-name car)
 (define var-member assq)
