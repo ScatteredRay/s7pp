@@ -1423,6 +1423,8 @@ struct s7_scheme {
   int32_t *tc_rec_calls;
   int32_t last_gc_line;
   bool printing_gc_info;
+
+  opcode_t last_s_op;
 #endif
 };
 
@@ -2016,19 +2018,19 @@ static void init_types(void)
   #define T_Pcs(P) check_ref2(P, T_PAIR, T_CLOSURE_STAR, __func__, __LINE__, NULL, NULL)
   #define T_Pos(P) check_nref(P,                     __func__, __LINE__)                /* not free */
   #define T_Prc(P) check_ref14(P,                    __func__, __LINE__)                /* any procedure (3-arg setters) or #f|#t */
-  #define T_Prt(P) check_ref3(P,                     __func__, __LINE__)                /* input|output_port */
   #define T_Pri(P) check_ref3i(P,                    __func__, __LINE__)                /* input_port or #f */
   #define T_Pro(P) check_ref3o(P,                    __func__, __LINE__)                /* output_port or #f */
+  #define T_Prt(P) check_ref3(P,                     __func__, __LINE__)                /* input|output_port */
   #define T_Ptr(P) check_ref(P, T_C_POINTER,         __func__, __LINE__, NULL, NULL)
   #define T_Ran(P) check_ref(P, T_RANDOM_STATE,      __func__, __LINE__, NULL, NULL)
   #define T_Rel(P) check_ref(P, T_REAL,              __func__, __LINE__, NULL, NULL)
-  #define T_SVec(P) check_ref13(P,                   __func__, __LINE__)                /* subvector */
   #define T_Seq(P) check_ref8(P,                     __func__, __LINE__)                /* any sequence or structure */
   #define T_Sld(P) check_ref2(P, T_SLOT, T_UNDEFINED,__func__, __LINE__, NULL, NULL)
   #define T_Sln(P) check_ref12(P,                    __func__, __LINE__)                /* slot or nil */
   #define T_Slt(P) check_ref(P, T_SLOT,              __func__, __LINE__, NULL, NULL)
   #define T_Stk(P) check_ref(P, T_STACK,             __func__, __LINE__, NULL, NULL)
   #define T_Str(P) check_ref(P, T_STRING,            __func__, __LINE__, "sweep", NULL)
+  #define T_SVec(P) check_ref13(P,                   __func__, __LINE__)                /* subvector */
   #define T_Sym(P) check_ref(P, T_SYMBOL,            __func__, __LINE__, "sweep", "remove_gensym_from_symbol_table")
   #define T_Syn(P) check_ref(P, T_SYNTAX,            __func__, __LINE__, NULL, NULL)
   #define T_Undf(P) check_ref(P, T_UNDEFINED,        __func__, __LINE__, "sweep", NULL)
@@ -2075,19 +2077,19 @@ static void init_types(void)
   #define T_Pcs(P)  P
   #define T_Pos(P)  P
   #define T_Prc(P)  P
-  #define T_Prt(P)  P
   #define T_Pri(P)  P
   #define T_Pro(P)  P
+  #define T_Prt(P)  P
   #define T_Ptr(P)  P
   #define T_Ran(P)  P
   #define T_Rel(P)  P
-  #define T_SVec(P) P
   #define T_Seq(P)  P
   #define T_Sld(P)  P
   #define T_Sln(P)  P
   #define T_Slt(P)  P
   #define T_Stk(P)  P
   #define T_Str(P)  P
+  #define T_SVec(P) P
   #define T_Sym(P)  P
   #define T_Syn(P)  P
   #define T_Undf(P) P
@@ -3410,6 +3412,8 @@ static s7_pointer slot_expression(s7_pointer p)    \
 #define set_current_input_port(Sc, P)  Sc->input_port = T_Pri(P)
 #define current_output_port(Sc)        T_Pro(Sc->output_port)
 #define set_current_output_port(Sc, P) Sc->output_port = T_Pro(P)
+#define current_error_port(Sc)         T_Pro(Sc->error_port)
+#define set_current_error_port(Sc, P)  Sc->error_port = T_Pro(P)
 
 #define port_read_character(p)         port_port(p)->pf->read_character
 #define port_read_line(p)              port_port(p)->pf->read_line
@@ -7371,7 +7375,7 @@ static int64_t gc(s7_scheme *sc)
   set_mark(current_input_port(sc));
   mark_input_port_stack(sc);
   set_mark(current_output_port(sc));
-  set_mark(sc->error_port);
+  set_mark(current_error_port(sc));
   gc_mark(sc->stacktrace_defaults);
   gc_mark(sc->autoload_table);
   gc_mark(sc->default_random_state);
@@ -28202,12 +28206,12 @@ static s7_pointer g_set_current_output_port(s7_scheme *sc, s7_pointer args)
 
 
 /* -------------------------------- current-error-port -------------------------------- */
-s7_pointer s7_current_error_port(s7_scheme *sc) {return(sc->error_port);}
+s7_pointer s7_current_error_port(s7_scheme *sc) {return(current_error_port(sc));}
 
 s7_pointer s7_set_current_error_port(s7_scheme *sc, s7_pointer port)
 {
-  s7_pointer old_port = sc->error_port;
-  sc->error_port = port;
+  s7_pointer old_port = current_error_port(sc);
+  set_current_error_port(sc, port);
   return(old_port);
 }
 
@@ -28215,7 +28219,7 @@ static s7_pointer g_current_error_port(s7_scheme *sc, s7_pointer unused_args)
 {
   #define H_current_error_port "(current-error-port) returns the current error port"
   #define Q_current_error_port s7_make_signature(sc, 1, s7_make_signature(sc, 2, sc->is_output_port_symbol, sc->not_symbol))
-  return(sc->error_port);
+  return(current_error_port(sc));
 }
 
 static s7_pointer g_set_current_error_port(s7_scheme *sc, s7_pointer args)
@@ -28225,10 +28229,10 @@ static s7_pointer g_set_current_error_port(s7_scheme *sc, s7_pointer args)
                                      s7_make_signature(sc, 2, sc->is_output_port_symbol, sc->not_symbol), \
                                      s7_make_signature(sc, 2, sc->is_output_port_symbol, sc->not_symbol))
   s7_pointer port = car(args);
-  s7_pointer old_port = sc->error_port;
+  s7_pointer old_port = current_error_port(sc);
   if (((is_output_port(port)) &&
        (!port_is_closed(port))) || (port == sc->F))
-    sc->error_port = port;
+    set_current_error_port(sc, port);
   else
     {
       check_method(sc, port, sc->set_current_error_port_symbol, args);
@@ -29404,7 +29408,7 @@ static void init_standard_ports(s7_scheme *sc)
 
   set_current_input_port(sc, sc->standard_input);
   set_current_output_port(sc, sc->standard_output);
-  sc->error_port = sc->standard_error;
+  set_current_error_port(sc, sc->standard_error);
   sc->current_file = NULL;
   sc->current_line = -1;
 }
@@ -36438,7 +36442,7 @@ static s7_pointer g_format_just_control_string(s7_scheme *sc, s7_pointer args)
   if (pt == sc->T)
     {
       if ((current_output_port(sc) != sc->F) && (string_length(str) != 0))
-	port_write_string(sc->output_port)(sc, string_value(str), string_length(str), current_output_port(sc));
+	port_write_string(current_output_port(sc))(sc, string_value(str), string_length(str), current_output_port(sc));
       return(str);
     }
   if ((!is_output_port(pt)) ||
@@ -43294,6 +43298,7 @@ static hash_entry_t *hash_symbol(s7_scheme *sc, s7_pointer table, s7_pointer key
 
 /* ---------------- hash numbers ---------------- */
 static s7_int hash_float_location(s7_double x) {return(((is_NaN(x)) || (is_inf(x)) || (fabs(x) > DOUBLE_TO_INT64_LIMIT)) ? 0 : (s7_int)floor(fabs(x)));}
+  /* isnormal here in place of is_NaN and is_inf is slower */
 
 static s7_int hash_map_int(s7_scheme *sc, s7_pointer table, s7_pointer key)     {return(s7_int_abs(integer(key)));}
 static s7_int hash_map_real(s7_scheme *sc, s7_pointer table, s7_pointer key)    {return(hash_float_location(real(key)));}
@@ -51890,7 +51895,7 @@ static __attribute__ ((format (printf, 3, 4))) void s7_warn(s7_scheme *sc, s7_in
 static void s7_warn(s7_scheme *sc, s7_int len, const char *ctrl, ...) /* len = max size of output string (for vsnprintf) */
 #endif
 {
-  if ((sc->error_port != sc->F) && (!sc->muffle_warnings))
+  if ((current_error_port(sc) != sc->F) && (!sc->muffle_warnings))
     {
       int32_t bytes;
       va_list ap;
@@ -51900,10 +51905,10 @@ static void s7_warn(s7_scheme *sc, s7_int len, const char *ctrl, ...) /* len = m
       va_start(ap, ctrl);
       bytes = vsnprintf(str, len, ctrl, ap);
       va_end(ap);
-      if (port_is_closed(sc->error_port))
-	sc->error_port = sc->standard_error;
-      if ((bytes > 0) && (sc->error_port != sc->F))
-	port_write_string(sc->error_port)(sc, str, bytes, sc->error_port);
+      if (port_is_closed(current_error_port(sc)))
+	set_current_error_port(sc, sc->standard_error);
+      if ((bytes > 0) && (current_error_port(sc) != sc->F))
+	port_write_string(current_error_port(sc))(sc, str, bytes, current_error_port(sc));
       liberate(sc, b);
     }
 }
@@ -51929,8 +51934,8 @@ static void fill_error_location(s7_scheme *sc)
 
 static void format_to_error_port(s7_scheme *sc, const char *str, s7_pointer args, s7_int len)
 {
-  if (sc->error_port != sc->F)
-    format_to_port_1(sc, sc->error_port, str, args, NULL, false, true /* is_columnizing(str) */, len, NULL);
+  if (current_error_port(sc) != sc->F)
+    format_to_port_1(sc, current_error_port(sc), str, args, NULL, false, true /* is_columnizing(str) */, len, NULL);
   /* is_columnizing on every call is much slower than ignoring the issue */
 }
 
@@ -52042,9 +52047,9 @@ static noreturn void error_nr(s7_scheme *sc, s7_pointer type, s7_pointer info)
       s7_int op = sc->print_length;
       if (op < 32) sc->print_length = 32;
 
-      if ((!is_output_port(sc->error_port)) || /* error-port can be #f */
-	  (port_is_closed(sc->error_port)))
-	sc->error_port = sc->standard_error;
+      if ((!is_output_port(current_error_port(sc))) || /* error-port can be #f */
+	  (port_is_closed(current_error_port(sc))))
+	set_current_error_port(sc, sc->standard_error);
       /* if info is not a list, send object->string to current error port,
        *   else assume car(info) is a format control string, and cdr(info) are its args
        * if at all possible, get some indication of where we are!
@@ -52073,7 +52078,7 @@ static noreturn void error_nr(s7_scheme *sc, s7_pointer type, s7_pointer info)
       /* now display location at end */
       if (is_string(slot_value(sc->error_file)))
 	{
-	  s7_newline(sc, sc->error_port);
+	  s7_newline(sc, current_error_port(sc));
 	  format_to_error_port(sc, ";    ~A\n", set_plist_1(sc, object_to_truncated_string(sc, cur_code, 40)), 8);
 	  format_to_error_port(sc, ";    ~A, line ~D, position: ~D\n",
 			 set_plist_3(sc, slot_value(sc->error_file), slot_value(sc->error_line), slot_value(sc->error_position)), 31);
@@ -52124,22 +52129,22 @@ static noreturn void error_nr(s7_scheme *sc, s7_pointer type, s7_pointer info)
 					       s7_make_string_wrapper(sc, sc->s7_call_file),
 					       wrap_integer(sc, sc->s7_call_line)), 13);
 		}}
-	  s7_newline(sc, sc->error_port);
+	  s7_newline(sc, current_error_port(sc));
 	}
       /* look for __func__ in the error environment etc */
-      if (sc->error_port != sc->F)
+      if (current_error_port(sc) != sc->F)
 	{
 	  s7_pointer errp = s7_stacktrace(sc);
 	  if (string_length(errp) > 0)
 	    {
-	      port_write_string(sc->error_port)(sc, string_value(errp), string_length(errp), sc->error_port);
-	      port_write_character(sc->error_port)(sc, '\n', sc->error_port);
+	      port_write_string(current_error_port(sc))(sc, string_value(errp), string_length(errp), current_error_port(sc));
+	      port_write_character(current_error_port(sc))(sc, '\n', current_error_port(sc));
 	    }}
       else
 	if (is_pair(slot_value(sc->error_code)))
 	  {
 	    format_to_error_port(sc, ";    ~S", set_plist_1(sc, slot_value(sc->error_code)), 7);
-	    s7_newline(sc, sc->error_port);
+	    s7_newline(sc, current_error_port(sc));
 	  }
       /* if (is_continuation(type))
        *   go into repl here with access to continuation?  Or expect *error-handler* to deal with it?
@@ -52158,7 +52163,7 @@ s7_pointer s7_error(s7_scheme *sc, s7_pointer type, s7_pointer info) /* s7.h bac
 
 static noreturn void read_error_1_nr(s7_scheme *sc, const char *errmsg, bool string_error)
 {
-  /* reader errors happen before the evaluator gets involved, so forms such as:
+  /* read errors happen before the evaluator gets involved, so forms such as:
    *   (catch #t (lambda () (car '( . ))) (lambda arg 'error))
    * do not catch the error if we simply signal an error when we encounter it.
    */
@@ -68555,9 +68560,16 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
     case OP_EVAL_MACRO_MV: /* perhaps reader-cond expansion at eval-time (not at run-time) via ((let () reader-cond) ...)? */
       {
 	opcode_t s_op = stack_op(sc->stack, top - 4);
+	if (S7_DEBUGGING) 
+	  {
+	    sc->last_s_op = s_op; 
+	    if (SHOW_EVAL_OPS) 
+	      fprintf(stderr, "eval_macro_mv splice %s with %s, code: %s, args: %s, value: %s\n", 
+		      display(args), op_names[s_op], display(sc->code), display(sc->args), display(sc->value));
+	  }
 	if ((s_op == OP_DO_STEP) || (s_op == OP_DEACTIVATE_GOTO) || (s_op == OP_LET1))
 	  return(args); /* tricky reader-cond as macro in do body returning values... or call-with-exit */
-#if 1
+
 	/* if eval_args2 here, how to maintain the current evaluation?
 	 *   (+ (reader-cond (#t 1 (values 2 3) 4))) -> 10
          *   (+ (((vector reader-cond) 0) (#t 1 (values 2 3) 4))) -> 5 [10 if this block of code is included, s7test is ok with this code]
@@ -68568,21 +68580,28 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 	    for (x = args; is_not_null(cdr(x)); x = cdr(x))
 	      stack_args(sc->stack, top - 4) = cons(sc, car(x), stack_args(sc->stack, top - 4));
 	    sc->w = sc->unused;
-	    /* fprintf(stderr, "eval_args2: sc->code: %s, sc->args %s, sc->value: %s, args: %s, last_args: %s\n", 
-	     *         display(sc->code), display(sc->args), display(sc->value), display(args), display(stack_args(sc->stack, top - 4)));
-	     */
+	    if (SHOW_EVAL_OPS)
+	      fprintf(stderr, "eval_macro splice %s with %s, code: %s, args: %s, value: %s -> %s %s\n", 
+		      display(args), op_names[s_op], display(sc->code), display(sc->args), display(sc->value), display(stack_args(sc->stack, top - 4)), display(car(x)));
 	    return(car(x));
 	  }
-#endif
 	/* fall through */
+	/* safe_c_p_1 also happens and currently drops trailing arg: ((let () reader-cond) (#t (values 1 2) (iv)))
+	 *   op_eval_macro (not op_expansion) is called and can be included below (except it segfaults in s7test...), but trailing arg
+	 *   is still dropped because optimizer sees (reader-cond ...) -- one arg!
+	 *   (define iv (int-vector 1 2)) (define (func) (eof-object? ((let () reader-cond) (#t (values 1 2) (iv))))) (func)
+	 */
       }
+
     case OP_EXPANSION:
       /* we get here if a reader-macro (define-expansion) returns multiple values.
        *    these need to be read in order into the current reader lists (we'll assume OP_READ_LIST is next in the stack.
        *    and that it will be expecting the next arg entry in sc->value; but it could be OP_LOAD_RETURN_IF_EOF if the expansion is at top level).
        */
       top -= 4;
-      if (SHOW_EVAL_OPS) fprintf(stderr, "%s[%d]: stack top: %" ld64 ", op: %s, args: %s\n", __func__, __LINE__, top, op_names[stack_op(sc->stack, top)], display(args));
+      if (SHOW_EVAL_OPS)
+	fprintf(stderr, "%s[%d]: %s stack top: %" ld64 ", op: %s, args: %s\n", __func__, __LINE__, 
+		op_names[stack_op(sc->stack, top + 4)], top, op_names[stack_op(sc->stack, top)], display(args));
       if (stack_op(sc->stack, top) == OP_LOAD_RETURN_IF_EOF)
 	{
 	  /* expansion at top-level returned values, eval args in order */
@@ -68605,7 +68624,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
       return(args);
 
     default:
-      /* fprintf(stderr, "%s[%d]: splice on: %s\n", __func__, __LINE__, op_names[stack_op(sc->stack, top)]); */
+      /* if (SHOW_EVAL_OPS) fprintf(stderr, "  %s[%d]: splice punts: %s\n", __func__, __LINE__, op_names[stack_op(sc->stack, top)]); */
       break;
     }
 
@@ -93501,7 +93520,6 @@ static const char *decoded_name(s7_scheme *sc, const s7_pointer p)
   if (p == sc->rootlet)             return("rootlet");
   if (p == sc->s7_starlet)          return("*s7*"); /* this is the function */
   if (p == sc->unlet)               return("unlet");
-  if (p == sc->error_port)          return("error_port");
   if (p == sc->owlet)               return("owlet");
   if (p == sc->standard_input)      return("*stdin*");
   if (p == sc->standard_output)     return("*stdout*");
@@ -93509,6 +93527,7 @@ static const char *decoded_name(s7_scheme *sc, const s7_pointer p)
   if (p == sc->else_symbol)         return("else_symbol");
   if (p == current_input_port(sc))  return("current-input-port");
   if (p == current_output_port(sc)) return("current-output-port");
+  if (p == current_error_port(sc))  return("current-error_port");
   return((p == sc->stack) ? "stack" : NULL);
 }
 
@@ -96356,60 +96375,61 @@ int main(int argc, char **argv)
 /* ---------------------------------------------------
  *            20.9   21.0   22.0   23.0   23.6   23.7
  * ---------------------------------------------------
- * tpeak      115    114    108    105    102
- * tref       691    687    463    459    459
- * index     1026   1016    973    967    969
- * tmock     1177   1165   1057   1019   1027
- * tvect     2519   2464   1772   1669   1647
- * timp      2637   2575   1930   1694   1716
- * texit     ----   ----   1778   1741   1765
- * s7test    1873   1831   1818   1829   1846
- * thook     ----   ----   2590   2030   2046
- * tauto     ----   ----   2562   2048   2063
- * lt        2187   2172   2150   2185   2199
- * dup       3805   3788   2492   2239   2234
- * tcopy     8035   5546   2539   2375   2380
- * tread     2440   2421   2419   2408   2417
- * fbench    2688   2583   2460   2430   2458
- * trclo     2735   2574   2454   2445   2461
- * titer     2865   2842   2641   2509   2465
- * tload     ----   ----   3046   2404   2531
- * tmat      3065   3042   2524   2578   2828
- * tb        2735   2681   2612   2604   2630
- * tsort     3105   3104   2856   2804   2828
- * tobj      4016   3970   3828   3577   3576
- * teq       4068   4045   3536   3486   3588
- * tio       3816   3752   3683   3620   3616
- * tmac      3950   3873   3033   3677   3688
- * tclo      4787   4735   4390   4384   4448
- * tcase     4960   4793   4439   4430   4448
- * tlet      7775   5640   4450   4427   4452
- * tfft      7820   7729   4755   4476   4511
- * tstar     6139   5923   5519   4449   4554
- * tmap      8869   8774   4489   4541   4618
- * tshoot    5525   5447   5183   5055   5048
- * tstr      6880   6342   5488   5162   5194
- * tform     5357   5348   5307   5316   5402
- * tnum      6348   6013   5433   5396   5410
- * tlamb     6423   6273   5720   5560   5620
- * tmisc     8869   7612   6435   6076   6222
- * tgsl      8485   7802   6373   6282   6229
- * tlist     7896   7546   6558   6240   6284
- * tset      ----   ----   ----   6260   6290
- * tari      13.0   12.7   6827   6543   6490
- * trec      6936   6922   6521   6588   6581
- * tleft     10.4   10.2   7657   7479   7627
- * tgc       11.9   11.1   8177   7857   7958
- * thash     11.8   11.7   9734   9479   9483
- * cb        11.2   11.0   9658   9564   9631
- * tgen      11.2   11.4   12.0   12.1   12.1
- * tall      15.6   15.6   15.6   15.6   15.1
- * calls     36.7   37.5   37.0   37.5   37.1
- * sg        ----   ----   55.9   55.8   55.3
- * lg        ----   ----  105.2  106.4  107.2
- * tbig     177.4  175.8  156.5  148.1  145.8
+ * tpeak      115    114    108    105    102    102
+ * tref       691    687    463    459    459    459
+ * index     1026   1016    973    967    969    970
+ * tmock     1177   1165   1057   1019   1027   1027
+ * tvect     2519   2464   1772   1669   1647   1647
+ * timp      2637   2575   1930   1694   1716   1709
+ * texit     ----   ----   1778   1741   1765   1765
+ * s7test    1873   1831   1818   1829   1846   1859
+ * thook     ----   ----   2590   2030   2046   2044
+ * tauto     ----   ----   2562   2048   2063   2046
+ * lt        2187   2172   2150   2185   2199   2200
+ * dup       3805   3788   2492   2239   2234   2234
+ * tcopy     8035   5546   2539   2375   2380   2381
+ * tread     2440   2421   2419   2408   2417   2401
+ * fbench    2688   2583   2460   2430   2458   2458
+ * trclo     2735   2574   2454   2445   2461   2461
+ * titer     2865   2842   2641   2509   2465   2465
+ * tload     ----   ----   3046   2404   2531   2503
+ * tmat      3065   3042   2524   2578   2586   2586
+ * tb        2735   2681   2612   2604   2630   2631
+ * tsort     3105   3104   2856   2804   2828   2828
+ * tobj      4016   3970   3828   3577   3576   3511
+ * teq       4068   4045   3536   3486   3588   3589
+ * tio       3816   3752   3683   3620   3616   3604
+ * tmac      3950   3873   3033   3677   3688   3688
+ * tclo      4787   4735   4390   4384   4448   4450
+ * tcase     4960   4793   4439   4430   4448   4451
+ * tlet      7775   5640   4450   4427   4452   4452
+ * tfft      7820   7729   4755   4476   4511   4512
+ * tstar     6139   5923   5519   4449   4554   4554
+ * tmap      8869   8774   4489   4541   4618   4618
+ * tshoot    5525   5447   5183   5055   5048   5046
+ * tform     5357   5348   5307   5316   5402   5169
+ * tstr      6880   6342   5488   5162   5194   5199
+ * tnum      6348   6013   5433   5396   5410   5415
+ * tlamb     6423   6273   5720   5560   5620   5622
+ * tmisc     8869   7612   6435   6076   6222   6223
+ * tgsl      8485   7802   6373   6282   6229   6230
+ * tlist     7896   7546   6558   6240   6284   6280
+ * tset      ----   ----   ----   6260   6290   6306
+ * tari      13.0   12.7   6827   6543   6490   6490
+ * trec      6936   6922   6521   6588   6581   6581
+ * tleft     10.4   10.2   7657   7479   7627   7611
+ * tgc       11.9   11.1   8177   7857   7958   7958
+ * thash     11.8   11.7   9734   9479   9483   9536
+ * cb        11.2   11.0   9658   9564   9631   9634
+ * tgen      11.2   11.4   12.0   12.1   12.1   12.1
+ * tall      15.6   15.6   15.6   15.6   15.1   15.1
+ * calls     36.7   37.5   37.0   37.5   37.1   37.1
+ * sg        ----   ----   55.9   55.8   55.3   55.3
+ * lg        ----   ----  105.2  106.4  107.2  107.2
+ * tbig     177.4  175.8  156.5  148.1  145.8  145.9
  * -------------------------------------------------
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * safety for exp->mac? check-define-macro in lint
+ * *read-error-hook* is only triggered in #... -- it is reader-error?
  */

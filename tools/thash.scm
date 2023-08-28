@@ -201,6 +201,12 @@
 	  (display "oops")))
     (set! any-hash #f)))
 
+(when (provided? 'pure-s7)
+  (define (vector-fill! vect val . args)
+    (if (vector? vect)
+	(apply fill! vect val args)
+	(error 'wrong-type-arg "vector-fill! argument should be a vector: ~A" str))))
+
 (define (test9 size)
   (let ((any-hash1 (make-hash-table size eq?)))
     (if (= size 1)

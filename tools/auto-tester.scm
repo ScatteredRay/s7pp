@@ -651,6 +651,7 @@
        (object->string (car (list ,@args)))
      read-line))
 
+#|
 (define-expansion (_rd7_ . args)
   `(with-input-from-file "/home/bil/cl/all-lg-results"
      (lambda ()
@@ -667,7 +668,7 @@
 	   (unless (port-closed? (current-input-port))
 	     (close-input-port (current-input-port)))
 	   (set! (current-input-port) old-port)))))
-
+|#
 #|
 (define-expansion (_wr1_ . args)
   `(let ((port #f))
@@ -966,7 +967,7 @@
 			  'close-input-port
 			  ;'current-input-port ;-- too many (read...)
 			  ;'set-current-input-port ; -- collides with rd8 etc
-                          ;'set-cdr!
+                          'set-cdr!
                           ;'unlet ;-- spurious diffs
                           ;'port-line-number ;-- too many spurious diffs
 			  'load  ; -- (load (port-filename)) ;'current-error-port ;-- spurious output
@@ -979,7 +980,7 @@
  			  ;'open-output-file -- horrible arbitrary undeletable files
 			  ;'delete-file 'set-current-output-port
 			  'autoload
-			  ;'varlet ;-- error exits, chaos in rootlet
+			  ;'varlet ;-- error exits, chaos in rootlet (see local-varlet)
 			  ;'eval ; -- can't use if signature (circular program) or (make-list (max-list-len))
 			  'checked-eval
 			  ;'immutable! ;-- lots of complaints about 'a constant in inlet
@@ -987,11 +988,11 @@
 			  ;'owlet ;too many uninteresting diffs
 			  ;'gc  ; slower? and can be trouble if called within an expression
 			  ;'reader-cond ;-- cond test clause can involve unbound vars: (null? i) for example, and the bugs of eval-time reader-cond are too annoying
-			  ;'funclet ; '*function* ; tons of output
+			  ;'funclet ; '*function* ; tons of output in both cases, not interesting
 			  ;'random
 			  ;;; 'quote
 			  '*error-hook* ;'*autoload-hook* 
-			  ;'cond-expand
+			  ;'cond-expand ; (cond-expand (reader-cond...)) too many times
 			  ;'random-state->list
                           ;'pair-line-number 'pair-filename ; -- too many uninteresting diffs
 			  'let-set!
@@ -1421,8 +1422,8 @@
                     (lambda (s) (string-append "(_rd4_ " s ")")))
 	      (list (lambda (s) (string-append "(_rd5_ " s ")"))
                     (lambda (s) (string-append "(_rd6_ " s ")")))
-	      (list (lambda (s) (string-append "(_rd7_ " s ")"))
-                    (lambda (s) (string-append "(_rd8_ " s ")")))
+;	      (list (lambda (s) (string-append "(_rd7_ " s ")"))
+;                    (lambda (s) (string-append "(_rd8_ " s ")")))
 	      (list (lambda (s) (string-append "(format #f \"~S\" (list " s "))"))
 		    (lambda (s) (string-append "(object->string (list " s "))")))
 ;	      (list (lambda (s) (string-append "(_wr1_ " s ")"))
@@ -1643,7 +1644,12 @@
       (if (string-position "a3" str) (format *stderr* "a3: ~W~%" a3))
       (if (string-position "a4" str) (format *stderr* "a4: ~W~%" a4))
       (newline *stderr*)
-      (let ((tree (with-input-from-string str read)))
+
+      (let ((tree (catch #t 
+		    (lambda () ; try to catch read errors
+		      (eval-string (string-append "'" str))) ;(with-input-from-string str read) -- causes missing close paren troubles with eval-time reader-cond (read error not caught)
+		    (lambda (t i)
+		      ()))))
 	(let walker ((p tree))
 	  (if (symbol? p)
 	      (if (or (setter p) (setter (symbol->value p)))
@@ -1876,6 +1882,7 @@
       (catch #t
 	(lambda ()
 	  (set! curstr str)
+	  ;; this is not the missing ) problem
 	  (s7-optimize (list (catch #t
 			       (lambda ()
 				 (with-input-from-string str read))
