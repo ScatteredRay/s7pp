@@ -1423,8 +1423,6 @@ struct s7_scheme {
   int32_t *tc_rec_calls;
   int32_t last_gc_line;
   bool printing_gc_info;
-
-  opcode_t last_s_op;
 #endif
 };
 
@@ -68561,12 +68559,9 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
       {
 	opcode_t s_op = stack_op(sc->stack, top - 4);
 	if (S7_DEBUGGING) 
-	  {
-	    sc->last_s_op = s_op; 
-	    if (SHOW_EVAL_OPS) 
-	      fprintf(stderr, "eval_macro_mv splice %s with %s, code: %s, args: %s, value: %s\n", 
-		      display(args), op_names[s_op], display(sc->code), display(sc->args), display(sc->value));
-	  }
+	  if (SHOW_EVAL_OPS) 
+	    fprintf(stderr, "eval_macro_mv splice %s with %s, code: %s, args: %s, value: %s\n", 
+		    display(args), op_names[s_op], display(sc->code), display(sc->args), display(sc->value));
 	if ((s_op == OP_DO_STEP) || (s_op == OP_DEACTIVATE_GOTO) || (s_op == OP_LET1))
 	  return(args); /* tricky reader-cond as macro in do body returning values... or call-with-exit */
 
