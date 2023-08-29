@@ -438,9 +438,6 @@
   #define NAN (INFINITY / INFINITY) /* apparently ieee754 suggests 0.0/0.0 */
 #endif
 
-#define BOLD_TEXT "\033[1m"
-#define UNBOLD_TEXT "\033[22m"
-
 #if ((!__NetBSD__) && ((_MSC_VER) || (!defined(__STC__)) || (defined(__STDC_VERSION__) && (__STDC_VERSION__ < 199901L))))
   #define __func__ __FUNCTION__
 #endif
@@ -4607,6 +4604,14 @@ static s7_pointer cons_unchecked(s7_scheme *sc, s7_pointer a, s7_pointer b);
 static s7_pointer unbound_variable(s7_scheme *sc, s7_pointer sym);
 
 
+#define bold_text    "\033[1m"
+#define unbold_text  "\033[22m"
+#define red_text     "\033[31m"
+#define green_text   "\033[32m"
+#define blue_text    "\033[34m"
+#define uncolor_text "\033[0m" /* yellow=33 */
+
+
 /* -------------------------------- internal debugging apparatus -------------------------------- */
 static int64_t heap_location(s7_scheme *sc, s7_pointer p)
 {
@@ -5046,7 +5051,7 @@ static void set_local_1(s7_scheme *sc, s7_pointer symbol, const char *func, int3
   if (is_global(symbol))
     fprintf(stderr, "%s[%d]: %s%s%s in %s\n",
 	    func, line,
-	    BOLD_TEXT, display(symbol), UNBOLD_TEXT,
+	    bold_text, display(symbol), unbold_text,
 	    display_80(sc->cur_code));
   full_type(symbol) = (full_type(symbol) & ~(T_DONT_EVAL_ARGS | T_GLOBAL | T_SYNTACTIC));
 }
@@ -5061,7 +5066,7 @@ static char *safe_object_to_string(s7_pointer p)
 
 static void complain(const char* complaint, s7_pointer p, const char *func, int32_t line, uint8_t typ)
 {
-  fprintf(stderr, complaint, BOLD_TEXT, func, line, check_name(cur_sc, typ), safe_object_to_string(p), UNBOLD_TEXT);
+  fprintf(stderr, complaint, bold_text, func, line, check_name(cur_sc, typ), safe_object_to_string(p), unbold_text);
   if (cur_sc->stop_at_error) abort();
 }
 
@@ -5116,7 +5121,7 @@ static char* show_debugger_bits(s7_pointer p)
 static s7_pointer check_ref(s7_pointer p, uint8_t expected_type, const char *func, int32_t line, const char *func1, const char *func2)
 {
   if (!p)
-    fprintf(stderr, "%s%s[%d]: null pointer passed to check_ref%s\n", BOLD_TEXT, func, line, UNBOLD_TEXT);
+    fprintf(stderr, "%s%s[%d]: null pointer passed to check_ref%s\n", bold_text, func, line, unbold_text);
   else
     {
       uint8_t typ = unchecked_type(p);
@@ -5125,16 +5130,16 @@ static s7_pointer check_ref(s7_pointer p, uint8_t expected_type, const char *fun
 	  if ((!func1) || (typ != T_FREE))
 	    {
 	      fprintf(stderr, "%s%s[%d]: not %s, but %s (%s)%s\n",
-		      BOLD_TEXT,
+		      bold_text,
 		      func, line, check_name(cur_sc, expected_type), check_name(cur_sc, typ), safe_object_to_string(p),
-		      UNBOLD_TEXT);
+		      unbold_text);
 	      if (cur_sc->stop_at_error) abort();
 	    }
 	  else
 	    if ((strcmp(func, func1) != 0) &&
 		((!func2) || (strcmp(func, func2) != 0)))
 	      {
-		fprintf(stderr, "%s%s[%d]: free cell, not %s%s\n", BOLD_TEXT, func, line, check_name(cur_sc, expected_type), UNBOLD_TEXT);
+		fprintf(stderr, "%s%s[%d]: free cell, not %s%s\n", bold_text, func, line, check_name(cur_sc, expected_type), unbold_text);
 		if (cur_sc->stop_at_error) abort();
 	      }}}
   return(p);
@@ -5302,10 +5307,10 @@ static void print_gc_info(s7_scheme *sc, s7_pointer obj, int32_t line)
 	if (obj->explicit_free_line > 0)
 	  snprintf(fline, 128, ", freed at %d, ", obj->explicit_free_line);
 	fprintf(stderr, "%s%p is free (line %d, alloc type: %s %" ld64 " #x%" PRIx64 " (%s)), alloc: %s[%d], %sgc: %s[%d]%s",
-		BOLD_TEXT, obj, line, s7_type_names[obj->alloc_type & 0xff], obj->alloc_type, obj->alloc_type,
+		bold_text, obj, line, s7_type_names[obj->alloc_type & 0xff], obj->alloc_type, obj->alloc_type,
 		bits, obj->alloc_func, obj->alloc_line,
-		(obj->explicit_free_line > 0) ? fline : "", obj->gc_func, obj->gc_line,	UNBOLD_TEXT);
-	if (S7_DEBUGGING) fprintf(stderr, "%s, last gc line: %d%s", BOLD_TEXT, sc->last_gc_line, UNBOLD_TEXT);
+		(obj->explicit_free_line > 0) ? fline : "", obj->gc_func, obj->gc_line,	unbold_text);
+	if (S7_DEBUGGING) fprintf(stderr, "%s, last gc line: %d%s", bold_text, sc->last_gc_line, unbold_text);
 	fprintf(stderr, "\n");
 	free(bits);
       }
@@ -5316,18 +5321,18 @@ static s7_pointer check_nref(s7_pointer p, const char *func, int32_t line)
 {
   if (!p)
     {
-      fprintf(stderr, "%s%s[%d]: null pointer!%s\n", BOLD_TEXT, func, line, UNBOLD_TEXT);
+      fprintf(stderr, "%s%s[%d]: null pointer!%s\n", bold_text, func, line, unbold_text);
       if (cur_sc->stop_at_error) abort();
     }
   else
     if (unchecked_type(p) >= NUM_TYPES)
       {
-	fprintf(stderr, "%s%s[%d]: attempt to use messed up cell (type: %d)%s\n", BOLD_TEXT, func, line, unchecked_type(p), UNBOLD_TEXT);
+	fprintf(stderr, "%s%s[%d]: attempt to use messed up cell (type: %d)%s\n", bold_text, func, line, unchecked_type(p), unbold_text);
 	if (cur_sc->stop_at_error) abort();
       }
   if (unchecked_type(p) == T_FREE)
     {
-      fprintf(stderr, "%s%s[%d]: attempt to use free cell%s\n", BOLD_TEXT, func, line, UNBOLD_TEXT);
+      fprintf(stderr, "%s%s[%d]: attempt to use free cell%s\n", bold_text, func, line, unbold_text);
       print_gc_info(cur_sc, p, line);
       if (cur_sc->stop_at_error) abort();
     }
@@ -5368,11 +5373,11 @@ static s7_pointer check_ref18(s7_pointer p, const char *func, int32_t line)
       if (global_value(p) != p)
 	{
 	  fprintf(stderr, "%s%s[%d]: keyword %s value is not itself (type: %s)%s\n", 
-		  BOLD_TEXT, func, line, display(p), s7_type_names[unchecked_type(global_value(p))], UNBOLD_TEXT);
+		  bold_text, func, line, display(p), s7_type_names[unchecked_type(global_value(p))], unbold_text);
 	  if (cur_sc->stop_at_error) abort();
 	}
       if (in_heap(keyword_symbol_unchecked(p)))
-	fprintf(stderr, "%s%s[%d]: keyword %s symbol is in the heap%s\n", BOLD_TEXT, func, line, display(p), UNBOLD_TEXT);
+	fprintf(stderr, "%s%s[%d]: keyword %s symbol is in the heap%s\n", bold_text, func, line, display(p), unbold_text);
       if (has_odd_bits(p))
 	{char *s; fprintf(stderr, "odd bits: %s\n", s = describe_type_bits(cur_sc, p)); free(s);}
     }
@@ -5385,7 +5390,7 @@ static s7_pointer check_ref19(s7_pointer p, const char *func, int32_t line)
   check_nref(p, func, line);
   if (t_ext_p[typ]) 
     {
-      fprintf(stderr, "%s%s[%d]: attempt to use (internal) %s cell%s\n", BOLD_TEXT, func, line, s7_type_names[typ], UNBOLD_TEXT);
+      fprintf(stderr, "%s%s[%d]: attempt to use (internal) %s cell%s\n", bold_text, func, line, s7_type_names[typ], unbold_text);
       if (cur_sc->stop_at_error) abort();
     }
   return(p);
@@ -5438,7 +5443,7 @@ static void show_opt1_bits(s7_pointer p, const char *func, int32_t line, uint64_
 {
   char *bits = show_debugger_bits(p);
   fprintf(stderr, "%s%s[%d]%s: opt1: %p->%p wants %s, debugger bits are %" PRIx64 "%s but expects %" ld64,
-	  BOLD_TEXT, func, line, UNBOLD_TEXT,
+	  bold_text, func, line, unbold_text,
 	  p, p->object.cons.opt1, opt1_role_name(role), p->debugger_bits, bits, (s7_int)role);
   free(bits);
 }
@@ -5495,7 +5500,7 @@ static void show_opt2_bits(s7_pointer p, const char *func, int32_t line, uint64_
 {
   char *bits = show_debugger_bits(p);
   fprintf(stderr, "%s%s[%d]%s: opt2: %p->%p wants %s, debugger bits are %" PRIx64 "%s but expects %" ld64 " %s",
-	  BOLD_TEXT, func, line, UNBOLD_TEXT,
+	  bold_text, func, line, unbold_text,
 	  p, p->object.cons.o2.opt2, opt2_role_name(role), p->debugger_bits, bits, (s7_int)role, opt2_role_name(role));
   free(bits);
 }
@@ -5519,7 +5524,7 @@ static void check_opt2_bits(s7_scheme *sc, s7_pointer p, uint64_t role, const ch
 {
   if (!p)
     {
-      fprintf(stderr, "%s%s[%d]: opt2 null!\n%s", BOLD_TEXT, func, line, UNBOLD_TEXT);
+      fprintf(stderr, "%s%s[%d]: opt2 null!\n%s", bold_text, func, line, unbold_text);
       if (sc->stop_at_error) abort();
     }
   if ((!opt2_is_set(p)) ||
@@ -5555,9 +5560,9 @@ static void set_opt2_1(s7_scheme *sc, s7_pointer p, s7_pointer x, uint64_t role,
       (f_call_func_mismatch(func)))
     fprintf(stderr, "%s[%d]: set fx_proc for %s to null (%s%s%s)\n", func, line,
 	    string_value(object_to_truncated_string(sc, p, 80)),
-	    ((is_h_optimized(car(p))) && (is_safe_c_op(optimize_op(car(p))))) ? BOLD_TEXT : "",
+	    ((is_h_optimized(car(p))) && (is_safe_c_op(optimize_op(car(p))))) ? bold_text : "",
 	    op_names[optimize_op(car(p))],
-	    ((is_h_optimized(car(p))) && (is_safe_c_op(optimize_op(car(p))))) ? UNBOLD_TEXT : "");
+	    ((is_h_optimized(car(p))) && (is_safe_c_op(optimize_op(car(p))))) ? unbold_text : "");
   if ((role != OPT2_FX) && (role != OPT2_DIRECT) && (has_fx(p))) /* sometimes opt2_direct just specializes fx */
     {
       fprintf(stderr, "%s[%d]: overwrite has_fx: %s %s\n", func, line, opt2_role_name(role), display_80(p));
@@ -5593,7 +5598,7 @@ static void set_opt2_name_1(s7_pointer p, const char *str)
 static void show_opt3_bits(s7_pointer p, const char *func, int32_t line, uint64_t role)
 {
   char *bits = show_debugger_bits(p);
-  fprintf(stderr, "%s%s[%d]%s: opt3: %s %" PRIx64 "%s", BOLD_TEXT, func, line, UNBOLD_TEXT, opt3_role_name(role), p->debugger_bits, bits);
+  fprintf(stderr, "%s%s[%d]%s: opt3: %s %" PRIx64 "%s", bold_text, func, line, unbold_text, opt3_role_name(role), p->debugger_bits, bits);
   free(bits);
 }
 
@@ -5601,7 +5606,7 @@ static void check_opt3_bits(s7_scheme *sc, s7_pointer p, uint64_t role, const ch
 {
   if (!p)
     {
-      fprintf(stderr, "%s%s[%d]: opt3 null!\n%s", BOLD_TEXT, func, line, UNBOLD_TEXT);
+      fprintf(stderr, "%s%s[%d]: opt3 null!\n%s", bold_text, func, line, unbold_text);
       if (sc->stop_at_error) abort();
     }
   if ((!opt3_is_set(p)) ||
@@ -5731,7 +5736,7 @@ static s7_pointer check_null_sym(s7_scheme *sc, s7_pointer p, s7_pointer sym, in
     {
       s7_pointer slot = symbol_to_local_slot(sc, sym, sc->curlet);
       char *s = describe_type_bits(sc, sym);
-      fprintf(stderr, "%s%s[%d]: %s unbound%s\n", BOLD_TEXT, func, line, symbol_name(sym), UNBOLD_TEXT);
+      fprintf(stderr, "%s%s[%d]: %s unbound%s\n", bold_text, func, line, symbol_name(sym), unbold_text);
       fprintf(stderr, "  symbol_id: %" ld64 ", let_id: %" ld64 ", bits: %s", symbol_id(sym), let_id(sc->curlet), s);
       free(s);
       if (is_slot(slot)) fprintf(stderr, ", slot: %s", display(slot));
@@ -7926,7 +7931,7 @@ static void push_op_stack(s7_scheme *sc, s7_pointer op)
   (*sc->op_stack_now++) = T_Ext(op); /* not T_App etc -- args can be pushed */
   if (sc->op_stack_now > (sc->op_stack + sc->op_stack_size))
     {
-      fprintf(stderr, "%sop_stack overflow%s\n", BOLD_TEXT, UNBOLD_TEXT);
+      fprintf(stderr, "%sop_stack overflow%s\n", bold_text, unbold_text);
       if (sc->stop_at_error) abort();
     }
 }
@@ -7936,7 +7941,7 @@ static s7_pointer pop_op_stack(s7_scheme *sc)
   s7_pointer op = T_Ext(*(--(sc->op_stack_now)));
   if (sc->op_stack_now < sc->op_stack)
     {
-      fprintf(stderr, "%sop_stack underflow%s\n", BOLD_TEXT, UNBOLD_TEXT);
+      fprintf(stderr, "%sop_stack underflow%s\n", bold_text, unbold_text);
       if (sc->stop_at_error) abort();
     }
   return(T_Ext(op));
@@ -7973,7 +7978,7 @@ static void pop_stack_1(s7_scheme *sc, const char *func, int32_t line)
   sc->stack_end -= 4;
   if (sc->stack_end < sc->stack_start)
     {
-      fprintf(stderr, "%s%s[%d]: stack underflow%s\n", BOLD_TEXT, func, line, UNBOLD_TEXT);
+      fprintf(stderr, "%s%s[%d]: stack underflow%s\n", bold_text, func, line, unbold_text);
       if (sc->stop_at_error) abort();
     }
   /* here and in push_stack, both code and args might be non-free only because they've been retyped
@@ -7986,7 +7991,7 @@ static void pop_stack_1(s7_scheme *sc, const char *func, int32_t line)
   sc->cur_op = (opcode_t)(sc->stack_end[3]);
   if (sc->cur_op >= NUM_OPS)
     {
-      fprintf(stderr, "%s%s[%d]: pop_stack invalid opcode: %" p64 " %s\n", BOLD_TEXT, func, line, sc->cur_op, UNBOLD_TEXT);
+      fprintf(stderr, "%s%s[%d]: pop_stack invalid opcode: %" p64 " %s\n", bold_text, func, line, sc->cur_op, unbold_text);
       if (sc->stop_at_error) abort();
     }
   if ((sc->cur_op != OP_GC_PROTECT) &&
@@ -8001,7 +8006,7 @@ static void pop_stack_no_op_1(s7_scheme *sc, const char *func, int32_t line)
   sc->stack_end -= 4;
   if (sc->stack_end < sc->stack_start)
     {
-      fprintf(stderr, "%s%s[%d]: stack underflow%s\n", BOLD_TEXT, func, line, UNBOLD_TEXT);
+      fprintf(stderr, "%s%s[%d]: stack underflow%s\n", bold_text, func, line, unbold_text);
       if (sc->stop_at_error) abort();
     }
   sc->code = T_Pos(sc->stack_end[0]);
@@ -8016,14 +8021,14 @@ static void pop_stack_no_op_1(s7_scheme *sc, const char *func, int32_t line)
 
 static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer code, s7_pointer *end, const char *func, int32_t line)
 {
-  if ((SHOW_EVAL_OPS) && (op == OP_EVAL_DONE)) fprintf(stderr, "%s[%d]: push eval_done\n", func, line);
+  if ((SHOW_EVAL_OPS) && (op == OP_EVAL_DONE)) fprintf(stderr, "  %s[%d]: push eval_done\n", func, line);
   if (sc->stack_end >= sc->stack_start + sc->stack_size)
     {
       fprintf(stderr, "%s%s[%d]: stack overflow, %" ld64 " > %u, trigger: %" ld64 " %s\n",
-	      BOLD_TEXT, func, line,
+	      bold_text, func, line,
 	      (s7_int)((intptr_t)(sc->stack_end - sc->stack_start)), sc->stack_size,
 	      (s7_int)((intptr_t)(sc->stack_resize_trigger - sc->stack_start)),
-	      UNBOLD_TEXT);
+	      unbold_text);
       s7_show_stack(sc);
       /* make room for debugging */
 
@@ -8032,7 +8037,7 @@ static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer
     }
   if (sc->stack_end >= sc->stack_resize_trigger)
     {
-      fprintf(stderr, "%s%s[%d]: stack resize skipped%s\n", BOLD_TEXT, func, line, UNBOLD_TEXT);
+      fprintf(stderr, "%s%s[%d]: stack resize skipped%s\n", bold_text, func, line, unbold_text);
       if (sc->stop_at_error)
 	{
 	  /* this is pointless if we can't look around in gdb, so give us some room */
@@ -8043,7 +8048,7 @@ static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer
     fprintf(stderr, "%s[%d]: stack changed in push_stack\n", func, line);
   if (op >= NUM_OPS)
     {
-      fprintf(stderr, "%s%s[%d]: push_stack invalid opcode: %" p64 " %s\n", BOLD_TEXT, func, line, sc->cur_op, UNBOLD_TEXT);
+      fprintf(stderr, "%s%s[%d]: push_stack invalid opcode: %" p64 " %s\n", bold_text, func, line, sc->cur_op, unbold_text);
       if (sc->stop_at_error) abort();
     }
   if (code) sc->stack_end[0] = T_Pos(code);
@@ -8150,7 +8155,7 @@ static void unstack_1(s7_scheme *sc, const char *func, int32_t line)
   sc->stack_end -= 4;
   if (((opcode_t)sc->stack_end[3]) != OP_GC_PROTECT)
     {
-      fprintf(stderr, "%s%s[%d]: popped %s?%s\n", BOLD_TEXT, func, line, op_names[(opcode_t)sc->stack_end[3]], UNBOLD_TEXT);
+      fprintf(stderr, "%s%s[%d]: popped %s?%s\n", bold_text, func, line, op_names[(opcode_t)sc->stack_end[3]], unbold_text);
       /* "popped apply" means we called something that went to eval+apply when we thought it was a safe function */
       fprintf(stderr, "    code: %s, args: %s\n", display(sc->code), display(sc->args));
       fprintf(stderr, "    cur_code: %s, estr: %s\n", display(current_code(sc)), display(s7_name_to_value(sc, "estr")));
@@ -8163,7 +8168,7 @@ static void unstack_2(s7_scheme *sc, opcode_t op, const char *func, int32_t line
   sc->stack_end -= 4;
   if (((opcode_t)sc->stack_end[3]) != op)
     {
-      fprintf(stderr, "%s%s[%d]: popped %s? (expected %s)%s\n", BOLD_TEXT, func, line, op_names[(opcode_t)sc->stack_end[3]], op_names[op], UNBOLD_TEXT);
+      fprintf(stderr, "%s%s[%d]: popped %s? (expected %s)%s\n", bold_text, func, line, op_names[(opcode_t)sc->stack_end[3]], op_names[op], unbold_text);
       fprintf(stderr, "    code: %s, args: %s\n", display(sc->code), display(sc->args));
       fprintf(stderr, "    cur_code: %s, estr: %s\n", display(current_code(sc)), display(s7_name_to_value(sc, "estr")));
       if (sc->stop_at_error) abort();
@@ -8221,10 +8226,10 @@ static void resize_stack_1(s7_scheme *sc, const char *func, int line)
   if ((sc->stack_size * 2) > sc->max_stack_size)
     {
       fprintf(stderr, "%s%s[%d]: stack too big, %" ld64 " > %u, trigger: %" ld64 " %s\n",
-	      BOLD_TEXT, func, line,
+	      bold_text, func, line,
 	      (s7_int)((intptr_t)(sc->stack_end - sc->stack_start)), sc->stack_size,
 	      (s7_int)((intptr_t)(sc->stack_resize_trigger - sc->stack_start)),
-	      UNBOLD_TEXT);
+	      unbold_text);
       /* s7_show_stack(sc); */ /* prints so much the error message is inaccessible */
       fprintf(stderr, "stack:\n");
       for (int64_t i = current_stack_top(sc) - 1; i >= current_stack_top(sc) - 100; i -= 4)
@@ -13623,7 +13628,11 @@ static inline double dpow(int32_t x, int32_t y)
 
 
 /* -------------------------------- number->string -------------------------------- */
-#define WITH_DTOA 1
+#ifndef WITH_DTOA
+  #define WITH_DTOA 1
+#endif
+/* there was a time when libc was so slow that this code was all but mandatory, but now (Aug-2023) the difference is much smaller */
+
 #if WITH_DTOA
 /* fpconv, revised to fit the local coding style
 
@@ -31302,7 +31311,7 @@ static s7_pointer titr_let(s7_scheme *sc, s7_pointer p, const char *func, int32_
   if (!is_let(iterator_sequence(p)))
     {
       fprintf(stderr, "%s%s[%d]: let iterator sequence is %s%s\n",
-	      BOLD_TEXT, func, line, check_name(sc, unchecked_type(iterator_sequence(p))), UNBOLD_TEXT);
+	      bold_text, func, line, check_name(sc, unchecked_type(iterator_sequence(p))), unbold_text);
       if (sc->stop_at_error) abort();
     }
   return(p);
@@ -31313,7 +31322,7 @@ static s7_pointer titr_pair(s7_scheme *sc, s7_pointer p, const char *func, int32
   if (!is_pair(iterator_sequence(p)))
     {
       fprintf(stderr, "%s%s[%d]: pair iterator sequence is %s%s\n",
-	      BOLD_TEXT, func, line, check_name(sc, unchecked_type(iterator_sequence(p))), UNBOLD_TEXT);
+	      bold_text, func, line, check_name(sc, unchecked_type(iterator_sequence(p))), unbold_text);
       if (sc->stop_at_error) abort();
     }
   return(p);
@@ -31324,7 +31333,7 @@ static s7_pointer titr_hash(s7_scheme *sc, s7_pointer p, const char *func, int32
   if (!is_hash_table(iterator_sequence(p)))
     {
       fprintf(stderr, "%s%s[%d]: hash iterator sequence is %s%s\n",
-	      BOLD_TEXT, func, line, check_name(sc, unchecked_type(iterator_sequence(p))), UNBOLD_TEXT);
+	      bold_text, func, line, check_name(sc, unchecked_type(iterator_sequence(p))), unbold_text);
       if (sc->stop_at_error) abort();
     }
   return(p);
@@ -31335,7 +31344,7 @@ static s7_pointer titr_len(s7_scheme *sc, s7_pointer p, const char *func, int32_
   if ((is_hash_table(iterator_sequence(p))) || (is_pair(iterator_sequence(p))))
     {
       fprintf(stderr, "%s%s[%d]: iterator length sequence is %s%s\n",
-	      BOLD_TEXT, func, line, check_name(sc, unchecked_type(iterator_sequence(p))), UNBOLD_TEXT);
+	      bold_text, func, line, check_name(sc, unchecked_type(iterator_sequence(p))), unbold_text);
       if (sc->stop_at_error) abort();
     }
   return(p);
@@ -31347,7 +31356,7 @@ static s7_pointer titr_pos(s7_scheme *sc, s7_pointer p, const char *func, int32_
       (is_pair(iterator_sequence(p))))
     {
       fprintf(stderr, "%s%s[%d]: iterator-position sequence is %s%s\n",
-	      BOLD_TEXT, func, line, check_name(sc, unchecked_type(iterator_sequence(p))), UNBOLD_TEXT);
+	      bold_text, func, line, check_name(sc, unchecked_type(iterator_sequence(p))), unbold_text);
       if (sc->stop_at_error) abort();
     }
   return(p);
@@ -51604,7 +51613,7 @@ static bool catch_1_function(s7_scheme *sc, s7_int i, s7_pointer type, s7_pointe
 		    y = type;
 	  if (y)
 	    {
-	      if ((SHOW_EVAL_OPS) && (loc > 4)) {fprintf(stderr, "about to pop_stack: \n"); s7_show_stack(sc);}
+	      if ((SHOW_EVAL_OPS) && (loc > 4)) {fprintf(stderr, "  about to pop_stack: \n"); s7_show_stack(sc);}
 	      if (loc > 4)
 		pop_stack(sc);
 	      /* we're at OP_CATCH, normally we want to pop that away, but (handwaving...) if we're coming
@@ -52015,7 +52024,7 @@ static noreturn void error_nr(s7_scheme *sc, s7_pointer type, s7_pointer info)
       if ((catcher) &&
 	  (catcher(sc, i, type, info, &reset_error_hook)))
 	{
-	  if (SHOW_EVAL_OPS) {fprintf(stderr, "after catch: \n"); s7_show_stack(sc);}
+	  if (SHOW_EVAL_OPS) {fprintf(stderr, "  after catch: \n"); s7_show_stack(sc);}
 	  if ((S7_DEBUGGING) && (!sc->longjmp_ok)) fprintf(stderr, "s7_error jump not available?\n");
 	  LongJmp(*(sc->goto_start), CATCH_JUMP);
 	}}
@@ -53215,8 +53224,8 @@ static void check_t_1(s7_scheme *sc, s7_pointer e, const char* func, s7_pointer 
 {
   if (let_slots(e) != s7_slot(sc, var))
     {
-      fprintf(stderr, "%s%s %s is out of date (%s in %s -> %s)%s\n", BOLD_TEXT, func, display(expr), display(var), display(sc->curlet),
-	      (tis_slot(let_slots(e))) ? display(let_slots(e)) : "no slots", UNBOLD_TEXT);
+      fprintf(stderr, "%s%s %s is out of date (%s in %s -> %s)%s\n", bold_text, func, display(expr), display(var), display(sc->curlet),
+	      (tis_slot(let_slots(e))) ? display(let_slots(e)) : "no slots", unbold_text);
       if (sc->stop_at_error) abort();
     }
 }
@@ -53237,8 +53246,8 @@ static void check_u_1(s7_scheme *sc, s7_pointer e, const char* func, s7_pointer 
 {
   if (next_slot(let_slots(e)) != s7_slot(sc, var))
     {
-      fprintf(stderr, "%s%s %s is out of date (%s in %s -> %s)%s\n", BOLD_TEXT, func, display(expr), display(var), display(e),
-	      (tis_slot(next_slot(let_slots(e)))) ? display(next_slot(let_slots(e))) : "no next slot", UNBOLD_TEXT);
+      fprintf(stderr, "%s%s %s is out of date (%s in %s -> %s)%s\n", bold_text, func, display(expr), display(var), display(e),
+	      (tis_slot(next_slot(let_slots(e)))) ? display(next_slot(let_slots(e))) : "no next slot", unbold_text);
       if (sc->stop_at_error) abort();
     }
 }
@@ -53259,8 +53268,8 @@ static void check_v_1(s7_scheme *sc, s7_pointer e, const char* func, s7_pointer 
 {
   if (next_slot(next_slot(let_slots(e))) != s7_slot(sc, var))
     {
-      fprintf(stderr, "%s%s %s is out of date (%s in %s -> %s)%s\n", BOLD_TEXT, func, display(expr), display(var), display(e),
-	      (tis_slot(next_slot(next_slot(let_slots(e))))) ? display(next_slot(next_slot(let_slots(e)))) : "no next slot", UNBOLD_TEXT);
+      fprintf(stderr, "%s%s %s is out of date (%s in %s -> %s)%s\n", bold_text, func, display(expr), display(var), display(e),
+	      (tis_slot(next_slot(next_slot(let_slots(e))))) ? display(next_slot(next_slot(let_slots(e)))) : "no next slot", unbold_text);
       if (sc->stop_at_error) abort();
     }
 }
@@ -53282,8 +53291,8 @@ static void check_o_1(s7_scheme *sc, s7_pointer e, const char* func, s7_pointer 
   s7_pointer slot = s7_slot(sc, var);
   if (lookup_slot_with_let(var, e) != slot)
     {
-      fprintf(stderr, "%s%s %s is out of date (%s in %s -> %s)%s\n", BOLD_TEXT, func, display(expr), display(var), display(e),
-	      (tis_slot(slot)) ? display(slot) : "undefined", UNBOLD_TEXT);
+      fprintf(stderr, "%s%s %s is out of date (%s in %s -> %s)%s\n", bold_text, func, display(expr), display(var), display(e),
+	      (tis_slot(slot)) ? display(slot) : "undefined", unbold_text);
       if (sc->stop_at_error) abort();
     }
 }
@@ -58217,17 +58226,12 @@ static opt_info *alloc_opt_info(s7_scheme *sc)
 #define OPT_PRINT 0
 #if OPT_PRINT
 
-#define green_text   "\033[32m"
-#define blue_text    "\033[34m"
-#define red_text     "\033[31m"
-#define uncolor_text "\033[0m" /* yellow=33 */
-
 #define return_false(Sc, Expr) return(return_false_1(Sc, Expr, __func__, __LINE__))
 static bool return_false_1(s7_scheme *sc, s7_pointer expr, const char *func, int32_t line)
 {
   if (expr)
-    fprintf(stderr, "   %s%s[%d]%s: %s\n", BOLD_TEXT, func, line, UNBOLD_TEXT, display_80(expr));
-  else fprintf(stderr, "   %s%s[%d]%s: false\n", BOLD_TEXT, func, line, UNBOLD_TEXT);
+    fprintf(stderr, "   %s%s[%d]%s: %s\n", bold_text, func, line, unbold_text, display_80(expr));
+  else fprintf(stderr, "   %s%s[%d]%s: false\n", bold_text, func, line, unbold_text);
   return(false);
 }
 
@@ -58243,14 +58247,14 @@ static bool return_true_1(s7_scheme *sc, s7_pointer expr, const char *func, int3
 #define return_success(Sc, P, Expr) return(return_success_1(Sc, P, Expr, __func__, __LINE__))
 static s7_pfunc return_success_1(s7_scheme *sc, s7_pfunc p, s7_pointer expr, const char *func, int32_t line)
 {
-  fprintf(stderr, "   %s%s[%d]%s: %s\n", BOLD_TEXT green_text, func, line, UNBOLD_TEXT uncolor_text, display(expr));
+  fprintf(stderr, "   %s%s[%d]%s: %s\n", bold_text green_text, func, line, unbold_text uncolor_text, display(expr));
   return(p);
 }
 
 #define return_null(Sc, Expr) return(return_null_1(Sc, Expr, __func__, __LINE__))
 static s7_pfunc return_null_1(s7_scheme *sc, s7_pointer expr, const char *func, int32_t line)
 {
-  fprintf(stderr, "   %s%s[%d]%s: %s\n   %sfailure%s\n", BOLD_TEXT, func, line, UNBOLD_TEXT, display_80(expr), BOLD_TEXT red_text, UNBOLD_TEXT uncolor_text);
+  fprintf(stderr, "   %s%s[%d]%s: %s\n   %sfailure%s\n", bold_text, func, line, unbold_text, display_80(expr), bold_text red_text, unbold_text uncolor_text);
   return(NULL);
 }
 #else
@@ -66790,7 +66794,7 @@ static bool cell_optimize_1(s7_scheme *sc, s7_pointer expr)
 #if OPT_PRINT
       {
 	bool res = p_implicit_ok(sc, s_slot, car_x, len);
-	if (!res) fprintf(stderr, "   %sno p_implicit for %s%s\n", BOLD_TEXT red_text, display(car_x), UNBOLD_TEXT uncolor_text);
+	if (!res) fprintf(stderr, "   %sno p_implicit for %s%s\n", bold_text red_text, display(car_x), unbold_text uncolor_text);
 	return(res);
       }
 #else
@@ -68560,7 +68564,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 	opcode_t s_op = stack_op(sc->stack, top - 4);
 	if (S7_DEBUGGING) 
 	  if (SHOW_EVAL_OPS) 
-	    fprintf(stderr, "eval_macro_mv splice %s with %s, code: %s, args: %s, value: %s\n", 
+	    fprintf(stderr, "  eval_macro_mv splice %s with %s, code: %s, args: %s, value: %s\n", 
 		    display(args), op_names[s_op], display(sc->code), display(sc->args), display(sc->value));
 	if ((s_op == OP_DO_STEP) || (s_op == OP_DEACTIVATE_GOTO) || (s_op == OP_LET1))
 	  return(args); /* tricky reader-cond as macro in do body returning values... or call-with-exit */
@@ -68576,7 +68580,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 	      stack_args(sc->stack, top - 4) = cons(sc, car(x), stack_args(sc->stack, top - 4));
 	    sc->w = sc->unused;
 	    if (SHOW_EVAL_OPS)
-	      fprintf(stderr, "eval_macro splice %s with %s, code: %s, args: %s, value: %s -> %s %s\n", 
+	      fprintf(stderr, "  eval_macro splice %s with %s, code: %s, args: %s, value: %s -> %s %s\n", 
 		      display(args), op_names[s_op], display(sc->code), display(sc->args), display(sc->value), display(stack_args(sc->stack, top - 4)), display(car(x)));
 	    return(car(x));
 	  }
@@ -68595,7 +68599,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
        */
       top -= 4;
       if (SHOW_EVAL_OPS)
-	fprintf(stderr, "%s[%d]: %s stack top: %" ld64 ", op: %s, args: %s\n", __func__, __LINE__, 
+	fprintf(stderr, "  %s[%d]: %s stack top: %" ld64 ", op: %s, args: %s\n", __func__, __LINE__, 
 		op_names[stack_op(sc->stack, top + 4)], top, op_names[stack_op(sc->stack, top)], display(args));
       if (stack_op(sc->stack, top) == OP_LOAD_RETURN_IF_EOF)
 	{
@@ -90341,7 +90345,7 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
       sc->cur_op = optimize_op(sc->code); /* sc->code can be anything, optimize_op examines a type field (opt_choice) */
 
     TOP_NO_POP:
-      if (SHOW_EVAL_OPS) safe_print(fprintf(stderr, "%s (%d), code: %s\n", op_names[sc->cur_op], (int)(sc->cur_op), display_80(sc->code)));
+      if (SHOW_EVAL_OPS) safe_print(fprintf(stderr, "  %s (%d), code: %s\n", op_names[sc->cur_op], (int)(sc->cur_op), display_80(sc->code)));
 
       /* it is only slightly faster to use labels as values (computed gotos) here. In my timing tests (June-2018), the best case speedup was in titer.scm
        *    callgrind numbers 4808 to 4669; another good case was tread.scm: 2410 to 2386.  Most timings were a draw.  computed-gotos-s7.c has the code,
@@ -91199,7 +91203,7 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	   */
 	APPLY:
 	case OP_APPLY:
-	  if (SHOW_EVAL_OPS) safe_print(fprintf(stderr, "%s[%d]: op_apply %s (%s) to %s\n", __func__, __LINE__,
+	  if (SHOW_EVAL_OPS) safe_print(fprintf(stderr, "  %s[%d]: op_apply %s (%s) to %s\n", __func__, __LINE__,
 						display_80(sc->code), s7_type_names[type(sc->code)], display_80(sc->args)));
 	  switch (type(sc->code))
 	    {
@@ -91918,7 +91922,7 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 
 	case OP_GC_PROTECT: case OP_BARRIER: case OP_NO_VALUES:
 	case OP_CATCH_ALL: case OP_CATCH: case OP_CATCH_1: case OP_CATCH_2:
-	  if (SHOW_EVAL_OPS) fprintf(stderr, "flush %s\n", op_names[sc->cur_op]);
+	  if (SHOW_EVAL_OPS) fprintf(stderr, "  flush %s\n", op_names[sc->cur_op]);
 	  continue;
 
 	case OP_GET_OUTPUT_STRING:      op_get_output_string(sc); /* from call-with-output-string|with-output-to-string; return the port string directly *//* fall through */
@@ -93603,7 +93607,7 @@ const char *s7_decode_bt(s7_scheme *sc)
 			if (vp == (void *)sc)
 			  {
 			    if (bt[i + 1] == ' ') fputc(' ', stdout);
-			    fprintf(stdout, "%s[s7]%s", BOLD_TEXT, UNBOLD_TEXT);
+			    fprintf(stdout, "%s[s7]%s", bold_text, unbold_text);
 			    i = k - 1;
 			  }
 			else
@@ -93613,7 +93617,7 @@ const char *s7_decode_bt(s7_scheme *sc)
 			    if (dname)
 			      {
 				if (bt[i + 1] == ' ') fputc(' ', stdout);
-				fprintf(stdout, "%s[%s]%s", BOLD_TEXT, dname, UNBOLD_TEXT);
+				fprintf(stdout, "%s[%s]%s", bold_text, dname, unbold_text);
 			      }
 			    if ((dname) || (is_decodable(sc, p)))
 			      {
@@ -93623,13 +93627,13 @@ const char *s7_decode_bt(s7_scheme *sc)
 				  {
 				    s7_pointer strp = object_to_truncated_string(sc, p, 80);
 				    if (dname) fprintf(stdout, " ");
-				    fprintf(stdout, "%s%s%s", BOLD_TEXT, string_value(strp), UNBOLD_TEXT);
+				    fprintf(stdout, "%s%s%s", bold_text, string_value(strp), unbold_text);
 				    if ((is_pair(p)) &&
 					(has_location(p)))
 				      {
 					uint32_t line = pair_line_number(p), file = pair_file_number(p);
 					if (line > 0)
-					  fprintf(stdout, " %s(%s[%u])%s", BOLD_TEXT, string_value(sc->file_names[file]), line, UNBOLD_TEXT);
+					  fprintf(stdout, " %s(%s[%u])%s", bold_text, string_value(sc->file_names[file]), line, unbold_text);
 				      }}}}}}}}
       liberate(sc, bt_block);
       sc->stop_at_error = old_stop;
