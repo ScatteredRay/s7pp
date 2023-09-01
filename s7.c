@@ -206,7 +206,7 @@
 #ifndef WITH_C_LOADER
   #if WITH_GCC && (!__MINGW32__) && (!__CYGWIN__)
     #define WITH_C_LOADER 1
-  /* (load file.so [e]) looks for (e 'init_func) and if found, calls it as the shared object init function.
+  /* (load file.so [e]) looks for ([e] 'init_func) and if found, calls it as the shared object init function.
    * If WITH_SYSTEM_EXTRAS is 0, the caller needs to supply system and delete-file so that cload.scm works.
    */
   #else
@@ -4167,7 +4167,7 @@ enum {OP_UNOPT, OP_GC_PROTECT, /* must be an even number of ops here, op_gc_prot
       OP_CLOSURE_AP, HOP_CLOSURE_AP, OP_CLOSURE_PA, HOP_CLOSURE_PA, OP_CLOSURE_PP, HOP_CLOSURE_PP,
       OP_CLOSURE_FA, HOP_CLOSURE_FA, OP_CLOSURE_SS, HOP_CLOSURE_SS, OP_CLOSURE_SS_O, HOP_CLOSURE_SS_O,
       OP_CLOSURE_SC, HOP_CLOSURE_SC, OP_CLOSURE_SC_O, HOP_CLOSURE_SC_O,
-      OP_CLOSURE_3S, HOP_CLOSURE_3S, OP_CLOSURE_3S_O, HOP_CLOSURE_3S_O, OP_CLOSURE_4S, HOP_CLOSURE_4S, OP_CLOSURE_4S_O, HOP_CLOSURE_4S_O,
+      OP_CLOSURE_3S, HOP_CLOSURE_3S, OP_CLOSURE_3S_O, HOP_CLOSURE_3S_O, OP_CLOSURE_4S, HOP_CLOSURE_4S, OP_CLOSURE_4S_O, HOP_CLOSURE_4S_O, OP_CLOSURE_5S, HOP_CLOSURE_5S,
       OP_CLOSURE_AA, HOP_CLOSURE_AA, OP_CLOSURE_AA_O, HOP_CLOSURE_AA_O, OP_CLOSURE_3A, HOP_CLOSURE_3A, OP_CLOSURE_4A, HOP_CLOSURE_4A,
       OP_CLOSURE_NA, HOP_CLOSURE_NA, OP_CLOSURE_ASS, HOP_CLOSURE_ASS, OP_CLOSURE_SAS, HOP_CLOSURE_SAS ,OP_CLOSURE_AAS, HOP_CLOSURE_AAS,
       OP_CLOSURE_SAA, HOP_CLOSURE_SAA, OP_CLOSURE_ASA, HOP_CLOSURE_ASA, OP_CLOSURE_NS, HOP_CLOSURE_NS,
@@ -4387,7 +4387,7 @@ static const char* op_names[NUM_OPS] =
       "closure_ap", "h_closure_ap", "closure_pa", "h_closure_pa", "closure_pp", "h_closure_pp",
       "closure_fa", "h_closure_fa", "closure_ss", "h_closure_ss", "closure_ss_o", "h_closure_ss_o",
       "closure_sc", "h_closure_sc", "closure_sc_o", "h_closure_sc_o",
-      "closure_3s", "h_closure_3s", "closure_3s_o", "h_closure_3s_o", "closure_4s", "h_closure_4s", "closure_4s_o", "h_closure_4s_o",
+      "closure_3s", "h_closure_3s", "closure_3s_o", "h_closure_3s_o", "closure_4s", "h_closure_4s", "closure_4s_o", "h_closure_4s_o", "closure_5s", "h_closure_5s",
       "closure_aa", "h_closure_aa", "closure_aa_o", "h_closure_aa_o", "closure_3a", "h_closure_3a", "closure_4a", "h_closure_4a",
       "closure_na", "h_closure_na", "closure_ass", "h_closure_ass", "closure_sas", "h_closure_sas ","closure_aas", "h_closure_aas",
       "closure_saa", "h_closure_saa", "closure_asa", "h_closure_asa", "closure_ns", "h_closure_ns",
@@ -4634,7 +4634,7 @@ bool s7_is_valid(s7_scheme *sc, s7_pointer arg)
   if (!arg) return(false);
   {
     s7_pointer heap0 = *(sc->heap);
-    s7_pointer heap1 = (s7_pointer)(heap0 + sc->heap_size);
+    const s7_pointer heap1 = (s7_pointer)(heap0 + sc->heap_size);
     if ((arg >= heap0) && (arg < heap1)) return(true);
   }
 #if TRAP_SEGFAULT
@@ -5918,6 +5918,7 @@ static const char *make_type_name(s7_scheme *sc, const char *name, article_t art
 
 static const char *type_name_from_type(int32_t typ, article_t article)
 {
+  /* if the type enum never changed, this could just be an array lookup, but it doesn't matter -- this function isn't called much */
   switch (typ)
     {
     case T_FREE:            return((article == NO_ARTICLE) ? "free-cell"         : "a free cell");
@@ -8978,6 +8979,18 @@ static inline void make_let_with_four_slots(s7_scheme *sc, s7_pointer func, s7_p
   inline_add_slot_at_end(sc, let_id(sc->curlet), last_slot, cadr(cargs), val4);
 }
 
+static inline void make_let_with_five_slots(s7_scheme *sc, s7_pointer func, s7_pointer val1, s7_pointer val2, s7_pointer val3, s7_pointer val4, s7_pointer val5)
+{
+  s7_pointer last_slot, cargs = closure_args(func);
+  sc->curlet = inline_make_let_with_two_slots(sc, closure_let(func), car(cargs), val1, cadr(cargs), val2);
+  cargs = cddr(cargs);
+  last_slot = next_slot(let_slots(sc->curlet));
+  last_slot = inline_add_slot_at_end(sc, let_id(sc->curlet), last_slot, car(cargs), val3);
+  cargs = cdr(cargs);
+  last_slot = inline_add_slot_at_end(sc, let_id(sc->curlet), last_slot, car(cargs), val4);
+  inline_add_slot_at_end(sc, let_id(sc->curlet), last_slot, cadr(cargs), val5);
+}
+
 static s7_pointer reuse_as_let(s7_scheme *sc, s7_pointer let, s7_pointer next_let)
 {
   /* we're reusing let here as a let -- it was probably a pair */
@@ -10280,7 +10293,7 @@ static s7_pointer let_copy(s7_scheme *sc, s7_pointer let)
 	  if (y)
 	    slot_set_next(y, z);
 	  else let_set_slots(new_e, z);
-	  slot_set_next(z, slot_end);              /* in case GC runs during this loop */
+	  slot_set_next(z, slot_end);          /* in case GC runs during this loop */
 	  y = z;
 	}}
   /* We can't do a (normal) loop here then reverse the slots later because the symbol's local_slot has to
@@ -13766,7 +13779,7 @@ static void dtoa_normalize(dtoa_np* fp)
   fp->exp -= shift;
 }
 
-static void dtoa_get_normalized_boundaries(dtoa_np* fp, dtoa_np* lower, dtoa_np* upper)
+static void dtoa_get_normalized_boundaries(const dtoa_np* fp, dtoa_np* lower, dtoa_np* upper)
 {
   int32_t u_shift, l_shift;
   upper->frac = (fp->frac << 1) + 1;
@@ -15301,7 +15314,7 @@ static s7_pointer make_undefined_bignum(s7_scheme *sc, const char *name)
 }
 #endif
 
-static s7_pointer nan1_or_bust(s7_scheme *sc, s7_double x, const char *p, char *q, int32_t radix, bool want_symbol, int32_t offset)
+static s7_pointer nan1_or_bust(s7_scheme *sc, s7_double x, const char *p, const char *q, int32_t radix, bool want_symbol, int32_t offset)
 {
   s7_int len = safe_strlen(p);
   if (p[len - 1] == 'i')       /* +nan.0[+/-]...i */
@@ -19646,8 +19659,8 @@ static s7_pointer chooser_check_arg_types(s7_scheme *sc, s7_pointer arg1, s7_poi
 					  s7_pointer f_2_ff, s7_pointer f_2_ii, s7_pointer f_2_if, s7_pointer f_2_fi,
 					  s7_pointer f_2_xi, s7_pointer f_2_ix, s7_pointer f_2_fx, s7_pointer f_2_xf)
 {
-  s7_pointer arg1_type = argument_type(sc, arg1);
-  s7_pointer arg2_type = argument_type(sc, arg2);
+  const s7_pointer arg1_type = argument_type(sc, arg1);
+  const s7_pointer arg2_type = argument_type(sc, arg2);
   if ((arg1_type) || (arg2_type))
     {
       if (arg1_type == sc->is_float_symbol)
@@ -28565,7 +28578,8 @@ static s7_pointer file_read_line(s7_scheme *sc, s7_pointer port, bool with_eol)
   while (true)
     {
       s7_int cur_size;
-      char *buf, *snew = strchr(sc->read_line_buf, (int)'\n'); /* or maybe just strlen + end-of-string=newline */
+      char *buf;
+      const char *snew = strchr(sc->read_line_buf, (int)'\n'); /* or maybe just strlen + end-of-string=newline */
       if (snew)
 	{
 	  s7_int pos = (s7_int)(snew - sc->read_line_buf);
@@ -29285,7 +29299,9 @@ static block_t *expand_filename(s7_scheme *sc, const char *name)
 static s7_pointer open_input_file_1(s7_scheme *sc, const char *name, const char *mode, const char *caller)
 {
   FILE *fp;
+#if WITH_GCC
   block_t *b;
+#endif
   /* see if we can open this file before allocating a port */
   if (is_directory(name))
     file_error_nr(sc, caller, "file is a directory:", name);
@@ -30767,7 +30783,7 @@ s7_pointer s7_autoload(s7_scheme *sc, s7_pointer symbol, s7_pointer file_or_func
     sc->autoload_table = s7_make_hash_table(sc, sc->default_hash_table_length); /* add_hash_table here, perhaps sc->hash_tables->loc-- */
   if (sc->safety >= MORE_SAFETY_WARNINGS)
     {
-      s7_pointer p = s7_hash_table_ref(sc, sc->autoload_table, symbol);
+      const s7_pointer p = s7_hash_table_ref(sc, sc->autoload_table, symbol);
       if ((p != sc->F) && (p != file_or_function))
 	s7_warn(sc, 256, "'%s autoload value changed\n", symbol_name(symbol));
     }
@@ -32952,7 +32968,7 @@ static void int_vector_to_port(s7_scheme *sc, s7_pointer vect, s7_pointer port, 
   if (len > 1000)
     {
       s7_int i, vlen = vector_length(vect);
-      s7_int *els = int_vector_ints(vect);
+      const s7_int *els = int_vector_ints(vect);
       s7_int first = els[0];
       for (i = 1; i < vlen; i++)
 	if (els[i] != first)
@@ -33030,7 +33046,7 @@ static void float_vector_to_port(s7_scheme *sc, s7_pointer vect, s7_pointer port
   char buf[FV_BUFSIZE];
   s7_int i, plen;
   bool too_long;
-  s7_double *els = float_vector_floats(vect);
+  const s7_double *els = float_vector_floats(vect);
   s7_int len = print_vector_length(sc, vect, port, use_write);
   if (len < 0) return;  /* vector-length=0 etc */
   too_long = (len < vector_length(vect));
@@ -33104,7 +33120,7 @@ static void byte_vector_to_port(s7_scheme *sc, s7_pointer vect, s7_pointer port,
   if (len > 1000)
     {
       s7_int vlen = vector_length(vect);
-      uint8_t *els = byte_vector_bytes(vect);
+      const uint8_t *els = byte_vector_bytes(vect);
       uint8_t first = els[0];
       for (i = 1; i < vlen; i++)
 	if (els[i] != first)
@@ -34152,7 +34168,7 @@ static s7_pointer find_closure(s7_scheme *sc, s7_pointer closure, s7_pointer cur
       if ((is_funclet(e)) || (is_maclet(e)))
 	{
 	  s7_pointer sym = funclet_function(e);
-	  s7_pointer f = s7_symbol_local_value(sc, sym, e);
+	  const s7_pointer f = s7_symbol_local_value(sc, sym, e);
 	  if (f == closure)
 	    return(sym);
 	}
@@ -36499,7 +36515,7 @@ static s7_pointer format_chooser(s7_scheme *sc, s7_pointer f, int32_t args, s7_p
 {
   if (args > 1)
     {
-      s7_pointer port = cadr(expr);
+      const s7_pointer port = cadr(expr);
       s7_pointer str_arg = caddr(expr);
       if (is_string(str_arg))
 	{
@@ -38592,7 +38608,7 @@ static s7_pointer g_memq(s7_scheme *sc, s7_pointer args)
 static s7_pointer g_memq_2(s7_scheme *sc, s7_pointer args)
 {
   s7_pointer x = cadr(args);
-  s7_pointer obj = car(args);
+  const s7_pointer obj = car(args);
   if (obj == car(x)) return(x);
   return((obj == cadr(x)) ? cdr(x) : sc->F);
 }
@@ -38613,7 +38629,7 @@ static s7_pointer memq_3_p_pp(s7_scheme *sc, s7_pointer obj, s7_pointer x)
 static s7_pointer g_memq_3(s7_scheme *sc, s7_pointer args)
 {
   s7_pointer x = cadr(args);
-  s7_pointer obj = car(args);
+  const s7_pointer obj = car(args);
   while (true)
     {
       if (obj == car(x)) return(x);
@@ -38643,7 +38659,7 @@ static s7_pointer g_memq_any(s7_scheme *sc, s7_pointer args)
 {
   /* no circular list check needed in this case */
   s7_pointer x = cadr(args);
-  s7_pointer obj = car(args);
+  const s7_pointer obj = car(args);
   while (true)
     {
       LOOP_4(if (obj == car(x)) return(x); x = cdr(x); if (!is_pair(x)) return(sc->F));
@@ -39514,9 +39530,9 @@ static vdims_t *make_vdims(s7_scheme *sc, bool elements_should_be_freed, s7_int 
   return(v);
 }
 
-static s7_pointer make_any_vector(s7_scheme *sc, int32_t type, s7_int len, s7_int dims, s7_int *dim_info)
+static s7_pointer make_any_vector(s7_scheme *sc, int32_t type, s7_int len, s7_int dims, const s7_int *dim_info)
 {
-  s7_pointer p = make_vector_1(sc, len, FILLED, type);
+  const s7_pointer p = make_vector_1(sc, len, FILLED, type);
   if (dim_info)
     {
       vector_set_dimension_info(p, make_vdims(sc, false, dims, dim_info));
@@ -39881,8 +39897,8 @@ static s7_int flatten_multivector_indices(s7_scheme *sc, s7_pointer vector, s7_i
   else
     {
       s7_int i;
-      s7_int *dimensions = vector_dimensions(vector);
-      s7_int *offsets = vector_offsets(vector);
+      const s7_int *dimensions = vector_dimensions(vector);
+      const s7_int *offsets = vector_offsets(vector);
       for (i = 0, index = 0; i < indices; i++)
 	{
 	  s7_int ind = va_arg(ap, s7_int);
@@ -60673,7 +60689,7 @@ static bool d_ddd_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 	      opc->v[11].fd = opc->v[10].o1->v[0].fd;
 	      opc->v[9].fd = opc->v[8].o1->v[0].fd;
 	      opc->v[6].fd = opc->v[5].o1->v[0].fd;
-	      if ((f = multiply_d_ddd) && (opc->v[11].fd == opt_D_s) && (opc->v[9].fd == opt_D_s) && (opc->v[6].fd == opt_d_s))
+	      if ((f == multiply_d_ddd) && (opc->v[11].fd == opt_D_s) && (opc->v[9].fd == opt_D_s) && (opc->v[6].fd == opt_d_s))
 		opc->v[0].fd = opt_d_ddd_fff_mul;
 	      return_true(sc, car_x);
 	    }}}
@@ -65891,6 +65907,7 @@ static s7_pointer opt_do_very_simple(opt_info *o)
 		}}
 	  else
 	    while (integer(vp) < end) {f(o1); integer(vp)++;}}
+          /* spliting out opt_set_p_d_f_sf_add here (for tgsl.scm) is marginal (time is in opt_d_dd_ff_mul -> opt_d_id_sf -> bessel funcs) */
   unstack(sc);
   set_curlet(sc, old_e);
   return(sc->T);
@@ -66521,6 +66538,7 @@ static bool float_optimize_1(s7_scheme *sc, s7_pointer expr)
 }
 
 static bool float_optimize(s7_scheme *sc, s7_pointer expr) {return((float_optimize_1(sc, expr)) && (sc->pc < OPTS_SIZE));}
+/* combining the sc->pc check into float_optimize_1 (and similarly for the other 3 cases) does not given any speedup */
 
 static bool int_optimize_1(s7_scheme *sc, s7_pointer expr)
 {
@@ -71579,7 +71597,7 @@ static opt_t optimize_func_many_args(s7_scheme *sc, s7_pointer expr, s7_pointer 
 	    {
 	      if (safe_case)
 		set_optimize_op(expr, hop + OP_SAFE_CLOSURE_NS);
-	      else set_optimize_op(expr, hop + ((args == 4) ? ((is_null(cdr(closure_body(func)))) ? OP_CLOSURE_4S_O : OP_CLOSURE_4S) : OP_CLOSURE_NS));
+	      else set_optimize_op(expr, hop + ((args == 4) ? ((is_null(cdr(closure_body(func)))) ? OP_CLOSURE_4S_O : OP_CLOSURE_4S) : ((args == 5) ? OP_CLOSURE_5S : OP_CLOSURE_NS)));
 	    }
 	  return(OPT_F);
 	}
@@ -84426,8 +84444,7 @@ static inline void op_closure_3s_o(s7_scheme *sc)
 static void op_closure_4s(s7_scheme *sc)
 {
   s7_pointer args = cdr(sc->code);
-  s7_pointer v1 = lookup(sc, car(args));
-  s7_pointer v2 = lookup(sc, cadr(args));
+  s7_pointer v1 = lookup(sc, car(args)), v2 = lookup(sc, cadr(args));
   s7_pointer f = opt1_lambda(sc->code);
   args = cddr(args);
   make_let_with_four_slots(sc, f, v1, v2, lookup(sc, car(args)), lookup(sc, cadr(args))); /* sets sc->curlet */
@@ -84438,12 +84455,22 @@ static void op_closure_4s(s7_scheme *sc)
 static inline void op_closure_4s_o(s7_scheme *sc)
 {
   s7_pointer args = cdr(sc->code);
-  s7_pointer v1 = lookup(sc, car(args));
-  s7_pointer v2 = lookup(sc, cadr(args));
+  s7_pointer v1 = lookup(sc, car(args)), v2 = lookup(sc, cadr(args));
   s7_pointer f = opt1_lambda(sc->code);
   args = cddr(args);
   make_let_with_four_slots(sc, f, v1, v2, lookup(sc, car(args)), lookup(sc, cadr(args))); /* sets sc->curlet */
   sc->code = car(closure_body(f));
+}
+
+static void op_closure_5s(s7_scheme *sc) /* .1 in lg but this is marginal -- adds two ops etc */
+{
+  s7_pointer args = cdr(sc->code);
+  s7_pointer v1 = lookup(sc, car(args)), v2 = lookup(sc, cadr(args));
+  s7_pointer f = opt1_lambda(sc->code);
+  args = cddr(args);
+  make_let_with_five_slots(sc, f, v1, v2, lookup(sc, car(args)), lookup(sc, cadr(args)), lookup(sc, caddr(args))); /* sets sc->curlet */
+  sc->code = T_Pair(closure_body(f));
+  if_pair_set_up_begin(sc);
 }
 
 static void op_safe_closure_aa(s7_scheme *sc)
@@ -89877,7 +89904,7 @@ static bool op_unknown_ns(s7_scheme *sc)
 	    return(fixup_unknown_op(sc, code, f, hop + ((is_safe_closure(f)) ? OP_SAFE_CLOSURE_3S : ((one_form) ? OP_CLOSURE_3S_O : OP_CLOSURE_3S))));
 	  if (num_args == 4)
 	    return(fixup_unknown_op(sc, code, f, hop + ((is_safe_closure(f)) ? OP_SAFE_CLOSURE_NS : ((one_form) ? OP_CLOSURE_4S_O : OP_CLOSURE_4S))));
-	  return(fixup_unknown_op(sc, code, f, hop + ((is_safe_closure(f)) ? OP_SAFE_CLOSURE_NS : OP_CLOSURE_NS)));
+	  return(fixup_unknown_op(sc, code, f, hop + ((is_safe_closure(f)) ? OP_SAFE_CLOSURE_NS : ((num_args == 5) ? OP_CLOSURE_5S : OP_CLOSURE_NS))));
 	}
       break;
 
@@ -90867,6 +90894,9 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 
 	case OP_CLOSURE_4S_O: if (!closure_is_ok(sc, sc->code, OK_UNSAFE_CLOSURE_P, 4)) {if (op_unknown_ns(sc)) goto EVAL; continue;}
 	case HOP_CLOSURE_4S_O: op_closure_4s_o(sc); goto EVAL;
+
+	case OP_CLOSURE_5S: if (!closure_is_fine(sc, sc->code, FINE_UNSAFE_CLOSURE, 5)) {if (op_unknown_ns(sc)) goto EVAL; continue;}
+	case HOP_CLOSURE_5S: op_closure_5s(sc); goto EVAL;
 
 	case OP_CLOSURE_SC: if (!closure_is_ok(sc, sc->code, OK_UNSAFE_CLOSURE_M, 2)) {if (op_unknown_gg(sc)) goto EVAL; continue;}
 	case HOP_CLOSURE_SC: op_closure_sc(sc); goto EVAL;
@@ -96007,7 +96037,7 @@ s7_scheme *s7_init(void)
   if (!s7_type_names[0]) {fprintf(stderr, "no type_names\n"); gdb_break();} /* squelch very stupid warnings! */
   if (strcmp(op_names[HOP_SAFE_C_PP], "h_safe_c_pp") != 0) fprintf(stderr, "c op_name: %s\n", op_names[HOP_SAFE_C_PP]);
   if (strcmp(op_names[OP_SET_WITH_LET_2], "set_with_let_2") != 0) fprintf(stderr, "set op_name: %s\n", op_names[OP_SET_WITH_LET_2]);
-  if (NUM_OPS != 924) fprintf(stderr, "size: cell: %d, block: %d, max op: %d, opt: %d\n", (int)sizeof(s7_cell), (int)sizeof(block_t), NUM_OPS, (int)sizeof(opt_info));
+  if (NUM_OPS != 926) fprintf(stderr, "size: cell: %d, block: %d, max op: %d, opt: %d\n", (int)sizeof(s7_cell), (int)sizeof(block_t), NUM_OPS, (int)sizeof(opt_info));
   /* cell size: 48, 120 if debugging, block size: 40, opt: 128 or 280 */
 #endif
 
@@ -96424,11 +96454,11 @@ int main(int argc, char **argv)
  * tall      15.6   15.6   15.6   15.6   15.1   15.1
  * calls     36.7   37.5   37.0   37.5   37.1   37.1
  * sg        ----   ----   55.9   55.8   55.3   55.3
- * lg        ----   ----  105.2  106.4  107.2  107.2
+ * lg        ----   ----  105.2  106.4  107.2  107.1
  * tbig     177.4  175.8  156.5  148.1  145.8  145.9
  * -------------------------------------------------
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
- * safety for exp->mac? check-define-macro in lint
- * *read-error-hook* is only triggered in #... -- it is reader-error?
+ * safety for exp->mac? check-define-macro in lint (given eval-string, we can't do this in s7.c I think)
+ * *read-error-hook* is only triggered in #... -- it is reader-error? (see also reader-cond bug)
  */
