@@ -1450,14 +1450,14 @@ static s7_pointer set_elist_1(s7_scheme *sc, s7_pointer x1);
 
 static size_t local_fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream)
 {
-  error_nr(cur_sc, cur_sc->io_error_symbol, 
+  error_nr(cur_sc, cur_sc->io_error_symbol,
 	   set_elist_1(cur_sc, wrap_string(cur_sc, "writing a file is not allowed in this version of s7", 51)));
 }
 
 static FILE *local_fopen(const char *pathname, const char *mode)
 {
   if ((mode[0] == 'w') || (mode[0] == 'a'))
-    error_nr(cur_sc, cur_sc->io_error_symbol, 
+    error_nr(cur_sc, cur_sc->io_error_symbol,
 	     set_elist_1(cur_sc, wrap_string(cur_sc, "opening a file is not allowed in this version of s7", 51)));
   return(old_fopen(pathname, mode));
 }
@@ -5372,7 +5372,7 @@ static s7_pointer check_ref18(s7_pointer p, const char *func, int32_t line)
     {
       if (global_value(p) != p)
 	{
-	  fprintf(stderr, "%s%s[%d]: keyword %s value is not itself (type: %s)%s\n", 
+	  fprintf(stderr, "%s%s[%d]: keyword %s value is not itself (type: %s)%s\n",
 		  bold_text, func, line, display(p), s7_type_names[unchecked_type(global_value(p))], unbold_text);
 	  if (cur_sc->stop_at_error) abort();
 	}
@@ -5388,7 +5388,7 @@ static s7_pointer check_ref19(s7_pointer p, const char *func, int32_t line)
 {
   uint8_t typ = unchecked_type(p);
   check_nref(p, func, line);
-  if (t_ext_p[typ]) 
+  if (t_ext_p[typ])
     {
       fprintf(stderr, "%s%s[%d]: attempt to use (internal) %s cell%s\n", bold_text, func, line, s7_type_names[typ], unbold_text);
       if (cur_sc->stop_at_error) abort();
@@ -20821,7 +20821,7 @@ static s7_pointer g_mul_xf(s7_scheme *sc, s7_pointer x, s7_double y, int32_t num
 {
   /* it's possible to return different argument NaNs depending on the expression or how it is wrapped:
    *   (* (bignum +nan.0) +nan.123) -> nan.123
-   *   (let () (define (func) (* (bignum +nan.0) +nan.123)) (func) (func)) -> nan.0 
+   *   (let () (define (func) (* (bignum +nan.0) +nan.123)) (func) (func)) -> nan.0
    * latter call is fx_c_aaa->fx_c_ac->g_mul_xf (if +nan.122 instead of +nan.0, we get +nan.122 so we always get one of the NaNs)
    */
   switch (type(x))
@@ -31524,10 +31524,10 @@ static s7_pointer vector_iterate(s7_scheme *sc, s7_pointer obj)
 static s7_pointer closure_iterate(s7_scheme *sc, s7_pointer obj)
 {
   /* this can be confusing: below a hash-table is the "function", and a function is the "iterator" only because with-let exports +iterator+=#t -> infinite loop!
-       (with-let 
+       (with-let
          (let ((+iterator+ #t))
            (lambda () #<eof>))    ; this works because a function has an associated let??  with-let first arg should be a let.
-         (for-each 
+         (for-each
           (make-hash-table)       ; (hash-table) -- ((hash-table) ()) is #f (not an error)
              ;(vector 1)          ; error: vector-ref second argument, (), is nil but should be an integer
              ;(vector)            ; error: for-each first argument #() called with 1 argument?
@@ -31536,7 +31536,7 @@ static s7_pointer closure_iterate(s7_scheme *sc, s7_pointer obj)
              ;(lambda (asd) ())   ; error: make-iterator argument, #<lambda (asd)>, is a function but should be a thunk
           ))
    * similarly:
-       (with-let 
+       (with-let
          (let ((+documentation+ "hiho")) (curlet))
          (define (f) 1)                         ; (define (f) "a string" 1) would return doc as "a string"
          (display (documentation f)) (newline)) ; "hiho" -- should we block +documentation+ in with-let?
@@ -45788,7 +45788,7 @@ static bool is_dwind_thunk(s7_scheme *sc, s7_pointer x)
 {
   switch (type(x))
     {
-    case T_MACRO: case T_BACRO: case T_CLOSURE: 
+    case T_MACRO: case T_BACRO: case T_CLOSURE:
     case T_MACRO_STAR: case T_BACRO_STAR: case T_CLOSURE_STAR:
       return(is_null(closure_args(x)));    /* this case does not match is_aritable -- it could be loosened -- arity=0 below would need fixup */
     case T_C_FUNCTION:
@@ -48623,7 +48623,7 @@ static s7_pointer copy_c_object_to_same_type(s7_scheme *sc, s7_pointer dest, s7_
   s7_int gc_loc1 = gc_protect_1(sc, mi);
   s7_pointer mj = make_mutable_integer(sc, 0);
   s7_int gc_loc2 = gc_protect_1(sc, mj);
-  
+
   for (s7_int i = source_start, j = dest_start; i < dest_end; i++, j++)
     {
       integer(mi) = i;
@@ -49498,7 +49498,7 @@ static s7_pointer string_or_byte_vector_reverse_in_place(s7_scheme *sc, s7_point
       bytes = byte_vector_bytes(p);
     }
   if (len < 2) return(p);
-  
+
 #if (defined(__linux__)) && (defined(__GLIBC__)) /* need byteswp.h */
   /* this code (from StackOverflow with changes) is much faster: */
 #include <byteswap.h>
@@ -51343,7 +51343,7 @@ s7_pointer s7_call_with_catch(s7_scheme *sc, s7_pointer tag, s7_pointer body, s7
     TRACK(sc);
     store_jump_info(sc);
     set_jump_info(sc, S7_CALL_SET_JUMP);
-    
+
     if (SHOW_EVAL_OPS) fprintf(stderr, "jump_loc: %d\n", jump_loc);
     if (jump_loc == NO_JUMP)
       {
@@ -65907,7 +65907,7 @@ static s7_pointer opt_do_very_simple(opt_info *o)
 		}}
 	  else
 	    while (integer(vp) < end) {f(o1); integer(vp)++;}}
-          /* spliting out opt_set_p_d_f_sf_add here (for tgsl.scm) is marginal (time is in opt_d_dd_ff_mul -> opt_d_id_sf -> bessel funcs) */
+          /* splitting out opt_set_p_d_f_sf_add here (for tgsl.scm) is marginal (time is in opt_d_dd_ff_mul -> opt_d_id_sf -> bessel funcs) */
   unstack(sc);
   set_curlet(sc, old_e);
   return(sc->T);
@@ -66624,7 +66624,7 @@ static bool p_2x_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	{
 	  if (p_pi_ok(sc, opc, s_func, sig, car_x))
 	    return(true);
-	  
+
 	  if ((car(sig) == sc->is_float_symbol) ||
 	      (car(sig) == sc->is_real_symbol))
 	    {
@@ -66671,7 +66671,7 @@ static bool p_3x_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	    return(true);
 	  if (p_pip_ok(sc, opc, s_func, car_x))
 	    return(true);
-	  
+
 	  if (((car(sig) == sc->is_float_symbol) ||
 	       (car(sig) == sc->is_real_symbol)) &&
 	      (s7_d_7pid_function(s_func)) &&
@@ -66682,7 +66682,7 @@ static bool p_3x_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	      opc->v[0].fp = d_to_p;
 	      return(true);
 	    }
-	  
+
 	  sc->pc = pstart - 1;
 	  if ((car(sig) == sc->is_integer_symbol) &&
 	      (s7_i_7pii_function(s_func)) &&
@@ -66793,7 +66793,7 @@ static bool cell_optimize_1(s7_scheme *sc, s7_pointer expr)
 	case 4: return(p_3x_ok(sc, opc, s_func, car_x, sc->pc, expr));
 	case 5: return(p_4x_ok(sc, opc, s_func, car_x, sc->pc, expr));
 
-	case 6: if (p_5x_ok(sc, opc, s_func, car_x, sc->pc, expr)) return(true); 
+	case 6: if (p_5x_ok(sc, opc, s_func, car_x, sc->pc, expr)) return(true);
 	  /* fall through */
 
 	default: return(p_call_any_ok(sc, opc, s_func, car_x, len)); /* >3D vector-set etc */
@@ -68580,9 +68580,9 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
     case OP_EVAL_MACRO_MV: /* perhaps reader-cond expansion at eval-time (not at run-time) via ((let () reader-cond) ...)? */
       {
 	opcode_t s_op = stack_op(sc->stack, top - 4);
-	if (S7_DEBUGGING) 
-	  if (SHOW_EVAL_OPS) 
-	    fprintf(stderr, "  eval_macro_mv splice %s with %s, code: %s, args: %s, value: %s\n", 
+	if (S7_DEBUGGING)
+	  if (SHOW_EVAL_OPS)
+	    fprintf(stderr, "  eval_macro_mv splice %s with %s, code: %s, args: %s, value: %s\n",
 		    display(args), op_names[s_op], display(sc->code), display(sc->args), display(sc->value));
 	if ((s_op == OP_DO_STEP) || (s_op == OP_DEACTIVATE_GOTO) || (s_op == OP_LET1))
 	  return(args); /* tricky reader-cond as macro in do body returning values... or call-with-exit */
@@ -68598,7 +68598,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 	      stack_args(sc->stack, top - 4) = cons(sc, car(x), stack_args(sc->stack, top - 4));
 	    sc->w = sc->unused;
 	    if (SHOW_EVAL_OPS)
-	      fprintf(stderr, "  eval_macro splice %s with %s, code: %s, args: %s, value: %s -> %s %s\n", 
+	      fprintf(stderr, "  eval_macro splice %s with %s, code: %s, args: %s, value: %s -> %s %s\n",
 		      display(args), op_names[s_op], display(sc->code), display(sc->args), display(sc->value), display(stack_args(sc->stack, top - 4)), display(car(x)));
 	    return(car(x));
 	  }
@@ -68617,7 +68617,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
        */
       top -= 4;
       if (SHOW_EVAL_OPS)
-	fprintf(stderr, "  %s[%d]: %s stack top: %" ld64 ", op: %s, args: %s\n", __func__, __LINE__, 
+	fprintf(stderr, "  %s[%d]: %s stack top: %" ld64 ", op: %s, args: %s\n", __func__, __LINE__,
 		op_names[stack_op(sc->stack, top + 4)], top, op_names[stack_op(sc->stack, top)], display(args));
       if (stack_op(sc->stack, top) == OP_LOAD_RETURN_IF_EOF)
 	{
@@ -69410,7 +69410,7 @@ static s7_pointer unbound_variable(s7_scheme *sc, s7_pointer sym)
 		  /* the current_let refs here are trying to handle local autoloads, but that is problematic -- we'd need to
 		   *   save the autoload curlet when autoload is called, and hope the current reference can still access that let?
 		   *   but if the same symbol is autloaded in several lets, we are in trouble, and how to handle a function that
-		   *   has an autoload?  I think I'll just assume rootlet, even though that is not very elegant.  Actually in the 
+		   *   has an autoload?  I think I'll just assume rootlet, even though that is not very elegant.  Actually in the
 		   *   libgsl case, we're trying to export a name from *libgsl* -- should that be done with define rather than autoload?
 		   */
 		  result = let_ref(sc, e, sym);  /* add '(sym . result) to current_let (was sc->nil, s7_load can set sc->curlet to sc->nil) */
@@ -83875,7 +83875,7 @@ static void op_define_with_setter(s7_scheme *sc)
 		  (!s7_is_equivalent(sc, old_value, sc->value)))    /* if value is unchanged, just ignore this (re)definition */
 		syntax_error_nr(sc, "define ~S, but it is immutable", 30, old_symbol);
 	    }
-	  else 
+	  else
 	    {
 	      slot_set_value_with_hook(slot, sc->value);
 	      symbol_increment_ctr(code);
@@ -84678,7 +84678,7 @@ static void op_closure_4a(s7_scheme *sc) /* sass */
 
 static void op_closure_na(s7_scheme *sc)
 {
-  s7_pointer exprs = cdr(sc->code);
+  s7_pointer exprs = cdr(sc->code);         /* "n" = opt3_arglen(exprs), mostly 5 in lt, 6 in tlet */
   s7_pointer func = opt1_lambda(sc->code), slot, last_slot;
   s7_int id;
   s7_pointer pars = closure_args(func);
@@ -84687,7 +84687,7 @@ static void op_closure_na(s7_scheme *sc)
   sc->value = fx_call(sc, exprs);
   new_cell_no_check(sc, last_slot, T_SLOT);
   slot_set_symbol_and_value(last_slot, car(pars), sc->value);
-  slot_set_next(last_slot, let_slots(e));                 /* i.e. slot_end */
+  slot_set_next(last_slot, let_slots(e));   /* i.e. slot_end */
   let_set_slots(e, last_slot);
   for (pars = cdr(pars), exprs = cdr(exprs); is_pair(pars); pars = cdr(pars), exprs = cdr(exprs))
     {
@@ -88718,8 +88718,8 @@ static token_t read_sharp(s7_scheme *sc, s7_pointer pt)
       }
       break;
 
-    case ':':  /* turn #: into : -- this is for compatibility with Guile, sigh. I just noticed that Rick is using this -- 
-		* I'll just leave it alone, but that means : readers need to handle this case specially. 
+    case ':':  /* turn #: into : -- this is for compatibility with Guile, sigh. I just noticed that Rick is using this --
+		* I'll just leave it alone, but that means : readers need to handle this case specially.
 		*/
       sc->strbuf[0] = ':';
       return(TOKEN_ATOM);
@@ -88727,7 +88727,7 @@ static token_t read_sharp(s7_scheme *sc, s7_pointer pt)
     case '!':  /*  I don't think #! is special anymore -- maybe remove this code? */
       return(read_excl_comment(sc, pt));
 
-    case '|': 
+    case '|':
       return(read_block_comment(sc, pt));
     }
   sc->strbuf[0] = (unsigned char)c;
@@ -89509,7 +89509,7 @@ static bool op_unknown_closure_s(s7_scheme *sc, s7_pointer f, s7_pointer code)
   bool one_form = is_null(cdr(body));
   int32_t hop = (is_immutable_and_stable(sc, car(code))) ? 1 : 0;
   set_opt2_sym(code, cadr(code));
-  
+
   /* code here might be (f x) where f is passed elsewhere as a function parameter,
    *   first time through we look it up, find a safe-closure and optimize as (say) safe_closure_s_a,
    *   next time it is something else, etc.  Rather than keep optimizing it locally, we need to
@@ -93294,12 +93294,12 @@ static s7_pointer s7_starlet_set_1(s7_scheme *sc, s7_pointer sym, s7_pointer val
     {
     case SL_ACCEPT_ALL_KEYWORD_ARGUMENTS:
       if (!is_boolean(val)) s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_BOOLEAN]);
-      sc->accept_all_keyword_arguments = s7_boolean(sc, val); 
+      sc->accept_all_keyword_arguments = s7_boolean(sc, val);
       return(val);
 
     case SL_AUTOLOADING:
       if (!is_boolean(val)) s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_BOOLEAN]);
-      sc->is_autoloading = s7_boolean(sc, val); 
+      sc->is_autoloading = s7_boolean(sc, val);
       return(val);
 
     case SL_BIGNUM_PRECISION:
@@ -93335,7 +93335,7 @@ static s7_pointer s7_starlet_set_1(s7_scheme *sc, s7_pointer sym, s7_pointer val
 
     case SL_EXPANSIONS:
       if (!is_boolean(val)) s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_BOOLEAN]);
-      sc->is_expanding = s7_boolean(sc, val); 
+      sc->is_expanding = s7_boolean(sc, val);
       return(val);
 
     case SL_FILE_NAMES: case SL_FILENAMES: sl_unsettable_error_nr(sc, sym);
@@ -93416,12 +93416,12 @@ static s7_pointer s7_starlet_set_1(s7_scheme *sc, s7_pointer sym, s7_pointer val
 
     case SL_MEMORY_USAGE:
     case SL_MOST_NEGATIVE_FIXNUM:
-    case SL_MOST_POSITIVE_FIXNUM:  
+    case SL_MOST_POSITIVE_FIXNUM:
       sl_unsettable_error_nr(sc, sym);
 
     case SL_MUFFLE_WARNINGS:
       if (!is_boolean(val)) s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_BOOLEAN]);
-      sc->muffle_warnings = s7_boolean(sc, val); 
+      sc->muffle_warnings = s7_boolean(sc, val);
       return(val);
 
     case SL_NUMBER_SEPARATOR:   /* I think no PL uses the separator in output */
@@ -93429,7 +93429,7 @@ static s7_pointer s7_starlet_set_1(s7_scheme *sc, s7_pointer sym, s7_pointer val
 
     case SL_OPENLETS:
       if (!is_boolean(val)) s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_BOOLEAN]);
-      sc->has_openlets = s7_boolean(sc, val); 
+      sc->has_openlets = s7_boolean(sc, val);
       return(val);
 
     case SL_OUTPUT_PORT_DATA_SIZE:
@@ -93448,7 +93448,7 @@ static s7_pointer s7_starlet_set_1(s7_scheme *sc, s7_pointer sym, s7_pointer val
       if ((is_symbol(val)) || val == sc->F) {sc->profile_prefix = val; return(val);}
       s7_starlet_wrong_type_error_nr(sc, sym, val, wrap_string(sc, "a symbol or #f", 14));
 
-    case SL_ROOTLET_SIZE: 
+    case SL_ROOTLET_SIZE:
       sl_unsettable_error_nr(sc, sym);
 
     case SL_SAFETY:
@@ -93469,12 +93469,12 @@ static s7_pointer s7_starlet_set_1(s7_scheme *sc, s7_pointer sym, s7_pointer val
 
     case SL_UNDEFINED_CONSTANT_WARNINGS:
       if (!is_boolean(val)) s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_BOOLEAN]);
-      sc->undefined_constant_warnings = s7_boolean(sc, val); 
+      sc->undefined_constant_warnings = s7_boolean(sc, val);
       return(val);
 
     case SL_UNDEFINED_IDENTIFIER_WARNINGS:
       if (!is_boolean(val)) s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_BOOLEAN]);
-      sc->undefined_identifier_warnings = s7_boolean(sc, val); 
+      sc->undefined_identifier_warnings = s7_boolean(sc, val);
       return(val);
 
     case SL_VERSION:
@@ -96173,7 +96173,7 @@ void s7_free(s7_scheme *sc)
   if (sc->autoload_names_sizes) free(sc->autoload_names_sizes);
   if (sc->autoloaded_already)
     {
-      for (i = 0; i < sc->autoload_names_loc; i++) 
+      for (i = 0; i < sc->autoload_names_loc; i++)
 	if (sc->autoloaded_already[i]) free(sc->autoloaded_already[i]);
       free(sc->autoloaded_already);
     }
