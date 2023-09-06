@@ -6106,6 +6106,8 @@ returns 23, and <code>(abs -1 (reader-cond ((provided? 'surreals) 1)))</code> re
 me unhappy.  Even worse: <code>(define (f a (reader-cond ((provided? 'surreals) b))) a)</code> which adds
 the argument "b" if surreals are provided.
 Maybe reader-cond (and expansions in general) should not magically evaporate in such cases.
+
+(I just noticed that the corrected r7rs.pdf says that the result in cond-expand is unspecified).
 </p>
 <!--
 There's no statement in the r7rs spec that cond-expand can only happen at top-level, and in s7 you can load a
