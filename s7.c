@@ -3310,7 +3310,7 @@ static s7_pointer slot_expression(s7_pointer p)    \
 #define stack_element(p, i)            unchecked_vector_element(T_Stk(p), i)
 #define stack_elements(p)              unchecked_vector_elements(T_Stk(p))
 #define stack_block(p)                 unchecked_vector_block(T_Stk(p))
-#define current_stack_top(Sc)          ((Sc)->stack_end - (Sc)->stack_start)
+#define stack_top(Sc)          ((Sc)->stack_end - (Sc)->stack_start)
 #define temp_stack_top(p)              (T_Stk(p))->object.stk.top
 /* #define stack_flags(p)              (T_Stk(p))->object.stk.flags */
 #define stack_clear_flags(p)           (T_Stk(p))->object.stk.flags = 0
@@ -4694,17 +4694,29 @@ void s7_show_history(s7_scheme *sc)
 #endif
 }
 
-#define stack_code(Stack, Loc)        stack_element(Stack, Loc - 3)
-#define stack_let(Stack, Loc)         stack_element(Stack, Loc - 2)
-#define stack_args(Stack, Loc)        stack_element(Stack, Loc - 1)
-#define stack_op(Stack, Loc)          ((opcode_t)(stack_element(Stack, Loc)))
-#define set_stack_op(Stack, Loc, Op)  stack_element(Stack, Loc) = (s7_pointer)(Op)
+#define stack_op(Stack, Loc)         ((opcode_t)(stack_element(Stack, Loc)))
+#define stack_args(Stack, Loc)       stack_element(Stack, Loc - 1)
+#define stack_let(Stack, Loc)        stack_element(Stack, Loc - 2)
+#define stack_code(Stack, Loc)       stack_element(Stack, Loc - 3)
+#define set_stack_op(Stack, Loc, Op) stack_element(Stack, Loc) = (s7_pointer)(Op)
+
+#define stack_top_op(Sc)             ((opcode_t)(Sc->stack_end[-1]))
+#define stack_top_args(Sc)           (Sc->stack_end[-2])
+#define stack_top_let(Sc)            (Sc->stack_end[-3])
+#define stack_top_code(Sc)           (Sc->stack_end[-4])
+#define set_stack_top_op(Sc, Op)     Sc->stack_end[-1] = (s7_pointer)(Op)
+
+/* beware of stack_top_code!  If a function has a tail-call, the stack_top_code that form sees
+ *   if stack_top_op==op-begin1 can change from call to call -- the begin actually refers
+ *   to the caller, which is dependent on where the current function was called, so we can't hard-wire
+ *   any optimizations based on that sequence.
+ */
 
 void s7_show_stack(s7_scheme *sc);
 void s7_show_stack(s7_scheme *sc)
 {
   fprintf(stderr, "stack:\n");
-  for (int64_t i = current_stack_top(sc) - 1; i >= 3; i -= 4)
+  for (int64_t i = stack_top(sc) - 1; i >= 3; i -= 4)
     fprintf(stderr, "  %s\n", op_names[stack_op(sc->stack, i)]);
 }
 
@@ -5671,7 +5683,7 @@ static uint64_t opt3_location_1(s7_scheme *sc, s7_pointer p, const char *func, i
       show_opt3_bits(p, func, line, (uint64_t)OPT3_LOCATION);
       if (sc->stop_at_error) abort();
     }
-  return(p->object.sym_cons.location); /* don't use pair_location macro here or below (infinite recursion in S7_DEBUGGING case via opt3_location_1) */
+  return(p->object.sym_cons.location); /* don't use pair_location macro here or below (infinite recursion if S7_DEBUGGING via opt3_location_1) */
 }
 
 static void set_opt3_location_1(s7_pointer p, uint64_t x)
@@ -7375,7 +7387,7 @@ static int64_t gc(s7_scheme *sc)
   mark_current_code(sc); /* probably redundant if with_history */
   gc_mark(sc->value);
 
-  mark_stack_1(sc->stack, current_stack_top(sc));
+  mark_stack_1(sc->stack, stack_top(sc));
   set_mark(current_input_port(sc));
   mark_input_port_stack(sc);
   set_mark(current_output_port(sc));
@@ -8180,14 +8192,6 @@ static void unstack_2(s7_scheme *sc, opcode_t op, const char *func, int32_t line
 #define unstack_with(sc, op) sc->stack_end -= 4
 #endif
 
-#define main_stack_op(Sc) ((opcode_t)(Sc->stack_end[-1]))
-/* #define main_stack_args(Sc) (Sc->stack_end[-2]), #define main_stack_let(Sc) (Sc->stack_end[-3]), #define main_stack_code(Sc) (Sc->stack_end[-4]) */
-/* beware of main_stack_code!  If a function has a tail-call, the main_stack_code that form sees
- *   if main_stack_op==op-begin1 can change from call to call -- the begin actually refers
- *   to the caller, which is dependent on where the current function was called, so we can't hard-wire
- *   any optimizations based on that sequence.
- */
-
 static void stack_reset(s7_scheme *sc)
 {
   sc->stack_end = sc->stack_start;
@@ -8196,7 +8200,7 @@ static void stack_reset(s7_scheme *sc)
 
 static uint32_t resize_stack_unchecked(s7_scheme *sc)
 {
-  uint64_t loc = current_stack_top(sc);
+  uint64_t loc = stack_top(sc);
   uint32_t new_size = sc->stack_size * 2;
   block_t *ob = stack_block(sc->stack);
   block_t *nb = reallocate(sc, ob, new_size * sizeof(s7_pointer));
@@ -8233,7 +8237,7 @@ static void resize_stack_1(s7_scheme *sc, const char *func, int line)
 	      unbold_text);
       /* s7_show_stack(sc); */ /* prints so much the error message is inaccessible */
       fprintf(stderr, "stack:\n");
-      for (int64_t i = current_stack_top(sc) - 1; i >= current_stack_top(sc) - 100; i -= 4)
+      for (int64_t i = stack_top(sc) - 1; i >= stack_top(sc) - 100; i -= 4)
 	fprintf(stderr, "  %s\n", op_names[stack_op(sc->stack, i)]);
       resize_stack_unchecked(sc); /* give us some room while debugging! */
       abort();
@@ -10617,7 +10621,7 @@ static s7_pointer g_symbol_to_dynamic_value(s7_scheme *sc, s7_pointer args)
   if (top_id == symbol_id(sym))
     return(val);
 
-  for (int64_t i = current_stack_top(sc) - 1; i > 0; i -= 4)
+  for (int64_t i = stack_top(sc) - 1; i > 0; i -= 4)
     if (is_let_unchecked(stack_let(sc->stack, i))) /* OP_GC_PROTECT let slot can be anything (even free) */
       {
 	s7_pointer cur_val = find_dynamic_value(sc, stack_let(sc->stack, i), sym, &top_id);
@@ -11722,7 +11726,7 @@ s7_pointer s7_make_continuation(s7_scheme *sc)
   make_room_for_cc_stack(sc);
   if (sc->continuation_counter > 2000) call_gc(sc); /* call_gc zeros cc counter, gc time up, but run time down -- try big cache */
 
-  loc = current_stack_top(sc);
+  loc = stack_top(sc);
   stack = make_simple_vector(sc, loc);
   set_full_type(stack, T_STACK);
   temp_stack_top(stack) = loc;
@@ -11758,14 +11762,14 @@ static bool check_for_dynamic_winds(s7_scheme *sc, s7_pointer c)
    *   so they'll complain.  Otherwise we're supposed to re-run the init func before diving
    *   into the body.  Similarly for let-temporarily.  If a call/cc jumps out of a dynamic-wind
    *   body-func, we're supposed to call the finish-func.  The continuation is called at
-   *   current_stack_top(sc); the continuation form is at continuation_stack_top(c).
+   *   stack_top(sc); the continuation form is at continuation_stack_top(c).
    *
    * check sc->stack for dynamic-winds we're jumping out of
    *    we need to check from the current stack top down to where the continuation stack matches the current stack??
    *    this was (i > 0), but that goes too far back; perhaps s7 should save the position of the call/cc invocation.
    *    also the two stacks can be different sizes (either can be larger)
    */
-  int64_t top1 = current_stack_top(sc), top2 = continuation_stack_top(c);
+  int64_t top1 = stack_top(sc), top2 = continuation_stack_top(c);
   for (int64_t i = top1 - 1; (i > 0) && ((i >= top2) || (stack_code(sc->stack, i) != stack_code(continuation_stack(c), i))); i -= 4)
     {
       opcode_t op = stack_op(sc->stack, i);
@@ -11841,7 +11845,7 @@ static bool check_for_dynamic_winds(s7_scheme *sc, s7_pointer c)
 	}}
 
   /* check continuation-stack for dynamic-winds we're jumping into */
-  for (int64_t i = current_stack_top(sc) - 1; i < top2; i += 4)
+  for (int64_t i = stack_top(sc) - 1; i < top2; i += 4)
     {
       opcode_t op = stack_op(continuation_stack(c), i);
       if (op == OP_DYNAMIC_WIND)
@@ -11985,7 +11989,7 @@ static void call_with_exit(s7_scheme *sc)
   sc->op_stack_now = (s7_pointer *)(sc->op_stack + call_exit_op_loc(sc->code));
 
   /* look for dynamic-wind in the stack section that we are jumping out of */
-  i = current_stack_top(sc) - 1;
+  i = stack_top(sc) - 1;
   do {
     switch (stack_op(sc->stack, i)) /* avoidable if we group these ops at the end and use op< */
       {
@@ -12099,7 +12103,7 @@ static inline s7_pointer make_goto(s7_scheme *sc, s7_pointer name) /* inline for
 {
   s7_pointer x;
   new_cell(sc, x, T_GOTO);
-  call_exit_goto_loc(x) = current_stack_top(sc);
+  call_exit_goto_loc(x) = stack_top(sc);
   call_exit_op_loc(x) = (int32_t)(sc->op_stack_now - sc->op_stack);
   call_exit_active(x) = true;
   call_exit_name(x) = name;
@@ -30231,7 +30235,7 @@ s7_pointer s7_read(s7_scheme *sc, s7_pointer port)
 	  if (sc->tok == TOKEN_EOF)
 	    sc->value = eof_object;
 	  if ((sc->cur_op == OP_EVAL_DONE) && /* pushed above */
-	      (stack_op(sc->stack, current_stack_top(sc) - 1) == OP_BARRIER))
+	      (stack_top_op(sc) == OP_BARRIER))
 	    pop_stack(sc);
 	}
       pop_input_port(sc);
@@ -50662,7 +50666,7 @@ static bool stacktrace_find_let(s7_scheme *sc, int64_t loc, s7_pointer e)
 
 static int64_t stacktrace_find_error_hook_quit(s7_scheme *sc)
 {
-  for (int64_t i = current_stack_top(sc) - 1; i >= 3; i -= 4)
+  for (int64_t i = stack_top(sc) - 1; i >= 3; i -= 4)
     if (stack_op(sc->stack, i) == OP_ERROR_HOOK_QUIT)
       return(i);
   return(-1);
@@ -50844,7 +50848,7 @@ static s7_pointer stacktrace_1(s7_scheme *sc, s7_int frames_max, s7_int code_col
   char *str = NULL;
   block_t *strp = NULL;
   int64_t loc, frames = 0;
-  int64_t top = (sc->stack_end - sc->stack_start) / 4; /* (*s7* 'stack_top), not current_stack_top! */
+  int64_t top = (sc->stack_end - sc->stack_start) / 4; /* (*s7* 'stack_top), not stack_top(sc)! */
   clear_symbol_list(sc);
 
   if (stacktrace_in_error_handler(sc, top))
@@ -51294,7 +51298,7 @@ static s7_pointer g_catch(s7_scheme *sc, s7_pointer args)
   if (SHOW_EVAL_OPS) fprintf(stderr, "%s[%d]\n", __func__, __LINE__);
   new_cell(sc, p, T_CATCH);
   catch_tag(p) = car(args);
-  catch_goto_loc(p) = current_stack_top(sc);
+  catch_goto_loc(p) = stack_top(sc);
   catch_op_loc(p) = (int32_t)(sc->op_stack_now - sc->op_stack);
   catch_set_handler(p, err);
   catch_cstack(p) = sc->goto_start;
@@ -51333,7 +51337,7 @@ s7_pointer s7_call_with_catch(s7_scheme *sc, s7_pointer tag, s7_pointer body, s7
   if (SHOW_EVAL_OPS) fprintf(stderr, "%s[%d]\n", __func__, __LINE__);
   new_cell(sc, p, T_CATCH);
   catch_tag(p) = tag;
-  catch_goto_loc(p) = current_stack_top(sc);
+  catch_goto_loc(p) = stack_top(sc);
   catch_op_loc(p) = (int32_t)(sc->op_stack_now - sc->op_stack);
   catch_set_handler(p, error_handler);
   catch_cstack(p) = sc->goto_start;
@@ -51384,7 +51388,7 @@ static void op_c_catch(s7_scheme *sc)
 
   new_cell(sc, p, T_CATCH);                /* the catch object sitting on the stack */
   catch_tag(p) = tag;
-  catch_goto_loc(p) = current_stack_top(sc);
+  catch_goto_loc(p) = stack_top(sc);
   catch_op_loc(p) = sc->op_stack_now - sc->op_stack;
   catch_set_handler(p, cdadr(args));       /* not yet a closure... */
   catch_cstack(p) = sc->goto_start;
@@ -51398,7 +51402,7 @@ static void op_c_catch_all(s7_scheme *sc)
   s7_pointer p;
   new_cell(sc, p, T_CATCH);
   catch_tag(p) = sc->T;
-  catch_goto_loc(p) = current_stack_top(sc);
+  catch_goto_loc(p) = stack_top(sc);
   catch_op_loc(p) = sc->op_stack_now - sc->op_stack;
   catch_set_handler(p, sc->nil);
   catch_cstack(p) = sc->goto_start;
@@ -51519,11 +51523,11 @@ static void load_catch_cstack(s7_scheme *sc, s7_pointer c)
     sc->goto_start = catch_cstack(c);
 }
 
-static bool catch_all_function(s7_scheme *sc, s7_int top, s7_pointer type, s7_pointer info, bool *reset_hook)
+static bool catch_all_function(s7_scheme *sc, s7_int catch_loc, s7_pointer type, s7_pointer info, bool *reset_hook)
 {
-  s7_pointer catcher = T_Cat(stack_code(sc->stack, top));
+  s7_pointer catcher = T_Cat(stack_code(sc->stack, catch_loc));
   if (SHOW_EVAL_OPS) fprintf(stderr, "catcher: %s\n", __func__);
-  sc->value = stack_args(sc->stack, top);      /* error result, optimize_func_three_args -> op_c_catch_all etc */
+  sc->value = stack_args(sc->stack, catch_loc);      /* error result, optimize_func_three_args -> op_c_catch_all etc */
   if (sc->value == sc->unused) sc->value = type;
   sc->op_stack_now = (s7_pointer *)(sc->op_stack + catch_op_loc(catcher));
   sc->stack_end = (s7_pointer *)(sc->stack_start + catch_goto_loc(catcher));
@@ -51532,12 +51536,12 @@ static bool catch_all_function(s7_scheme *sc, s7_int top, s7_pointer type, s7_po
   return(true);
 }
 
-static bool catch_2_function(s7_scheme *sc, s7_int top, s7_pointer type, s7_pointer info, bool *reset_hook)
+static bool catch_2_function(s7_scheme *sc, s7_int catch_loc, s7_pointer type, s7_pointer info, bool *reset_hook)
 {
   /* this is the macro-error-handler case from g_catch
    *    (let () (define-macro (m . args) (apply (car args) (cadr args))) (catch #t (lambda () (error abs -1)) m))
    */
-  s7_pointer x = T_Cat(stack_code(sc->stack, top));
+  s7_pointer x = T_Cat(stack_code(sc->stack, catch_loc));
   if (SHOW_EVAL_OPS) fprintf(stderr, "catcher: %s\n", __func__);
   if ((catch_tag(x) == sc->T) || (catch_tag(x) == type) || (type == sc->T))
     {
@@ -51554,15 +51558,15 @@ static bool catch_2_function(s7_scheme *sc, s7_int top, s7_pointer type, s7_poin
   return(false);
 }
 
-static bool catch_1_function(s7_scheme *sc, s7_int top, s7_pointer type, s7_pointer info, bool *reset_hook)
+static bool catch_1_function(s7_scheme *sc, s7_int catch_loc, s7_pointer type, s7_pointer info, bool *reset_hook)
 {
-  s7_pointer x = T_Cat(stack_code(sc->stack, top));
+  s7_pointer x = T_Cat(stack_code(sc->stack, catch_loc));
   if (SHOW_EVAL_OPS) fprintf(stderr, "catcher: %s\n", __func__);
   if ((catch_tag(x) == sc->T) ||  /* the normal case */
       (catch_tag(x) == type) ||
       (type == sc->T))
     {
-      opcode_t op = stack_op(sc->stack, top);
+      opcode_t op = stack_op(sc->stack, catch_loc);
       s7_pointer catcher = x, error_body, error_args;
       s7_pointer error_func = catch_handler(catcher);
       uint64_t loc = catch_goto_loc(catcher);
@@ -51570,7 +51574,7 @@ static bool catch_1_function(s7_scheme *sc, s7_int top, s7_pointer type, s7_poin
       init_temp(sc->y, type);
       sc->value = info;
 
-      sc->temp4 = stack_let(sc->stack, top); /* GC protect this, since we're moving the stack top below */
+      sc->temp4 = stack_let(sc->stack, catch_loc); /* GC protect this, since we're moving the stack top below */
       sc->op_stack_now = (s7_pointer *)(sc->op_stack + catch_op_loc(catcher));
       sc->stack_end = (s7_pointer *)(sc->stack_start + loc);
       load_catch_cstack(sc, catcher);
@@ -51694,9 +51698,9 @@ static bool catch_1_function(s7_scheme *sc, s7_int top, s7_pointer type, s7_poin
   return(false);
 }
 
-static bool catch_dynamic_wind_function(s7_scheme *sc, s7_int top, s7_pointer type, s7_pointer info, bool *reset_hook)
+static bool catch_dynamic_wind_function(s7_scheme *sc, s7_int catch_loc, s7_pointer type, s7_pointer info, bool *reset_hook)
 {
-  s7_pointer x = T_Dyn(stack_code(sc->stack, top));
+  s7_pointer x = T_Dyn(stack_code(sc->stack, catch_loc));
   if (SHOW_EVAL_OPS) fprintf(stderr, "catcher: %s\n", __func__);
   if (dynamic_wind_state(x) == DWIND_BODY)
     {
@@ -51707,34 +51711,34 @@ static bool catch_dynamic_wind_function(s7_scheme *sc, s7_int top, s7_pointer ty
   return(false);
 }
 
-static bool catch_out_function(s7_scheme *sc, s7_int top, s7_pointer type, s7_pointer info, bool *reset_hook)
+static bool catch_out_function(s7_scheme *sc, s7_int catch_loc, s7_pointer type, s7_pointer info, bool *reset_hook)
 {
-  s7_pointer x = T_Pro(stack_code(sc->stack, top));   /* "code" = port that we opened */
+  s7_pointer x = T_Pro(stack_code(sc->stack, catch_loc));   /* "code" = port that we opened */
   if (SHOW_EVAL_OPS) fprintf(stderr, "catcher: %s\n", __func__);
   s7_close_output_port(sc, x);
-  x = stack_args(sc->stack, top);                     /* "args" = port that we shadowed, if not #<unused> */
+  x = stack_args(sc->stack, catch_loc);                     /* "args" = port that we shadowed, if not #<unused> */
   if (x != sc->unused)
     set_current_output_port(sc, x);
   return(false);
 }
 
-static bool catch_in_function(s7_scheme *sc, s7_int top, s7_pointer type, s7_pointer info, bool *reset_hook)
+static bool catch_in_function(s7_scheme *sc, s7_int catch_loc, s7_pointer type, s7_pointer info, bool *reset_hook)
 {
   if (SHOW_EVAL_OPS) fprintf(stderr, "catcher: %s\n", __func__);
-  s7_close_input_port(sc, T_Pri(stack_code(sc->stack, top)));     /* "code" = port that we opened */
-  if (stack_args(sc->stack, top) != sc->unused)
-    set_current_input_port(sc, stack_args(sc->stack, top));       /* "args" = port that we shadowed */
+  s7_close_input_port(sc, T_Pri(stack_code(sc->stack, catch_loc)));     /* "code" = port that we opened */
+  if (stack_args(sc->stack, catch_loc) != sc->unused)
+    set_current_input_port(sc, stack_args(sc->stack, catch_loc));       /* "args" = port that we shadowed */
   return(false);
 }
 
-static bool catch_read_function(s7_scheme *sc, s7_int top, s7_pointer type, s7_pointer info, bool *reset_hook)
+static bool catch_read_function(s7_scheme *sc, s7_int catch_loc, s7_pointer type, s7_pointer info, bool *reset_hook)
 {
   if (SHOW_EVAL_OPS) fprintf(stderr, "catcher: %s\n", __func__);
   pop_input_port(sc);
   return(false);
 }
 
-static bool catch_eval_function(s7_scheme *sc, s7_int top, s7_pointer type, s7_pointer info, bool *reset_hook)
+static bool catch_eval_function(s7_scheme *sc, s7_int catch_loc, s7_pointer type, s7_pointer info, bool *reset_hook)
 {
   if (SHOW_EVAL_OPS) fprintf(stderr, "catcher: %s\n", __func__);
   s7_close_input_port(sc, current_input_port(sc));
@@ -51742,36 +51746,36 @@ static bool catch_eval_function(s7_scheme *sc, s7_int top, s7_pointer type, s7_p
   return(false);
 }
 
-static bool catch_barrier_function(s7_scheme *sc, s7_int top, s7_pointer type, s7_pointer info, bool *reset_hook)
+static bool catch_barrier_function(s7_scheme *sc, s7_int catch_loc, s7_pointer type, s7_pointer info, bool *reset_hook)
 { /* can this happen? is it doing the right thing? read/eval/call_begin_hook push_stack op_barrier but only s7_read includes a port (this is not hit in s7test.scm) */
   if (SHOW_EVAL_OPS) fprintf(stderr, "catcher: %s\n", __func__);
-  if (is_input_port(stack_args(sc->stack, top)))
+  if (is_input_port(stack_args(sc->stack, catch_loc)))
     {
-      if (current_input_port(sc) == stack_args(sc->stack, top))
+      if (current_input_port(sc) == stack_args(sc->stack, catch_loc))
 	pop_input_port(sc);
-      s7_close_input_port(sc, stack_args(sc->stack, top));
+      s7_close_input_port(sc, stack_args(sc->stack, catch_loc));
     }
   return(false);
 }
 
-static bool catch_error_hook_function(s7_scheme *sc, s7_int top, s7_pointer type, s7_pointer info, bool *reset_hook)
+static bool catch_error_hook_function(s7_scheme *sc, s7_int catch_loc, s7_pointer type, s7_pointer info, bool *reset_hook)
 {
   if (SHOW_EVAL_OPS) fprintf(stderr, "catcher: %s\n", __func__);
-  let_set(sc, closure_let(sc->error_hook), sc->body_symbol, stack_code(sc->stack, top));
+  let_set(sc, closure_let(sc->error_hook), sc->body_symbol, stack_code(sc->stack, catch_loc));
   /* apparently there was an error during *error-hook* evaluation, but Rick wants the hook re-established anyway */
   (*reset_hook) = true;
   /* avoid infinite loop -- don't try to (re-)evaluate (buggy) *error-hook*! */
   return(false);
 }
 
-static bool catch_goto_function(s7_scheme *sc, s7_int top, s7_pointer type, s7_pointer info, bool *reset_hook)
+static bool catch_goto_function(s7_scheme *sc, s7_int catch_loc, s7_pointer type, s7_pointer info, bool *reset_hook)
 {
   if (SHOW_EVAL_OPS) fprintf(stderr, "catcher: %s\n", __func__);
-  call_exit_active(stack_args(sc->stack, top)) = false;
+  call_exit_active(stack_args(sc->stack, catch_loc)) = false;
   return(false);
 }
 
-static bool catch_map_unwind_function(s7_scheme *sc, s7_int top, s7_pointer type, s7_pointer info, bool *reset_hook)
+static bool catch_map_unwind_function(s7_scheme *sc, s7_int catch_loc, s7_pointer type, s7_pointer info, bool *reset_hook)
 {
   if (SHOW_EVAL_OPS) fprintf(stderr, "catcher: %s\n", __func__);
   sc->map_call_ctr--;
@@ -51781,7 +51785,7 @@ static bool catch_map_unwind_function(s7_scheme *sc, s7_int top, s7_pointer type
 
 static bool op_let_temp_done1(s7_scheme *sc);
 
-static bool catch_let_temporarily_function(s7_scheme *sc, s7_int top, s7_pointer type, s7_pointer info, bool *reset_hook)
+static bool catch_let_temporarily_function(s7_scheme *sc, s7_int catch_loc, s7_pointer type, s7_pointer info, bool *reset_hook)
 {
   /* this is aimed at let-temp error-hook... error -- not yet tested much */
   if (SHOW_EVAL_OPS) fprintf(stderr, "catcher: %s\n", __func__);
@@ -51802,9 +51806,9 @@ static bool catch_let_temporarily_function(s7_scheme *sc, s7_int top, s7_pointer
       let_set(sc, closure_let(sc->error_hook), sc->body_symbol, error_hook_funcs);
       let_set(sc, closure_let(sc->let_temp_hook), sc->body_symbol, sc->nil);
 
-      sc->args = stack_args(sc->stack, top);
-      sc->code = stack_code(sc->stack, top);
-      set_curlet(sc, stack_let(sc->stack, top));
+      sc->args = stack_args(sc->stack, catch_loc);
+      sc->code = stack_code(sc->stack, catch_loc);
+      set_curlet(sc, stack_let(sc->stack, catch_loc));
 
       push_stack_direct(sc, OP_GC_PROTECT);
       if (!op_let_temp_done1(sc))
@@ -51812,50 +51816,50 @@ static bool catch_let_temporarily_function(s7_scheme *sc, s7_int top, s7_pointer
 	  push_stack_direct(sc, OP_EVAL_DONE);
 	  eval(sc, OP_SET_UNCHECKED);
 	}}
-  else let_temp_done(sc, stack_args(sc->stack, top), stack_let(sc->stack, top));
+  else let_temp_done(sc, stack_args(sc->stack, catch_loc), stack_let(sc->stack, catch_loc));
   return(false);
 }
 
-static bool catch_let_temp_unwind_function(s7_scheme *sc, s7_int top, s7_pointer type, s7_pointer info, bool *reset_hook)
+static bool catch_let_temp_unwind_function(s7_scheme *sc, s7_int catch_loc, s7_pointer type, s7_pointer info, bool *reset_hook)
 {
   if (SHOW_EVAL_OPS) fprintf(stderr, "catcher: %s\n", __func__);
-  slot_set_value(stack_code(sc->stack, top), stack_args(sc->stack, top));
+  slot_set_value(stack_code(sc->stack, catch_loc), stack_args(sc->stack, catch_loc));
   return(false);
 }
 
-static bool catch_let_temp_s7_unwind_function(s7_scheme *sc, s7_int top, s7_pointer type, s7_pointer info, bool *reset_hook)
+static bool catch_let_temp_s7_unwind_function(s7_scheme *sc, s7_int catch_loc, s7_pointer type, s7_pointer info, bool *reset_hook)
 {
   if (SHOW_EVAL_OPS) fprintf(stderr, "catcher: %s\n", __func__);
-  s7_starlet_set_1(sc, T_Sym(stack_code(sc->stack, top)), stack_args(sc->stack, top));
+  s7_starlet_set_1(sc, T_Sym(stack_code(sc->stack, catch_loc)), stack_args(sc->stack, catch_loc));
   return(false);
 }
 
-static bool catch_let_temp_s7_direct_unwind_function(s7_scheme *sc, s7_int top, s7_pointer type, s7_pointer info, bool *reset_hook)
+static bool catch_let_temp_s7_direct_unwind_function(s7_scheme *sc, s7_int catch_loc, s7_pointer type, s7_pointer info, bool *reset_hook)
 {
   if (SHOW_EVAL_OPS) fprintf(stderr, "catcher: %s\n", __func__);
-  sc->has_openlets = (stack_args(sc->stack, top) != sc->F);
+  sc->has_openlets = (stack_args(sc->stack, catch_loc) != sc->F);
   return(false);
 }
 
-static bool catch_dynamic_unwind_function(s7_scheme *sc, s7_int top, s7_pointer type, s7_pointer info, bool *reset_hook)
+static bool catch_dynamic_unwind_function(s7_scheme *sc, s7_int catch_loc, s7_pointer type, s7_pointer info, bool *reset_hook)
 {
   /* if func has an error, s7_error will call it as it unwinds the stack -- an infinite loop. So, cancel the unwind first */
   if (SHOW_EVAL_OPS) fprintf(stderr, "catcher: %s\n", __func__);
-  set_stack_op(sc->stack, top, OP_GC_PROTECT);
+  set_stack_op(sc->stack, catch_loc, OP_GC_PROTECT);
 
   /* we're in an error or throw, so there is no return value to report, but we need to decrement *debug-spaces* (if in debug)
    *    stack_let is the trace-in let at the point of the dynamic_unwind call
    */
   if (sc->debug > 0)
     {
-      s7_pointer spaces = lookup_slot_with_let(make_symbol(sc, "*debug-spaces*", 14), stack_let(sc->stack, top));
+      s7_pointer spaces = lookup_slot_with_let(make_symbol(sc, "*debug-spaces*", 14), stack_let(sc->stack, catch_loc));
       if (is_slot(spaces))
 	slot_set_value(spaces, make_integer(sc, max_i_ii(0LL, integer(slot_value(spaces)) - 2))); /* should involve only small_ints */
     }
   return(false);
 }
 
-typedef bool (*catch_function_t)(s7_scheme *sc, s7_int top, s7_pointer type, s7_pointer info, bool *reset_hook);
+typedef bool (*catch_function_t)(s7_scheme *sc, s7_int catch_loc, s7_pointer type, s7_pointer info, bool *reset_hook);
 static catch_function_t catchers[NUM_OPS];
 
 static void init_catchers(void)
@@ -51894,7 +51898,7 @@ It looks for an existing catch with a matching tag, and jumps to it if found.  O
   gc_protect_via_stack(sc, args);
   /* type can be anything: (throw (list 1 2 3) (make-list 512)), sc->w and sc->value not good here for gc protection */
 
-  for (int64_t i = current_stack_top(sc) - 5; i >= 3; i -= 4) /* look for a catcher */
+  for (int64_t i = stack_top(sc) - 5; i >= 3; i -= 4) /* look for a catcher */
     {
       catch_function_t catcher = catchers[stack_op(sc->stack, i)];
       if ((catcher) &&
@@ -52033,7 +52037,7 @@ static noreturn void error_nr(s7_scheme *sc, s7_pointer type, s7_pointer info)
 
   /* look for a catcher, call catch*function in the error context (before unwinding the stack), outlet(owlet) is curlet */
   /* top is 1 past actual top, top - 1 is op, if op = OP_CATCH, top - 4 is the cell containing the catch struct */
-  for (int64_t i = current_stack_top(sc) - 1; i >= 3; i -= 4)
+  for (int64_t i = stack_top(sc) - 1; i >= 3; i -= 4)
     {
       catch_function_t catcher = catchers[stack_op(sc->stack, i)];
       if ((SHOW_EVAL_OPS) && (catcher)) {fprintf(stderr, "before catch:\n"); s7_show_stack(sc);}
@@ -53037,7 +53041,7 @@ pass (rootlet):\n\
       clear_all_optimizations(sc, sc->code); /* clears "unsafe" ops, not all ops */
 
   set_current_code(sc, sc->code);
-  if (current_stack_top(sc) < 12)
+  if (stack_top(sc) < 12)
     push_stack_op(sc, OP_BARRIER);
   push_stack_direct(sc, OP_EVAL);
   return(sc->nil);
@@ -68361,16 +68365,20 @@ static Inline void inline_op_map_gather(s7_scheme *sc) /* called thrice in eval,
 
 
 /* -------------------------------- multiple-values -------------------------------- */
+#define stack_top4_op(Sc)             ((opcode_t)(Sc->stack_end[-5])) /* top4 == top - 4 */
+#define stack_top4_args(Sc)           (Sc->stack_end[-6])
+#define stack_top4_let(Sc)            (Sc->stack_end[-7])
+#define stack_top4_code(Sc)           (Sc->stack_end[-8])
+
 static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 {
-  int64_t top = current_stack_top(sc) - 1; /* stack_end - stack_start if negative, we're in big trouble */
   s7_pointer x;
   if (SHOW_EVAL_OPS)
     safe_print(fprintf(stderr, "%s[%d]: splice %s %s\n", __func__, __LINE__,
-		       (top > 0) ? op_names[stack_op(sc->stack, top)] : "no stack!", display_80(args)));
+		       (sc->stack_end > sc->stack_start) ? op_names[stack_top_op(sc)] : "no stack!", display_80(args)));
   if ((S7_DEBUGGING) && ((is_null(args)) || (is_null(cdr(args))))) fprintf(stderr, "%s: %s\n", __func__, display(args));
 
-  switch (stack_op(sc->stack, top))
+  switch (stack_top_op(sc))
     {
       /* the normal case -- splice values into caller's args */
     case OP_EVAL_ARGS1: case OP_EVAL_ARGS2: case OP_EVAL_ARGS3: case OP_EVAL_ARGS4:
@@ -68382,21 +68390,21 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
        */
       sc->w = args;
       for (x = args; is_not_null(cdr(x)); x = cdr(x))
-	stack_args(sc->stack, top) = cons(sc, car(x), stack_args(sc->stack, top));
+	stack_top_args(sc) = cons(sc, car(x), stack_top_args(sc));
       sc->w = sc->unused;
       return(car(x));
 
       /* in the next set, the main evaluator branches blithely assume no multiple-values, and if it happens anyway, we go to a different branch here */
     case OP_ANY_CLOSURE_NP_2:
-      set_stack_op(sc->stack, top, OP_ANY_CLOSURE_NP_MV);
+      set_stack_top_op(sc, OP_ANY_CLOSURE_NP_MV);
       goto FP_MV;
 
     case OP_ANY_C_NP_2:
-      set_stack_op(sc->stack, top, OP_ANY_C_NP_MV);
+      set_stack_top_op(sc, OP_ANY_C_NP_MV);
       goto FP_MV;
 
     case OP_ANY_C_NP_1: case OP_ANY_CLOSURE_NP_1:
-      set_stack_op(sc->stack, top, stack_op(sc->stack, top) + 1); /* replace with mv version */
+      set_stack_top_op(sc, stack_top_op(sc) + 1); /* replace with mv version */
 
     case OP_ANY_C_NP_MV: case OP_ANY_CLOSURE_NP_MV:
     FP_MV:
@@ -68410,31 +68418,31 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
       return(args);
 
     case OP_SAFE_C_SSP_1:
-      set_stack_op(sc->stack, top, OP_SAFE_C_SSP_MV);
+      set_stack_top_op(sc, OP_SAFE_C_SSP_MV);
       return(args);
 
     case OP_SAFE_C_SP_1: case OP_SAFE_CONS_SP_1: case OP_SAFE_ADD_SP_1: case OP_SAFE_MULTIPLY_SP_1:
-      set_stack_op(sc->stack, top, OP_SAFE_C_SP_MV);
+      set_stack_top_op(sc, OP_SAFE_C_SP_MV);
       return(args);
 
     case OP_SAFE_C_PS_1:
-      set_stack_op(sc->stack, top, OP_SAFE_C_PS_MV);
+      set_stack_top_op(sc, OP_SAFE_C_PS_MV);
       return(args);
 
     case OP_SAFE_C_PC_1:
-      set_stack_op(sc->stack, top, OP_SAFE_C_PC_MV);
+      set_stack_top_op(sc, OP_SAFE_C_PC_MV);
       return(args);
 
     case OP_SAFE_C_PA_1:
-      set_stack_op(sc->stack, top, OP_SAFE_C_PA_MV);
+      set_stack_top_op(sc, OP_SAFE_C_PA_MV);
       return(args);
 
     case OP_C_P_1: case OP_SAFE_C_P_1:
-      set_stack_op(sc->stack, top, OP_C_P_MV);
+      set_stack_top_op(sc, OP_C_P_MV);
       return(args);
 
     case OP_C_AP_1:
-      set_stack_op(sc->stack, top, OP_C_AP_MV);
+      set_stack_top_op(sc, OP_C_AP_MV);
       /* sc->value = args; */ /* removed 29-Mar-22 -- seems redundant */
       return(args);
 
@@ -68445,19 +68453,18 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
     case OP_ANY_CLOSURE_3P_1: case OP_ANY_CLOSURE_3P_2: case OP_ANY_CLOSURE_3P_3:
     case OP_ANY_CLOSURE_4P_1: case OP_ANY_CLOSURE_4P_2: case OP_ANY_CLOSURE_4P_3: case OP_ANY_CLOSURE_4P_4:
       if (is_multiple_value(sc->value)) clear_multiple_value(sc->value);
-      error_nr(sc, sc->wrong_number_of_args_symbol,
-	       set_elist_3(sc, too_many_arguments_string, stack_code(sc->stack, top), sc->value));
+      error_nr(sc, sc->wrong_number_of_args_symbol, set_elist_3(sc, too_many_arguments_string, stack_top_code(sc), sc->value));
 
     case OP_SAFE_C_PP_1:
-      set_stack_op(sc->stack, top, OP_SAFE_C_PP_3_MV);
+      set_stack_top_op(sc, OP_SAFE_C_PP_3_MV);
       return(args);
 
     case OP_SAFE_C_PP_5:
-      set_stack_op(sc->stack, top, OP_SAFE_C_PP_6_MV);
+      set_stack_top_op(sc, OP_SAFE_C_PP_6_MV);
       return(args);
 
     case OP_SAFE_C_3P_1: case OP_SAFE_C_3P_2: case OP_SAFE_C_3P_3:
-      set_stack_op(sc->stack, top, stack_op(sc->stack, top) +  3);
+      set_stack_top_op(sc, stack_top_op(sc) +  3);
     case OP_SAFE_C_3P_1_MV: case OP_SAFE_C_3P_2_MV: case OP_SAFE_C_3P_3_MV:
       return(cons(sc, sc->unused, copy_proper_list(sc, args)));
 
@@ -68468,10 +68475,10 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
       if (is_null(cdr(args)))
 	return(car(args));
 
-      stack_args(sc->stack, top) = cons(sc, stack_code(sc->stack, top), stack_args(sc->stack, top));
+      stack_top_args(sc) = cons(sc, stack_top_code(sc), stack_top_args(sc));
       for (x = args; is_not_null(cddr(x)); x = cdr(x))
-	stack_args(sc->stack, top) = cons(sc, car(x), stack_args(sc->stack, top));
-      stack_code(sc->stack, top) = car(x);
+	stack_top_args(sc) = cons(sc, car(x), stack_top_args(sc));
+      stack_top_code(sc) = car(x);
       return(cadr(x));
 
       /* look for errors here rather than glomming up the set! and let code */
@@ -68479,14 +68486,14 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
     case OP_SET1:
     case OP_SET_FROM_LET_TEMP:                /* (set! var (values 1 2 3)) */
     case OP_SET_FROM_SETTER:
-      syntax_error_with_caller_nr(sc, "set!: can't set ~A to ~S", 24, stack_code(sc->stack, top), set_ulist_1(sc, sc->values_symbol, args));
+      syntax_error_with_caller_nr(sc, "set!: can't set ~A to ~S", 24, stack_top_code(sc), set_ulist_1(sc, sc->values_symbol, args));
 
     case OP_SET_opSAq_P_1: case OP_SET_opSAAq_P_1:
       syntax_error_nr(sc, "too many arguments to set! ~S", 29, set_ulist_1(sc, sc->values_symbol, args));
 
     case OP_LET1:                         /* (let ((var (values 1 2 3))) ...) */
       {
-	s7_pointer let_code, vars, sym, p = stack_args(sc->stack, top);
+	s7_pointer let_code, vars, sym, p = stack_top_args(sc);
 	for (let_code = p; is_pair(cdr(let_code)); let_code = cdr(let_code));
 	for (vars = caar(let_code); is_pair(cdr(p)); p = cdr(p), vars = cdr(vars));
 	sym = caar(vars);
@@ -68498,23 +68505,23 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 
     case OP_LET_ONE_NEW_1: case OP_LET_ONE_P_NEW_1:
       syntax_error_with_caller2_nr(sc, "~A: can't bind ~A to ~S", 23, sc->let_symbol,
-			      opt2_sym(stack_code(sc->stack, top)), set_ulist_1(sc, sc->values_symbol, args));
+			      opt2_sym(stack_top_code(sc)), set_ulist_1(sc, sc->values_symbol, args));
 
     case OP_LET_ONE_OLD_1: case OP_LET_ONE_P_OLD_1:
       syntax_error_with_caller2_nr(sc, "~A: can't bind ~A to ~S", 23, sc->let_symbol,
-			      slot_symbol(let_slots(opt3_let(stack_code(sc->stack, top)))), set_ulist_1(sc, sc->values_symbol, args));
+			      slot_symbol(let_slots(opt3_let(stack_top_code(sc)))), set_ulist_1(sc, sc->values_symbol, args));
 
     case OP_LET_STAR1:             /* here caar(sc->code) is bound to sc->value */
       syntax_error_with_caller2_nr(sc, "~A: can't bind ~A to ~S", 23, sc->let_star_symbol,
-			      caar(stack_code(sc->stack, top)), set_ulist_1(sc, sc->values_symbol, args));
+			      caar(stack_top_code(sc)), set_ulist_1(sc, sc->values_symbol, args));
 
     case OP_LETREC1:               /* here sc->args is the slot about to receive a value */
       syntax_error_with_caller2_nr(sc, "~A: can't bind ~A to ~S", 23, sc->letrec_symbol,
-			      slot_symbol(stack_args(sc->stack, top)), set_ulist_1(sc, sc->values_symbol, args));
+			      slot_symbol(stack_top_args(sc)), set_ulist_1(sc, sc->values_symbol, args));
 
     case OP_LETREC_STAR1:
       syntax_error_with_caller2_nr(sc, "~A: can't bind ~A to ~S", 23, sc->letrec_star_symbol,
-			      slot_symbol(stack_args(sc->stack, top)), set_ulist_1(sc, sc->values_symbol, args));
+			      slot_symbol(stack_top_args(sc)), set_ulist_1(sc, sc->values_symbol, args));
 
     case OP_AND_P1:
     case OP_AND_SAFE_P_REST: /* from OP_AND_SAFE_P1 or P2 */
@@ -68545,7 +68552,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 	bool mv = is_multiple_value(args);
 	if (mv) clear_multiple_value(args);
 	sc->value = cons(sc, sc->values_symbol, args);
-	dynamic_unwind(sc, stack_code(sc->stack, top), stack_args(sc->stack, top)); /* position (curlet), this applies code to sc->value */
+	dynamic_unwind(sc, stack_top_code(sc), stack_top_args(sc)); /* position (curlet), this applies code to sc->value */
 	sc->value = old_value;
 	if (mv) set_multiple_value(args);
 	sc->stack_end -= 4; /* either op is possible I think */
@@ -68571,7 +68578,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
       return(args);
 
     case OP_DEACTIVATE_GOTO:  /* (+ (call-with-exit (lambda (ret) (values 1 2 3)))) */
-      call_exit_active(stack_args(sc->stack, top)) = false; /* stack_args(sc->stack, top) is the goto */
+      call_exit_active(stack_top_args(sc)) = false; /* stack_top_args(sc) is the goto */
 
     case OP_CATCH: case OP_CATCH_1: case OP_CATCH_2: case OP_CATCH_ALL: /* (+ (catch #t (lambda () (values 3 4)) (lambda args args))) */
       pop_stack(sc);
@@ -68579,7 +68586,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 
     case OP_EVAL_MACRO_MV: /* perhaps reader-cond expansion at eval-time (not at run-time) via ((let () reader-cond) ...)? */
       {
-	opcode_t s_op = stack_op(sc->stack, top - 4);
+	opcode_t s_op = stack_top4_op(sc);
 	if (S7_DEBUGGING)
 	  if (SHOW_EVAL_OPS)
 	    fprintf(stderr, "  eval_macro_mv splice %s with %s, code: %s, args: %s, value: %s\n",
@@ -68595,11 +68602,11 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 	  {
 	    sc->w = args;
 	    for (x = args; is_not_null(cdr(x)); x = cdr(x))
-	      stack_args(sc->stack, top - 4) = cons(sc, car(x), stack_args(sc->stack, top - 4));
+	      stack_top4_args(sc) = cons(sc, car(x), stack_top4_args(sc));
 	    sc->w = sc->unused;
 	    if (SHOW_EVAL_OPS)
 	      fprintf(stderr, "  eval_macro splice %s with %s, code: %s, args: %s, value: %s -> %s %s\n",
-		      display(args), op_names[s_op], display(sc->code), display(sc->args), display(sc->value), display(stack_args(sc->stack, top - 4)), display(car(x)));
+		      display(args), op_names[s_op], display(sc->code), display(sc->args), display(sc->value), display(stack_top4_args(sc)), display(car(x)));
 	    return(car(x));
 	  }
 	/* fall through */
@@ -68615,11 +68622,10 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
        *    these need to be read in order into the current reader lists (we'll assume OP_READ_LIST is next in the stack.
        *    and that it will be expecting the next arg entry in sc->value; but it could be OP_LOAD_RETURN_IF_EOF if the expansion is at top level).
        */
-      top -= 4;
       if (SHOW_EVAL_OPS)
 	fprintf(stderr, "  %s[%d]: %s stack top: %" ld64 ", op: %s, args: %s\n", __func__, __LINE__,
-		op_names[stack_op(sc->stack, top + 4)], top, op_names[stack_op(sc->stack, top)], display(args));
-      if (stack_op(sc->stack, top) == OP_LOAD_RETURN_IF_EOF)
+		op_names[stack_top_op(sc)], stack_top(sc), op_names[stack_top4_op(sc)], display(args));
+      if (stack_top4_op(sc) == OP_LOAD_RETURN_IF_EOF)
 	{
 	  /* expansion at top-level returned values, eval args in order */
 	  sc->code = args;
@@ -68627,21 +68633,21 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 	  return(sc->code);
 	}
       for (x = args; is_not_null(cdr(x)); x = cdr(x))
-	stack_args(sc->stack, top) = cons(sc, car(x), stack_args(sc->stack, top));
+	stack_top4_args(sc) = cons(sc, car(x), stack_top4_args(sc));
       pop_stack(sc);               /* need GC protection in loop above, so do this afterwards */
       return(car(x));              /* sc->value from OP_READ_LIST point of view */
 
     case OP_EVAL_DONE:
-      if (stack_op(sc->stack, (top - 4)) == OP_NO_VALUES)
+      if (stack_top4_op(sc) == OP_NO_VALUES)
  	error_nr(sc, sc->error_symbol,
 		 set_elist_1(sc, wrap_string(sc, "function-port should not return multiple-values", 47)));
-      set_stack_op(sc->stack, top, OP_SPLICE_VALUES); /* tricky -- continue from eval_done with the current splice */
-      stack_args(sc->stack, top) = args;
+      set_stack_top_op(sc, OP_SPLICE_VALUES); /* tricky -- continue from eval_done with the current splice */
+      stack_top_args(sc) = args;
       push_stack_op(sc, OP_EVAL_DONE);
       return(args);
 
     default:
-      /* if (SHOW_EVAL_OPS) fprintf(stderr, "  %s[%d]: splice punts: %s\n", __func__, __LINE__, op_names[stack_op(sc->stack, top)]); */
+      /* if (SHOW_EVAL_OPS) fprintf(stderr, "  %s[%d]: splice punts: %s\n", __func__, __LINE__, op_names[stack_top_op(sc)]); */
       break;
     }
 
@@ -74303,7 +74309,7 @@ static int32_t check_lambda(s7_scheme *sc, s7_pointer form, bool opt)
    *   to mimic define, we need to parallel op_define_with_setter + make_funclet, I think
    */
   if ((opt) ||
-      (main_stack_op(sc) == OP_DEFINE1) ||
+      (stack_top_op(sc) == OP_DEFINE1) ||
       (((sc->stack_end - sc->stack_start) > 4) &&
        (((opcode_t)(sc->stack_end[-5])) == OP_DEFINE1) &&  /* surely if define is ok, so is define dilambda? 16-Apr-16 */
        (sc->op_stack_now > sc->op_stack) &&
@@ -74348,7 +74354,7 @@ static void check_lambda_star(s7_scheme *sc)
 
   set_car(code, check_lambda_star_args(sc, car(code), NULL, sc->code));
   if ((sc->safety > NO_SAFETY) ||
-      (main_stack_op(sc) != OP_DEFINE1))
+      (stack_top_op(sc) != OP_DEFINE1))
     {
       if (optimize(sc, cdr(code), 0, collect_parameters(sc, car(code), sc->nil)) == OPT_OOPS)
 	clear_all_optimizations(sc, cdr(code));
@@ -77632,15 +77638,14 @@ static void transfer_macro_info(s7_scheme *sc, s7_pointer mac)
 
 static goto_t op_expansion(s7_scheme *sc)
 {
-  int64_t loc = current_stack_top(sc) - 1;
-  s7_pointer caller = (is_pair(stack_args(sc->stack, loc))) ? car(stack_args(sc->stack, loc)) : sc->F; /* this can be garbage */
-  if ((loc >= 3) &&
-      (stack_op(sc->stack, loc) != OP_READ_QUOTE) &&        /* '(expansion ...) */
-      (stack_op(sc->stack, loc) != OP_READ_VECTOR) &&       /* #(expansion ...) */
-      (caller != sc->quote_symbol) &&                       /* (quote (expansion ...)) */
-      (caller != sc->macroexpand_symbol) &&                 /* (macroexpand (expansion ...)) */
-      (caller != sc->define_expansion_symbol) &&            /* (define-expansion ...) being reloaded/redefined */
-      (caller != sc->define_expansion_star_symbol))         /* (define-expansion* ...) being reloaded/redefined */
+  s7_pointer caller = (is_pair(stack_top_args(sc))) ? car(stack_top_args(sc)) : sc->F; /* this can be garbage */
+  if ((sc->stack_end > sc->stack_start) &&
+      (stack_top_op(sc) != OP_READ_QUOTE) &&        /* '(expansion ...) */
+      (stack_top_op(sc) != OP_READ_VECTOR) &&       /* #(expansion ...) */
+      (caller != sc->quote_symbol) &&               /* (quote (expansion ...)) */
+      (caller != sc->macroexpand_symbol) &&         /* (macroexpand (expansion ...)) */
+      (caller != sc->define_expansion_symbol) &&    /* (define-expansion ...) being reloaded/redefined */
+      (caller != sc->define_expansion_star_symbol)) /* (define-expansion* ...) being reloaded/redefined */
     {
       s7_pointer symbol = car(sc->value), slot;
       /* we're playing fast and loose with sc->curlet in the reader, so here we need a disaster check */
@@ -77790,11 +77795,11 @@ static void op_finish_expansion(s7_scheme *sc)
   /* after the expander has finished, if a list was returned, we need to add some annotations.
    *   if the expander returned (values), the list-in-progress vanishes! (This mimics map and *#readers*).
    */
-  if (SHOW_EVAL_OPS) fprintf(stderr, "%s[%d]: op: %s, value: %s\n", __func__, __LINE__, op_names[stack_op(sc->stack, current_stack_top(sc) - 1)], display(sc->value));
+  if (SHOW_EVAL_OPS) fprintf(stderr, "%s[%d]: op: %s, value: %s\n", __func__, __LINE__, op_names[stack_top_op(sc)], display(sc->value));
   if (sc->value == sc->no_value)
     {
-      if (stack_op(sc->stack, current_stack_top(sc) - 1) != OP_LOAD_RETURN_IF_EOF) /* latter op if empty expansion at top-level */
-	sc->stack_end[-1] = (s7_pointer)OP_READ_NEXT;
+      if (stack_top_op(sc) != OP_LOAD_RETURN_IF_EOF) /* latter op if empty expansion at top-level */
+	set_stack_top_op(sc, OP_READ_NEXT);
     }
   else
     if (is_pair(sc->value))
@@ -80457,8 +80462,8 @@ static s7_pointer check_do(s7_scheme *sc)
 			}
 		      fx_tree(sc, body, car(v), NULL, NULL, false);
 		      /* an experiment (this never works...) */
-		      if (stack_op(sc->stack, current_stack_top(sc) - 1) == OP_SAFE_DO_STEP)
-			fx_tree_outer(sc, body, caaar(stack_code(sc->stack, (current_stack_top(sc) - 1))), NULL, NULL, true);
+		      if (stack_top_op(sc) == OP_SAFE_DO_STEP)
+			fx_tree_outer(sc, body, caaar(stack_top_code(sc)), NULL, NULL, true);
 		    }}
 	      return(sc->nil);
 	    }}}
@@ -87801,7 +87806,7 @@ static void op_cl_na(s7_scheme *sc)
     clear_list_in_use(val);
   else
     /* the fn_proc call might push its own op (e.g. for-each/map) so we have to check for that */
-    if (main_stack_op(sc) == OP_GC_PROTECT)
+    if (stack_top_op(sc) == OP_GC_PROTECT)
       unstack(sc);
 }
 
@@ -88509,11 +88514,11 @@ static goto_t trailers(s7_scheme *sc)
 /* ---------------- reader funcs for eval ---------------- */
 static void back_up_stack(s7_scheme *sc)
 {
-  opcode_t top_op = stack_op(sc->stack, current_stack_top(sc) - 1);
+  opcode_t top_op = stack_top_op(sc);
   if (top_op == OP_READ_DOT)
     {
       pop_stack(sc);
-      top_op = stack_op(sc->stack, current_stack_top(sc) - 1);
+      top_op = stack_top_op(sc);
     }
   if ((top_op == OP_READ_VECTOR) ||
       (top_op == OP_READ_BYTE_VECTOR) ||
@@ -88521,7 +88526,7 @@ static void back_up_stack(s7_scheme *sc)
       (top_op == OP_READ_FLOAT_VECTOR))
    {
       pop_stack(sc);
-      top_op = stack_op(sc->stack, current_stack_top(sc) - 1);
+      top_op = stack_top_op(sc);
     }
   if (top_op == OP_READ_QUOTE)
     pop_stack(sc);
@@ -89256,7 +89261,7 @@ static bool op_read_quasiquote(s7_scheme *sc)
   /* doing quasiquote at read time means there are minor inconsistencies in various combinations or quote/' and quasiquote/`.
    *   A quoted ` will expand but quoted quasiquote will not (` can't be redefined, but quasiquote can).  see s7test.scm for examples.
    */
-  return(main_stack_op(sc) != OP_READ_LIST);
+  return(stack_top_op(sc) != OP_READ_LIST);
 }
 
 static bool pop_read_list(s7_scheme *sc)
@@ -89310,7 +89315,7 @@ static bool op_load_close_and_pop_if_eof(s7_scheme *sc)
 static bool op_read_apply_values(s7_scheme *sc)
 {
   sc->value = list_2_unchecked(sc, sc->unquote_symbol, list_2(sc, sc->apply_values_symbol, sc->value));
-  return(main_stack_op(sc) != OP_READ_LIST);
+  return(stack_top_op(sc) != OP_READ_LIST);
 }
 
 static goto_t op_read_dot(s7_scheme *sc)
@@ -89333,7 +89338,7 @@ static goto_t op_read_dot(s7_scheme *sc)
    * but we also get here in a lambda arg list: (lambda (a b . c) #f) -> value: c, args: (b a)
    */
   sc->value = any_list_reverse_in_place(sc, sc->value, sc->args);
-  return((main_stack_op(sc) == OP_READ_LIST) ? goto_pop_read_list : goto_start);
+  return((stack_top_op(sc) == OP_READ_LIST) ? goto_pop_read_list : goto_start);
 }
 
 static bool op_read_quote(s7_scheme *sc)
@@ -89343,7 +89348,7 @@ static bool op_read_quote(s7_scheme *sc)
       ((is_pair(sc->value)) || (is_any_vector(sc->value)) || (is_string(sc->value))))
     set_immutable(sc->value);
   sc->value = list_2(sc, sc->quote_symbol, sc->value);
-  return(main_stack_op(sc) != OP_READ_LIST);
+  return(stack_top_op(sc) != OP_READ_LIST);
 }
 
 static bool op_read_unquote(s7_scheme *sc)
@@ -89354,7 +89359,7 @@ static bool op_read_unquote(s7_scheme *sc)
   if ((is_pair(sc->value)) ||
       (is_symbol(sc->value)))
     sc->value = list_2(sc, sc->unquote_symbol, sc->value);
-  return(main_stack_op(sc) != OP_READ_LIST);
+  return(stack_top_op(sc) != OP_READ_LIST);
 }
 
 /* safety check is at read time, so (immutable? (let-temporarily (((*s7* 'safety) 2)) #(1 2 3))) is #f
@@ -89365,28 +89370,28 @@ static bool op_read_vector(s7_scheme *sc)
   sc->value = (sc->args == int_one) ? g_vector(sc, sc->value) : g_multivector(sc, integer(sc->args), sc->value); /* sc->args was sc->w earlier from read_sharp */
   /* here and below all of the sc->value list can be freed, but my tests showed no speed up even in large cases */
   if (sc->safety > IMMUTABLE_VECTOR_SAFETY) set_immutable(sc->value);
-  return(main_stack_op(sc) != OP_READ_LIST);
+  return(stack_top_op(sc) != OP_READ_LIST);
 }
 
 static bool op_read_int_vector(s7_scheme *sc)
 {
   sc->value = (sc->args == int_one) ? g_int_vector(sc, sc->value) : g_int_multivector(sc, integer(sc->args), sc->value);
   if (sc->safety > IMMUTABLE_VECTOR_SAFETY) set_immutable(sc->value);
-  return(main_stack_op(sc) != OP_READ_LIST);
+  return(stack_top_op(sc) != OP_READ_LIST);
 }
 
 static bool op_read_float_vector(s7_scheme *sc)
 {
   sc->value = (sc->args == int_one) ? g_float_vector(sc, sc->value) : g_float_multivector(sc, integer(sc->args), sc->value);
   if (sc->safety > IMMUTABLE_VECTOR_SAFETY) set_immutable(sc->value);
-  return(main_stack_op(sc) != OP_READ_LIST);
+  return(stack_top_op(sc) != OP_READ_LIST);
 }
 
 static bool op_read_byte_vector(s7_scheme *sc)
 {
   sc->value = (sc->args == int_one) ? g_byte_vector(sc, sc->value) : g_byte_multivector(sc, integer(sc->args), sc->value);
   if (sc->safety > IMMUTABLE_VECTOR_SAFETY) set_immutable(sc->value);
-  return(main_stack_op(sc) != OP_READ_LIST);
+  return(stack_top_op(sc) != OP_READ_LIST);
 }
 
 
@@ -92036,7 +92041,7 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 		push_stack_no_let_no_code(sc, OP_READ_LIST, sc->nil);
 		/* check_stack_size(sc); */
 		sc->value = read_expression(sc);
-		if (main_stack_op(sc) == OP_READ_LIST) goto POP_READ_LIST;
+		if (stack_top_op(sc) == OP_READ_LIST) goto POP_READ_LIST;
 		continue;
 
 	      case ')':
@@ -92067,7 +92072,7 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 		sc->tok = TOKEN_BACK_QUOTE;
 		push_stack_no_let_no_code(sc, OP_READ_LIST, sc->args);
 		sc->value = read_expression(sc);
-		if (main_stack_op(sc) == OP_READ_LIST) goto POP_READ_LIST;
+		if (stack_top_op(sc) == OP_READ_LIST) goto POP_READ_LIST;
 		continue;
 
 	      case ',':
@@ -92112,7 +92117,7 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	    case TOKEN_DOT:          read_dot_and_expression(sc); break;
 	    default:                 read_tok_default(sc); break;
 	    }
-	  if (main_stack_op(sc) == OP_READ_LIST) goto POP_READ_LIST;
+	  if (stack_top_op(sc) == OP_READ_LIST) goto POP_READ_LIST;
 	  continue;
 
 	case OP_READ_DOT:
@@ -92192,7 +92197,7 @@ static void save_holder_data(s7_scheme *sc, s7_pointer p)
     case T_INPUT_PORT:   mark_holdee(p, port_string_or_function(p), NULL); break;
     case T_C_POINTER:    mark_holdee(p, c_pointer_type(p), NULL); mark_holdee(p, c_pointer_info(p), NULL); break;
     case T_COUNTER:      mark_holdee(p, counter_result(p), NULL); mark_holdee(p, counter_list(p), NULL); mark_holdee(p, counter_let(p), NULL); break;
-    case T_STACK:        mark_stack_holdees(sc, p, (p == sc->stack) ? current_stack_top(sc) : temp_stack_top(p)); break;
+    case T_STACK:        mark_stack_holdees(sc, p, (p == sc->stack) ? stack_top(sc) : temp_stack_top(p)); break;
     case T_OUTPUT_PORT:  if (is_function_port(p)) mark_holdee(p, port_string_or_function(p), NULL); break;
 
     case T_ITERATOR:
@@ -92745,7 +92750,7 @@ static s7_pointer memory_usage(s7_scheme *sc)
   add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "setters", 7), make_integer(sc, sc->protected_setters_loc));
 
   add_symbol_table(sc, mu_let);
-  add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "stack", 5), cons(sc, make_integer(sc, current_stack_top(sc)), make_integer(sc, sc->stack_size)));
+  add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "stack", 5), cons(sc, make_integer(sc, stack_top(sc)), make_integer(sc, sc->stack_size)));
 
   len = sc->autoload_names_top * (sizeof(const char **) + sizeof(s7_int) + sizeof(bool));
   for (i = 0; i < sc->autoload_names_loc; i++) len += sc->autoload_names_sizes[i];
@@ -92915,7 +92920,7 @@ static s7_pointer sl_history(s7_scheme *sc)
 static s7_pointer sl_active_catches(s7_scheme *sc)
 {
   s7_pointer lst = sc->nil;
-  for (int64_t i = current_stack_top(sc) - 1; i >= 3; i -= 4)
+  for (int64_t i = stack_top(sc) - 1; i >= 3; i -= 4)
     switch (stack_op(sc->stack, i))
       {
       case OP_CATCH_ALL:
@@ -93014,7 +93019,7 @@ static s7_pointer s7_starlet(s7_scheme *sc, s7_int choice)
     case SL_PROFILE_PREFIX:                return(sc->profile_prefix);
     case SL_ROOTLET_SIZE:                  return(make_integer(sc, sc->rootlet_entries));
     case SL_SAFETY:                        return(make_integer(sc, sc->safety));
-    case SL_STACK:                         return(sl_stack_entries(sc, sc->stack, current_stack_top(sc)));
+    case SL_STACK:                         return(sl_stack_entries(sc, sc->stack, stack_top(sc)));
     case SL_STACKTRACE_DEFAULTS:           return(copy_proper_list(sc, sc->stacktrace_defaults)); /* if not copied, we can set! entries directly to garbage */
     case SL_STACK_SIZE:                    return(make_integer(sc, sc->stack_size));
     case SL_STACK_TOP:                     return(make_integer(sc, (sc->stack_end - sc->stack_start) / 4));
@@ -96414,33 +96419,33 @@ int main(int argc, char **argv)
  * s7test    1873   1831   1818   1829   1846   1859
  * thook     ----   ----   2590   2030   2046   2044
  * tauto     ----   ----   2562   2048   2063   2046
- * lt        2187   2172   2150   2185   2199   2200
- * dup       3805   3788   2492   2239   2234   2234
+ * lt        2187   2172   2150   2185   2199   2198
+ * dup       3805   3788   2492   2239   2234   2214
  * tcopy     8035   5546   2539   2375   2380   2381
- * tread     2440   2421   2419   2408   2417   2401
+ * tread     2440   2421   2419   2408   2417   2399
  * fbench    2688   2583   2460   2430   2458   2458
  * trclo     2735   2574   2454   2445   2461   2461
  * titer     2865   2842   2641   2509   2465   2465
- * tload     ----   ----   3046   2404   2531   2503
- * tmat      3065   3042   2524   2578   2586   2586
- * tb        2735   2681   2612   2604   2630   2631
+ * tload     ----   ----   3046   2404   2531   2502
+ * tmat      3065   3042   2524   2578   2586   2582
+ * tb        2735   2681   2612   2604   2630   2630
  * tsort     3105   3104   2856   2804   2828   2828
  * tobj      4016   3970   3828   3577   3576   3511
- * teq       4068   4045   3536   3486   3588   3589
+ * teq       4068   4045   3536   3486   3588   3568
  * tio       3816   3752   3683   3620   3616   3604
- * tmac      3950   3873   3033   3677   3688   3688
- * tclo      4787   4735   4390   4384   4448   4450
- * tcase     4960   4793   4439   4430   4448   4451
+ * tmac      3950   3873   3033   3677   3688   3685
+ * tclo      4787   4735   4390   4384   4448   4445
+ * tcase     4960   4793   4439   4430   4448   4448
  * tlet      7775   5640   4450   4427   4452   4452
  * tfft      7820   7729   4755   4476   4511   4512
- * tstar     6139   5923   5519   4449   4554   4554
+ * tstar     6139   5923   5519   4449   4554   4553
  * tmap      8869   8774   4489   4541   4618   4618
- * tshoot    5525   5447   5183   5055   5048   5046
- * tform     5357   5348   5307   5316   5402   5169
+ * tshoot    5525   5447   5183   5055   5048   5044
+ * tform     5357   5348   5307   5316   5402   5167
  * tstr      6880   6342   5488   5162   5194   5199
- * tnum      6348   6013   5433   5396   5410   5415
- * tlamb     6423   6273   5720   5560   5620   5622
- * tmisc     8869   7612   6435   6076   6222   6223
+ * tnum      6348   6013   5433   5396   5410   5408
+ * tlamb     6423   6273   5720   5560   5620   5620
+ * tmisc     8869   7612   6435   6076   6222   6216
  * tgsl      8485   7802   6373   6282   6229   6230
  * tlist     7896   7546   6558   6240   6284   6280
  * tset      ----   ----   ----   6260   6290   6306
@@ -96448,11 +96453,11 @@ int main(int argc, char **argv)
  * trec      6936   6922   6521   6588   6581   6581
  * tleft     10.4   10.2   7657   7479   7627   7611
  * tgc       11.9   11.1   8177   7857   7958   7958
- * thash     11.8   11.7   9734   9479   9483   9536
- * cb        11.2   11.0   9658   9564   9631   9634
+ * thash     11.8   11.7   9734   9479   9483   9535
+ * cb        11.2   11.0   9658   9564   9631   9626
  * tgen      11.2   11.4   12.0   12.1   12.1   12.1
  * tall      15.6   15.6   15.6   15.6   15.1   15.1
- * calls     36.7   37.5   37.0   37.5   37.1   37.1
+ * calls     36.7   37.5   37.0   37.5   37.1   37.3
  * sg        ----   ----   55.9   55.8   55.3   55.3
  * lg        ----   ----  105.2  106.4  107.2  107.1
  * tbig     177.4  175.8  156.5  148.1  145.8  145.9
@@ -96461,6 +96466,5 @@ int main(int argc, char **argv)
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * safety for exp->mac? check-define-macro in lint (given eval-string, we can't do this in s7.c I think)
  * *read-error-hook* is only triggered in #... -- it is reader-error? (see also reader-cond bug)
- * need stack_* args from stack_end? currently stack_element(sc->stack, stack_end - stack_start - 1)?
- *   also current_stack_top makes no sense unless used with sc->stack -- how to check this?
+ * T_op to check that arg is plausible opcode?
  */
