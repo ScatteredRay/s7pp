@@ -1963,6 +1963,7 @@ static void init_types(void)
   static s7_pointer check_ref16(s7_pointer p, const char *func, int32_t line);
   static s7_pointer check_ref19(s7_pointer p, const char *func, int32_t line);
   static s7_pointer check_nref(s7_pointer p, const char *func, int32_t line);
+  static s7_pointer check_opcode(s7_pointer p, const char *func, int32_t line);
   static s7_pointer check_let_ref(s7_pointer p, uint64_t role, const char *func, int32_t line);
 
   #define unchecked_type(p) ((p)->tf.type_field)
@@ -2009,6 +2010,7 @@ static void init_types(void)
   #define T_Num(P) check_ref7(P,                     __func__, __LINE__)                /* any number (not bignums) */
   #define T_Nvc(P) check_ref(P, T_VECTOR,            __func__, __LINE__, "sweep", NULL)
   #define T_Obj(P) check_ref(P, T_C_OBJECT,          __func__, __LINE__, "sweep", "s7_c_object_value")
+  #define T_Op(P)  check_opcode(P,                   __func__, __LINE__)
   #define T_Pair(P) check_ref(P, T_PAIR,             __func__, __LINE__, NULL, NULL)
   #define T_Pcs(P) check_ref2(P, T_PAIR, T_CLOSURE_STAR, __func__, __LINE__, NULL, NULL)
   #define T_Pos(P) check_nref(P,                     __func__, __LINE__)                /* not free */
@@ -2068,6 +2070,7 @@ static void init_types(void)
   #define T_Num(P)  P
   #define T_Nvc(P)  P
   #define T_Obj(P)  P
+  #define T_Op(P)   P
   #define T_Pair(P) P
   #define T_Pcs(P)  P
   #define T_Pos(P)  P
@@ -2313,7 +2316,7 @@ static void init_types(void)
 /* T_LOCAL is bit 12 */
 
 #define T_SAFE_PROCEDURE               (1 << (TYPE_BITS + 13))
-#define is_safe_procedure(p)           has_type_bit(T_App(p), T_SAFE_PROCEDURE) /* was T_Pos 19-Apr-21 */
+#define is_safe_procedure(p)           has_type_bit(T_App(p), T_SAFE_PROCEDURE)
 #define is_safe_or_scope_safe_procedure(p) ((full_type(T_Fnc(p)) & (T_SCOPE_SAFE | T_SAFE_PROCEDURE)) != 0)
 /* applicable objects that do not return or modify their arg list directly (no :rest arg in particular),
  *    and that can't call themselves either directly or via s7_call, and that don't mess with the stack.
@@ -2336,7 +2339,7 @@ static void init_types(void)
 #define set_unsafely_optimized(p)      full_type(T_Pair(p)) = (full_type(p) | T_UNSAFE | T_OPTIMIZED)
 #define is_unsafe(p)                   has_type_bit(T_Pair(p), T_UNSAFE)
 #define clear_unsafe(p)                clear_type_bit(T_Pair(p), T_UNSAFE)
-#define is_safely_optimized(p)         ((full_type(T_Pair(p)) & (T_OPTIMIZED | T_UNSAFE)) == T_OPTIMIZED) /* was T_Pos 30-Jan-21 */
+#define is_safely_optimized(p)         ((full_type(T_Pair(p)) & (T_OPTIMIZED | T_UNSAFE)) == T_OPTIMIZED)
 /* optimizer flag saying "this expression is not completely self-contained.  It might involve the stack, etc" */
 
 #define T_CLEAN_SYMBOL                 T_UNSAFE
@@ -2522,7 +2525,7 @@ static void init_types(void)
 /* this marks an environment or closure that is "open" for generic functions etc, don't reuse this bit */
 
 #define T_ITER_OK                      (1LL << (TYPE_BITS + 23))
-#define iter_ok(p)                     has_type_bit(T_Itr(p), T_ITER_OK) /* was T_Pos 15-Apr-21 */
+#define iter_ok(p)                     has_type_bit(T_Itr(p), T_ITER_OK)
 #define clear_iter_ok(p)               clear_type_bit(T_Itr(p), T_ITER_OK)
 
 #define T_LOOP_END_POSSIBLE            T_ITER_OK
@@ -2666,7 +2669,7 @@ static void init_types(void)
 
 #define T_CYCLIC_SET                   (1LL << (TYPE_BITS + BIT_ROOM + 30))
 #define T_SHORT_CYCLIC_SET             (1 << 6)
-#define is_cyclic_set(p)               has_type1_bit(T_Seq(p), T_SHORT_CYCLIC_SET) /* was T_Pos 30-Jan-21 */
+#define is_cyclic_set(p)               has_type1_bit(T_Seq(p), T_SHORT_CYCLIC_SET)
 #define set_cyclic_set(p)              set_type1_bit(T_Seq(p), T_SHORT_CYCLIC_SET)
 #define clear_cyclic_bits(p)           clear_type_bit(p, T_COLLECTED | T_SHARED | T_CYCLIC | T_CYCLIC_SET)
 
@@ -3331,18 +3334,18 @@ static s7_pointer slot_expression(s7_pointer p)    \
 #define hash_table_checker(p)          (T_Hsh(p))->object.hasher.hash_func
 #define hash_table_mapper(p)           (T_Hsh(p))->object.hasher.loc
 #define hash_table_procedures(p)       T_Lst(hash_table_block(p)->ex.ex_ptr)
-#define hash_table_set_procedures(p, Lst)  hash_table_block(p)->ex.ex_ptr = T_Lst(Lst)  /* both the checker/mapper: car/cdr, and the two typers (opt/opt2) */
-#define hash_table_procedures_checker(p)   car(hash_table_procedures(p))
-#define hash_table_procedures_mapper(p)    cdr(hash_table_procedures(p))
+#define hash_table_set_procedures(p, Lst)       hash_table_block(p)->ex.ex_ptr = T_Lst(Lst)  /* both the checker/mapper: car/cdr, and the two typers (opt/opt2) */
+#define hash_table_procedures_checker(p)        car(hash_table_procedures(p))
+#define hash_table_procedures_mapper(p)         cdr(hash_table_procedures(p))
 #define hash_table_set_procedures_checker(p, f) set_car(hash_table_procedures(p), f)
-#define hash_table_set_procedures_mapper(p, f) set_cdr(hash_table_procedures(p), f)
-#define hash_table_key_typer(p)            T_Prc(opt1_any(hash_table_procedures(p)))
-#define hash_table_key_typer_unchecked(p)  hash_table_block(p)->ex.ex_ptr->object.cons.opt1
-#define hash_table_set_key_typer(p, Fnc)   set_opt1_any(hash_table_procedures(T_Hsh(p)), T_Prc(Fnc))
-#define hash_table_value_typer(p)          T_Prc(opt2_any(hash_table_procedures(p)))
-#define hash_table_value_typer_unchecked(p) hash_table_block(p)->ex.ex_ptr->object.cons.o2.opt2
-#define hash_table_set_value_typer(p, Fnc) set_opt2_any(hash_table_procedures(T_Hsh(p)), T_Prc(Fnc))
-#define weak_hash_iters(p)                 hash_table_block(p)->ln.tag
+#define hash_table_set_procedures_mapper(p, f)  set_cdr(hash_table_procedures(p), f)
+#define hash_table_key_typer(p)                 T_Prc(opt1_any(hash_table_procedures(p)))
+#define hash_table_key_typer_unchecked(p)       hash_table_block(p)->ex.ex_ptr->object.cons.opt1
+#define hash_table_set_key_typer(p, Fnc)        set_opt1_any(hash_table_procedures(T_Hsh(p)), T_Prc(Fnc))
+#define hash_table_value_typer(p)               T_Prc(opt2_any(hash_table_procedures(p)))
+#define hash_table_value_typer_unchecked(p)     hash_table_block(p)->ex.ex_ptr->object.cons.o2.opt2
+#define hash_table_set_value_typer(p, Fnc)      set_opt2_any(hash_table_procedures(T_Hsh(p)), T_Prc(Fnc))
+#define weak_hash_iters(p)                      hash_table_block(p)->ln.tag
 
 #if S7_DEBUGGING
 #define T_Itr_Pos(p)                   titr_pos(sc, T_Itr(p), __func__, __LINE__)
@@ -3497,7 +3500,7 @@ static s7_pointer slot_expression(s7_pointer p)    \
 #define is_bacro(p)                    (type(p) == T_BACRO)
 #define is_bacro_star(p)               (type(p) == T_BACRO_STAR)
 #define is_either_macro(p)             ((is_macro(p)) || (is_macro_star(p)))
-#define is_either_bacro(p)             ((type(p) == T_BACRO) || (type(p) == T_BACRO_STAR))
+#define is_either_bacro(p)             ((is_bacro(p)) || (is_bacro_star(p)))
 
 #define is_closure(p)                  (type(p) == T_CLOSURE)
 #define is_closure_star(p)             (type(p) == T_CLOSURE_STAR)
@@ -3677,8 +3680,8 @@ static void set_type_1(s7_pointer p, uint64_t f, const char *func, int32_t line)
 }
 #endif
 
-#define number_name(p)                 (char *)((T_Num(p))->object.number_name.name + 1)
-#define number_name_length(p)          (T_Num(p))->object.number_name.name[0]
+#define number_name(p)        (char *)((T_Num(p))->object.number_name.name + 1)
+#define number_name_length(p) (T_Num(p))->object.number_name.name[0]
 
 static void set_number_name(s7_pointer p, const char *name, int32_t len)
 {
@@ -4694,19 +4697,20 @@ void s7_show_history(s7_scheme *sc)
 #endif
 }
 
-#define stack_op(Stack, Loc)         ((opcode_t)(stack_element(Stack, Loc)))
+#define stack_op(Stack, Loc)         ((opcode_t)T_Op(stack_element(Stack, Loc)))
 #define stack_args(Stack, Loc)       stack_element(Stack, Loc - 1)
 #define stack_let(Stack, Loc)        stack_element(Stack, Loc - 2)
 #define stack_code(Stack, Loc)       stack_element(Stack, Loc - 3)
 #define set_stack_op(Stack, Loc, Op) stack_element(Stack, Loc) = (s7_pointer)(Op)
 
-#define stack_top_op(Sc)             ((opcode_t)(Sc->stack_end[-1]))
+#define stack_top_op(Sc)             ((opcode_t)T_Op(Sc->stack_end[-1]))
+#define unchecked_stack_top_op(Sc)   ((opcode_t)(Sc->stack_end[-1]))
 #define stack_top_args(Sc)           (Sc->stack_end[-2])
 #define stack_top_let(Sc)            (Sc->stack_end[-3])
 #define stack_top_code(Sc)           (Sc->stack_end[-4])
 #define set_stack_top_op(Sc, Op)     Sc->stack_end[-1] = (s7_pointer)(Op)
 
-/* beware of stack_top_code!  If a function has a tail-call, the stack_top_code that form sees
+/* stack_top_code changes.  If a function has a tail-call, the stack_top_code that form sees
  *   if stack_top_op==op-begin1 can change from call to call -- the begin actually refers
  *   to the caller, which is dependent on where the current function was called, so we can't hard-wire
  *   any optimizations based on that sequence.
@@ -5403,6 +5407,17 @@ static s7_pointer check_ref19(s7_pointer p, const char *func, int32_t line)
   if (t_ext_p[typ])
     {
       fprintf(stderr, "%s%s[%d]: attempt to use (internal) %s cell%s\n", bold_text, func, line, s7_type_names[typ], unbold_text);
+      if (cur_sc->stop_at_error) abort();
+    }
+  return(p);
+}
+
+static s7_pointer check_opcode(s7_pointer p, const char *func, int32_t line)
+{
+  s7_int op = (s7_int)(intptr_t)p;
+  if ((op < 0) || (op >= NUM_OPS))
+    {
+      fprintf(stderr, "%s%s[%d]: opcode_t: %" ld64 " == %p?%s\n", bold_text, func, line, op, p, unbold_text);
       if (cur_sc->stop_at_error) abort();
     }
   return(p);
@@ -8001,7 +8016,7 @@ static void pop_stack_1(s7_scheme *sc, const char *func, int32_t line)
   sc->code = T_Pos(sc->stack_end[0]);
   sc->curlet = sc->stack_end[1];  /* not T_Lid|Pos, see op_any_closure_3p_end et al (stack used to pass args, not curlet) */
   sc->args = sc->stack_end[2];
-  sc->cur_op = (opcode_t)(sc->stack_end[3]);
+  sc->cur_op = (opcode_t)T_Op(sc->stack_end[3]);
   if (sc->cur_op >= NUM_OPS)
     {
       fprintf(stderr, "%s%s[%d]: pop_stack invalid opcode: %" p64 " %s\n", bold_text, func, line, sc->cur_op, unbold_text);
@@ -8166,9 +8181,9 @@ static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer
 static void unstack_1(s7_scheme *sc, const char *func, int32_t line)
 {
   sc->stack_end -= 4;
-  if (((opcode_t)sc->stack_end[3]) != OP_GC_PROTECT)
+  if ((opcode_t)T_Op(sc->stack_end[3]) != OP_GC_PROTECT)
     {
-      fprintf(stderr, "%s%s[%d]: popped %s?%s\n", bold_text, func, line, op_names[(opcode_t)sc->stack_end[3]], unbold_text);
+      fprintf(stderr, "%s%s[%d]: popped %s?%s\n", bold_text, func, line, op_names[(opcode_t)T_Op(sc->stack_end[3])], unbold_text);
       /* "popped apply" means we called something that went to eval+apply when we thought it was a safe function */
       fprintf(stderr, "    code: %s, args: %s\n", display(sc->code), display(sc->args));
       fprintf(stderr, "    cur_code: %s, estr: %s\n", display(current_code(sc)), display(s7_name_to_value(sc, "estr")));
@@ -8179,9 +8194,9 @@ static void unstack_1(s7_scheme *sc, const char *func, int32_t line)
 static void unstack_2(s7_scheme *sc, opcode_t op, const char *func, int32_t line)
 {
   sc->stack_end -= 4;
-  if (((opcode_t)sc->stack_end[3]) != op)
+  if ((opcode_t)T_Op(sc->stack_end[3]) != op)
     {
-      fprintf(stderr, "%s%s[%d]: popped %s? (expected %s)%s\n", bold_text, func, line, op_names[(opcode_t)sc->stack_end[3]], op_names[op], unbold_text);
+      fprintf(stderr, "%s%s[%d]: popped %s? (expected %s)%s\n", bold_text, func, line, op_names[(opcode_t)T_Op(sc->stack_end[3])], op_names[op], unbold_text);
       fprintf(stderr, "    code: %s, args: %s\n", display(sc->code), display(sc->args));
       fprintf(stderr, "    cur_code: %s, estr: %s\n", display(current_code(sc)), display(s7_name_to_value(sc, "estr")));
       if (sc->stop_at_error) abort();
@@ -8272,18 +8287,18 @@ s7_pointer s7_gc_unprotect_via_stack(s7_scheme *sc, s7_pointer x)
   return(x);
 }
 
-#define stack_protected1(Sc) Sc->stack_end[-2] /* args */
+#define stack_protected1(Sc) Sc->stack_end[-2] /* args */ /* stack_top_args(Sc) etc, but it's easier to remember these aliases */
 #define stack_protected2(Sc) Sc->stack_end[-4] /* code */
 #define stack_protected3(Sc) Sc->stack_end[-3] /* curlet */
 
 #if S7_DEBUGGING
-  #define set_stack_protected1(Sc, Val) do {if ((opcode_t)(Sc->stack_end[-1]) != OP_GC_PROTECT) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[(opcode_t)(Sc->stack_end[-1])]); Sc->stack_end[-2] = Val;} while (0)
-  #define set_stack_protected2(Sc, Val) do {if ((opcode_t)(Sc->stack_end[-1]) != OP_GC_PROTECT) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[(opcode_t)(Sc->stack_end[-1])]); Sc->stack_end[-4] = Val;} while (0)
-  #define set_stack_protected3(Sc, Val) do {if ((opcode_t)(Sc->stack_end[-1]) != OP_GC_PROTECT) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[(opcode_t)(Sc->stack_end[-1])]); Sc->stack_end[-3] = Val;} while (0)
+  #define set_stack_protected1(Sc, Val) do {if (stack_top_op(Sc) != OP_GC_PROTECT) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); Sc->stack_end[-2] = Val;} while (0)
+  #define set_stack_protected2(Sc, Val) do {if (stack_top_op(Sc) != OP_GC_PROTECT) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); Sc->stack_end[-4] = Val;} while (0)
+  #define set_stack_protected3(Sc, Val) do {if (stack_top_op(Sc) != OP_GC_PROTECT) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); Sc->stack_end[-3] = Val;} while (0)
 
-  #define set_stack_protected1_with(Sc, Val, Op) do {if ((opcode_t)(Sc->stack_end[-1]) != Op) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[(opcode_t)(Sc->stack_end[-1])]); Sc->stack_end[-2] = Val;} while (0)
-  #define set_stack_protected2_with(Sc, Val, Op) do {if ((opcode_t)(Sc->stack_end[-1]) != Op) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[(opcode_t)(Sc->stack_end[-1])]); Sc->stack_end[-4] = Val;} while (0)
-  #define set_stack_protected3_with(Sc, Val, Op) do {if ((opcode_t)(Sc->stack_end[-1]) != Op) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[(opcode_t)(Sc->stack_end[-1])]); Sc->stack_end[-3] = Val;} while (0)
+  #define set_stack_protected1_with(Sc, Val, Op) do {if (stack_top_op(Sc) != Op) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); Sc->stack_end[-2] = Val;} while (0)
+  #define set_stack_protected2_with(Sc, Val, Op) do {if (stack_top_op(Sc) != Op) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); Sc->stack_end[-4] = Val;} while (0)
+  #define set_stack_protected3_with(Sc, Val, Op) do {if (stack_top_op(Sc) != Op) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); Sc->stack_end[-3] = Val;} while (0)
 #else
   #define set_stack_protected1(Sc, Val) Sc->stack_end[-2] = Val
   #define set_stack_protected2(Sc, Val) Sc->stack_end[-4] = Val
@@ -30905,7 +30920,7 @@ The symbols refer to the argument to \"provide\".  (require lint.scm)"
 	    if (is_closure(f))   /* f should be a function of one argument, the current (calling) environment */
 	      s7_call(sc, f, set_ulist_1(sc, sc->curlet, sc->nil));
 	}}
-  if (((opcode_t)sc->stack_end[-1]) == OP_GC_PROTECT) /* op_error_quit if load failed in scheme in Snd */
+  if (unchecked_stack_top_op(sc) == OP_GC_PROTECT) /* op_error_quit if load failed in scheme in Snd */
     unstack(sc);
   return(sc->T);
 }
@@ -31039,7 +31054,7 @@ s7_pointer s7_eval_c_string_with_environment(s7_scheme *sc, const char *str, s7_
   code = s7_read(sc, port);
   s7_close_input_port(sc, port);
   result = s7_eval(sc, T_Ext(code), e);
-  if (((opcode_t)sc->stack_end[-1]) == OP_GC_PROTECT)
+  if (unchecked_stack_top_op(sc) == OP_GC_PROTECT)
     unstack(sc); /* pop_stack(sc); */
   return(result);
 }
@@ -51054,7 +51069,7 @@ static void swap_stack(s7_scheme *sc, opcode_t new_op, s7_pointer new_code, s7_p
   code = sc->stack_end[0];
   e = sc->stack_end[1];
   args = sc->stack_end[2];
-  op = (opcode_t)(sc->stack_end[3]); /* this should be begin1 */
+  op = (opcode_t)T_Op(sc->stack_end[3]); /* this should be begin1 */
   if ((S7_DEBUGGING) && (op != OP_BEGIN_NO_HOOK) && (op != OP_BEGIN_HOOK))
     fprintf(stderr, "swap %s in %s\n", op_names[op], display(s7_name_to_value(sc, "estr")));
   push_stack(sc, new_op, new_args, new_code);
@@ -51355,7 +51370,7 @@ s7_pointer s7_call_with_catch(s7_scheme *sc, s7_pointer tag, s7_pointer body, s7
 	if (SHOW_EVAL_OPS) fprintf(stderr, "  longjmp call %s\n", display(body));
 	push_stack(sc, OP_CATCH, error_handler, p);
 	result = s7_call(sc, body, sc->nil);
-	if (((opcode_t)sc->stack_end[-1]) == OP_CATCH) sc->stack_end -= 4;
+	if (stack_top_op(sc) == OP_CATCH) sc->stack_end -= 4;
       }
     else
       {
@@ -51364,7 +51379,7 @@ s7_pointer s7_call_with_catch(s7_scheme *sc, s7_pointer tag, s7_pointer body, s7
 	  eval(sc, sc->cur_op);
 	if ((jump_loc == CATCH_JUMP) &&    /* we're returning from an error in catch */
 	    ((sc->stack_end == sc->stack_start) ||
-	     (((sc->stack_end - 4) == sc->stack_start) && (((opcode_t)sc->stack_end[-1]) == OP_GC_PROTECT)))) /* s7_apply_function probably */
+	     (((sc->stack_end - 4) == sc->stack_start) && (unchecked_stack_top_op(sc) == OP_GC_PROTECT)))) /* s7_apply_function probably */
 	  push_stack_op(sc, OP_ERROR_QUIT);
 	result = sc->value;
       }
@@ -66990,7 +67005,7 @@ static s7_pointer g_optimize(s7_scheme *sc, s7_pointer args)
   gc_protect_via_stack(sc, code);
   f = s7_optimize(sc, code);
   if (f) result = f(sc);
-  if (((opcode_t)sc->stack_end[-1]) == OP_GC_PROTECT) unstack(sc); /* was unstack(sc) */
+  if (unchecked_stack_top_op(sc) == OP_GC_PROTECT) unstack(sc); /* was unstack(sc) */
   return(result);
 }
 
@@ -68365,7 +68380,7 @@ static Inline void inline_op_map_gather(s7_scheme *sc) /* called thrice in eval,
 
 
 /* -------------------------------- multiple-values -------------------------------- */
-#define stack_top4_op(Sc)             ((opcode_t)(Sc->stack_end[-5])) /* top4 == top - 4 */
+#define stack_top4_op(Sc)             ((opcode_t)T_Op(Sc->stack_end[-5])) /* top4 == top - 4 */
 #define stack_top4_args(Sc)           (Sc->stack_end[-6])
 #define stack_top4_let(Sc)            (Sc->stack_end[-7])
 #define stack_top4_code(Sc)           (Sc->stack_end[-8])
@@ -68378,7 +68393,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 		       (sc->stack_end > sc->stack_start) ? op_names[stack_top_op(sc)] : "no stack!", display_80(args)));
   if ((S7_DEBUGGING) && ((is_null(args)) || (is_null(cdr(args))))) fprintf(stderr, "%s: %s\n", __func__, display(args));
 
-  switch (stack_top_op(sc))
+  switch (unchecked_stack_top_op(sc)) /* unchecked for C s7_values call at top-level -- see ffitest.c */
     {
       /* the normal case -- splice values into caller's args */
     case OP_EVAL_ARGS1: case OP_EVAL_ARGS2: case OP_EVAL_ARGS3: case OP_EVAL_ARGS4:
@@ -74311,7 +74326,7 @@ static int32_t check_lambda(s7_scheme *sc, s7_pointer form, bool opt)
   if ((opt) ||
       (stack_top_op(sc) == OP_DEFINE1) ||
       (((sc->stack_end - sc->stack_start) > 4) &&
-       (((opcode_t)(sc->stack_end[-5])) == OP_DEFINE1) &&  /* surely if define is ok, so is define dilambda? 16-Apr-16 */
+       (stack_top4_op(sc) == OP_DEFINE1) &&  /* surely if define is ok, so is define dilambda? 16-Apr-16 */
        (sc->op_stack_now > sc->op_stack) &&
        ((*(sc->op_stack_now - 1)) == (s7_pointer)global_value(sc->dilambda_symbol))))
     optimize_lambda(sc, true, sc->unused, car(code), body);
@@ -77639,7 +77654,7 @@ static void transfer_macro_info(s7_scheme *sc, s7_pointer mac)
 static goto_t op_expansion(s7_scheme *sc)
 {
   s7_pointer caller = (is_pair(stack_top_args(sc))) ? car(stack_top_args(sc)) : sc->F; /* this can be garbage */
-  if ((sc->stack_end > sc->stack_start) &&
+  if ((sc->stack_end > sc->stack_start) &&          /* there is a stack... */
       (stack_top_op(sc) != OP_READ_QUOTE) &&        /* '(expansion ...) */
       (stack_top_op(sc) != OP_READ_VECTOR) &&       /* #(expansion ...) */
       (caller != sc->quote_symbol) &&               /* (quote (expansion ...)) */
@@ -87666,7 +87681,7 @@ static void op_safe_c_sp(s7_scheme *sc)
 {
   s7_pointer args = cdr(sc->code);
   check_stack_size(sc);
-  push_stack(sc, (opcode_t)opt1_any(args), lookup(sc, car(args)), sc->code);
+  push_stack(sc, (opcode_t)T_Op(opt1_any(args)), lookup(sc, car(args)), sc->code);
   sc->code = cadr(args);
 }
 
@@ -87721,7 +87736,7 @@ static void op_safe_c_cp(s7_scheme *sc)
    *   the reader protects us, but a call/cc can replace the original stack with a much smaller one.
    */
   check_stack_size(sc);
-  push_stack(sc, (opcode_t)opt1_any(args), opt3_any(args), sc->code); /* to safe_add_sp_1 for example */
+  push_stack(sc, (opcode_t)T_Op(opt1_any(args)), opt3_any(args), sc->code); /* to safe_add_sp_1 for example */
   sc->code = cadr(args);
 }
 
@@ -87806,7 +87821,7 @@ static void op_cl_na(s7_scheme *sc)
     clear_list_in_use(val);
   else
     /* the fn_proc call might push its own op (e.g. for-each/map) so we have to check for that */
-    if (stack_top_op(sc) == OP_GC_PROTECT)
+    if (unchecked_stack_top_op(sc) == OP_GC_PROTECT)
       unstack(sc);
 }
 
@@ -87826,7 +87841,7 @@ static inline void op_safe_c_pp(s7_scheme *sc)
   if ((has_gx(args)) && (symbol_ctr(caar(args)) == 1))
     {
       sc->args = fx_proc_unchecked(args)(sc, car(args));
-      push_stack_direct(sc, (opcode_t)opt1_any(args)); /* args = first value, func(args, value) if no mv */
+      push_stack_direct(sc, (opcode_t)T_Op(opt1_any(args))); /* args = first value, func(args, value) if no mv */
       sc->code = cadr(args);
     }
   else
@@ -87839,7 +87854,7 @@ static inline void op_safe_c_pp(s7_scheme *sc)
 static void op_safe_c_pp_1(s7_scheme *sc)
 {
   /* it is much slower to check has_gx here! */
-  push_stack(sc, (opcode_t)opt1_any(cdr(sc->code)), sc->value, sc->code); /* args[i.e. sc->value] = first value, func(args, value) if no mv */
+  push_stack(sc, (opcode_t)T_Op(opt1_any(cdr(sc->code))), sc->value, sc->code); /* args[i.e. sc->value] = first value, func(args, value) if no mv */
   sc->code = caddr(sc->code);
 }
 
@@ -88093,7 +88108,7 @@ static bool op_safe_c_ap(s7_scheme *sc)
     }
   check_stack_size(sc);
   sc->args = fx_call(sc, code);
-  push_stack_direct(sc, (opcode_t)opt1_any(code)); /* safe_c_sp cases, mv->safe_c_sp_mv */
+  push_stack_direct(sc, (opcode_t)T_Op(opt1_any(code))); /* safe_c_sp cases, mv->safe_c_sp_mv */
   sc->code = car(val);
   return(true);
 }
@@ -96466,5 +96481,6 @@ int main(int argc, char **argv)
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * safety for exp->mac? check-define-macro in lint (given eval-string, we can't do this in s7.c I think)
  * *read-error-hook* is only triggered in #... -- it is reader-error? (see also reader-cond bug)
- * T_op to check that arg is plausible opcode?
+ * more preset access pointers?
+ * there are lots of sc->stack_end[] refs (8104) -- use stack_push_* instead?
  */

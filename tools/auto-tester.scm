@@ -3,7 +3,7 @@
 (define-constant stable (symbol-table))
 (define-constant stable-len (length stable))
 
-(define with-mock-data #f)
+(define with-mock-data #t)
 ;(set! (*s7* 'profile) 1)
 (when (provided? 'number-separator) (set! (*s7* 'number-separator) #\,))
 ;(set! (*s7* 'gc-stats) #t)
@@ -846,10 +846,21 @@
 (define-constant x8 :hi)
 (define-constant x9 'hi)
 
+(define-constant gb1 'gb2)
+(define-constant gb2 'gb3)
+(define-constant gb3 '(+ 1 2))
+
 (define-constant typed-hash (make-hash-table 8 eq? (cons symbol? integer?)))
 (define-constant typed-vector (make-vector 8 'a symbol?))
 (define-constant typed-let1 (immutable! (let ((a 1)) (set! (setter 'a) integer?) (curlet))))
 (define-constant constant-let (immutable! (let () (define-constant a 1) (curlet))))
+
+(define-constant bight (let* ((size 10000)
+			      (ht (make-hash-table size)))
+			 (do ((i 0 (+ i 1))) 
+			     ((= i size))
+			   (hash-table-set! ht (symbol (format #f "a~D" i)) i))
+			 ht))
 
 (define-constant fvset float-vector-set!)
 (define-constant htset hash-table-set!)
@@ -992,7 +1003,7 @@
 			  ;'random
 			  ;;; 'quote
 			  '*error-hook* ;'*autoload-hook* 
-			  ;'cond-expand ; (cond-expand (reader-cond...)) too many times
+			  'cond-expand ; (cond-expand (reader-cond...)) too many times
 			  ;'random-state->list
                           ;'pair-line-number 'pair-filename ; -- too many uninteresting diffs
 			  'let-set!
@@ -1066,7 +1077,7 @@
 			  ;'sandbox ;-- slow and talkative
 			  'circular-list? ;;'hash-table->alist -- hash map order problem
 			  'weak-hash-table 'byte? 'the 'lognand 'logeqv
-			  ;'local-random
+			  'local-random
 			  'local-read-string 'local-varlet 'local-let-set!
 			  'pp-checked
 			  'kar '_dilambda_ '_vals_ '_vals1_ '_vals2_
@@ -1084,12 +1095,13 @@
 			  '_asdf_
 			  'ims 'imbv 'imv 'imiv 'imfv 'imi 'imp 'imh 'ilt
 			  'imv2 'imv3 'imfv2 'imfv3 'imiv2 'imiv3 'imbv2 'imbv3
-			  'vvv 'vvvi 'vvvf 'typed-hash 'typed-vector 'typed-let 'constant-let
+			  'vvv 'vvvi 'vvvf 'typed-hash 'typed-vector 'typed-let 'constant-let 'bight
 			  'a1 'a2 'a3 'a4 'a5 'a6
+			  'gb1 'gb2 'gb3
 
 			  'bignum 'symbol 'count-if 'pretty-print 'tree-member 'funclet? 'bignum? 'copy-tree 
 			  ;'dynamic-unwind ; many swaps that are probably confused
-                          ;'function-open-output 'function-open-input 'function-get-output 'function-close-output ;see s7test
+                          ;'function-open-output 'function-open-input 'function-get-output 'function-close-output ;see s7test, not set up for t725
 
 			  ))
 
@@ -1141,6 +1153,7 @@
 		    "((if (> 3 2) or and) #t #f)"
 		    "float-var" "int-var" "ratio-var" "complex-var"
 		    (reader-cond ((provided? 'number-separator) "1,232"))
+		    "(eval-string \"(reader-cond ((provided? 'surreals) 123))\")"
 
                     "(apply + (make-list 2 3))" "(let ((a 1) (b 2) (c 3)) (+ a b c))" "(let ((x '(\"asdf\"))) (apply #_format #f x))"
                     "(cons (cons + -) *)" "(list (list quasiquote +) -1)" "(let ((s '(1 2))) (list (car s) (cdr s)))"
@@ -1284,7 +1297,7 @@
 
 		    "(gensym \"g_123\")"
 		    "(make-list 256 1)"
-		    "(make-list 512)"
+		    "(make-list 512 '(1))"
 		    "(make-vector '(2 3) 1)"             "(make-vector '(12 14) #<undefined>)"
 		    "(make-byte-vector '(2 3) 1)"        "(make-byte-vector '(4 32) 255)"
 		    "(make-string 256 #\\1)"             "(make-string 64 #\\a)"
@@ -1314,11 +1327,6 @@
 		    "(immutable! #(1 2))" "(immutable! #r(1 2))" "(immutable! \"asdf\")" "(immutable! '(1 2))" "(immutable! (hash-table 'a 1))"
 		    "(lambda (x) (fill! (copy x) 0))"
 
-		    "(begin (list? (*s7* 'catches)))"
-		    "(begin (integer? (*s7* 'stack-top)))"
-		    ;"(begin (list? (*s7* 'stacktrace-defaults)))"
-		    ;(reader-cond ((provided? 'debugging) "(when ((*s7* 'heap-size) < (ash 1 21)) (heap-analyze) (heap-scan 47))")) ;(+ 1 (random 47))))"))
-
 		    "(map (lambda (x) (catch #t (lambda () (vector->list x)) (lambda (t i) 'err))) (list #(1 2) 1))"
 		    ;"(symbol-table)" ; (make-list 123 (symbol-table))!
 
@@ -1337,10 +1345,14 @@
 		    "(begin (list? (*s7* 'stack)))" "(begin (integer? (*s7* 'stack-size)))" ; variable, and stack can contain e.g. #<unused>
 		    "(*s7* 'version)"
 		    "(*s7* 'stacktrace-defaults)"
+		    "(begin (list? (*s7* 'catches)))"
+		    "(begin (integer? (*s7* 'stack-top)))"
+		    ;(reader-cond ((provided? 'debugging) "(when ((*s7* 'heap-size) < (ash 1 21)) (heap-analyze) (heap-scan 47))")) ;(+ 1 (random 47))))"))
 
 		    "(let loop ((i 2)) (if (> i 0) (loop (- i 1)) i))"
 
-		    ;"(rootlet)" ;"(curlet)"
+		    ;"(rootlet)" 
+		    "(let? (curlet))"
 		    ;"*s7*" ;variable
 
 		    "(symbol (make-string 130 #\\a))" "(symbol \"a\" \"b\")"
