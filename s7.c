@@ -7999,6 +7999,12 @@ static void resize_op_stack(s7_scheme *sc)
   sc->op_stack_end = (s7_pointer *)(sc->op_stack + sc->op_stack_size);
 }
 
+
+#define stack_end_code(Sc) Sc->stack_end[0]
+#define stack_end_let(Sc)  Sc->stack_end[1]
+#define stack_end_args(Sc) Sc->stack_end[2]
+#define stack_end_op(Sc)   Sc->stack_end[3]
+
 #if S7_DEBUGGING
 #define pop_stack(Sc) pop_stack_1(Sc, __func__, __LINE__)
 static void pop_stack_1(s7_scheme *sc, const char *func, int32_t line)
@@ -8013,17 +8019,17 @@ static void pop_stack_1(s7_scheme *sc, const char *func, int32_t line)
    *   inline (as in named let) -- they actually don't make sense in these cases, but are ignored,
    *   and are carried around as GC protection in other cases.
    */
-  sc->code = T_Pos(sc->stack_end[0]);
-  sc->curlet = sc->stack_end[1];  /* not T_Lid|Pos, see op_any_closure_3p_end et al (stack used to pass args, not curlet) */
-  sc->args = sc->stack_end[2];
-  sc->cur_op = (opcode_t)T_Op(sc->stack_end[3]);
+  sc->code = T_Pos(stack_end_code(sc));
+  sc->curlet = stack_end_let(sc);  /* not T_Lid|Pos, see op_any_closure_3p_end et al (stack used to pass args, not curlet) */
+  sc->args = stack_end_args(sc);
+  sc->cur_op = (opcode_t)T_Op(stack_end_op(sc));
   if (sc->cur_op >= NUM_OPS)
     {
       fprintf(stderr, "%s%s[%d]: pop_stack invalid opcode: %" p64 " %s\n", bold_text, func, line, sc->cur_op, unbold_text);
       if (sc->stop_at_error) abort();
     }
   if ((sc->cur_op != OP_GC_PROTECT) &&
-      (!is_let(sc->stack_end[1])) && (!is_null(sc->stack_end[1])) &&
+      (!is_let(stack_end_let(sc))) && (!is_null(stack_end_let(sc))) &&
       (sc->cur_op != OP_ANY_CLOSURE_3P_3)) /* used as third GC protection field */
     fprintf(stderr, "%s[%d]: curlet not a let: %s\n", func, line, op_names[sc->cur_op]);
 }
@@ -8037,11 +8043,11 @@ static void pop_stack_no_op_1(s7_scheme *sc, const char *func, int32_t line)
       fprintf(stderr, "%s%s[%d]: stack underflow%s\n", bold_text, func, line, unbold_text);
       if (sc->stop_at_error) abort();
     }
-  sc->code = T_Pos(sc->stack_end[0]);
-  if ((sc->cur_op != OP_GC_PROTECT) && (!is_let(sc->stack_end[1])) && (!is_null(sc->stack_end[1])))
+  sc->code = T_Pos(stack_end_code(sc));
+  if ((sc->cur_op != OP_GC_PROTECT) && (!is_let(stack_end_let(sc))) && (!is_null(stack_end_let(sc))))
     fprintf(stderr, "%s[%d]: curlet not a let\n", func, line);
-  sc->curlet = sc->stack_end[1]; /* not T_Lid|Pos: gc_protect can set this directly (not through push_stack) to anything */
-  sc->args = sc->stack_end[2];
+  sc->curlet = stack_end_let(sc); /* not T_Lid|Pos: gc_protect can set this directly (not through push_stack) to anything */
+  sc->args = stack_end_args(sc);
 }
 
 #define push_stack(Sc, Op, Args, Code)	\
@@ -8079,10 +8085,10 @@ static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer
       fprintf(stderr, "%s%s[%d]: push_stack invalid opcode: %" p64 " %s\n", bold_text, func, line, sc->cur_op, unbold_text);
       if (sc->stop_at_error) abort();
     }
-  if (code) sc->stack_end[0] = T_Pos(code);
-  sc->stack_end[1] = T_Lid(sc->curlet);
-  if ((args) && (unchecked_type(args) != T_FREE)) sc->stack_end[2] = T_Pos(args);
-  sc->stack_end[3] = (s7_pointer)op;
+  if (code) stack_end_code(sc) = T_Pos(code);
+  stack_end_let(sc) = T_Lid(sc->curlet);
+  if ((args) && (unchecked_type(args) != T_FREE)) stack_end_args(sc) = T_Pos(args);
+  stack_end_op(sc) = (s7_pointer)op;
   sc->stack_end += 4;
 }
 
@@ -8103,10 +8109,10 @@ static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer
 
 #define push_stack(Sc, Op, Args, Code) \
   do { \
-      Sc->stack_end[0] = Code; \
-      Sc->stack_end[1] = Sc->curlet; \
-      Sc->stack_end[2] = Args; \
-      Sc->stack_end[3] = (s7_pointer)(Op); \
+      stack_end_code(sc) = Code; \
+      stack_end_let(sc) = Sc->curlet; \
+      stack_end_args(sc) = Args; \
+      stack_end_op(sc) = (s7_pointer)(Op); \
       Sc->stack_end += 4; \
   } while (0)
 
@@ -8114,7 +8120,7 @@ static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer
   do { \
       Sc->cur_op = Op; \
       memcpy((void *)(Sc->stack_end), (void *)Sc, 4 * sizeof(s7_pointer)); \
-      /* Sc->stack_end[3] = (s7_pointer)(Op); */ \
+      /* stack_end_op(sc) = (s7_pointer)(Op); */ \
       Sc->stack_end += 4; \
   } while (0)
 /* is this faster with cur_op because of the cast to s7_pointer, or is callgrind messing up memcpy stats?
@@ -8123,52 +8129,52 @@ static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer
 
 #define push_stack_no_code(Sc, Op, Args) \
   do { \
-      Sc->stack_end[1] = Sc->curlet; \
-      Sc->stack_end[2] = Args; \
-      Sc->stack_end[3] = (s7_pointer)(Op); \
+      stack_end_let(sc) = Sc->curlet; \
+      stack_end_args(sc) = Args; \
+      stack_end_op(sc) = (s7_pointer)(Op); \
       Sc->stack_end += 4; \
   } while (0)
 
 #define push_stack_no_let_no_code(Sc, Op, Args) \
   do { \
-      Sc->stack_end[2] = Args; \
-      Sc->stack_end[3] = (s7_pointer)(Op); \
+      stack_end_args(sc) = Args; \
+      stack_end_op(sc) = (s7_pointer)(Op); \
       Sc->stack_end += 4; \
   } while (0)
 
 #define push_stack_no_args(Sc, Op, Code) \
   do { \
-      Sc->stack_end[0] = Code; \
-      Sc->stack_end[1] = Sc->curlet; \
-      Sc->stack_end[3] = (s7_pointer)(Op); \
+      stack_end_code(sc) = Code; \
+      stack_end_let(sc) = Sc->curlet; \
+      stack_end_op(sc) = (s7_pointer)(Op); \
       Sc->stack_end += 4; \
   } while (0)
 
 #define push_stack_no_args_direct(Sc, Op) \
   do { \
       memcpy((void *)(Sc->stack_end), (void *)Sc, 2 * sizeof(s7_pointer));	\
-      Sc->stack_end[3] = (s7_pointer)(Op); \
+      stack_end_op(sc) = (s7_pointer)(Op); \
       Sc->stack_end += 4; \
   } while (0)
 
 #define push_stack_no_let(Sc, Op, Args, Code) \
   do { \
-      Sc->stack_end[0] = Code; \
-      Sc->stack_end[2] = Args; \
-      Sc->stack_end[3] = (s7_pointer)(Op); \
+      stack_end_code(sc) = Code; \
+      stack_end_args(sc) = Args; \
+      stack_end_op(sc) = (s7_pointer)(Op); \
       Sc->stack_end += 4; \
   } while (0)
 
 #define push_stack_op(Sc, Op) \
   do { \
-      Sc->stack_end[3] = (s7_pointer)(Op); \
+      stack_end_op(sc) = (s7_pointer)(Op); \
       Sc->stack_end += 4; \
   } while (0)
 
 #define push_stack_op_let(Sc, Op) \
   do { \
-      Sc->stack_end[1] = Sc->curlet; \
-      Sc->stack_end[3] = (s7_pointer)(Op); \
+      stack_end_let(sc) = Sc->curlet; \
+      stack_end_op(sc) = (s7_pointer)(Op); \
       Sc->stack_end += 4; \
   } while (0)
 #endif
@@ -8181,9 +8187,9 @@ static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer
 static void unstack_1(s7_scheme *sc, const char *func, int32_t line)
 {
   sc->stack_end -= 4;
-  if ((opcode_t)T_Op(sc->stack_end[3]) != OP_GC_PROTECT)
+  if ((opcode_t)T_Op(stack_end_op(sc)) != OP_GC_PROTECT)
     {
-      fprintf(stderr, "%s%s[%d]: popped %s?%s\n", bold_text, func, line, op_names[(opcode_t)T_Op(sc->stack_end[3])], unbold_text);
+      fprintf(stderr, "%s%s[%d]: popped %s?%s\n", bold_text, func, line, op_names[(opcode_t)T_Op(stack_end_op(sc))], unbold_text);
       /* "popped apply" means we called something that went to eval+apply when we thought it was a safe function */
       fprintf(stderr, "    code: %s, args: %s\n", display(sc->code), display(sc->args));
       fprintf(stderr, "    cur_code: %s, estr: %s\n", display(current_code(sc)), display(s7_name_to_value(sc, "estr")));
@@ -8194,9 +8200,9 @@ static void unstack_1(s7_scheme *sc, const char *func, int32_t line)
 static void unstack_2(s7_scheme *sc, opcode_t op, const char *func, int32_t line)
 {
   sc->stack_end -= 4;
-  if ((opcode_t)T_Op(sc->stack_end[3]) != op)
+  if ((opcode_t)T_Op(stack_end_op(sc)) != op)
     {
-      fprintf(stderr, "%s%s[%d]: popped %s? (expected %s)%s\n", bold_text, func, line, op_names[(opcode_t)T_Op(sc->stack_end[3])], op_names[op], unbold_text);
+      fprintf(stderr, "%s%s[%d]: popped %s? (expected %s)%s\n", bold_text, func, line, op_names[(opcode_t)T_Op(stack_end_op(sc))], op_names[op], unbold_text);
       fprintf(stderr, "    code: %s, args: %s\n", display(sc->code), display(sc->args));
       fprintf(stderr, "    cur_code: %s, estr: %s\n", display(current_code(sc)), display(s7_name_to_value(sc, "estr")));
       if (sc->stop_at_error) abort();
@@ -10002,8 +10008,8 @@ static s7_pointer call_let_ref_fallback(s7_scheme *sc, s7_pointer let, s7_pointe
   /* (let ((x #f)) (let begin ((x 1234)) (begin 1) 2)) -> stack overflow eventually, but should we try to catch it? */
   p = s7_apply_function(sc, find_method(sc, let, sc->let_ref_fallback_symbol), set_qlist_2(sc, let, symbol));
   unstack(sc);
-  sc->code = T_Pos(sc->stack_end[0]); /* can be #<unused> */
-  sc->value = T_Ext(sc->stack_end[2]);
+  sc->code = T_Pos(stack_end_code(sc)); /* can be #<unused> */
+  sc->value = T_Ext(stack_end_args(sc));
   return(p);
 }
 
@@ -10013,8 +10019,8 @@ static s7_pointer call_let_set_fallback(s7_scheme *sc, s7_pointer let, s7_pointe
   push_stack_no_let(sc, OP_GC_PROTECT, sc->value, sc->code);
   p = s7_apply_function(sc, find_method(sc, let, sc->let_set_fallback_symbol), set_qlist_3(sc, let, symbol, value));
   unstack(sc);
-  sc->code = T_Pos(sc->stack_end[0]);
-  sc->value = T_Ext(sc->stack_end[2]);
+  sc->code = T_Pos(stack_end_code(sc));
+  sc->value = T_Ext(stack_end_args(sc));
   return(p);
 }
 
@@ -28687,8 +28693,8 @@ static void function_write_char(s7_scheme *sc, uint8_t c, s7_pointer port)
 #if 1
   memcpy((void *)sc, (void *)(sc->stack_end), 3 * sizeof(s7_pointer)); /* code/let/args */
 #else
-  sc->code = sc->stack_end[0];
-  sc->args = sc->stack_end[2];
+  sc->code = stack_end_code(sc);
+  sc->args = stack_end_args(sc);
 #endif
 }
 
@@ -28838,8 +28844,8 @@ static void function_display(s7_scheme *sc, const char *s, s7_pointer port)
 #if 1
   memcpy((void *)sc, (void *)(sc->stack_end), 3 * sizeof(s7_pointer)); /* code/let/args */
 #else
-  sc->code = sc->stack_end[0]; /* sc->curlet = sc->stack_end[1] */
-  sc->args = sc->stack_end[2];
+  sc->code = stack_end_code(sc); /* sc->curlet = stack_end_let(sc) */
+  sc->args = stack_end_args(sc);
 #endif
 }
 
@@ -28853,8 +28859,8 @@ static void function_write_string(s7_scheme *sc, const char *str, s7_int len, s7
 #if 1
   memcpy((void *)sc, (void *)(sc->stack_end), 3 * sizeof(s7_pointer)); /* code/let/args */
 #else
-  sc->code = sc->stack_end[0];
-  sc->args = sc->stack_end[2];
+  sc->code = stack_end_code(sc);
+  sc->args = stack_end_args(sc);
 #endif
 }
 
@@ -30920,8 +30926,7 @@ The symbols refer to the argument to \"provide\".  (require lint.scm)"
 	    if (is_closure(f))   /* f should be a function of one argument, the current (calling) environment */
 	      s7_call(sc, f, set_ulist_1(sc, sc->curlet, sc->nil));
 	}}
-  if (unchecked_stack_top_op(sc) == OP_GC_PROTECT) /* op_error_quit if load failed in scheme in Snd */
-    unstack(sc);
+  if (stack_top_op(sc) == OP_GC_PROTECT) unstack(sc); /* op_error_quit if load failed in scheme in Snd */
   return(sc->T);
 }
 
@@ -31054,8 +31059,7 @@ s7_pointer s7_eval_c_string_with_environment(s7_scheme *sc, const char *str, s7_
   code = s7_read(sc, port);
   s7_close_input_port(sc, port);
   result = s7_eval(sc, T_Ext(code), e);
-  if (unchecked_stack_top_op(sc) == OP_GC_PROTECT)
-    unstack(sc); /* pop_stack(sc); */
+  if (unchecked_stack_top_op(sc) == OP_GC_PROTECT) unstack(sc); /* pop_stack(sc); */
   return(result);
 }
 
@@ -51066,17 +51070,17 @@ static void swap_stack(s7_scheme *sc, opcode_t new_op, s7_pointer new_code, s7_p
   opcode_t op;
 
   sc->stack_end -= 4;
-  code = sc->stack_end[0];
-  e = sc->stack_end[1];
-  args = sc->stack_end[2];
-  op = (opcode_t)T_Op(sc->stack_end[3]); /* this should be begin1 */
+  code = stack_end_code(sc);
+  e = stack_end_let(sc);
+  args = stack_end_args(sc);
+  op = (opcode_t)T_Op(stack_end_op(sc)); /* this should be begin1 */
   if ((S7_DEBUGGING) && (op != OP_BEGIN_NO_HOOK) && (op != OP_BEGIN_HOOK))
     fprintf(stderr, "swap %s in %s\n", op_names[op], display(s7_name_to_value(sc, "estr")));
   push_stack(sc, new_op, new_args, new_code);
-  sc->stack_end[0] = code;
-  sc->stack_end[1] = e;
-  sc->stack_end[2] = args;
-  sc->stack_end[3] = (s7_pointer)op;
+  stack_end_code(sc) = code;
+  stack_end_let(sc) = e;
+  stack_end_args(sc) = args;
+  stack_end_op(sc) = (s7_pointer)op;
   sc->stack_end += 4;
 }
 
@@ -51379,7 +51383,7 @@ s7_pointer s7_call_with_catch(s7_scheme *sc, s7_pointer tag, s7_pointer body, s7
 	  eval(sc, sc->cur_op);
 	if ((jump_loc == CATCH_JUMP) &&    /* we're returning from an error in catch */
 	    ((sc->stack_end == sc->stack_start) ||
-	     (((sc->stack_end - 4) == sc->stack_start) && (unchecked_stack_top_op(sc) == OP_GC_PROTECT)))) /* s7_apply_function probably */
+	     (((sc->stack_end - 4) == sc->stack_start) && (stack_top_op(sc) == OP_GC_PROTECT)))) /* s7_apply_function probably */
 	  push_stack_op(sc, OP_ERROR_QUIT);
 	result = sc->value;
       }
@@ -67005,7 +67009,7 @@ static s7_pointer g_optimize(s7_scheme *sc, s7_pointer args)
   gc_protect_via_stack(sc, code);
   f = s7_optimize(sc, code);
   if (f) result = f(sc);
-  if (unchecked_stack_top_op(sc) == OP_GC_PROTECT) unstack(sc); /* was unstack(sc) */
+  if (stack_top_op(sc) == OP_GC_PROTECT) unstack(sc);
   return(result);
 }
 
@@ -76282,7 +76286,7 @@ static goto_t op_let_temp_init2(s7_scheme *sc)
   car(sc->args) = cadr(sc->args);
   /* pop_stack(sc); */ /* this clobbers sc->args! 7-May-22 */
   unstack(sc);         /* pop_stack_no_args(sc) in effect */
-  sc->code = cdr(sc->stack_end[0]);
+  sc->code = cdr(stack_end_code(sc));
   if (is_pair(sc->code))
     {
       push_stack_direct(sc, OP_LET_TEMP_DONE);
@@ -84195,9 +84199,9 @@ static void op_any_closure_3p(s7_scheme *sc)
       p = cdr(p);
       if (has_fx(p))
 	{
-	  sc->stack_end[0] = sc->code; /* push_stack_direct(sc, OP_ANY_CLOSURE_3P_3) here but trying to be too clever? */
-	  sc->stack_end[2] = sc->args; /* stack[args] == arg1 to closure) */
-	  sc->stack_end[3] = (s7_pointer)(OP_ANY_CLOSURE_3P_3);
+	  stack_end_code(sc) = sc->code; /* push_stack_direct(sc, OP_ANY_CLOSURE_3P_3) here but trying to be too clever? */
+	  stack_end_args(sc) = sc->args; /* stack[args] == arg1 to closure) */
+	  stack_end_op(sc) = (s7_pointer)(OP_ANY_CLOSURE_3P_3);
 	  sc->stack_end += 4;
 	  set_stack_protected3_with(sc, fx_call(sc, p), OP_ANY_CLOSURE_3P_3);
 	  /* (i.e. stack[curlet] == arg2 of closure), fx_call might push_stack gc_protect etc, so push_stack via +4 before it */
@@ -84286,7 +84290,7 @@ static void op_any_closure_4p(s7_scheme *sc)
 	    }}
       else
 	{
-	  sc->stack_end[2] = sc->unused; /* copy_stack dangling pair */
+	  stack_end_args(sc) = sc->unused; /* copy_stack dangling pair */
 	  push_stack_no_args_direct(sc, OP_ANY_CLOSURE_4P_2);
 	  sc->code = car(p);
 	}}
@@ -87821,8 +87825,7 @@ static void op_cl_na(s7_scheme *sc)
     clear_list_in_use(val);
   else
     /* the fn_proc call might push its own op (e.g. for-each/map) so we have to check for that */
-    if (unchecked_stack_top_op(sc) == OP_GC_PROTECT)
-      unstack(sc);
+    if (stack_top_op(sc) == OP_GC_PROTECT) unstack(sc);
 }
 
 static void op_cl_sas(s7_scheme *sc)
@@ -89283,7 +89286,7 @@ static bool pop_read_list(s7_scheme *sc)
 {
   /* push-stack OP_READ_LIST is always no_code and op is always OP_READ_LIST (and not used), sc->curlet is apparently not needed here */
   unstack_with(sc, OP_READ_LIST);
-  sc->args = sc->stack_end[2];
+  sc->args = stack_end_args(sc);
   if (!is_null(sc->args)) return(false); /* fall into read_list where sc->args is placed at end of on-going list, sc->value */
   sc->args = list_1(sc, sc->value);
   pair_set_current_input_location(sc, sc->args); /* uses port_location */
@@ -96476,11 +96479,10 @@ int main(int argc, char **argv)
  * sg        ----   ----   55.9   55.8   55.3   55.3
  * lg        ----   ----  105.2  106.4  107.2  107.1
  * tbig     177.4  175.8  156.5  148.1  145.8  145.9
- * -------------------------------------------------
+ * ---------------------------------------------------
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * safety for exp->mac? check-define-macro in lint (given eval-string, we can't do this in s7.c I think)
  * *read-error-hook* is only triggered in #... -- it is reader-error? (see also reader-cond bug)
  * more preset access pointers?
- * there are lots of sc->stack_end[] refs (8104) -- use stack_push_* instead?
  */
