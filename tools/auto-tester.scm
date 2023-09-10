@@ -21,9 +21,11 @@
 
 (require libc.scm)
 (define (reseed)
-  (let ((seed (with-let *libc*
-		(let ((res (clock_gettime CLOCK_MONOTONIC)))
-		  (+ (* 1000000000 (cadr res)) (caddr res)))))
+  (let ((seed (if (provided? 'osx)
+		  (car ((*libc* 'gettimeofday)))
+		  (with-let *libc*
+		    (let ((res (clock_gettime CLOCK_MONOTONIC)))
+		      (+ (* 1000000000 (cadr res)) (caddr res))))))
 	(carry (#i(1791398085 1929682203 1683268614 1965537969 1675393560 1967773755 1517746329
                    1447497129 1655692410 1606218150 2051013963 1075433238 1557985959 1781943330
                    1893513180 1631296680 2131995753 2083801278 1873196400 1554115554)

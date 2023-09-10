@@ -8189,7 +8189,7 @@ static void unstack_1(s7_scheme *sc, const char *func, int32_t line)
   sc->stack_end -= 4;
   if ((opcode_t)T_Op(stack_end_op(sc)) != OP_GC_PROTECT)
     {
-      fprintf(stderr, "%s%s[%d]: popped %s?%s\n", bold_text, func, line, op_names[(opcode_t)T_Op(stack_end_op(sc))], unbold_text);
+      fprintf(stderr, "%s%s[%d]: popped %s, (expected OP_GC_PROTECT)?%s\n", bold_text, func, line, op_names[(opcode_t)T_Op(stack_end_op(sc))], unbold_text);
       /* "popped apply" means we called something that went to eval+apply when we thought it was a safe function */
       fprintf(stderr, "    code: %s, args: %s\n", display(sc->code), display(sc->args));
       fprintf(stderr, "    cur_code: %s, estr: %s\n", display(current_code(sc)), display(s7_name_to_value(sc, "estr")));
@@ -68643,7 +68643,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
        */
       if (SHOW_EVAL_OPS)
 	fprintf(stderr, "  %s[%d]: %s stack top: %" ld64 ", op: %s, args: %s\n", __func__, __LINE__,
-		op_names[stack_top_op(sc)], stack_top(sc), op_names[stack_top4_op(sc)], display(args));
+		op_names[stack_top_op(sc)], (s7_int)(intptr_t)stack_top(sc), op_names[stack_top4_op(sc)], display(args));
       if (stack_top4_op(sc) == OP_LOAD_RETURN_IF_EOF)
 	{
 	  /* expansion at top-level returned values, eval args in order */
@@ -93174,7 +93174,7 @@ static s7_pointer set_bignum_precision(s7_scheme *sc, int32_t precision)
   mpfr_set_default_prec(bits);
   mpc_set_default_precision(bits);
   bpi = big_pi(sc);
-  slot_set_value(global_slot(sc->pi_symbol), bpi);  /* don't check immutable flag here (if debugging) */
+  global_slot(sc->pi_symbol)->object.slt.val = bpi; /* don't check immutable flag here (if debugging) -- i.e. don't use slot_set_value! */
   slot_set_value(initial_slot(sc->pi_symbol), bpi); /* if #_pi occurs after precision set, make sure #_pi is still legit (not a free cell) */
   return(sc->F);
 }
