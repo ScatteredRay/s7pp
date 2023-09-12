@@ -5728,6 +5728,13 @@ static void set_opt3_len_1(s7_pointer p, uint64_t x)
   set_opt3_is_set(p);
 }
 
+static inline void check_opt_bits(s7_pointer p, int bits) /* "inline" to disable "defined but not used" warning from gcc */
+{
+  if (((bits & 1) != 0) && (opt1_is_set(p))) fprintf(stderr, "opt1 set ");
+  if (((bits & 2) != 0) && (opt2_is_set(p))) fprintf(stderr, "opt2 set ");
+  if (((bits & 4) != 0) && (opt3_is_set(p)) && (!has_type_bit(p, T_LOCATION))) fprintf(stderr, "opt3 set ");
+}
+
 static void print_debugging_state(s7_scheme *sc, s7_pointer obj, s7_pointer port)
 {
   /* show current state, current allocated state */
@@ -9241,7 +9248,7 @@ s7_pointer s7_make_slot(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7_poi
 	immutable_object_error_nr(sc, set_elist_2(sc, wrap_string(sc, "can't define '~S; rootlet is immutable", 38), symbol));
       if ((sc->safety <= NO_SAFETY) &&
 	  (has_closure_let(value)))
-	remove_function_from_heap(sc, value);
+	remove_function_from_heap(sc, value); /* optimization of access pointers happens later so presumably this is safe */
 
       /* first look for existing slot -- this is not always checked before calling s7_make_slot */
       if (is_slot(global_slot(symbol)))
@@ -53536,7 +53543,7 @@ fx_num_eq_s0_any(fx_num_eq_v0, v_lookup)
 
 static s7_pointer fx_num_eq_0s(s7_scheme *sc, s7_pointer arg)
 {
-  s7_pointer val = lookup(sc, caddr(arg));
+  s7_pointer val = lookup(sc, opt3_sym(arg)); /* opt3_sym: caddr(arg) -- this actually makes a measurable difference in callgrind! */
   return((is_t_integer(val)) ? make_boolean(sc, integer(val) == 0) : g_num_eq(sc, set_plist_2(sc, val, int_zero)));
 }
 
@@ -53716,7 +53723,7 @@ static s7_pointer fx_not_is_eq_car_sq(s7_scheme *sc, s7_pointer arg)
 #define fx_is_pair_car_s_any(Name, Lookup) \
   static s7_pointer Name(s7_scheme *sc, s7_pointer arg) \
   { \
-    s7_pointer p = Lookup(sc, opt2_sym(cdr(arg)), arg); \
+    s7_pointer p = Lookup(sc, opt3_sym(arg), arg); \
     return((is_pair(p)) ? make_boolean(sc, is_pair(car(p))) : g_is_pair(sc, set_plist_1(sc, g_car(sc, set_plist_1(sc, p))))); \
   }
 
@@ -53727,7 +53734,7 @@ fx_is_pair_car_s_any(fx_is_pair_car_t, t_lookup)
 #define fx_is_pair_cdr_s_any(Name, Lookup) \
   static s7_pointer Name(s7_scheme *sc, s7_pointer arg) \
   { \
-    s7_pointer p = Lookup(sc, opt2_sym(cdr(arg)), arg); \
+    s7_pointer p = Lookup(sc, opt3_sym(arg), arg); \
     return((is_pair(p)) ? make_boolean(sc, is_pair(cdr(p))) : g_is_pair(sc, set_plist_1(sc, g_cdr(sc, set_plist_1(sc, p))))); \
   }
 
@@ -53739,7 +53746,7 @@ fx_is_pair_cdr_s_any(fx_is_pair_cdr_u, u_lookup)
 #define fx_is_pair_cadr_s_any(Name, Lookup) \
   static s7_pointer Name(s7_scheme *sc, s7_pointer arg) \
   { \
-    s7_pointer p = Lookup(sc, opt2_sym(cdr(arg)), arg); \
+    s7_pointer p = Lookup(sc, opt3_sym(arg), arg); \
     return(((is_pair(p)) && (is_pair(cdr(p)))) ? make_boolean(sc, is_pair(cadr(p))) : g_is_pair(sc, set_plist_1(sc, g_cadr(sc, set_plist_1(sc, p))))); \
   }
 
@@ -53750,7 +53757,7 @@ fx_is_pair_cadr_s_any(fx_is_pair_cadr_t, t_lookup)
 #define fx_is_pair_cddr_s_any(Name, Lookup) \
   static s7_pointer Name(s7_scheme *sc, s7_pointer arg) \
   { \
-    s7_pointer p = Lookup(sc, opt2_sym(cdr(arg)), arg); \
+    s7_pointer p = Lookup(sc, opt3_sym(arg), arg); \
     return(((is_pair(p)) && (is_pair(cdr(p)))) ? make_boolean(sc, is_pair(cddr(p))) : g_is_pair(sc, set_plist_1(sc, g_cddr(sc, set_plist_1(sc, p))))); \
   }
 
@@ -56776,10 +56783,10 @@ static s7_function fx_choose(s7_scheme *sc, s7_pointer holder, s7_pointer cur_en
 	    {
 	      if (fx_matches(car(arg), sc->is_pair_symbol))
 		{
-		  if (caadr(arg) == sc->car_symbol)  {set_opt2_sym(cdr(arg), cadadr(arg)); return(fx_is_pair_car_s);}
-		  if (caadr(arg) == sc->cdr_symbol)  {set_opt2_sym(cdr(arg), cadadr(arg)); return(fx_is_pair_cdr_s);}
-		  if (caadr(arg) == sc->cadr_symbol) {set_opt2_sym(cdr(arg), cadadr(arg)); return(fx_is_pair_cadr_s);}
-		  if (caadr(arg) == sc->cddr_symbol) {set_opt2_sym(cdr(arg), cadadr(arg)); return(fx_is_pair_cddr_s);}
+		  if (caadr(arg) == sc->car_symbol)  {set_opt3_sym(arg, cadadr(arg)); return(fx_is_pair_car_s);} /* (pair? ...) is ok, so loc can be sym? 7 in lg */
+		  if (caadr(arg) == sc->cdr_symbol)  {set_opt3_sym(arg, cadadr(arg)); return(fx_is_pair_cdr_s);}
+		  if (caadr(arg) == sc->cadr_symbol) {set_opt3_sym(arg, cadadr(arg)); return(fx_is_pair_cadr_s);}
+		  if (caadr(arg) == sc->cddr_symbol) {set_opt3_sym(arg, cadadr(arg)); return(fx_is_pair_cddr_s);}
 		}
 	      if (fx_matches(car(arg), sc->is_null_symbol))
 		{
@@ -56880,7 +56887,11 @@ static s7_function fx_choose(s7_scheme *sc, s7_pointer holder, s7_pointer cur_en
 	      if (car(arg) == sc->cons_symbol) return(fx_cons_cs);
 	      if ((car(arg) == sc->add_symbol) && (is_t_real(cadr(arg)))) return(fx_add_fs);
 	      if ((car(arg) == sc->subtract_symbol) && (is_t_real(cadr(arg)))) return(fx_subtract_fs);
-	      if ((car(arg) == sc->num_eq_symbol) && (cadr(arg) == int_zero)) return(fx_num_eq_0s);
+	      if ((car(arg) == sc->num_eq_symbol) && (cadr(arg) == int_zero)) 
+		{
+		  set_opt3_sym(arg, caddr(arg)); /* opt3_location is in use, but the num_eq is ok, so only symbol might care about that info? (or use cdr(arg)) */
+		  return(fx_num_eq_0s);
+		}
 	      if (car(arg) == sc->multiply_symbol)
 		{
 		  if (is_t_real(cadr(arg))) return(fx_multiply_fs);
@@ -56901,7 +56912,7 @@ static s7_function fx_choose(s7_scheme *sc, s7_pointer holder, s7_pointer cur_en
 	      if ((car(arg) == sc->cons_symbol) && (caaddr(arg) == sc->cdr_symbol)) {set_opt2_sym(cdr(arg), cadaddr(arg)); return(fx_cons_s_cdr_s);}
 	      set_opt1_sym(cdr(arg), cadaddr(arg));
 	      set_opt2_direct(cdr(arg), (s7_pointer)(s7_p_pp_function(global_value(car(arg)))));
-	      set_opt3_direct(cdr(arg), (s7_pointer)(s7_p_p_function(global_value(caaddr(arg)))));
+	      set_opt3_direct(cdr(arg), (s7_pointer)(s7_p_p_function(global_value(caaddr(arg))))); /* arg opt3 only location, but no change in callgrind */
 	      return(fx_c_s_opsq_direct);
 	    }
 	  return(fx_c_s_opsq);
@@ -96056,8 +96067,8 @@ s7_scheme *s7_init(void)
   sc->let_temp_hook = s7_eval_c_string(sc, "(make-hook 'type 'data)");
 
 #if S7_DEBUGGING
-  s7_define_function(sc, "report-missed-calls", g_report_missed_calls, 0, 0, false, NULL);
-  if (!s7_type_names[0]) {fprintf(stderr, "no type_names\n"); gdb_break();} /* squelch very stupid warnings! */
+  s7_define_function(sc, "report-missed-calls", g_report_missed_calls, 0, 0, false, NULL); /* tc/recur tests in s7test.scm */
+  /* if (!s7_type_names[0]) {fprintf(stderr, "no type_names\n"); gdb_break();} */ /* no longer necessary? (used to disable a dumb gcc warning) */
   if (strcmp(op_names[HOP_SAFE_C_PP], "h_safe_c_pp") != 0) fprintf(stderr, "c op_name: %s\n", op_names[HOP_SAFE_C_PP]);
   if (strcmp(op_names[OP_SET_WITH_LET_2], "set_with_let_2") != 0) fprintf(stderr, "set op_name: %s\n", op_names[OP_SET_WITH_LET_2]);
   if (NUM_OPS != 926) fprintf(stderr, "size: cell: %d, block: %d, max op: %d, opt: %d\n", (int)sizeof(s7_cell), (int)sizeof(block_t), NUM_OPS, (int)sizeof(opt_info));
@@ -96461,7 +96472,7 @@ int main(int argc, char **argv)
  * tshoot    5525   5447   5183   5055   5048   5044
  * tform     5357   5348   5307   5316   5402   5167
  * tstr      6880   6342   5488   5162   5194   5199
- * tnum      6348   6013   5433   5396   5410   5408
+ * tnum      6348   6013   5433   5396   5410   5408  5403
  * tlamb     6423   6273   5720   5560   5620   5620
  * tmisc     8869   7612   6435   6076   6222   6216
  * tgsl      8485   7802   6373   6282   6229   6230
@@ -96484,5 +96495,9 @@ int main(int argc, char **argv)
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * safety for exp->mac? check-define-macro in lint (given eval-string, we can't do this in s7.c I think)
  * *read-error-hook* is only triggered in #... -- it is reader-error? (see also reader-cond bug)
- * more preset access pointers?
+ * more preset access pointers? 
+ *   cdr(expr)->expr and caddr matter! check cdr(expr)->cdr(arg) cases and all caddrs (719?)
+ * max-string-length is not applied very consistently (not in read-line, or various other make_string_with_length cases)
+ *   others: symbol->string, symbol, number->string, s7_make_string, read_string_constant, object->string, format, port_to_let,
+ *   string-append, eval-string?, port-filename?
  */
