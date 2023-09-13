@@ -8300,26 +8300,26 @@ s7_pointer s7_gc_unprotect_via_stack(s7_scheme *sc, s7_pointer x)
   return(x);
 }
 
-#define stack_protected1(Sc) Sc->stack_end[-2] /* args */ /* stack_top_args(Sc) etc, but it's easier to remember these aliases */
-#define stack_protected2(Sc) Sc->stack_end[-4] /* code */
-#define stack_protected3(Sc) Sc->stack_end[-3] /* curlet */
+#define stack_protected1(Sc) stack_top_args(Sc) /* it's easier to remember these aliases in this context (GC protection so code/args business is irrelevant) */
+#define stack_protected2(Sc) stack_top_code(Sc)
+#define stack_protected3(Sc) stack_top_let(Sc)
 
 #if S7_DEBUGGING
-  #define set_stack_protected1(Sc, Val) do {if (stack_top_op(Sc) != OP_GC_PROTECT) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); Sc->stack_end[-2] = Val;} while (0)
-  #define set_stack_protected2(Sc, Val) do {if (stack_top_op(Sc) != OP_GC_PROTECT) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); Sc->stack_end[-4] = Val;} while (0)
-  #define set_stack_protected3(Sc, Val) do {if (stack_top_op(Sc) != OP_GC_PROTECT) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); Sc->stack_end[-3] = Val;} while (0)
+  #define set_stack_protected1(Sc, Val) do {if (stack_top_op(Sc) != OP_GC_PROTECT) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); stack_protected1(Sc) = Val;} while (0)
+  #define set_stack_protected2(Sc, Val) do {if (stack_top_op(Sc) != OP_GC_PROTECT) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); stack_protected2(Sc) = Val;} while (0)
+  #define set_stack_protected3(Sc, Val) do {if (stack_top_op(Sc) != OP_GC_PROTECT) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); stack_protected3(Sc) = Val;} while (0)
 
-  #define set_stack_protected1_with(Sc, Val, Op) do {if (stack_top_op(Sc) != Op) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); Sc->stack_end[-2] = Val;} while (0)
-  #define set_stack_protected2_with(Sc, Val, Op) do {if (stack_top_op(Sc) != Op) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); Sc->stack_end[-4] = Val;} while (0)
-  #define set_stack_protected3_with(Sc, Val, Op) do {if (stack_top_op(Sc) != Op) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); Sc->stack_end[-3] = Val;} while (0)
+  #define set_stack_protected1_with(Sc, Val, Op) do {if (stack_top_op(Sc) != Op) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); stack_protected1(Sc) = Val;} while (0)
+  #define set_stack_protected2_with(Sc, Val, Op) do {if (stack_top_op(Sc) != Op) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); stack_protected2(Sc) = Val;} while (0)
+  #define set_stack_protected3_with(Sc, Val, Op) do {if (stack_top_op(Sc) != Op) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); stack_protected3(Sc) = Val;} while (0)
 #else
-  #define set_stack_protected1(Sc, Val) Sc->stack_end[-2] = Val
-  #define set_stack_protected2(Sc, Val) Sc->stack_end[-4] = Val
-  #define set_stack_protected3(Sc, Val) Sc->stack_end[-3] = Val
+  #define set_stack_protected1(Sc, Val) stack_protected1(Sc) = Val
+  #define set_stack_protected2(Sc, Val) stack_protected2(Sc) = Val
+  #define set_stack_protected3(Sc, Val) stack_protected3(Sc) = Val
 
-  #define set_stack_protected1_with(Sc, Val, Op) Sc->stack_end[-2] = Val
-  #define set_stack_protected2_with(Sc, Val, Op) Sc->stack_end[-4] = Val
-  #define set_stack_protected3_with(Sc, Val, Op) Sc->stack_end[-3] = Val
+  #define set_stack_protected1_with(Sc, Val, Op) stack_protected1(Sc) = Val
+  #define set_stack_protected2_with(Sc, Val, Op) stack_protected2(Sc) = Val
+  #define set_stack_protected3_with(Sc, Val, Op) stack_protected3(Sc) = Val
 #endif
 
 #define gc_protect_via_stack(Sc, Obj) push_stack_no_let_no_code(Sc, OP_GC_PROTECT, Obj)
@@ -84704,7 +84704,7 @@ static void op_closure_4a(s7_scheme *sc) /* sass */
   s7_pointer f = opt1_lambda(sc->code);
   gc_protect_2_via_stack(sc, fx_call(sc, args), fx_call(sc, cddr(args)));
   args = cdr(args);
-  set_stack_protected3(sc, fx_call(sc, args));  /* [-3]=second */
+  set_stack_protected3(sc, fx_call(sc, args));
   make_let_with_four_slots(sc, f, stack_protected1(sc), stack_protected3(sc), stack_protected2(sc), fx_call(sc, cddr(args)));
   unstack(sc);
   sc->code = T_Pair(closure_body(f));
@@ -96436,60 +96436,60 @@ int main(int argc, char **argv)
 #endif
 
 /* ---------------------------------------------------
- *            20.9   21.0   22.0   23.0   23.6   23.7
+ *            20.9   21.0   22.0   23.0   23.7   23.8
  * ---------------------------------------------------
  * tpeak      115    114    108    105    102    102
  * tref       691    687    463    459    459    459
- * index     1026   1016    973    967    969    970
+ * index     1026   1016    973    967    970    970
  * tmock     1177   1165   1057   1019   1027   1027
  * tvect     2519   2464   1772   1669   1647   1647
- * timp      2637   2575   1930   1694   1716   1709
+ * timp      2637   2575   1930   1694   1709   1709
  * texit     ----   ----   1778   1741   1765   1765
- * s7test    1873   1831   1818   1829   1846   1859
- * thook     ----   ----   2590   2030   2046   2044
- * tauto     ----   ----   2562   2048   2063   2046
- * lt        2187   2172   2150   2185   2199   2198
- * dup       3805   3788   2492   2239   2234   2214
- * tcopy     8035   5546   2539   2375   2380   2381
- * tread     2440   2421   2419   2408   2417   2399
+ * s7test    1873   1831   1818   1829   1859   1859
+ * thook     ----   ----   2590   2030   2044   2044
+ * tauto     ----   ----   2562   2048   2046   2046
+ * lt        2187   2172   2150   2185   2198   2198
+ * dup       3805   3788   2492   2239   2214   2214
+ * tcopy     8035   5546   2539   2375   2381   2381
+ * tread     2440   2421   2419   2408   2399   2399
  * fbench    2688   2583   2460   2430   2458   2458
  * trclo     2735   2574   2454   2445   2461   2461
  * titer     2865   2842   2641   2509   2465   2465
- * tload     ----   ----   3046   2404   2531   2502
- * tmat      3065   3042   2524   2578   2586   2582
+ * tload     ----   ----   3046   2404   2502   2502
+ * tmat      3065   3042   2524   2578   2582   2582
  * tb        2735   2681   2612   2604   2630   2630
  * tsort     3105   3104   2856   2804   2828   2828
- * tobj      4016   3970   3828   3577   3576   3511
- * teq       4068   4045   3536   3486   3588   3568
- * tio       3816   3752   3683   3620   3616   3604
- * tmac      3950   3873   3033   3677   3688   3685
- * tclo      4787   4735   4390   4384   4448   4445
+ * tobj      4016   3970   3828   3577   3511   3511
+ * teq       4068   4045   3536   3486   3568   3568
+ * tio       3816   3752   3683   3620   3604   3604
+ * tmac      3950   3873   3033   3677   3685   3685
+ * tclo      4787   4735   4390   4384   4445   4445
  * tcase     4960   4793   4439   4430   4448   4448
  * tlet      7775   5640   4450   4427   4452   4452
- * tfft      7820   7729   4755   4476   4511   4512
- * tstar     6139   5923   5519   4449   4554   4553
+ * tfft      7820   7729   4755   4476   4512   4512
+ * tstar     6139   5923   5519   4449   4553   4553
  * tmap      8869   8774   4489   4541   4618   4618
- * tshoot    5525   5447   5183   5055   5048   5044
- * tform     5357   5348   5307   5316   5402   5167
- * tstr      6880   6342   5488   5162   5194   5199
- * tnum      6348   6013   5433   5396   5410   5408  5403
+ * tshoot    5525   5447   5183   5055   5044   5044
+ * tform     5357   5348   5307   5316   5167   5167
+ * tstr      6880   6342   5488   5162   5199   5199
+ * tnum      6348   6013   5433   5396   5408   5403
  * tlamb     6423   6273   5720   5560   5620   5620
- * tmisc     8869   7612   6435   6076   6222   6216
- * tgsl      8485   7802   6373   6282   6229   6230
- * tlist     7896   7546   6558   6240   6284   6280
- * tset      ----   ----   ----   6260   6290   6306
+ * tmisc     8869   7612   6435   6076   6216   6216
+ * tgsl      8485   7802   6373   6282   6230   6230
+ * tlist     7896   7546   6558   6240   6280   6280
+ * tset      ----   ----   ----   6260   6306   6306
  * tari      13.0   12.7   6827   6543   6490   6490
  * trec      6936   6922   6521   6588   6581   6581
- * tleft     10.4   10.2   7657   7479   7627   7611
+ * tleft     10.4   10.2   7657   7479   7611   7611
  * tgc       11.9   11.1   8177   7857   7958   7958
- * thash     11.8   11.7   9734   9479   9483   9535
- * cb        11.2   11.0   9658   9564   9631   9626
+ * thash     11.8   11.7   9734   9479   9535   9535
+ * cb        11.2   11.0   9658   9564   9626   9626
  * tgen      11.2   11.4   12.0   12.1   12.1   12.1
  * tall      15.6   15.6   15.6   15.6   15.1   15.1
- * calls     36.7   37.5   37.0   37.5   37.1   37.3
+ * calls     36.7   37.5   37.0   37.5   37.3   37.3
  * sg        ----   ----   55.9   55.8   55.3   55.3
- * lg        ----   ----  105.2  106.4  107.2  107.1
- * tbig     177.4  175.8  156.5  148.1  145.8  145.9
+ * lg        ----   ----  105.2  106.4  107.1  107.1
+ * tbig     177.4  175.8  156.5  148.1  145.9  145.9
  * ---------------------------------------------------
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
@@ -96497,7 +96497,9 @@ int main(int argc, char **argv)
  * *read-error-hook* is only triggered in #... -- it is reader-error? (see also reader-cond bug)
  * more preset access pointers? 
  *   cdr(expr)->expr and caddr matter! check cdr(expr)->cdr(arg) cases and all caddrs (719?)
- * max-string-length is not applied very consistently (not in read-line, or various other make_string_with_length cases)
+ * max-string-length is not checked very consistently (not in read-line, or various other make_string_with_length cases)
  *   others: symbol->string, symbol, number->string, s7_make_string, read_string_constant, object->string, format, port_to_let,
  *   string-append, eval-string?, port-filename?
+ * need s7test checks for all these limits [e.g. vector: 98891 only hits make*]
+ * need complete (append () ...) tests [mock-* -> local append?]
  */
