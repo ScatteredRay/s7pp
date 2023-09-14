@@ -108,6 +108,19 @@
 	    (let-temporarily (((*s7* 'openlets) #f)) 
 	      (apply func (reverse! new-args)))))))
 
+
+  (define (append-wrapper . args)
+    ;;  append is odd -- if 0 args -> (), 1 arg -> arg, 2 args and first is (), return arg2(etc), else (apply #_append args-via-values)?
+    ;;    we can get here with 0 args via: (with-let (*mock-vector* 'mock-vector-class) (append)) !
+    (if (null? args)
+	()
+	(if (null? (cdr args)) 
+	    (car args) ; presumably a mock object
+	    (if (and (null? (car args))  ; etc...
+		     (null? (cddr args)))
+		(cadr args)
+		(apply (with-mock-wrapper* #_append) args)))))
+
   ;; one tricky thing here is that a mock object can be the let of with-let: (with-let (mock-port ...) ...)
   ;;   so a mock object's method can be called even when no argument is a mock object.  Even trickier
   ;;   (display (openlet (with-let (mock-c-pointer 0) (lambda () 1))))
@@ -174,7 +187,7 @@
 							 (apply append args)
 							 (error 'wrong-type-arg "vector-append arguments should be vectors: ~A" args))))
 					       (with-mock-wrapper* #_vector-append))
-		       'append             (with-mock-wrapper* #_append)
+		       'append             append-wrapper ;(with-mock-vector #_append)
 		       'vector-typer       (with-mock-wrapper #_vector-typer)
 		       'class-name         '*mock-vector*)))
 	  
@@ -272,7 +285,7 @@
 		       'copy               (with-mock-wrapper* #_copy)
 		       'hash-table?        (with-mock-wrapper #_hash-table?)
 		       'length             (with-mock-wrapper #_length)
-		       'append             (with-mock-wrapper* #_append)
+		       'append             append-wrapper ;(with-mock-wrapper* #_append)
 		       'hash-table-key-typer (with-mock-wrapper #_hash-table-key-typer)
 		       'hash-table-value-typer (with-mock-wrapper #_hash-table-value-typer)
 		       'class-name         '*mock-hash-table*)))
@@ -404,7 +417,7 @@
 		       'string-ci>=?           (with-mock-wrapper* #_string-ci>=?)
 		       'string?                (with-mock-wrapper #_string?)
 		       'length                 (with-mock-wrapper (if (provided? 'pure-s7) #_length #_string-length))
-		       'append                 (with-mock-wrapper* #_append)
+		       'append                 append-wrapper ;(with-mock-wrapper* #_append)
 		       'class-name             '*mock-string*)))
 	  
 	  (define* (make-mock-string len (init #\null))
@@ -542,7 +555,7 @@
 		 'negative?        (with-mock-wrapper #_negative?)
 		 'infinite?        (with-mock-wrapper #_infinite?)
 		 'nan?             (with-mock-wrapper #_nan?)
-		 ;'append           (with-mock-wrapper* #_append) ;?? (append ... 3 ...) is an error
+		 ;'append          append-wrapper ; (with-mock-wrapper* #_append) ;?? (append ... 3 ...) is an error
 		 'magnitude        (with-mock-wrapper #_magnitude)
 		 'angle            (with-mock-wrapper #_angle)
 		 'rationalize      (with-mock-wrapper* #_rationalize)
@@ -883,7 +896,7 @@
 		       'list-set!        (with-mock-wrapper* #_list-set!)
 		       'pair?            (with-mock-wrapper #_pair?)
 		       'length           (with-mock-wrapper #_length)
-		       'append           (with-mock-wrapper* #_append)
+		       'append           append-wrapper ;(with-mock-wrapper* #_append)
 		       'class-name       '*mock-pair*)))
 	  
 	  (define (mock-pair . args)
@@ -1079,7 +1092,7 @@
 		       'output-port?        (with-mock-wrapper #_output-port?)
 		       'port-closed?        (with-mock-wrapper #_port-closed?)
 		       'equivalent?         (with-mock-wrapper* #_equivalent?)
-		       ;'append              (with-mock-wrapper* #_append) ; ?? (append (open-input-string "asdf")...) is an error
+		       ;'append              (with-mock-wrapper* #_append) ; ?? (append (open-input-string "asdf") ...) is an error
 		       'set-current-output-port (with-mock-wrapper #_set-current-output-port)
 		       'set-current-input-port  (with-mock-wrapper #_set-current-input-port)
 		       'set-current-error-port  (with-mock-wrapper #_set-current-error-port)

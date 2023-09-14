@@ -96497,9 +96497,6 @@ int main(int argc, char **argv)
  * *read-error-hook* is only triggered in #... -- it is reader-error? (see also reader-cond bug)
  * more preset access pointers? 
  *   cdr(expr)->expr and caddr matter! check cdr(expr)->cdr(arg) cases and all caddrs (719?)
- * max-string-length is not checked very consistently (not in read-line, or various other make_string_with_length cases)
- *   others: symbol->string, symbol, number->string, s7_make_string, read_string_constant, object->string, format, port_to_let,
- *   string-append, eval-string?, port-filename?
- * need s7test checks for all these limits [e.g. vector: 98891 only hits make*]
- * need complete (append () ...) tests [mock-* -> local append?]
+ * max-string-length is not checked very consistently (see t651.scm for scheme cases, also s7_make_string, port_to_let, read_string_constant
+ * need s7test checks for all these limits [e.g. vector: 98891 only hits make*]: max-list-length, max-vector-length, max-vector-dimensions
  */
