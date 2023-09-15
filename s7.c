@@ -40093,6 +40093,10 @@ static s7_pointer g_vector(s7_scheme *sc, s7_pointer args)
   s7_int len = proper_list_length_with_end(args, &b);
   if (!is_null(b))
     error_nr(sc, sc->read_error_symbol, set_elist_1(sc, wrap_string(sc, "vector constant data is not a proper list", 41)));
+  if (len > sc->max_vector_length)
+    error_nr(sc, sc->out_of_range_symbol, 
+	     set_elist_3(sc, wrap_string(sc, "vector has too many arguments: '~S, but (*s7* 'max-vector-length) is ~S", 71),
+			 args, wrap_integer(sc, sc->max_vector_length)));
   vec = make_simple_vector(sc, len);
   if (len > 0)
     {
@@ -40148,7 +40152,10 @@ static s7_pointer g_float_vector(s7_scheme *sc, s7_pointer args)
   s7_int len = proper_list_length_with_end(args, &b);
   if (!is_null(b))
     error_nr(sc, sc->read_error_symbol, set_elist_1(sc, wrap_string(sc, "float-vector constant data is not a proper list", 47)));
-
+  if (len > sc->max_vector_length)
+    error_nr(sc, sc->out_of_range_symbol, 
+	     set_elist_3(sc, wrap_string(sc, "float-vector has too many arguments: '~S, but (*s7* 'max-vector-length) is ~S", 77),
+			 args, wrap_integer(sc, sc->max_vector_length)));
   vec = make_simple_float_vector(sc, len);
   if (len > 0)
     {
@@ -40194,7 +40201,10 @@ static s7_pointer g_int_vector(s7_scheme *sc, s7_pointer args)
   s7_int len = proper_list_length_with_end(args, &b);
   if (!is_null(b))
     error_nr(sc, sc->read_error_symbol, set_elist_1(sc, wrap_string(sc, "int-vector constant data is not a proper list", 45)));
-
+  if (len > sc->max_vector_length)
+    error_nr(sc, sc->out_of_range_symbol, 
+	     set_elist_3(sc, wrap_string(sc, "int-vector has too many arguments: '~S, but (*s7* 'max-vector-length) is ~S", 75),
+			 args, wrap_integer(sc, sc->max_vector_length)));
   vec = make_simple_int_vector(sc, len);
   if (len == 0) return(vec);
   for (s7_pointer x = args; is_pair(x); x = cdr(x), i++)
@@ -40236,7 +40246,10 @@ static s7_pointer g_byte_vector(s7_scheme *sc, s7_pointer args)
   s7_int len = proper_list_length_with_end(args, &end);
   if (!is_null(end))
     error_nr(sc, sc->read_error_symbol, set_elist_1(sc, wrap_string(sc, "byte-vector constant data is not a proper list", 46)));
-
+  if (len > sc->max_vector_length)
+    error_nr(sc, sc->out_of_range_symbol, 
+	     set_elist_3(sc, wrap_string(sc, "byte-vector has too many arguments: '~S, but (*s7* 'max-vector-length) is ~S", 76),
+			 args, wrap_integer(sc, sc->max_vector_length)));
   vec = make_simple_byte_vector(sc, len);
   str = byte_vector_bytes(vec);
   for (s7_pointer x = args; is_pair(x); i++, x = cdr(x))
@@ -40457,7 +40470,7 @@ a vector that points to the same elements as the original-vector but with differ
 	    out_of_range_error_nr(sc, sc->subvector_symbol, int_two, start, wrap_string(sc, "start point > end point", 23));
 	  new_len = new_end - offset;
 
-	  if (is_pair(cdddr(args)))
+	  if (is_pair(cdddr(args))) /* get new dimensions */
 	    {
 	      s7_pointer dims = cadddr(args);
 	      if ((is_null(dims)) ||
@@ -40472,12 +40485,22 @@ a vector that points to the same elements as the original-vector but with differ
 			   set_elist_1(sc, wrap_string(sc, "a subvector must fit in the original vector", 43)));
 
 	      v = list_to_dims(sc, dims);
+	      if (vdims_rank(v) > sc->max_vector_dimensions)
+		{
+		  liberate(sc, v);
+		  error_nr(sc, sc->out_of_range_symbol, 
+			   set_elist_3(sc, wrap_string(sc, "subvector specifies too many dimensions: '~S, but (*s7* 'max-vector-dimensions) is ~S", 85),
+				       dims, wrap_integer(sc, sc->max_vector_dimensions)));
+		}
 	      new_len = vdims_dims(v)[0];
 	      for (s7_int i = 1; i < vdims_rank(v); i++) new_len *= vdims_dims(v)[i];
 	      if (new_len != new_end - offset)
-		error_nr(sc, sc->wrong_type_arg_symbol,
-			 set_elist_4(sc, wrap_string(sc, "subvector dimensional length, ~S, does not match the start and end positions: ~S to ~S~%", 88),
-				     wrap_integer(sc, new_len), start, end));
+		{
+		  liberate(sc, v); /* 14-Sep-23 */
+		  error_nr(sc, sc->wrong_type_arg_symbol,
+			   set_elist_4(sc, wrap_string(sc, "subvector dimensional length, ~S, does not match the start and end positions: ~S to ~S~%", 88),
+				       wrap_integer(sc, new_len), start, end));
+		}
 	      vdims_original(v) = orig;
 	    }}}
 
@@ -96497,6 +96520,8 @@ int main(int argc, char **argv)
  * *read-error-hook* is only triggered in #... -- it is reader-error? (see also reader-cond bug)
  * more preset access pointers? 
  *   cdr(expr)->expr and caddr matter! check cdr(expr)->cdr(arg) cases and all caddrs (719?)
- * max-string-length is not checked very consistently (see t651.scm for scheme cases, also s7_make_string, port_to_let, read_string_constant
- * need s7test checks for all these limits [e.g. vector: 98891 only hits make*]: max-list-length, max-vector-length, max-vector-dimensions
+ * max-string-length is not checked very consistently (also port_to_let?, read_string_constant)
+ *   s7test 98938 for tests (40 cases, not counting C-side -- user can check bounds C-side)
+ * need to find unliberated blocks due to errors (as in g_subvector)
+ * some way to check double free etc in mallocate if s7_debugging? (block already in block list?)
  */
