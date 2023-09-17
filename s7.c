@@ -8487,6 +8487,10 @@ static s7_pointer g_symbol_table(s7_scheme *sc, s7_pointer unused_args)
   for (int32_t i = 0; i < SYMBOL_TABLE_SIZE; i++)
     for (s7_pointer x = entries[i]; is_not_null(x); x = cdr(x))
       syms++;
+  if (syms > sc->max_vector_length)
+    error_nr(sc, sc->out_of_range_symbol, 
+	     set_elist_3(sc, wrap_string(sc, "symbol-table size, ~D, is greater than (*s7* 'max-vector-length), ~D", 68),
+			 wrap_integer(sc, syms), wrap_integer(sc, sc->max_vector_length)));
   sc->w = make_simple_vector(sc, syms);
   els = vector_elements(sc->w);
   for (int32_t i = 0, j = 0; i < SYMBOL_TABLE_SIZE; i++)
@@ -37419,13 +37423,8 @@ static s7_pointer list_ref_1(s7_scheme *sc, s7_pointer lst, s7_pointer ind)
   if (!s7_is_integer(ind))
     return(method_or_bust_pp(sc, ind, sc->list_ref_symbol, lst, ind, sc->type_names[T_INTEGER], 2));
   index = s7_integer_clamped_if_gmp(sc, ind);
-  if (index < 0)
-    out_of_range_error_nr(sc, sc->list_ref_symbol, int_two, ind, it_is_negative_string);
-  if (index > sc->max_list_length)
-    error_nr(sc, sc->out_of_range_symbol, 
-	     set_elist_3(sc, wrap_string(sc, "list-ref index argument ~D is greater than (*s7* 'max-list-length), ~D", 70),
-			 wrap_integer(sc, index), wrap_integer(sc, sc->max_list_length)));
-
+  if ((index < 0) || (index > sc->max_list_length)) /* max-list-length check for circular list-ref? */
+    out_of_range_error_nr(sc, sc->list_ref_symbol, int_two, ind, (index < 0) ? it_is_negative_string : it_is_too_large_string);
   for (s7_int i = 0; (i < index) && is_pair(p); i++, p = cdr(p)) {}
   if (is_pair(p)) return(car(p));
   if (is_null(p))
@@ -37510,13 +37509,8 @@ static s7_pointer list_ref_chooser(s7_scheme *sc, s7_pointer f, int32_t args, s7
 static inline s7_pointer list_ref_p_pi_unchecked(s7_scheme *sc, s7_pointer p1, s7_int i1)
 {
   s7_pointer p = p1;
-  if (i1 < 0)
-    out_of_range_error_nr(sc, sc->list_ref_symbol, int_two, wrap_integer(sc, i1), it_is_negative_string);
-  if (i1 > sc->max_list_length)
-    error_nr(sc, sc->out_of_range_symbol, 
-	     set_elist_3(sc, wrap_string(sc, "list-ref index argument ~D is greater than (*s7* 'max-list-length), ~D", 70),
-			 wrap_integer(sc, i1), wrap_integer(sc, sc->max_list_length)));
-
+  if ((i1 < 0) || (i1 > sc->max_list_length))
+    out_of_range_error_nr(sc, sc->list_ref_symbol, int_two, wrap_integer(sc, i1), (i1 < 0) ? it_is_negative_string : it_is_too_large_string);
   for (s7_int i = 0; ((is_pair(p)) && (i < i1)); i++, p = cdr(p));
   if (!is_pair(p))
     {
@@ -37576,15 +37570,10 @@ static s7_pointer g_list_set_1(s7_scheme *sc, s7_pointer lst, s7_pointer args, i
   if (!s7_is_integer(ind))
     return(method_or_bust(sc, ind, sc->list_set_symbol, set_ulist_1(sc, lst, args), sc->type_names[T_INTEGER], 2));
   index = s7_integer_clamped_if_gmp(sc, ind);
-  if (index < 0)
-    out_of_range_error_nr(sc, sc->list_set_symbol, wrap_integer(sc, arg_num), ind, it_is_negative_string);
-  if (index > sc->max_list_length)
-    error_nr(sc, sc->out_of_range_symbol, 
-	     set_elist_3(sc, wrap_string(sc, "list-set! index argument ~D is greater than (*s7* 'max-list-length), ~D", 70),
-			 wrap_integer(sc, index), wrap_integer(sc, sc->max_list_length)));
+  if ((index < 0) || (index > sc->max_list_length))
+    out_of_range_error_nr(sc, sc->list_set_symbol, wrap_integer(sc, arg_num), ind, (index < 0) ? it_is_negative_string : it_is_too_large_string);
 
   for (s7_int i = 0; (i < index) && is_pair(p); i++, p = cdr(p)) {}
-
   if (!is_pair(p))
     {
       if (is_null(p))
@@ -37607,13 +37596,8 @@ static s7_pointer g_list_set(s7_scheme *sc, s7_pointer args) {return(g_list_set_
 static inline s7_pointer list_set_p_pip_unchecked(s7_scheme *sc, s7_pointer p1, s7_int i1, s7_pointer p2)
 {
   s7_pointer p = p1;
-  if (i1 < 0)
-    out_of_range_error_nr(sc, sc->list_set_symbol, int_two, wrap_integer(sc, i1), it_is_negative_string);
-  if (i1 > sc->max_list_length)
-    error_nr(sc, sc->out_of_range_symbol, 
-	     set_elist_3(sc, wrap_string(sc, "list-set! index argument ~D is greater than (*s7* 'max-list-length), ~D", 70),
-			 wrap_integer(sc, i1), wrap_integer(sc, sc->max_list_length)));
-
+  if ((i1 < 0) || (i1 > sc->max_list_length))
+    out_of_range_error_nr(sc, sc->list_set_symbol, int_two, wrap_integer(sc, i1), (i1 < 0) ? it_is_negative_string : it_is_too_large_string);
   for (s7_int i = 0; ((is_pair(p)) && (i < i1)); i++, p = cdr(p));
   if (!is_pair(p))
     {
@@ -37630,13 +37614,8 @@ static s7_pointer list_increment_p_pip_unchecked(opt_info *o)
   s7_scheme *sc = o->sc;
   s7_pointer p = slot_value(o->v[2].p), p1, p2;
   s7_int index = integer(p);
-  if (index < 0)
-    out_of_range_error_nr(sc, sc->list_set_symbol, int_two, p, it_is_negative_string);
-  if (index > sc->max_list_length)
-    error_nr(sc, sc->out_of_range_symbol, 
-	     set_elist_3(sc, wrap_string(sc, "list-set! index argument ~D is greater than (*s7* 'max-list-length), ~D", 70),
-			 wrap_integer(sc, index), wrap_integer(sc, sc->max_list_length)));
-
+  if ((index < 0) || (index > sc->max_list_length))
+    out_of_range_error_nr(sc, sc->list_set_symbol, int_two, p, (index < 0) ? it_is_negative_string : it_is_too_large_string);
   p1 = slot_value(o->v[1].p);
   p = p1;
   for (s7_int i = 0; ((is_pair(p)) && (i < index)); i++, p = cdr(p));
@@ -37667,12 +37646,8 @@ static s7_pointer g_list_set_i(s7_scheme *sc, s7_pointer args)
     return(mutable_method_or_bust(sc, lst, sc->list_set_symbol, args, sc->type_names[T_PAIR], 1));
 
   index = s7_integer_clamped_if_gmp(sc, cadr(args));
-  if (index < 0)
-    out_of_range_error_nr(sc, sc->list_set_symbol, int_two, wrap_integer(sc, index), it_is_negative_string);
-  if (index > sc->max_list_length)
-    error_nr(sc, sc->out_of_range_symbol, 
-	     set_elist_3(sc, wrap_string(sc, "list-set! index argument ~D is greater than (*s7* 'max-list-length), ~D", 70),
-			 wrap_integer(sc, index), wrap_integer(sc, sc->max_list_length)));
+  if ((index < 0) || (index > sc->max_list_length))
+    out_of_range_error_nr(sc, sc->list_set_symbol, int_two, wrap_integer(sc, index), (index < 0) ? it_is_negative_string : it_is_too_large_string);
 
   for (s7_int i = 0; (i < index) && is_pair(p); i++, p = cdr(p)) {}
   if (!is_pair(p))
@@ -37707,13 +37682,8 @@ static s7_pointer list_tail_p_pp(s7_scheme *sc, s7_pointer lst, s7_pointer p)
 
   if (!is_list(lst)) /* (list-tail () 0) -> () */
     return(method_or_bust_with_type_pi(sc, lst, sc->list_tail_symbol, lst, index, a_list_string, 1));
-  if (index < 0)
-    out_of_range_error_nr(sc, sc->list_tail_symbol, int_two, wrap_integer(sc, index), it_is_negative_string);
-  if (index > sc->max_list_length)
-    error_nr(sc, sc->out_of_range_symbol, 
-	     set_elist_3(sc, wrap_string(sc, "list-tail index argument ~D is greater than (*s7* 'max-list-length), ~D", 70),
-			 wrap_integer(sc, index), wrap_integer(sc, sc->max_list_length)));
-
+  if ((index < 0) || (index > sc->max_list_length))
+    out_of_range_error_nr(sc, sc->list_tail_symbol, int_two, wrap_integer(sc, index), (index < 0) ? it_is_negative_string : it_is_too_large_string);
   for (i = 0; (i < index) && (is_pair(lst)); i++, lst = cdr(lst)) {}
   if (i < index)
     out_of_range_error_nr(sc, sc->list_tail_symbol, int_two, wrap_integer(sc, index), it_is_too_large_string);
@@ -93167,7 +93137,7 @@ static s7_pointer s7_starlet(s7_scheme *sc, s7_int choice)
     case SL_MUFFLE_WARNINGS:               return(s7_make_boolean(sc, sc->muffle_warnings));
     case SL_NUMBER_SEPARATOR:              return(chars[(int)(sc->number_separator)]);
     case SL_OPENLETS:                      return(s7_make_boolean(sc, sc->has_openlets));
-    case SL_OUTPUT_FILE_PORT_DATA_SIZE:         return(make_integer(sc, sc->output_file_port_data_size));
+    case SL_OUTPUT_FILE_PORT_DATA_SIZE:    return(make_integer(sc, sc->output_file_port_data_size));
     case SL_PRINT_LENGTH:                  return(make_integer(sc, sc->print_length));
     case SL_PROFILE:                       return(make_integer(sc, sc->profile));
     case SL_PROFILE_INFO:                  return(profile_info_out(sc));
@@ -96571,7 +96541,7 @@ int main(int argc, char **argv)
  * tvect     2519   2464   1772   1669   1647   1647
  * timp      2637   2575   1930   1694   1709   1709
  * texit     ----   ----   1778   1741   1765   1765
- * s7test    1873   1831   1818   1829   1859   1859
+ * s7test    1873   1831   1818   1829   1859   1846
  * thook     ----   ----   2590   2030   2044   2044
  * tauto     ----   ----   2562   2048   2046   2046
  * lt        2187   2172   2150   2185   2198   2198
@@ -96596,7 +96566,7 @@ int main(int argc, char **argv)
  * tstar     6139   5923   5519   4449   4553   4553
  * tmap      8869   8774   4489   4541   4618   4618
  * tshoot    5525   5447   5183   5055   5044   5044
- * tform     5357   5348   5307   5316   5167   5167
+ * tform     5357   5348   5307   5316   5167   5162
  * tstr      6880   6342   5488   5162   5199   5199
  * tnum      6348   6013   5433   5396   5408   5403
  * tlamb     6423   6273   5720   5560   5620   5620
@@ -96612,7 +96582,7 @@ int main(int argc, char **argv)
  * cb        11.2   11.0   9658   9564   9626   9626
  * tgen      11.2   11.4   12.0   12.1   12.1   12.1
  * tall      15.6   15.6   15.6   15.6   15.1   15.1
- * calls     36.7   37.5   37.0   37.5   37.3   37.3
+ * calls     36.7   37.5   37.0   37.5   37.3   37.2
  * sg        ----   ----   55.9   55.8   55.3   55.3
  * lg        ----   ----  105.2  106.4  107.1  107.1
  * tbig     177.4  175.8  156.5  148.1  145.9  145.9
@@ -96623,8 +96593,6 @@ int main(int argc, char **argv)
  * *read-error-hook* is only triggered in #... -- it is reader-error? (see also reader-cond bug)
  * more preset access pointers? 
  *   cdr(expr)->expr and caddr matter! check cdr(expr)->cdr(arg) cases and all caddrs (719?)
- * max-*-length not checked in all cases (also port_to_let?, read_string_constant): s7test 98865 for remaining Scheme-side cases
- * need to find unliberated blocks due to errors (as in g_subvector)
+ * need to find unliberated blocks due to errors (as in g_subvector) [gc-visible flag?]
  *   some way to check double free etc in mallocate if s7_debugging? (block already in block list?)
- *   if s7_debugging, save malloc file/line? then display in memory_usage?
  */
