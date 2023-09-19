@@ -5728,12 +5728,14 @@ static void set_opt3_len_1(s7_pointer p, uint64_t x)
   set_opt3_is_set(p);
 }
 
-static inline void check_opt_bits(s7_pointer p, int bits) /* "inline" to disable "defined but not used" warning from gcc */
+#if 0
+static void check_opt_bits(s7_pointer p, int bits)
 {
   if (((bits & 1) != 0) && (opt1_is_set(p))) fprintf(stderr, "opt1 set ");
   if (((bits & 2) != 0) && (opt2_is_set(p))) fprintf(stderr, "opt2 set ");
   if (((bits & 4) != 0) && (opt3_is_set(p)) && (!has_type_bit(p, T_LOCATION))) fprintf(stderr, "opt3 set ");
 }
+#endif
 
 static void print_debugging_state(s7_scheme *sc, s7_pointer obj, s7_pointer port)
 {
@@ -11834,7 +11836,7 @@ static bool check_for_dynamic_winds(s7_scheme *sc, s7_pointer c)
 			if (dynamic_wind_out(x) != sc->F)
 			  sc->value = s7_call(sc, dynamic_wind_out(x), sc->nil);
 		      }}
-		else let_temp_done(sc, stack_args(sc->stack, i), stack_let(sc->stack, i));
+		else let_temp_done(sc, stack_args(sc->stack, i), T_Lid(stack_let(sc->stack, i)));
 	      }}
 	  break;
 
@@ -12065,7 +12067,7 @@ static void call_with_exit(s7_scheme *sc)
       case OP_LET_TEMP_DONE:
 	{
 	  s7_pointer old_args = sc->args;
-	  let_temp_done(sc, stack_args(sc->stack, i), stack_let(sc->stack, i));
+	  let_temp_done(sc, stack_args(sc->stack, i), T_Lid(stack_let(sc->stack, i)));
 	  sc->args = old_args;
 	}
 	break;
@@ -51008,7 +51010,7 @@ static s7_pointer stacktrace_1(s7_scheme *sc, s7_int frames_max, s7_int code_col
 		  (!strstr(codestr, "(stacktrace)")) &&
 		  (!strstr(codestr, "(stacktrace ")))
 		{
-		  s7_pointer e = stack_let(sc->stack, true_loc);
+		  s7_pointer e = stack_let(sc->stack, true_loc); /* might not be let (gc stack protection etc) */
 		  s7_pointer f = stacktrace_find_caller(sc, e);
 		  if (!stacktrace_error_hook_function(sc, f))
 		    {
@@ -51938,7 +51940,7 @@ static bool catch_let_temporarily_function(s7_scheme *sc, s7_int catch_loc, s7_p
 	  push_stack_direct(sc, OP_EVAL_DONE);
 	  eval(sc, OP_SET_UNCHECKED);
 	}}
-  else let_temp_done(sc, stack_args(sc->stack, catch_loc), stack_let(sc->stack, catch_loc));
+  else let_temp_done(sc, stack_args(sc->stack, catch_loc), T_Lid(stack_let(sc->stack, catch_loc)));
   return(false);
 }
 
@@ -51974,7 +51976,7 @@ static bool catch_dynamic_unwind_function(s7_scheme *sc, s7_int catch_loc, s7_po
    */
   if (sc->debug > 0)
     {
-      s7_pointer spaces = lookup_slot_with_let(make_symbol(sc, "*debug-spaces*", 14), stack_let(sc->stack, catch_loc));
+      s7_pointer spaces = lookup_slot_with_let(make_symbol(sc, "*debug-spaces*", 14), T_Lid(stack_let(sc->stack, catch_loc)));
       if (is_slot(spaces))
 	slot_set_value(spaces, make_integer(sc, max_i_ii(0LL, integer(slot_value(spaces)) - 2))); /* should involve only small_ints */
     }
@@ -92582,10 +92584,11 @@ void s7_heap_scan(s7_scheme *sc, int32_t typ)
 	    if (obj->root)
 	      fprintf(stderr, "%s from %s (%d holder%s)\n", display_80(obj), obj->root,
 		      obj->holders, (obj->holders != 1) ? "s" : "");
-	    else fprintf(stderr, "%s from %s (%s, %p, alloc: %d, holder%s: %d)\n",
+	    else fprintf(stderr, "%s from %s (%s, %p, alloc: %d, holder%s: %d %s alloc: %d)\n",
 			 display_80(obj), display_80(obj->holder),
 			 s7_type_names[unchecked_type(obj->holder)], obj->holder, obj->alloc_line,
-			 (obj->holders != 1) ? "s" : "", obj->holders);
+			 (obj->holders != 1) ? "s" : "", obj->holders,
+			 display(obj->holder), obj->holder->alloc_line);
 	}}
   if (!found_one)
     fprintf(stderr, "heap-scan: no %s found\n", s7_type_names[typ]);
@@ -92606,7 +92609,7 @@ static s7_pointer g_heap_scan(s7_scheme *sc, s7_pointer args)
 
 static s7_pointer g_heap_analyze(s7_scheme *sc, s7_pointer args)
 {
-  #define H_heap_analyze "(heap-analyze type) gets heap data for subsequent heap-scan"
+  #define H_heap_analyze "(heap-analyze) gets heap data for subsequent heap-scan"
   #define Q_heap_analyze s7_make_signature(sc, 1, sc->not_symbol)
   s7_heap_analyze(sc);
   return(sc->F);
@@ -92740,12 +92743,13 @@ static void add_symbol_table(s7_scheme *sc, s7_pointer mu_let)
       if (k > mx_list) mx_list = k;
     }
   add_slot_unchecked_with_id(sc, mu_let, sc->symbol_table_symbol,
-			     s7_list(sc, 9,
-				     make_integer(sc, SYMBOL_TABLE_SIZE),
+			     s7_inlet(sc, 
+			       s7_list(sc, 10,
+				     sc->size_symbol, make_integer(sc, SYMBOL_TABLE_SIZE),
 				     make_symbol(sc, "max-bin", 7), make_integer(sc, mx_list),
 				     make_symbol(sc, "symbols", 7), cons(sc, make_integer(sc, syms), make_integer(sc, syms - gens - keys)),
 				     make_symbol(sc, "gensyms", 7), make_integer(sc, gens),
-				     make_symbol(sc, "keys", 4),    make_integer(sc, keys)));
+				     make_symbol(sc, "keys", 4),    make_integer(sc, keys))));
 }
 
 static s7_pointer kmg(s7_scheme *sc, s7_int bytes)
@@ -92777,21 +92781,22 @@ static void add_gc_list_sizes(s7_scheme *sc, s7_pointer mu_let)
 
   add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "gc-lists", 8),
      s7_list(sc, 4, make_integer(sc, loc), make_integer(sc, len), kmg(sc, len * sizeof(s7_pointer)), /* active, total, space allocated */
-       s7_list(sc, 14,
-	 list_3(sc, sc->string_symbol,                    make_integer(sc, sc->strings->loc),             make_integer(sc, sc->strings->size)),
-	 list_3(sc, sc->vector_symbol,                    make_integer(sc, sc->vectors->loc),             make_integer(sc, sc->vectors->size)),
-	 list_3(sc, sc->hash_table_symbol,                make_integer(sc, sc->hash_tables->loc),         make_integer(sc, sc->hash_tables->size)),
-	 list_3(sc, make_symbol(sc, "multivector", 11),   make_integer(sc, sc->multivectors->loc),        make_integer(sc, sc->multivectors->size)),
-	 list_3(sc, make_symbol(sc, "input", 5),          make_integer(sc, sc->input_ports->loc),         make_integer(sc, sc->input_ports->size)),
-	 list_3(sc, make_symbol(sc, "output", 6),         make_integer(sc, sc->output_ports->loc),        make_integer(sc, sc->output_ports->size)),
-	 list_3(sc, make_symbol(sc, "input-string", 12),  make_integer(sc, sc->input_string_ports->loc),  make_integer(sc, sc->input_string_ports->size)),
-	 list_3(sc, make_symbol(sc, "continuation", 12),  make_integer(sc, sc->continuations->loc),       make_integer(sc, sc->continuations->size)),
-	 list_3(sc, make_symbol(sc, "c-object", 8),       make_integer(sc, sc->c_objects->loc),           make_integer(sc, sc->c_objects->size)),
-	 list_3(sc, sc->gensym_symbol,                    make_integer(sc, sc->gensyms->loc),             make_integer(sc, sc->gensyms->size)),
-	 list_3(sc, make_symbol(sc, "undefined", 9),      make_integer(sc, sc->undefineds->loc),          make_integer(sc, sc->undefineds->size)),
-	 list_3(sc, make_symbol(sc, "weak-ref", 8),       make_integer(sc, sc->weak_refs->loc),           make_integer(sc, sc->weak_refs->size)),
-	 list_3(sc, make_symbol(sc, "weak-hash-iter", 14),make_integer(sc, sc->weak_hash_iterators->loc), make_integer(sc, sc->weak_hash_iterators->size)),
-	 list_3(sc, make_symbol(sc, "opt1-func", 9),      make_integer(sc, sc->opt1_funcs->loc),          make_integer(sc, sc->opt1_funcs->size)))));
+       s7_inlet(sc, 
+         s7_list(sc, 28,
+	   sc->string_symbol,                    cons(sc, make_integer(sc, sc->strings->loc),             make_integer(sc, sc->strings->size)),
+	   sc->vector_symbol,                    cons(sc, make_integer(sc, sc->vectors->loc),             make_integer(sc, sc->vectors->size)),
+	   sc->hash_table_symbol,                cons(sc, make_integer(sc, sc->hash_tables->loc),         make_integer(sc, sc->hash_tables->size)),
+	   make_symbol(sc, "multivector", 11),   cons(sc, make_integer(sc, sc->multivectors->loc),        make_integer(sc, sc->multivectors->size)),
+	   make_symbol(sc, "input", 5),          cons(sc, make_integer(sc, sc->input_ports->loc),         make_integer(sc, sc->input_ports->size)),
+	   make_symbol(sc, "output", 6),         cons(sc, make_integer(sc, sc->output_ports->loc),        make_integer(sc, sc->output_ports->size)),
+	   make_symbol(sc, "input-string", 12),  cons(sc, make_integer(sc, sc->input_string_ports->loc),  make_integer(sc, sc->input_string_ports->size)),
+	   make_symbol(sc, "continuation", 12),  cons(sc, make_integer(sc, sc->continuations->loc),       make_integer(sc, sc->continuations->size)),
+	   make_symbol(sc, "c-object", 8),       cons(sc, make_integer(sc, sc->c_objects->loc),           make_integer(sc, sc->c_objects->size)),
+	   sc->gensym_symbol,                    cons(sc, make_integer(sc, sc->gensyms->loc),             make_integer(sc, sc->gensyms->size)),
+	   make_symbol(sc, "undefined", 9),      cons(sc, make_integer(sc, sc->undefineds->loc),          make_integer(sc, sc->undefineds->size)),
+	   make_symbol(sc, "weak-ref", 8),       cons(sc, make_integer(sc, sc->weak_refs->loc),           make_integer(sc, sc->weak_refs->size)),
+	   make_symbol(sc, "weak-hash-iter", 14),cons(sc, make_integer(sc, sc->weak_hash_iterators->loc), make_integer(sc, sc->weak_hash_iterators->size)),
+	   make_symbol(sc, "opt1-func", 9),      cons(sc, make_integer(sc, sc->opt1_funcs->loc),          make_integer(sc, sc->opt1_funcs->size))))));
 }
 
 /* handling all *s7* fields via fallbacks lets us use direct field accesses in the rest of s7, and avoids
@@ -92805,7 +92810,7 @@ static void add_gc_list_sizes(s7_scheme *sc, s7_pointer mu_let)
 
 static s7_pointer memory_usage(s7_scheme *sc)
 {
-  s7_int i, k, len, in_use = 0, vlen = 0, flen = 0, ilen = 0, blen = 0, hlen = 0;
+  s7_int i, k, len, in_use = 0, all_len = 0;
   gc_list_t *gp;
   s7_int ts[NUM_TYPES];
 
@@ -92859,13 +92864,20 @@ static s7_pointer memory_usage(s7_scheme *sc)
     {
       if (i > 0) in_use += ts[i];
       if (ts[i] > 50)
-	sc->w = cons_unchecked(sc, cons(sc, make_symbol_with_strlen(sc, (i == 0) ? "free" : type_name_from_type(i, NO_ARTICLE)),
-					    make_integer(sc, ts[i])), sc->w);
-    }
+	{
+	  /* can't use bare type name here ("let" is a syntactic symbol) */
+	  const char *tname = (i == 0) ? "free" : type_name_from_type(i, NO_ARTICLE);
+	  s7_int len = safe_strlen(tname);
+	  uint8_t name[16];
+	  memcpy((void *)name, (const void *)tname, len);
+	  name[len] = (uint8_t)'\0';
+	  name[0] = (uint8_t)toupper((int)name[0]);
+	  sc->w = cons_unchecked(sc, make_integer(sc, ts[i]), cons(sc, make_symbol(sc, (const char *)name, len), sc->w));
+	}}
   add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "cells-in-use/free", 17),
 			     cons(sc, make_integer(sc, in_use), make_integer(sc, sc->free_heap_top - sc->free_heap)));
   if (is_pair(sc->w))
-    add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "types", 5), proper_list_reverse_in_place(sc, sc->w));
+    add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "types", 5), s7_inlet(sc, proper_list_reverse_in_place(sc, sc->w)));
   sc->w = sc->unused;
   /* same for semipermanent cells requires traversing saved_pointers and the alloc and big_alloc blocks up to alloc_k, or keeping explicit counts */
 
@@ -92893,53 +92905,67 @@ static s7_pointer memory_usage(s7_scheme *sc)
   add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "strings", 7), cons(sc, make_integer(sc, gp->loc), make_integer(sc, len)));
 
   /* vectors */
-  for (k = 0, gp = sc->vectors; k < 2; k++, gp = sc->multivectors)
-    for (i = 0; i < gp->loc; i++)
-      {
-	s7_pointer v = gp->list[i];
-	if (is_float_vector(v))
-	  flen += vector_length(v);
-	else
-	  if (is_int_vector(v))
-	    ilen += vector_length(v);
+  {
+    s7_int vlen = 0, vs = 0, flen = 0, fvs = 0, ilen = 0, ivs = 0, blen = 0, bvs = 0;
+    for (k = 0, gp = sc->vectors; k < 2; k++, gp = sc->multivectors)
+      for (i = 0; i < gp->loc; i++)
+	{
+	  s7_pointer v = gp->list[i];
+	  if (is_float_vector(v))
+	    {fvs++; flen += vector_length(v);}
 	  else
-	    if (is_byte_vector(v))
-	      blen += vector_length(v);
-	    else vlen += vector_length(v);
-      }
-  add_slot_unchecked_with_id(sc, mu_let,
-			     make_symbol(sc, "vectors", 7),
-			     s7_list(sc, 9,
-				     make_integer(sc, sc->vectors->loc + sc->multivectors->loc),
-				     make_symbol(sc, "vlen", 4),  make_integer(sc, vlen),
-				     make_symbol(sc, "fvlen", 5), make_integer(sc, flen),
-				     make_symbol(sc, "ivlen", 5), make_integer(sc, ilen),
-				     make_symbol(sc, "bvlen", 5), make_integer(sc, blen)));
+	    if (is_int_vector(v))
+	      {ivs++; ilen += vector_length(v);}
+	    else
+	      if (is_byte_vector(v))
+		{bvs++; blen += vector_length(v);}
+	      else {vs++; vlen += vector_length(v);}
+	}
+    all_len += blen + ilen * sizeof(s7_int) + flen * sizeof(s7_double) + vlen * sizeof(s7_pointer);
+    add_slot_unchecked_with_id(sc, mu_let,
+			       make_symbol(sc, "vectors", 7),
+			       s7_inlet(sc, 
+			         s7_list(sc, 10,
+				   make_symbol(sc, "total", 5),  make_integer(sc, sc->vectors->loc + sc->multivectors->loc),
+				   make_symbol(sc, "normal", 6), cons(sc, make_integer(sc, vs), make_integer(sc, vlen)),
+				   make_symbol(sc, "float", 5),  cons(sc, make_integer(sc, fvs), make_integer(sc, flen)),
+				   make_symbol(sc, "int", 3),    cons(sc, make_integer(sc, ivs), make_integer(sc, ilen)),
+				   make_symbol(sc, "byte", 4),   cons(sc, make_integer(sc, bvs), make_integer(sc, blen)))));
+  }
   /* hash-tables */
-  for (i = 0, gp = sc->hash_tables; i < gp->loc; i++)
+  {
+    s7_int hlen = 0;
+    for (i = 0, gp = sc->hash_tables; i < gp->loc; i++)
     {
       s7_pointer v = gp->list[i];
       hlen += ((hash_table_mask(v) + 1) * sizeof(hash_entry_t *));
       hlen += (hash_table_entries(v) * sizeof(hash_entry_t));
     }
-  add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "hash-tables", 11),
-			     cons(sc, make_integer(sc, sc->hash_tables->loc), make_integer(sc, hlen)));
-
+    all_len += all_len;
+    add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "hash-tables", 11),
+			       cons(sc, make_integer(sc, sc->hash_tables->loc), make_integer(sc, hlen)));
+  }
   /* ports */
+  add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "input-port-stack", 16),
+			     cons(sc, make_integer(sc, sc->input_port_stack_loc), make_integer(sc, sc->input_port_stack_size)));
   gp = sc->input_ports;
   for (i = 0, len = 0; i < gp->loc; i++)
     {
       s7_pointer v = gp->list[i];
       if (port_data(v)) len += port_data_size(v);
     }
+  add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "input-ports", 11),
+			     cons(sc, make_integer(sc, sc->input_ports->loc), make_integer(sc, len)));
+
   gp = sc->input_string_ports;
   for (i = 0, len = 0; i < gp->loc; i++)
     {
       s7_pointer v = gp->list[i];
       if (port_data(v)) len += port_data_size(v);
     }
-  add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "input-ports", 11),
-			     cons(sc, make_integer(sc, sc->input_ports->loc + sc->input_string_ports->loc), make_integer(sc, len)));
+  add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "input-string-ports", 18),
+			     cons(sc, make_integer(sc, sc->input_string_ports->loc), make_integer(sc, len)));
+
   gp = sc->output_ports;
   for (i = 0, len = 0; i < gp->loc; i++)
     {
@@ -92989,14 +93015,14 @@ static s7_pointer memory_usage(s7_scheme *sc)
       len += (sizeof(block_t) + block_size(b));
     sc->w = cons(sc, make_integer(sc, k), sc->w);
     add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "free-lists", 10),
-			       list_2(sc, cons(sc, make_symbol(sc, "bytes", 5), kmg(sc, len)),
-				      cons(sc, make_symbol(sc, "bins", 4), proper_list_reverse_in_place(sc, sc->w))));
+			       s7_inlet(sc, list_2(sc, cons(sc, make_symbol(sc, "bytes", 5), kmg(sc, len)),
+						   cons(sc, make_symbol(sc, "bins", 4), proper_list_reverse_in_place(sc, sc->w)))));
     sc->w = sc->unused;
     add_slot_unchecked_with_id(sc, mu_let,
 			       make_symbol(sc, "approximate-s7-size", 19),
 			       kmg(sc, ((sc->semipermanent_cells + NUM_SMALL_INTS + sc->heap_size) * sizeof(s7_cell)) +
 				   ((2 * sc->heap_size + SYMBOL_TABLE_SIZE + sc->stack_size) * sizeof(s7_pointer)) +
-				   len + hlen + (vlen * sizeof(s7_pointer)) + (flen * sizeof(s7_double)) + (ilen * sizeof(s7_int)) + blen));
+				   len + all_len));
   }
   s7_gc_unprotect_at(sc, gc_loc);
   return(mu_let);
