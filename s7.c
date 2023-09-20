@@ -53866,7 +53866,7 @@ fx_is_pair_cddr_s_any(fx_is_pair_cddr_t, t_lookup)
 #define fx_is_null_cdr_s_any(Name, Lookup) \
   static s7_pointer Name(s7_scheme *sc, s7_pointer arg) \
   { \
-    s7_pointer p = Lookup(sc, opt2_sym(cdr(arg)), arg); \
+    s7_pointer p = Lookup(sc, opt3_sym(arg), arg); \
     return((is_pair(p)) ? make_boolean(sc, is_null(cdr(p))) : g_is_null(sc, set_plist_1(sc, g_cdr(sc, set_plist_1(sc, p))))); \
   }
 
@@ -53877,7 +53877,7 @@ fx_is_null_cdr_s_any(fx_is_null_cdr_t, t_lookup)
 #define fx_is_null_cadr_s_any(Name, Lookup) \
   static s7_pointer Name(s7_scheme *sc, s7_pointer arg) \
   { \
-    s7_pointer p = Lookup(sc, opt2_sym(cdr(arg)), arg); \
+    s7_pointer p = Lookup(sc, opt3_sym(arg), arg); \
     return(((is_pair(p)) && (is_pair(cdr(p)))) ? make_boolean(sc, is_null(cadr(p))) : g_is_null(sc, set_plist_1(sc, g_cadr(sc, set_plist_1(sc, p))))); \
   }
 
@@ -53888,7 +53888,7 @@ fx_is_null_cadr_s_any(fx_is_null_cadr_t, t_lookup)
 #define fx_is_null_cddr_s_any(Name, Lookup) \
   static s7_pointer Name(s7_scheme *sc, s7_pointer arg) \
   { \
-    s7_pointer p = Lookup(sc, opt2_sym(cdr(arg)), arg); \
+    s7_pointer p = Lookup(sc, opt3_sym(arg), arg); \
     return(((is_pair(p)) && (is_pair(cdr(p)))) ? make_boolean(sc, is_null(cddr(p))) : g_is_null(sc, set_plist_1(sc, g_cddr(sc, set_plist_1(sc, p))))); \
   }
 
@@ -53899,7 +53899,7 @@ fx_is_null_cddr_s_any(fx_is_null_cddr_t, t_lookup)
 #define fx_is_symbol_cadr_s_any(Name, Lookup) \
   static s7_pointer Name(s7_scheme *sc, s7_pointer arg) \
   { \
-    s7_pointer p = Lookup(sc, opt2_sym(cdr(arg)), arg); \
+    s7_pointer p = Lookup(sc, opt3_sym(arg), arg); \
     return(((is_pair(p)) && (is_pair(cdr(p)))) ? make_boolean(sc, is_symbol(cadr(p))) : g_is_symbol(sc, set_plist_1(sc, g_cadr(sc, set_plist_1(sc, p))))); \
   }
 
@@ -53914,7 +53914,7 @@ static s7_pointer fx_is_symbol_car_t(s7_scheme *sc, s7_pointer arg)
 
 static s7_pointer fx_floor_sqrt_s(s7_scheme *sc, s7_pointer arg)
 {
-  s7_pointer p = lookup(sc, opt2_sym(cdr(arg)));
+  s7_pointer p = lookup(sc, opt3_sym(arg));
 #if WITH_GMP
   if ((is_t_big_integer(p)) &&
       (mpz_cmp_ui(big_integer(p), 0) >= 0)) /* p >= 0 */
@@ -54683,7 +54683,7 @@ static s7_pointer fx_c_optq_direct(s7_scheme *sc, s7_pointer arg)
 #define fx_c_car_s_any(Name, Lookup) \
   static s7_pointer Name(s7_scheme *sc, s7_pointer arg) \
   { \
-    s7_pointer val = Lookup(sc, opt2_sym(cdr(arg)), arg); \
+    s7_pointer val = Lookup(sc, opt3_sym(arg), arg); \
     set_car(sc->t1_1, (is_pair(val)) ? car(val) : g_car(sc, set_plist_1(sc, val))); \
     return(fn_proc(arg)(sc, sc->t1_1)); \
   }
@@ -54695,7 +54695,7 @@ fx_c_car_s_any(fx_c_car_u, u_lookup)
 #define fx_c_cdr_s_any(Name, Lookup) \
   static s7_pointer Name(s7_scheme *sc, s7_pointer arg) \
   { \
-    s7_pointer val = Lookup(sc, opt2_sym(cdr(arg)), arg); \
+    s7_pointer val = Lookup(sc, opt3_sym(arg), arg); \
     set_car(sc->t1_1, (is_pair(val)) ? cdr(val) : g_cdr(sc, set_plist_1(sc, val))); \
     return(fn_proc(arg)(sc, sc->t1_1)); \
   }
@@ -56888,13 +56888,13 @@ static s7_function fx_choose(s7_scheme *sc, s7_pointer holder, s7_pointer cur_en
 		}
 	      if (fx_matches(car(arg), sc->is_null_symbol))
 		{
-		  if (caadr(arg) == sc->cdr_symbol)  {set_opt2_sym(cdr(arg), cadadr(arg)); return(fx_is_null_cdr_s);}
-		  if (caadr(arg) == sc->cadr_symbol) {set_opt2_sym(cdr(arg), cadadr(arg)); return(fx_is_null_cadr_s);}
-		  if (caadr(arg) == sc->cddr_symbol) {set_opt2_sym(cdr(arg), cadadr(arg)); return(fx_is_null_cddr_s);}
+		  if (caadr(arg) == sc->cdr_symbol)  {set_opt3_sym(arg, cadadr(arg)); return(fx_is_null_cdr_s);}
+		  if (caadr(arg) == sc->cadr_symbol) {set_opt3_sym(arg, cadadr(arg)); return(fx_is_null_cadr_s);}
+		  if (caadr(arg) == sc->cddr_symbol) {set_opt3_sym(arg, cadadr(arg)); return(fx_is_null_cddr_s);}
 		}
 	      if ((fx_matches(car(arg), sc->is_symbol_symbol)) &&
 		  (caadr(arg) == sc->cadr_symbol))
-		{set_opt2_sym(cdr(arg), cadadr(arg)); return(fx_is_symbol_cadr_s);}
+		{set_opt3_sym(arg, cadadr(arg)); return(fx_is_symbol_cadr_s);}
 
 	      if (fx_matches(car(arg), sc->not_symbol))
 		{
@@ -56904,7 +56904,7 @@ static s7_function fx_choose(s7_scheme *sc, s7_pointer holder, s7_pointer cur_en
 		  return(fx_not_opsq);
 		}
 	      if ((fx_matches(car(arg), sc->floor_symbol)) && (caadr(arg) == sc->sqrt_symbol))
-		{set_opt2_sym(cdr(arg), cadadr(arg)); return(fx_floor_sqrt_s);}
+		{set_opt3_sym(arg, cadadr(arg)); return(fx_floor_sqrt_s);}
 	    }
 	  if (is_unchanged_global(car(arg)))     /* (? (op arg)) where (op arg) might return a let with a ? method etc */
 	    {                          /*    other possibility: fx_c_a */
@@ -56920,12 +56920,12 @@ static s7_function fx_choose(s7_scheme *sc, s7_pointer holder, s7_pointer cur_en
 	  /* this should follow the is_type* check above */
 	  if (fx_matches(caadr(arg), sc->car_symbol))
 	    {
-	      set_opt2_sym(cdr(arg), cadadr(arg));
+	      set_opt3_sym(arg, cadadr(arg));
 	      return(fx_c_car_s);
 	    }
 	  if (fx_matches(caadr(arg), sc->cdr_symbol))
 	    {
-	      set_opt2_sym(cdr(arg), cadadr(arg));
+	      set_opt3_sym(arg, cadadr(arg));
 	      return(fx_c_cdr_s);
 	    }
 	  return(fx_c_opsq);
@@ -78907,8 +78907,8 @@ static bool op_set_opsaq_a(s7_scheme *sc)        /* (set! (symbol fxable) fxable
 	}}
   value = fx_call(sc, cdr(code));
   gc_protect_via_stack(sc, value);
-  if (dont_eval_args(obj)) /* this check is ridiculously expensive! 60 in tstar, similar lg, but it's faster than is_any_macro */
-    index = cadar(code); /* if obj is a c_macro, surely we don't want to evaluate cdar(code)? */
+  if (dont_eval_args(obj)) /* this check is expensive, 8 in tstar, similar lg, but it's faster than is_any_macro */
+    index = cadar(code);   /* if obj is a c_macro, surely we don't want to evaluate cdar(code)? */
   else index = fx_call(sc, cdar(code));
   set_stack_protected2(sc, index);
   result = set_pair3(sc, obj, index, value);
@@ -96617,8 +96617,7 @@ int main(int argc, char **argv)
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * safety for exp->mac? check-define-macro in lint (given eval-string, we can't do this in s7.c I think)
  * *read-error-hook* is only triggered in #... -- it is reader-error? (see also reader-cond bug)
- * more preset access pointers? 
+ * more preset access pointers?
  *   cdr(expr)->expr and caddr matter! check cdr(expr)->cdr(arg) cases and all caddrs (719?)
- * need to find unliberated blocks due to errors (as in g_subvector) [gc-visible flag?]
- *   some way to check double free etc in mallocate if s7_debugging? (block already in block list?)
+ * check op_set_opsaq_a
  */
