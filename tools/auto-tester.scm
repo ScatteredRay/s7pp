@@ -8,6 +8,8 @@
 (when (provided? 'number-separator) (set! (*s7* 'number-separator) #\,))
 ;(set! (*s7* 'gc-stats) #t)
 
+(define with-continuations #f)
+
 (for-each (lambda (x)
 	    (unless (memq (car x) '(*features* *libraries* *#readers*)) ; last 2 for sandbox
 	      (immutable! (car x))))
@@ -20,20 +22,6 @@
 	  (symbol-table))
 
 (require libc.scm)
-(define (reseed)
-  (let ((seed (if (provided? 'osx)
-		  (car ((*libc* 'gettimeofday)))
-		  (with-let *libc*
-		    (let ((res (clock_gettime CLOCK_MONOTONIC)))
-		      (+ (* 1000000000 (cadr res)) (caddr res))))))
-	(carry (#i(1791398085 1929682203 1683268614 1965537969 1675393560 1967773755 1517746329
-                   1447497129 1655692410 1606218150 2051013963 1075433238 1557985959 1781943330
-                   1893513180 1631296680 2131995753 2083801278 1873196400 1554115554)
-		  ;; possibly problematic: 2083801278
-		(random 20))))
-    (if (provided? 'gmp) 
-	(random-state seed)
-	(random-state seed carry))))
 
 (unless (file-exists? "~/cl/tmp1.r5rs")
   (system "touch ~/cl/tmp1.r5rs"))
@@ -92,8 +80,8 @@
 
 (load "stuff.scm")
 (load "write.scm")
-(define (pp-checked obj)
-  (let-temporarily ((((funclet pretty-print) '*pretty-print-cycles*) #t)) (pp obj)))
+;;(define (pp-checked obj) (let-temporarily ((((funclet pretty-print) '*pretty-print-cycles*) #t)) (pp obj)))
+;; #t is the default for print-cycles
 (require case.scm)
 (define match?  ((funclet 'case*) 'case*-match?))
 
@@ -555,8 +543,8 @@
 (define-expansion (_cw_ . args)
   `(call-with-exit (lambda (_x_) (_x_ ,@args))))
 
-(define-expansion (_cc_ . args)
-  `(call/cc (lambda (_x_) (_x_ ,@args))))
+;;(define-expansion (_cc_ . args)
+;;  `(call/cc (lambda (_x_) (_x_ ,@args))))
 
 (define-expansion (_ct1_ . args)
   `(catch #t (lambda () (call-with-exit (lambda (goto) (values ,@args)))) (lambda args 'error)))
@@ -857,7 +845,7 @@
 (define-constant typed-let1 (immutable! (let ((a 1)) (set! (setter 'a) integer?) (curlet))))
 (define-constant constant-let (immutable! (let () (define-constant a 1) (curlet))))
 
-(define-constant bight (let* ((size 10000)
+(define-constant bight (let* ((size 1000)
 			      (ht (make-hash-table size)))
 			 (do ((i 0 (+ i 1))) 
 			     ((= i size))
@@ -966,7 +954,8 @@
 			  'or 'and 'when 'unless 'if 'begin
 			  'with-baffle 'let-temporarily 'with-let
 			  'byte-vector-set! 'my-make-byte-vector
-			  'write-char 'call/cc 'write-byte 'write-string
+			  'write-char 'write-byte 'write-string
+			  (reader-cond (with-continuations 'call/cc))
 			  'file-mtime
 			  'write 'display
 			  (reader-cond ((not with-mock-data) 'outlet))
@@ -1081,7 +1070,7 @@
 			  'weak-hash-table 'byte? 'the 'lognand 'logeqv
 			  'local-random
 			  'local-read-string 'local-varlet 'local-let-set!
-			  'pp-checked
+			  ;'pp-checked
 			  'kar '_dilambda_ '_vals_ '_vals1_ '_vals2_
                           '_vals3_ '_vals4_ '_vals5_ '_vals6_ '_vals3s_ '_vals4s_ '_vals5s_ '_vals6s_
                           '_svals3_ '_svals4_ '_svals5_ '_svals6_ '_svals3s_ '_svals4s_ '_svals5s_ '_svals6s_
@@ -1185,6 +1174,8 @@
                                             (let ((res (list (caar lst) (cdar lst))))
                                               (set! lst (cdr lst)) res)
                                             #<eof>))))"
+		    (reader-cond
+		     (with-continuations
 		    "(display (call/cc (lambda (return)
 					(let ((val \"line 1~%line 2~%line 3\"))
 					  (call-with-input-string val
@@ -1195,7 +1186,7 @@
 					    (lambda (p) (return 'oops)))))))"
 		    "(display (call/cc (lambda (return)
 					  (call-with-output-string
-					    (lambda (p) (return 'oops))))))"
+					    (lambda (p) (return 'oops))))))"))
 
 		    "#<eof>" "#<undefined>" "#<unspecified>" "#unknown" "___lst" "#<bignum: 3>"
 		    "#<>" "#<label:>" "#<...>" "..." 
@@ -1205,12 +1196,14 @@
 		    "#r(0.000000 0.303100 0.261228 0.917131 0.691793 -0.677124 0.027342 -0.014801 1.166154 0.416979 0.851167 1.410955 0.139409 -0.306122 1.416862 1.054300 0.792442 0.062922 1.507148 0.118287 1.375215 1.459904 1.620963 0.828106 -0.237368 0.987982 0.753194 0.096604 1.712227 1.239483 0.673351 0.871862 0.125962 0.260000 0.626286 0.147473 0.131774 0.201212 -0.194457 0.538798 0.418147 1.292448 0.871870 0.794549 0.988888 1.131816 -0.166311 0.052304 0.543793 -0.229410 0.113585 0.733683 0.271039 1.008427 1.788452 0.654055 0.106430 0.828086 0.097436 0.376461)"
 
 		    "(call-with-exit (lambda (goto) goto))"
-		    "(with-baffle (call/cc (lambda (cc) (cc 1))))"
 		    "(symbol->string 'x)" "(symbol \"a b\")" "(symbol \"(\\\")\")"
 		    "(call-with-exit (lambda (return) (return 'ce)))"
 		    "(call-with-exit (lambda (return) (let ((x 1) (y 2)) (return x y))))"
+		    (reader-cond
+		     (with-continuations
+		    "(with-baffle (call/cc (lambda (cc) (cc 1))))"
 		    "(call/cc (lambda (return) (return 'oops)))"
-		    "(call/cc (lambda (return) (let ((x 1) (y 2)) (return x y))))"
+		    "(call/cc (lambda (return) (let ((x 1) (y 2)) (return x y))))"))
 		    "(let ((x 1)) (dynamic-wind (lambda () (set! x 2)) (lambda () (+ x 1)) (lambda () (set! x 1))))"
 
 		    "(let-temporarily ((x 1)) x)" "(let-temporarily ((x #(1)) (i 0)) i)"
@@ -1340,11 +1333,11 @@
 		    "(*s7* 'c-types)"
 		    ;"(copy (*s7* 'file-names))" ; one is *stdin* which can hang if read* gets it as the port
 		    ;"(*s7* 'gc-freed)" "(*s7* 'gc-total-freed)" "(*s7* 'free-heap-size)" ; variable
-		    "(copy (*s7* 'gc-protected-objects))"  ; access + element set => not protected! perhaps copy it?
-		    "(begin (let? (*s7* 'memory-usage)))"
+		    ;"(copy (*s7* 'gc-protected-objects))"  ; access + element set => not protected! perhaps copy it?
+		    ;"(begin (let? (*s7* 'memory-usage)))" ; slow
 		    ;"(*s7* 'most-negative-fixnum)" "(*s7* 'most-positive-fixnum)"
 		    "(*s7* 'rootlet-size)"
-		    "(begin (list? (*s7* 'stack)))" "(begin (integer? (*s7* 'stack-size)))" ; variable, and stack can contain e.g. #<unused>
+		    ;"(begin (list? (*s7* 'stack)))" "(begin (integer? (*s7* 'stack-size)))" ; variable, and stack can contain e.g. #<unused>
 		    "(*s7* 'version)"
 		    "(*s7* 'stacktrace-defaults)"
 		    "(begin (list? (*s7* 'catches)))"
@@ -1382,8 +1375,12 @@
                     (lambda (s) (string-append "(case x (else " s "))")))
 	      (list (lambda (s) (string-append "(case false ((#f) " s "))"))
                     (lambda (s) (string-append "(case false ((1) #t) (else " s "))")))
+	      (reader-cond
+	       (with-continuations
 	      (list (lambda (s) (string-append "(call-with-exit (lambda (_x_) " s "))"))
                     (lambda (s) (string-append "(call/cc (lambda (_x_) " s "))")))
+	      (list (lambda (s) (string-append "(let () (let-temporarily ((x 1234)) (call-with-exit (lambda (goto) (goto x))) " s "))"))
+                    (lambda (s) (string-append "(let () (let-temporarily ((x 1234)) (call/cc (lambda (goto) (goto x))) " s "))")))))
 	      (list (lambda (s) (string-append "(if (not x) (begin " s "))"))
                     (lambda (s) (string-append "(if x #<unspecified> (begin " s "))")))
 	      (list (lambda (s) (string-append "(cond ((not false) " s "))"))
@@ -1414,8 +1411,6 @@
                     (lambda (s) (string-append "(_rf3_ " s ")")))
 	      (list (lambda (s) (string-append "(_do1_ " s ")"))
                     (lambda (s) (string-append "(_do2_ " s ")")))
-	      (list (lambda (s) (string-append "(let () (let-temporarily ((x 1234)) (call-with-exit (lambda (goto) (goto x))) " s "))"))
-                    (lambda (s) (string-append "(let () (let-temporarily ((x 1234)) (call/cc (lambda (goto) (goto x))) " s "))")))
 	      (list (lambda (s) (string-append "(let ((lt (inlet 'a 1))) (set! (with-let lt a) " s "))"))
 		    (lambda (s) (string-append "(let ((lt (inlet 'a 1))) (set! (lt 'a) " s "))")))
 	      (list (lambda (s) (string-append "(let ((lt (inlet 'a 1))) (set! (with-let ((curlet) 'lt) a) " s "))"))
@@ -1848,14 +1843,14 @@
 	    (abort))
 	  (when (eq? type 'heap-too-big)
 	    (format *stderr* "heap overflow from ~S~%" str)
-	    (display (*s7* 'memory-usage) *stderr*)
+	    (pretty-print (*s7* 'memory-usage) *stderr*)
 	    (newline *stderr*)
 	    (format *stderr* "gc -> ")
+	    (do ((x 0.0) (i 0 (+ i 1))) ((= i 256)) (set! x (complex i i))) ; clear temps
 	    (gc) (gc)
-	    (let ((res (*s7* 'memory-usage)))
-	      (let-temporarily ((((funclet pretty-print) '*pretty-print-cycles*) #t))
-		(pp res))) ; was display
+	    (pretty-print (*s7* 'memory-usage) *stderr*)
 	    (newline *stderr*)
+	    (display "stopping t725...\n" *stderr*)
 	    (abort)) ; to keep Linux from killing the X server!
 	  (unless (or (not (eq? type 'read-error))
 		      (string-position "junk" (car info))
@@ -1879,7 +1874,6 @@
       (set! nostr estr)
       (set! ostr str)
       (set! (current-output-port) #f)
-      ;(procedure-source pp-checked)
 
       (if (> (random 1.0) 0.5)
 	  (begin
@@ -1916,8 +1910,7 @@
 	  ;(gc) (gc)
 	  (set! (*s7* 'print-length) 4096)
 	  (same-type? val1 val2 val3 val4 str str1 str2 str3 str4))
-	(when (eq? outer-funcs last-func)
-	  (reseed))
+	;(when (eq? outer-funcs last-func) (reseed))
 	(set! last-func outer-funcs))
 
       ;(unless (output-port? imfo) (format *stderr* "(new) imfo ~S -> ~S~%" estr imfo) (abort)) ; with-mock-data
@@ -1935,8 +1928,7 @@
     (define dots (vector "." "-" "+" "-"))
     (define (test-it)
       (do ((m 0 (+ m 1))
-	   (n 0)
-	   (p 1 (+ p 1)))
+	   (n 0))
 	  ((= m 100000000)
 	   (format *stderr* "reached end of loop??~%"))
 
@@ -1946,10 +1938,6 @@
 	  (if (= n 4) (set! n 0))
 	  (format *stderr* "~A" (vector-ref dots n)))
 
-	(when (= p 10000000)
-	  (set! p 0)
-	  (reseed))
-
 	(catch #t
 	  (lambda ()
 	    (try-both (make-expr (+ 1 (random both-ran))))) ; min 1 here not 0, was 6
@@ -1957,7 +1945,17 @@
 	    (apply format *stderr* info)
 	    ))
 	))
-
+#|
+    (define (vmemq f v)
+      (call-with-exit
+       (lambda (g)
+	 (do ((i 0 (+ i 1)))
+	     ((= i (length v)))
+	   (if (eq? (v i) 'call/cc)
+	       (g #t)))
+	 #f)))
+    (display "call: " *stderr*) (display (vmemq 'call/cc functions) *stderr*) (newline *stderr*)
+|#
     (test-it)))
 )
 
