@@ -6832,8 +6832,12 @@ static void sweep(s7_scheme *sc)
 #endif
 }
 
-static /* inline */ void add_to_gc_list(gc_list_t *gp, s7_pointer p) /* why inline here? (not tgc) */
+static /* inline */ void add_to_gc_list(gc_list_t *gp, s7_pointer p)
 {
+#if S7_DEBUGGING
+  if ((!in_heap(p)) && (gp != cur_sc->opt1_funcs))
+    {char *s; fprintf(stderr, "%s[%d]: %s not in heap, %s\n", __func__, __LINE__, display(p), s = describe_type_bits(cur_sc, p)); free(s);}
+#endif
   if (gp->loc == gp->size)
     {
       gp->size *= 2;
@@ -7635,7 +7639,8 @@ static void resize_heap_to(s7_scheme *sc, int64_t size)
 
   if (size == 0)
     {
-      if (old_free < old_size * sc->gc_resize_heap_by_4_fraction)
+      if ((old_free < old_size * sc->gc_resize_heap_by_4_fraction) &&
+	  (sc->max_heap_size > (sc->heap_size * 4)))
 	sc->heap_size *= 4;          /* *8 if < 1M (or whatever) doesn't make much difference */
       else sc->heap_size *= 2;
       if (sc->gc_resize_heap_fraction > .4)
@@ -7659,7 +7664,7 @@ static void resize_heap_to(s7_scheme *sc, int64_t size)
   cp = (s7_cell **)Realloc(sc->heap, sc->heap_size * sizeof(s7_cell *));
   if (cp)
     sc->heap = cp;
-  else
+  else /* can this happen? */
     {
       s7_warn(sc, 256, "heap reallocation failed! tried to get %" ld64 " bytes (will retry with a smaller amount)\n",
 	      (int64_t)(sc->heap_size * sizeof(s7_cell *)));
@@ -7691,12 +7696,11 @@ static void resize_heap_to(s7_scheme *sc, int64_t size)
 
   if (show_heap_stats(sc))
     {
-      const char *str = string_value(object_to_truncated_string(sc, current_code(sc), 80));
       if (size != 0)
-	s7_warn(sc, 512, "heap grows to %" ld64 " (old free/size: %" ld64 "/%" ld64 ", requested %" ld64 ") from %s\n",
-		sc->heap_size, old_free, old_size, size, str);
-      else s7_warn(sc, 512, "heap grows to %" ld64 " (old free/size: %" ld64 "/%" ld64 ") from %s\n",
-		   sc->heap_size, old_free, old_size, str);
+	s7_warn(sc, 512, "heap grows to %" ld64 " (old free/size: %" ld64 "/%" ld64 ", requested %" ld64 ")\n",
+		sc->heap_size, old_free, old_size, size);
+      else s7_warn(sc, 512, "heap grows to %" ld64 " (old free/size: %" ld64 "/%" ld64 ", %.3f)\n",
+		   sc->heap_size, old_free, old_size, sc->gc_resize_heap_fraction);
     }
   if (sc->heap_size >= sc->max_heap_size)
     error_nr(sc, make_symbol(sc, "heap-too-big", 12),
@@ -29918,6 +29922,7 @@ static inline void push_input_port(s7_scheme *sc, s7_pointer new_port)
       sc->input_port_stack = (s7_pointer *)Realloc(sc->input_port_stack, sc->input_port_stack_size * sizeof(s7_pointer));
     }
   sc->input_port_stack[sc->input_port_stack_loc++] = current_input_port(sc);
+  /* fprintf(stderr, "%d ", sc->input_port_stack_loc); */
   set_current_input_port(sc, new_port);
 }
 
@@ -31117,7 +31122,6 @@ static s7_pointer g_eval_string(s7_scheme *sc, s7_pointer args)
     return(method_or_bust(sc, str, sc->eval_string_symbol, args, sc->type_names[T_STRING], 1));
   if (string_length(str) == 0)
     return(sc->F);  /* (eval-string "") -> #f */
-
   if (is_not_null(cdr(args)))
     {
       s7_pointer e = cadr(args);
@@ -77927,8 +77931,11 @@ static void op_finish_expansion(s7_scheme *sc)
   if (sc->value == sc->no_value)
     {
       if (stack_top_op(sc) != OP_LOAD_RETURN_IF_EOF) /* latter op if empty expansion at top-level */
-	set_stack_top_op(sc, OP_READ_NEXT);
-    }
+	{
+	  if (stack_top_op(sc) == OP_EVAL_STRING)    /* (eval-string "(reader-cond...)") where reader-cond returns (values) */
+	    sc->value = nil_string;
+	  else set_stack_top_op(sc, OP_READ_NEXT);
+	}}
   else
     if (is_pair(sc->value))
       sc->value = copy_body(sc, sc->value);
@@ -78493,6 +78500,13 @@ static void check_set(s7_scheme *sc)
 		    if (is_fxable(sc, value))
 		      {
 			pair_set_syntax_op(form, OP_SET_opSAq_A);   /* (set! (symbol fxable) fxable) */
+			/* perhaps: if "S" is a known function (etc), split this -- the runtime check for a macro here is very expensive
+			 *   fprintf(stderr, "(set! %s %s)\n", display(car(code)), display(cadr(code)));
+			 *   S=vector[tnum]/hash-table/c_func/s7/setter[tset]/var-*[lt]/c-obj[tobj]/dilambda[tstar]
+			 * so, if not any_macro OP_SET_opFAq_A else OP_SET_opMAq_A? or just the latter
+			 * also (set! (car a) b) -> (set-car! a b), (set! (cfunc a) b) -> ((setter cfunc) a b)
+			 * set_opsaq_a as "unknown" equivalent -> all the special cases which check just their case, maybe a no-parcel option
+                         */								      
 			fx_annotate_arg(sc, cdr(code), sc->curlet); /* cdr(code) -> value */
 
 			if (car(inner) == sc->s7_starlet_symbol)    /* (set! (*s7* 'field) value) */
@@ -78502,6 +78516,7 @@ static void check_set(s7_scheme *sc)
                                                ((is_quoted_symbol(index)) ? cadr(index) : index);
 			    if ((is_symbol(sym)) && (s7_starlet_symbol(sym) != SL_NO_FIELD))
 			      {
+				/* perhaps preset field -> op_print_length_set[misc?]|safety[tstar] etc, most (timing test) cases are just heap-size called once */
 				set_safe_optimize_op(form, OP_IMPLICIT_S7_STARLET_SET);
 				set_opt3_sym(form, sym);
 			      }}}
@@ -91278,9 +91293,7 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	case OP_IMPLICIT_VECTOR_SET_3:      if (op_implicit_vector_set_3(sc)) goto EVAL; continue;
 	case OP_IMPLICIT_VECTOR_SET_4:      if (op_implicit_vector_set_4(sc)) goto EVAL; continue;
 	case OP_IMPLICIT_S7_STARLET_REF_S:  sc->value = s7_starlet(sc, opt3_int(sc->code)); continue;
-	case OP_IMPLICIT_S7_STARLET_SET:
-	  sc->value = s7_starlet_set_1(sc, opt3_sym(sc->code), fx_call(sc, cddr(sc->code)));
-	  continue;
+	case OP_IMPLICIT_S7_STARLET_SET:    sc->value = s7_starlet_set_1(sc, opt3_sym(sc->code), fx_call(sc, cddr(sc->code))); continue;
 
 	case OP_UNOPT:       goto UNOPT;
 	case OP_SYMBOL:      sc->value = lookup_checked(sc, sc->code);     continue;
@@ -92578,17 +92591,16 @@ void s7_heap_scan(s7_scheme *sc, int32_t typ)
       if (unchecked_type(obj) == typ)
 	{
 	  found_one = true;
-	  if (obj->holders == 0)
-	    fprintf(stderr, "%s has no holder (alloc: %d)\n", display_80(obj), obj->alloc_line);
+	  if ((obj->holders == 0) || (!obj->holder))
+	    fprintf(stderr, "%s has no holder (alloc: %s[%d])\n", display_80(obj), obj->alloc_func, obj->alloc_line);
 	  else
 	    if (obj->root)
-	      fprintf(stderr, "%s from %s (%d holder%s)\n", display_80(obj), obj->root,
-		      obj->holders, (obj->holders != 1) ? "s" : "");
-	    else fprintf(stderr, "%s from %s (%s, %p, alloc: %d, holder%s: %d %s alloc: %d)\n",
-			 display_80(obj), display_80(obj->holder),
-			 s7_type_names[unchecked_type(obj->holder)], obj->holder, obj->alloc_line,
-			 (obj->holders != 1) ? "s" : "", obj->holders,
-			 display(obj->holder), obj->holder->alloc_line);
+	      fprintf(stderr, "%s from %s alloc: %s[%d] (%d holder%s, alloc: %s[%d])\n", 
+		      display_80(obj), obj->root, obj->alloc_func, obj->alloc_line,
+		      obj->holders, (obj->holders != 1) ? "s" : "", obj->holder->alloc_func, obj->holder->alloc_line);
+	    else fprintf(stderr, "%s (%s, %p, alloc: %s[%d], holder%s: %d %s alloc: %s[%d])\n",
+			 display_80(obj), s7_type_names[unchecked_type(obj->holder)], obj->holder, obj->alloc_func, obj->alloc_line,
+			 (obj->holders != 1) ? "s" : "", obj->holders, display(obj->holder), obj->holder->alloc_func, obj->holder->alloc_line);
 	}}
   if (!found_one)
     fprintf(stderr, "heap-scan: no %s found\n", s7_type_names[typ]);
@@ -96617,7 +96629,4 @@ int main(int argc, char **argv)
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * safety for exp->mac? check-define-macro in lint (given eval-string, we can't do this in s7.c I think)
  * *read-error-hook* is only triggered in #... -- it is reader-error? (see also reader-cond bug)
- * check op_set_opsaq_a
- * holder data: for each root, how many holdees? are these func args?
- *   would need counters throughout the mark process + array of roots + notion of permanents + how many holders for holdee?
  */
