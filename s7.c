@@ -1418,7 +1418,6 @@ struct s7_scheme {
 
 #if S7_DEBUGGING
   int32_t *tc_rec_calls;
-  int32_t last_gc_line;
   bool printing_gc_info;
 #endif
 };
@@ -5326,7 +5325,6 @@ static void print_gc_info(s7_scheme *sc, s7_pointer obj, int32_t line)
 		bold_text, obj, line, s7_type_names[obj->alloc_type & 0xff], obj->alloc_type, obj->alloc_type,
 		bits, obj->alloc_func, obj->alloc_line,
 		(obj->explicit_free_line > 0) ? fline : "", obj->gc_func, obj->gc_line,	unbold_text);
-	if (S7_DEBUGGING) fprintf(stderr, "%s, last gc line: %d%s", bold_text, sc->last_gc_line, unbold_text);
 	fprintf(stderr, "\n");
 	free(bits);
       }
@@ -7401,9 +7399,6 @@ static int64_t gc(s7_scheme *sc)
   sc->gc_in_progress = true;
   sc->gc_start = my_clock();
   sc->gc_calls++;
-#if S7_DEBUGGING
-  sc->last_gc_line = line;
-#endif
   sc->continuation_counter = 0;
 
   mark_rootlet(sc);
@@ -8196,31 +8191,20 @@ static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer
  */
 
 #if S7_DEBUGGING
-#define unstack(Sc) unstack_1(Sc, __func__, __LINE__)
-static void unstack_1(s7_scheme *sc, const char *func, int32_t line)
+#define unstack_with(Sc, Op) unstack_1(Sc, Op, __func__, __LINE__)
+static void unstack_1(s7_scheme *sc, opcode_t op, const char *func, int32_t line)
 {
   sc->stack_end -= 4;
-  if ((opcode_t)T_Op(stack_end_op(sc)) != OP_GC_PROTECT)
+  if ((opcode_t)T_Op(stack_end_op(sc)) != op)
     {
-      fprintf(stderr, "%s%s[%d]: popped %s, (expected OP_GC_PROTECT)?%s\n", bold_text, func, line, op_names[(opcode_t)T_Op(stack_end_op(sc))], unbold_text);
+      fprintf(stderr, "%s%s[%d]: popped %s? (expected %s)%s\n", bold_text, func, line, op_names[(opcode_t)T_Op(stack_end_op(sc))], op_names[op], unbold_text);
       /* "popped apply" means we called something that went to eval+apply when we thought it was a safe function */
       fprintf(stderr, "    code: %s, args: %s\n", display(sc->code), display(sc->args));
       fprintf(stderr, "    cur_code: %s, estr: %s\n", display(current_code(sc)), display(s7_name_to_value(sc, "estr")));
       if (sc->stop_at_error) abort();
     }
 }
-#define unstack_with(Sc, Op) unstack_2(Sc, Op, __func__, __LINE__)
-static void unstack_2(s7_scheme *sc, opcode_t op, const char *func, int32_t line)
-{
-  sc->stack_end -= 4;
-  if ((opcode_t)T_Op(stack_end_op(sc)) != op)
-    {
-      fprintf(stderr, "%s%s[%d]: popped %s? (expected %s)%s\n", bold_text, func, line, op_names[(opcode_t)T_Op(stack_end_op(sc))], op_names[op], unbold_text);
-      fprintf(stderr, "    code: %s, args: %s\n", display(sc->code), display(sc->args));
-      fprintf(stderr, "    cur_code: %s, estr: %s\n", display(current_code(sc)), display(s7_name_to_value(sc, "estr")));
-      if (sc->stop_at_error) abort();
-    }
-}
+#define unstack(Sc) unstack_with(Sc, OP_GC_PROTECT)
 #else
 #define unstack(sc) sc->stack_end -= 4
 #define unstack_with(sc, op) sc->stack_end -= 4
@@ -48902,6 +48886,9 @@ static s7_pointer s7_copy_1(s7_scheme *sc, s7_pointer caller, s7_pointer args)
   if ((source == dest) && (!have_indices))
     return(dest);
 
+  /* gc_protect_via_stack(sc, args); */ /* why is this problematic? */
+  sc->w = args;
+
   switch (type(source))
     {
     case T_PAIR:
@@ -77933,7 +77920,7 @@ static void op_finish_expansion(s7_scheme *sc)
       if (stack_top_op(sc) != OP_LOAD_RETURN_IF_EOF) /* latter op if empty expansion at top-level */
 	{
 	  if (stack_top_op(sc) == OP_EVAL_STRING)    /* (eval-string "(reader-cond...)") where reader-cond returns (values) */
-	    sc->value = nil_string;
+	    sc->value = nil_string;                  /*    perhaps #f here? */
 	  else set_stack_top_op(sc, OP_READ_NEXT);
 	}}
   else
@@ -96628,5 +96615,4 @@ int main(int argc, char **argv)
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * safety for exp->mac? check-define-macro in lint (given eval-string, we can't do this in s7.c I think)
- * *read-error-hook* is only triggered in #... -- it is reader-error? (see also reader-cond bug)
  */
