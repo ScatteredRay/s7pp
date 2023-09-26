@@ -8478,7 +8478,7 @@ static s7_pointer g_symbol_table(s7_scheme *sc, s7_pointer unused_args)
     for (s7_pointer x = entries[i]; is_not_null(x); x = cdr(x))
       syms++;
   if (syms > sc->max_vector_length)
-    error_nr(sc, sc->out_of_range_symbol, 
+    error_nr(sc, sc->out_of_range_symbol,
 	     set_elist_3(sc, wrap_string(sc, "symbol-table size, ~D, is greater than (*s7* 'max-vector-length), ~D", 68),
 			 wrap_integer(sc, syms), wrap_integer(sc, sc->max_vector_length)));
   sc->w = make_simple_vector(sc, syms);
@@ -8699,7 +8699,7 @@ static s7_pointer g_symbol_to_string(s7_scheme *sc, s7_pointer args)
     return(sole_arg_method_or_bust(sc, sym, sc->symbol_to_string_symbol, args, sc->type_names[T_SYMBOL]));
   /* s7_make_string uses strlen which stops at an embedded null */
   if (symbol_name_length(sym) > sc->max_string_length)
-    error_nr(sc, sc->out_of_range_symbol, 
+    error_nr(sc, sc->out_of_range_symbol,
 	     set_elist_3(sc, wrap_string(sc, "symbol->string symbol name is too large: (> ~D ~D) (*s7* 'max-string-length)", 76),
 			 wrap_integer(sc, symbol_name_length(sym)), wrap_integer(sc, sc->max_string_length)));
   return(inline_make_string_with_length(sc, symbol_name(sym), symbol_name_length(sym)));    /* return a copy */
@@ -26742,7 +26742,7 @@ static s7_pointer g_make_string(s7_scheme *sc, s7_pointer args)
   if (len < 0)
     out_of_range_error_nr(sc, sc->make_string_symbol, int_one, n, it_is_negative_string);
   if (len > sc->max_string_length)
-    error_nr(sc, sc->out_of_range_symbol, 
+    error_nr(sc, sc->out_of_range_symbol,
 	     set_elist_3(sc, wrap_string(sc, "make-string length argument ~D is greater than (*s7* 'max-string-length), ~D", 76),
 			 wrap_integer(sc, len), wrap_integer(sc, sc->max_string_length)));
 
@@ -26761,7 +26761,7 @@ static s7_pointer make_string_p_i(s7_scheme *sc, s7_int len)
   if (len < 0)
     out_of_range_error_nr(sc, sc->make_string_symbol, int_one, wrap_integer(sc, len), it_is_negative_string);
   if (len > sc->max_string_length)
-    error_nr(sc, sc->out_of_range_symbol, 
+    error_nr(sc, sc->out_of_range_symbol,
 	     set_elist_3(sc, wrap_string(sc, "make-string length argument ~D is greater than (*s7* 'max-string-length), ~D", 76),
 			 wrap_integer(sc, len), wrap_integer(sc, sc->max_string_length)));
   return(make_empty_string(sc, len, '\0'));
@@ -27849,7 +27849,7 @@ static s7_pointer g_string_1(s7_scheme *sc, s7_pointer args, s7_pointer sym)
 	  wrong_type_error_nr(sc, sym, len + 1, car(x), sc->type_names[T_CHARACTER]);
 	}}
   if (len > sc->max_string_length)
-    error_nr(sc, sc->out_of_range_symbol, 
+    error_nr(sc, sc->out_of_range_symbol,
 	     set_elist_4(sc, wrap_string(sc, "~S result string is too large (> ~D ~D) (*s7* 'max-string-length)", 65),
 			 sym, wrap_integer(sc, len), wrap_integer(sc, sc->max_string_length)));
   newstr = inline_make_empty_string(sc, len, 0);
@@ -27945,7 +27945,7 @@ static s7_pointer g_string_to_list(s7_scheme *sc, s7_pointer args)
   else
     if (end == 0) return(sc->nil);
   if ((end - start) > sc->max_list_length)
-    error_nr(sc, sc->out_of_range_symbol, 
+    error_nr(sc, sc->out_of_range_symbol,
 	     set_elist_5(sc, wrap_string(sc, "string->list length ~D, (- ~D ~D), is greater than (*s7* 'max-list-length), ~D", 78),
 			 wrap_integer(sc, end - start), wrap_integer(sc, end), wrap_integer(sc, start),
 			 wrap_integer(sc, sc->max_list_length)));
@@ -28130,7 +28130,7 @@ static s7_pointer port_filename_p_p(s7_scheme *sc, s7_pointer x)
       if (port_filename(x))
 	{
 	  if (port_filename_length(x) > sc->max_string_length)
-	    error_nr(sc, sc->out_of_range_symbol, 
+	    error_nr(sc, sc->out_of_range_symbol,
 		     set_elist_3(sc, wrap_string(sc, "port-filename is too long (> ~D ~D) (*s7* 'max-string-length)", 61),
 				 wrap_integer(sc, port_filename_length(x)), wrap_integer(sc, sc->max_string_length)));
 	  return(make_string_with_length(sc, port_filename(x), port_filename_length(x))); /* not wrapper here! */
@@ -30179,7 +30179,7 @@ static s7_pointer g_read_string(s7_scheme *sc, s7_pointer args)
   if (nchars < 0)
     out_of_range_error_nr(sc, sc->read_string_symbol, int_one, k, it_is_negative_string);
   if (nchars > sc->max_string_length)
-    error_nr(sc, sc->out_of_range_symbol, 
+    error_nr(sc, sc->out_of_range_symbol,
 	     set_elist_3(sc, wrap_string(sc, "read-string first argument ~D is greater than (*s7* 'max-string-length), ~D", 75),
 			 wrap_integer(sc, nchars), wrap_integer(sc, sc->max_string_length)));
 
@@ -31212,15 +31212,31 @@ static s7_pointer with_input(s7_scheme *sc, s7_pointer port, s7_pointer args)
   return(sc->F);
 }
 
+static s7_pointer procedure_required_args(s7_scheme *sc, s7_pointer x)
+{
+  switch (type(x))
+    {
+    case T_C_FUNCTION:
+      return(make_integer(sc, c_function_min_args(x)));
+    case T_C_MACRO:
+      return(make_integer(sc, c_macro_min_args(x)));
+    case T_CLOSURE: case T_MACRO: case T_BACRO:
+      if (closure_arity_unknown(x))
+	closure_set_arity(x, s7_list_length(sc, closure_args(x)));
+      return(make_integer(sc, s7_int_abs(closure_arity(x))));
+    }
+  return(int_zero);
+}
+
 static s7_pointer g_with_input_from_string(s7_scheme *sc, s7_pointer args)
 {
   #define H_with_input_from_string "(with-input-from-string str thunk) opens str as the temporary current-input-port and calls thunk"
   #define Q_with_input_from_string sc->pl_sf
 
-  s7_pointer str = car(args);
+  s7_pointer str = car(args), proc = cadr(args);
   if (!is_string(str))
     return(method_or_bust(sc, str, sc->with_input_from_string_symbol, args, sc->type_names[T_STRING], 1));
-  if (cadr(args) == global_value(sc->read_symbol))
+  if (proc == global_value(sc->read_symbol))
     {
       if (string_length(str) == 0)
 	return(eof_object);
@@ -31232,8 +31248,17 @@ static s7_pointer g_with_input_from_string(s7_scheme *sc, s7_pointer args)
       push_stack_op_let(sc, OP_READ_INTERNAL);
       return(current_input_port(sc));
     }
-  if (!is_thunk(sc, cadr(args)))
-    return(method_or_bust(sc, cadr(args), sc->with_input_from_string_symbol, args, a_thunk_string, 2));
+  if (!is_thunk(sc, proc))
+    {
+      if (is_any_procedure(proc))        /* i.e. c_function, lambda, macro, etc */
+	{
+	  s7_pointer req_args = procedure_required_args(sc, proc);
+	  error_nr(sc, sc->wrong_type_arg_symbol,
+		   set_elist_4(sc, wrap_string(sc, "~A requires ~D argument~P, but with-input-from-string's second argument should be a thunk", 89),
+			       proc, req_args, req_args));
+	}
+      else return(method_or_bust(sc, proc, sc->with_input_from_string_symbol, args, a_thunk_string, 2));
+    }
   /* since the arguments are evaluated before we get here, we can get some confusing situations:
    *   (with-input-from-string "#x2.1" (read))
    *     (read) -> whatever it can get from the current input port!
@@ -31251,11 +31276,21 @@ static s7_pointer g_with_input_from_file(s7_scheme *sc, s7_pointer args)
   #define H_with_input_from_file "(with-input-from-file filename thunk) opens filename as the temporary current-input-port and calls thunk"
   #define Q_with_input_from_file sc->pl_sf
 
-  if (!is_string(car(args)))
-    return(method_or_bust(sc, car(args), sc->with_input_from_file_symbol, args, sc->type_names[T_STRING], 1));
-  if (!is_thunk(sc, cadr(args)))
-    return(method_or_bust(sc, cadr(args), sc->with_input_from_file_symbol, args, a_thunk_string, 2));
-  return(with_input(sc, open_input_file_1(sc, string_value(car(args)), "r", "with-input-from-file"), args));
+  s7_pointer str = car(args), proc = cadr(args);
+  if (!is_string(str))
+    return(method_or_bust(sc, str, sc->with_input_from_file_symbol, args, sc->type_names[T_STRING], 1));
+  if (!is_thunk(sc, proc))
+    {
+      if (is_any_procedure(proc))        /* i.e. c_function, lambda, macro, etc */
+	{
+	  s7_pointer req_args = procedure_required_args(sc, proc);
+	  error_nr(sc, sc->wrong_type_arg_symbol,
+		   set_elist_4(sc, wrap_string(sc, "~A requires ~D argument~P, but with-input-from-file's second argument should be a thunk", 87),
+			       proc, req_args, req_args));
+	}
+      else return(method_or_bust(sc, proc, sc->with_input_from_file_symbol, args, a_thunk_string, 2));
+    }
+  return(with_input(sc, open_input_file_1(sc, string_value(str), "r", "with-input-from-file"), args));
 }
 
 static s7_pointer with_string_in(s7_scheme *sc, s7_pointer unused_args)
@@ -35535,17 +35570,26 @@ static s7_pointer g_with_output_to_string(s7_scheme *sc, s7_pointer args)
 calls thunk, then returns the collected output"
   #define Q_with_output_to_string s7_make_signature(sc, 2, sc->is_string_symbol, s7_make_signature(sc, 2, sc->is_procedure_symbol, sc->is_macro_symbol))
 
-  s7_pointer old_output_port, p = car(args);
-  if (!is_thunk(sc, p))
-    return(method_or_bust(sc, p, sc->with_output_to_string_symbol, args, a_thunk_string, 1));
-  if ((is_continuation(p)) || (is_goto(p)))
-    wrong_type_error_nr(sc, sc->with_output_to_string_symbol, 1, p, a_normal_procedure_string);
+  s7_pointer old_output_port, proc = car(args);
+  if (!is_thunk(sc, proc))
+    {
+      if (is_any_procedure(proc))        /* i.e. c_function, lambda, macro, etc */
+	{
+	  s7_pointer req_args = procedure_required_args(sc, proc);
+	  error_nr(sc, sc->wrong_type_arg_symbol,
+		   set_elist_4(sc, wrap_string(sc, "~A requires ~D argument~P, but with-output-to-string's first argument should be a thunk", 87),
+			       proc, req_args, req_args));
+	}
+      else return(method_or_bust(sc, proc, sc->with_output_to_string_symbol, args, a_thunk_string, 1));
+    }
+  if ((is_continuation(proc)) || (is_goto(proc)))
+    wrong_type_error_nr(sc, sc->with_output_to_string_symbol, 1, proc, a_normal_procedure_string);
 
   old_output_port = current_output_port(sc);
   set_current_output_port(sc, s7_open_output_string(sc));
   push_stack(sc, OP_UNWIND_OUTPUT, old_output_port, current_output_port(sc));
   push_stack(sc, OP_GET_OUTPUT_STRING, old_output_port, current_output_port(sc));
-  push_stack(sc, OP_APPLY, sc->nil, p);
+  push_stack(sc, OP_APPLY, sc->nil, proc);
   return(sc->F);
 }
 
@@ -35560,7 +35604,16 @@ static s7_pointer g_with_output_to_file(s7_scheme *sc, s7_pointer args)
   if (!is_string(file))
     return(method_or_bust(sc, file, sc->with_output_to_file_symbol, args, sc->type_names[T_STRING], 1));
   if (!is_thunk(sc, proc))
-    return(method_or_bust(sc, proc, sc->with_output_to_file_symbol, args, a_thunk_string, 2));
+    {
+      if (is_any_procedure(proc))        /* i.e. c_function, lambda, macro, etc */
+	{
+	  s7_pointer req_args = procedure_required_args(sc, proc);
+	  error_nr(sc, sc->wrong_type_arg_symbol,
+		   set_elist_4(sc, wrap_string(sc, "~A requires ~D argument~P, but with-output-to-file's second argument should be a thunk", 86),
+			       proc, req_args, req_args));
+	}
+      else return(method_or_bust(sc, proc, sc->with_output_to_file_symbol, args, a_thunk_string, 2));
+    }
   if ((is_continuation(proc)) || (is_goto(proc)))
     wrong_type_error_nr(sc, sc->with_output_to_file_symbol, 1, proc, a_normal_procedure_string);
 
@@ -37379,7 +37432,7 @@ static s7_pointer make_list_p_pp(s7_scheme *sc, s7_pointer n, s7_pointer init)
   if (len < 0)
     out_of_range_error_nr(sc, sc->make_list_symbol, int_one, n, it_is_negative_string);
   if (len > sc->max_list_length)
-    error_nr(sc, sc->out_of_range_symbol, 
+    error_nr(sc, sc->out_of_range_symbol,
 	     set_elist_3(sc, wrap_string(sc, "make-list length argument ~D is greater than (*s7* 'max-list-length), ~D", 72),
 			 wrap_integer(sc, len), wrap_integer(sc, sc->max_list_length)));
 
@@ -39459,7 +39512,7 @@ static s7_pointer make_vector_1(s7_scheme *sc, s7_int len, bool filled, uint8_t 
   if (len < 0)
     out_of_range_error_nr(sc, sc->make_vector_symbol, int_one, wrap_integer(sc, len), it_is_negative_string);
   if (len > sc->max_vector_length)
-    error_nr(sc, sc->out_of_range_symbol, 
+    error_nr(sc, sc->out_of_range_symbol,
 	     set_elist_3(sc, wrap_string(sc, "make-vector length argument ~D is greater than (*s7* 'max-vector-length), ~D", 76),
 			 wrap_integer(sc, len), wrap_integer(sc, sc->max_vector_length)));
 
@@ -40065,7 +40118,7 @@ static s7_pointer g_vector_to_list(s7_scheme *sc, s7_pointer args)
       if (start == end) return(sc->nil);
     }
   if ((end - start) > sc->max_list_length)
-    error_nr(sc, sc->out_of_range_symbol, 
+    error_nr(sc, sc->out_of_range_symbol,
 	     set_elist_5(sc, wrap_string(sc, "vector->list length ~D, (- ~D ~D), is greater than (*s7* 'max-list-length), ~D", 78),
 			 wrap_integer(sc, end - start), wrap_integer(sc, end), wrap_integer(sc, start),
 			 wrap_integer(sc, sc->max_list_length)));
@@ -40100,7 +40153,7 @@ static s7_pointer g_string_to_byte_vector(s7_scheme *sc, s7_pointer args)
   if (!is_string(str))
     return(method_or_bust_p(sc, str, sc->string_to_byte_vector_symbol, sc->type_names[T_STRING]));
   if (string_length(str) > sc->max_vector_length)
-    error_nr(sc, sc->out_of_range_symbol, 
+    error_nr(sc, sc->out_of_range_symbol,
 	     set_elist_3(sc, wrap_string(sc, "string->byte-vector string is too long: (> ~D ~D) (*s7* 'max-vector-length)", 75),
 			 wrap_integer(sc, string_length(str)), wrap_integer(sc, sc->max_vector_length)));
   return(s7_copy_1(sc, sc->string_to_byte_vector_symbol, set_plist_2(sc, str, make_simple_byte_vector(sc, string_length(str)))));
@@ -40116,7 +40169,7 @@ static s7_pointer g_byte_vector_to_string(s7_scheme *sc, s7_pointer args)
   if (!is_byte_vector(v))
     return(method_or_bust_p(sc, v, sc->byte_vector_to_string_symbol, sc->type_names[T_BYTE_VECTOR]));
   if (byte_vector_length(v) > sc->max_string_length)
-    error_nr(sc, sc->out_of_range_symbol, 
+    error_nr(sc, sc->out_of_range_symbol,
 	     set_elist_3(sc, wrap_string(sc, "byte-vector->string byte-vector is too large: (> ~D ~D) (*s7* 'max-string-length)", 81),
 			 wrap_integer(sc, byte_vector_length(v)), wrap_integer(sc, sc->max_string_length)));
   return(s7_copy_1(sc, sc->byte_vector_to_string_symbol, set_plist_2(sc, v, make_empty_string(sc, byte_vector_length(v), 0))));
@@ -40134,7 +40187,7 @@ static s7_pointer g_vector(s7_scheme *sc, s7_pointer args)
   if (!is_null(b))
     error_nr(sc, sc->read_error_symbol, set_elist_1(sc, wrap_string(sc, "vector contents list is not a proper list", 41)));
   if (len > sc->max_vector_length)
-    error_nr(sc, sc->out_of_range_symbol, 
+    error_nr(sc, sc->out_of_range_symbol,
 	     set_elist_3(sc, wrap_string(sc, "vector has too many arguments: '~S, but (*s7* 'max-vector-length) is ~D", 71),
 			 args, wrap_integer(sc, sc->max_vector_length)));
   vec = make_simple_vector(sc, len);
@@ -40193,7 +40246,7 @@ static s7_pointer g_float_vector(s7_scheme *sc, s7_pointer args)
   if (!is_null(b))
     error_nr(sc, sc->read_error_symbol, set_elist_1(sc, wrap_string(sc, "float-vector contents list is not a proper list", 47)));
   if (len > sc->max_vector_length)
-    error_nr(sc, sc->out_of_range_symbol, 
+    error_nr(sc, sc->out_of_range_symbol,
 	     set_elist_3(sc, wrap_string(sc, "float-vector has too many arguments: '~S, but (*s7* 'max-vector-length) is ~D", 77),
 			 args, wrap_integer(sc, sc->max_vector_length)));
   vec = make_simple_float_vector(sc, len);
@@ -40242,7 +40295,7 @@ static s7_pointer g_int_vector(s7_scheme *sc, s7_pointer args)
   if (!is_null(b))
     error_nr(sc, sc->read_error_symbol, set_elist_1(sc, wrap_string(sc, "int-vector contents list is not a proper list", 45)));
   if (len > sc->max_vector_length)
-    error_nr(sc, sc->out_of_range_symbol, 
+    error_nr(sc, sc->out_of_range_symbol,
 	     set_elist_3(sc, wrap_string(sc, "int-vector has too many arguments: '~S, but (*s7* 'max-vector-length) is ~D", 75),
 			 args, wrap_integer(sc, sc->max_vector_length)));
   vec = make_simple_int_vector(sc, len);
@@ -40287,7 +40340,7 @@ static s7_pointer g_byte_vector(s7_scheme *sc, s7_pointer args)
   if (!is_null(end))
     error_nr(sc, sc->read_error_symbol, set_elist_1(sc, wrap_string(sc, "byte-vector contents list is not a proper list", 46)));
   if (len > sc->max_vector_length)
-    error_nr(sc, sc->out_of_range_symbol, 
+    error_nr(sc, sc->out_of_range_symbol,
 	     set_elist_3(sc, wrap_string(sc, "byte-vector has too many arguments: '~S, but (*s7* 'max-vector-length) is ~D", 76),
 			 args, wrap_integer(sc, sc->max_vector_length)));
   vec = make_simple_byte_vector(sc, len);
@@ -40528,7 +40581,7 @@ a vector that points to the same elements as the original-vector but with differ
 	      if (vdims_rank(v) > sc->max_vector_dimensions)
 		{
 		  liberate(sc, v);
-		  error_nr(sc, sc->out_of_range_symbol, 
+		  error_nr(sc, sc->out_of_range_symbol,
 			   set_elist_3(sc, wrap_string(sc, "subvector specifies too many dimensions: '~S, but (*s7* 'max-vector-dimensions) is ~D", 85),
 				       dims, wrap_integer(sc, sc->max_vector_dimensions)));
 		}
@@ -40972,7 +41025,7 @@ static s7_int multivector_length(s7_scheme *sc, s7_pointer x, s7_pointer caller)
   if (dims <= 0)                /* 0 if circular, negative if dotted */
     wrong_type_error_nr(sc, caller, 1, x, a_proper_list_string);
   if (dims > sc->max_vector_dimensions)
-    error_nr(sc, sc->out_of_range_symbol, 
+    error_nr(sc, sc->out_of_range_symbol,
 	     set_elist_3(sc, wrap_string(sc, "~S specifies too many dimensions: '~S, but (*s7* 'max-vector-dimensions) is ~D", 78),
 			 x, wrap_integer(sc, sc->max_vector_dimensions)));
   for (y = x, len = 1; is_pair(y); y = cdr(y))
@@ -41171,7 +41224,7 @@ static s7_pointer g_make_float_vector(s7_scheme *sc, s7_pointer args)
   if (len < 0)
     out_of_range_error_nr(sc, sc->make_float_vector_symbol, int_one, p, it_is_negative_string);
   if (len > sc->max_vector_length)
-    error_nr(sc, sc->out_of_range_symbol, 
+    error_nr(sc, sc->out_of_range_symbol,
 	     set_elist_3(sc, wrap_string(sc, "make-float-vector first argument ~D is greater than (*s7* 'max-vector-length), ~D", 81),
 			 wrap_integer(sc, len), wrap_integer(sc, sc->max_vector_length)));
 
@@ -41248,7 +41301,7 @@ static s7_pointer g_make_int_vector(s7_scheme *sc, s7_pointer args)
   if (len < 0)
     out_of_range_error_nr(sc, sc->make_int_vector_symbol, int_one, p, it_is_negative_string);
   if (len > sc->max_vector_length)
-    error_nr(sc, sc->out_of_range_symbol, 
+    error_nr(sc, sc->out_of_range_symbol,
 	     set_elist_3(sc, wrap_string(sc, "make-int-vector first argument ~D is greater than (*s7* 'max-vector-length), ~D", 79),
 			 wrap_integer(sc, len), wrap_integer(sc, sc->max_vector_length)));
 
@@ -41297,7 +41350,7 @@ static s7_pointer g_make_byte_vector(s7_scheme *sc, s7_pointer args)
       if (len < 0)
 	out_of_range_error_nr(sc, sc->make_byte_vector_symbol, int_one, p, it_is_negative_string);
       if (len > sc->max_vector_length)
-	error_nr(sc, sc->out_of_range_symbol, 
+	error_nr(sc, sc->out_of_range_symbol,
 	     set_elist_3(sc, wrap_string(sc, "make-byte-vector first argument ~D is greater than (*s7* 'max-vector-length), ~D", 80),
 			 wrap_integer(sc, len), wrap_integer(sc, sc->max_vector_length)));
     }
@@ -41327,7 +41380,7 @@ static s7_pointer make_byte_vector_p_ii(s7_scheme *sc, s7_int len, s7_int init)
   if (len < 0)
     out_of_range_error_nr(sc, sc->make_byte_vector_symbol, int_one, wrap_integer(sc, len), it_is_negative_string);
   if (len > sc->max_vector_length)
-    error_nr(sc, sc->out_of_range_symbol, 
+    error_nr(sc, sc->out_of_range_symbol,
 	     set_elist_3(sc, wrap_string(sc, "make-byte-vector first argument ~D is greater than (*s7* 'max-vector-length), ~D", 80),
 			 wrap_integer(sc, len), wrap_integer(sc, sc->max_vector_length)));
   if ((init < 0) || (init > 255))
@@ -44977,10 +45030,10 @@ static s7_pointer g_hash_table_1(s7_scheme *sc, s7_pointer args, s7_pointer call
 	     set_elist_3(sc, wrap_string(sc, "~A got an odd number of arguments: ~S", 37), caller, args));
   len /= 2;
   if (len > sc->max_vector_length)
-    error_nr(sc, sc->out_of_range_symbol, 
+    error_nr(sc, sc->out_of_range_symbol,
 	     set_elist_4(sc, wrap_string(sc, "~S passed too many entries (> ~D ~D) (*s7* 'max-vector-length)", 62),
 			 caller, wrap_integer(sc, len), wrap_integer(sc, sc->max_vector_length)));
-  
+
   ht = s7_make_hash_table(sc, (len > sc->default_hash_table_length) ? len : sc->default_hash_table_length);
   if (len > 0)
     for (s7_pointer x = args, y = cdr(args); is_pair(x); x = cddr(x), y = unchecked_cdr(cdr(y)))
@@ -51421,7 +51474,15 @@ static s7_pointer g_catch(s7_scheme *sc, s7_pointer args)
 
   /* not sure about these error checks -- they can be omitted */
   if (!is_thunk(sc, proc))
-    wrong_type_error_nr(sc, sc->catch_symbol, 2, proc, a_thunk_string);
+    {
+      if (is_any_procedure(proc))        /* i.e. c_function, lambda, macro, etc */
+	{
+	  s7_pointer req_args = procedure_required_args(sc, proc);
+	  error_nr(sc, sc->wrong_type_arg_symbol,
+		   set_elist_4(sc, wrap_string(sc, "~A requires ~D argument~P, but catch's second argument should be a thunk", 72), proc, req_args, req_args));
+	}
+      else wrong_type_error_nr(sc, sc->catch_symbol, 2, proc, a_thunk_string);
+    }
   if (!is_applicable(err))
     wrong_type_error_nr(sc, sc->catch_symbol, 3, err, something_applicable_string);
 
@@ -56976,7 +57037,7 @@ static s7_function fx_choose(s7_scheme *sc, s7_pointer holder, s7_pointer cur_en
 	      if (car(arg) == sc->cons_symbol) return(fx_cons_cs);
 	      if ((car(arg) == sc->add_symbol) && (is_t_real(cadr(arg)))) return(fx_add_fs);
 	      if ((car(arg) == sc->subtract_symbol) && (is_t_real(cadr(arg)))) return(fx_subtract_fs);
-	      if ((car(arg) == sc->num_eq_symbol) && (cadr(arg) == int_zero)) 
+	      if ((car(arg) == sc->num_eq_symbol) && (cadr(arg) == int_zero))
 		{
 		  set_opt3_sym(arg, caddr(arg)); /* opt3_location is in use, but the num_eq is ok, so only symbol might care about that info? (or use cdr(arg)) */
 		  return(fx_num_eq_0s);
@@ -77919,9 +77980,11 @@ static void op_finish_expansion(s7_scheme *sc)
     {
       if (stack_top_op(sc) != OP_LOAD_RETURN_IF_EOF) /* latter op if empty expansion at top-level */
 	{
-	  if (stack_top_op(sc) == OP_EVAL_STRING)    /* (eval-string "(reader-cond...)") where reader-cond returns (values) */
+	  /* if (S7_DEBUGGING) fprintf(stderr, "%s[%d] ", op_names[stack_top_op(sc)], sc->input_port_stack_loc); */
+	  if (stack_top_op(sc) != OP_READ_LIST)      /* OP_EVAL_STRING: (eval-string "(reader-cond...)") where reader-cond returns (values) */
 	    sc->value = sc->F;                       /* (eval-string "") -> #f, was nil_string for awhile */
 	  else set_stack_top_op(sc, OP_READ_NEXT);
+	  /* OP_READ_DONE: (eval-string (object->string (with-input-from-string "(reader-cond ((provided? 'surreals) 123))" read))) */
 	}}
   else
     if (is_pair(sc->value))
@@ -78493,7 +78556,7 @@ static void check_set(s7_scheme *sc)
 			 * so, if not any_macro OP_SET_opFAq_A else OP_SET_opMAq_A? or just the latter
 			 * also (set! (car a) b) -> (set-car! a b), (set! (cfunc a) b) -> ((setter cfunc) a b)
 			 * set_opsaq_a as "unknown" equivalent -> all the special cases which check just their case, maybe a no-parcel option
-                         */								      
+                         */
 			fx_annotate_arg(sc, cdr(code), sc->curlet); /* cdr(code) -> value */
 
 			if (car(inner) == sc->s7_starlet_symbol)    /* (set! (*s7* 'field) value) */
@@ -92582,7 +92645,7 @@ void s7_heap_scan(s7_scheme *sc, int32_t typ)
 	    fprintf(stderr, "%s has no holder (alloc: %s[%d])\n", display_80(obj), obj->alloc_func, obj->alloc_line);
 	  else
 	    if (obj->root)
-	      fprintf(stderr, "%s from %s alloc: %s[%d] (%d holder%s, alloc: %s[%d])\n", 
+	      fprintf(stderr, "%s from %s alloc: %s[%d] (%d holder%s, alloc: %s[%d])\n",
 		      display_80(obj), obj->root, obj->alloc_func, obj->alloc_line,
 		      obj->holders, (obj->holders != 1) ? "s" : "", obj->holder->alloc_func, obj->holder->alloc_line);
 	    else fprintf(stderr, "%s (%s, %p, alloc: %s[%d], holder%s: %d %s alloc: %s[%d])\n",
@@ -92742,7 +92805,7 @@ static void add_symbol_table(s7_scheme *sc, s7_pointer mu_let)
       if (k > mx_list) mx_list = k;
     }
   add_slot_unchecked_with_id(sc, mu_let, sc->symbol_table_symbol,
-			     s7_inlet(sc, 
+			     s7_inlet(sc,
 			       s7_list(sc, 10,
 				     sc->size_symbol, make_integer(sc, SYMBOL_TABLE_SIZE),
 				     make_symbol(sc, "max-bin", 7), make_integer(sc, mx_list),
@@ -92780,7 +92843,7 @@ static void add_gc_list_sizes(s7_scheme *sc, s7_pointer mu_let)
 
   add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "gc-lists", 8),
      s7_list(sc, 4, make_integer(sc, loc), make_integer(sc, len), kmg(sc, len * sizeof(s7_pointer)), /* active, total, space allocated */
-       s7_inlet(sc, 
+       s7_inlet(sc,
          s7_list(sc, 28,
 	   sc->string_symbol,                    cons(sc, make_integer(sc, sc->strings->loc),             make_integer(sc, sc->strings->size)),
 	   sc->vector_symbol,                    cons(sc, make_integer(sc, sc->vectors->loc),             make_integer(sc, sc->vectors->size)),
@@ -92923,7 +92986,7 @@ static s7_pointer memory_usage(s7_scheme *sc)
     all_len += blen + ilen * sizeof(s7_int) + flen * sizeof(s7_double) + vlen * sizeof(s7_pointer);
     add_slot_unchecked_with_id(sc, mu_let,
 			       make_symbol(sc, "vectors", 7),
-			       s7_inlet(sc, 
+			       s7_inlet(sc,
 			         s7_list(sc, 10,
 				   make_symbol(sc, "total", 5),  make_integer(sc, sc->vectors->loc + sc->multivectors->loc),
 				   make_symbol(sc, "normal", 6), cons(sc, make_integer(sc, vs), make_integer(sc, vlen)),
@@ -95800,7 +95863,7 @@ s7_scheme *s7_init(void)
   sc->autoload_names_sizes = NULL;
   sc->autoloaded_already = NULL;
   sc->autoload_names_loc = 0;
-#if DISABLE_AUTOLOAD
+#if DISABLE_AUTOLOAD /* might not be defined, so we can't play games */
   sc->is_autoloading = false;
 #else
   sc->is_autoloading = true;
@@ -96615,5 +96678,5 @@ int main(int argc, char **argv)
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * safety for exp->mac? check-define-macro in lint (given eval-string, we can't do this in s7.c I think)
- * 77924 -- what is being cancelled? (unwinds etc) -- maybe push instead?
+ * lots of strings in gc-lists at end?
  */
