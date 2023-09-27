@@ -1419,6 +1419,7 @@ struct s7_scheme {
 #if S7_DEBUGGING
   int32_t *tc_rec_calls;
   bool printing_gc_info;
+  s7_int blocks_allocated;
 #endif
 };
 
@@ -1563,6 +1564,9 @@ static void init_block_lists(s7_scheme *sc)
 {
   for (int32_t i = 0; i < NUM_BLOCK_LISTS; i++)
     sc->block_lists[i] = NULL;
+#if S7_DEBUGGING
+  sc->blocks_allocated = 0;
+#endif
 }
 
 static inline void liberate(s7_scheme *sc, block_t *p)
@@ -1594,6 +1598,9 @@ static void fill_block_list(s7_scheme *sc)
 {
   #define BLOCK_MALLOC_SIZE 256
   block_t *b = (block_t *)Malloc(BLOCK_MALLOC_SIZE * sizeof(block_t)); /* batch alloc means blocks in this batch can't be freed, only returned to the list */
+#if S7_DEBUGGING
+  sc->blocks_allocated += BLOCK_MALLOC_SIZE;
+#endif
   add_saved_pointer(sc, b);
   sc->block_lists[BLOCK_LIST] = b;
   for (int32_t i = 0; i < BLOCK_MALLOC_SIZE - 1; b++, i++)
@@ -3312,7 +3319,7 @@ static s7_pointer slot_expression(s7_pointer p)    \
 #define stack_element(p, i)            unchecked_vector_element(T_Stk(p), i)
 #define stack_elements(p)              unchecked_vector_elements(T_Stk(p))
 #define stack_block(p)                 unchecked_vector_block(T_Stk(p))
-#define stack_top(Sc)          ((Sc)->stack_end - (Sc)->stack_start)
+#define stack_top(Sc)                  ((Sc)->stack_end - (Sc)->stack_start)
 #define temp_stack_top(p)              (T_Stk(p))->object.stk.top
 /* #define stack_flags(p)              (T_Stk(p))->object.stk.flags */
 #define stack_clear_flags(p)           (T_Stk(p))->object.stk.flags = 0
@@ -6643,7 +6650,7 @@ static void process_output_port(s7_scheme *sc, s7_pointer s1)
 static void process_continuation(s7_scheme *sc, s7_pointer s1)
 {
   continuation_op_stack(s1) = NULL;
-  liberate_block(sc, continuation_block(s1));
+  liberate_block(sc, continuation_block(s1)); /* from mallocate_block (s7_make_continuation) */
 }
 
 
@@ -31212,20 +31219,18 @@ static s7_pointer with_input(s7_scheme *sc, s7_pointer port, s7_pointer args)
   return(sc->F);
 }
 
-static s7_pointer procedure_required_args(s7_scheme *sc, s7_pointer x)
+static s7_int procedure_required_args(s7_scheme *sc, s7_pointer x)
 {
   switch (type(x))
     {
-    case T_C_FUNCTION:
-      return(make_integer(sc, c_function_min_args(x)));
-    case T_C_MACRO:
-      return(make_integer(sc, c_macro_min_args(x)));
+    case T_C_FUNCTION: return(c_function_min_args(x));
+    case T_C_MACRO:    return(c_macro_min_args(x));
     case T_CLOSURE: case T_MACRO: case T_BACRO:
       if (closure_arity_unknown(x))
 	closure_set_arity(x, s7_list_length(sc, closure_args(x)));
-      return(make_integer(sc, s7_int_abs(closure_arity(x))));
+      return(s7_int_abs(closure_arity(x)));
     }
-  return(int_zero);
+  return(0);
 }
 
 static s7_pointer g_with_input_from_string(s7_scheme *sc, s7_pointer args)
@@ -31252,7 +31257,7 @@ static s7_pointer g_with_input_from_string(s7_scheme *sc, s7_pointer args)
     {
       if (is_any_procedure(proc))        /* i.e. c_function, lambda, macro, etc */
 	{
-	  s7_pointer req_args = procedure_required_args(sc, proc);
+	  s7_pointer req_args = wrap_integer(sc, procedure_required_args(sc, proc));
 	  error_nr(sc, sc->wrong_type_arg_symbol,
 		   set_elist_4(sc, wrap_string(sc, "~A requires ~D argument~P, but with-input-from-string's second argument should be a thunk", 89),
 			       proc, req_args, req_args));
@@ -31283,7 +31288,7 @@ static s7_pointer g_with_input_from_file(s7_scheme *sc, s7_pointer args)
     {
       if (is_any_procedure(proc))        /* i.e. c_function, lambda, macro, etc */
 	{
-	  s7_pointer req_args = procedure_required_args(sc, proc);
+	  s7_pointer req_args = wrap_integer(sc, procedure_required_args(sc, proc));
 	  error_nr(sc, sc->wrong_type_arg_symbol,
 		   set_elist_4(sc, wrap_string(sc, "~A requires ~D argument~P, but with-input-from-file's second argument should be a thunk", 87),
 			       proc, req_args, req_args));
@@ -35575,7 +35580,7 @@ calls thunk, then returns the collected output"
     {
       if (is_any_procedure(proc))        /* i.e. c_function, lambda, macro, etc */
 	{
-	  s7_pointer req_args = procedure_required_args(sc, proc);
+	  s7_pointer req_args = wrap_integer(sc, procedure_required_args(sc, proc));
 	  error_nr(sc, sc->wrong_type_arg_symbol,
 		   set_elist_4(sc, wrap_string(sc, "~A requires ~D argument~P, but with-output-to-string's first argument should be a thunk", 87),
 			       proc, req_args, req_args));
@@ -35607,7 +35612,7 @@ static s7_pointer g_with_output_to_file(s7_scheme *sc, s7_pointer args)
     {
       if (is_any_procedure(proc))        /* i.e. c_function, lambda, macro, etc */
 	{
-	  s7_pointer req_args = procedure_required_args(sc, proc);
+	  s7_pointer req_args = wrap_integer(sc, procedure_required_args(sc, proc));
 	  error_nr(sc, sc->wrong_type_arg_symbol,
 		   set_elist_4(sc, wrap_string(sc, "~A requires ~D argument~P, but with-output-to-file's second argument should be a thunk", 86),
 			       proc, req_args, req_args));
@@ -51477,7 +51482,7 @@ static s7_pointer g_catch(s7_scheme *sc, s7_pointer args)
     {
       if (is_any_procedure(proc))        /* i.e. c_function, lambda, macro, etc */
 	{
-	  s7_pointer req_args = procedure_required_args(sc, proc);
+	  s7_pointer req_args = wrap_integer(sc, procedure_required_args(sc, proc));
 	  error_nr(sc, sc->wrong_type_arg_symbol,
 		   set_elist_4(sc, wrap_string(sc, "~A requires ~D argument~P, but catch's second argument should be a thunk", 72), proc, req_args, req_args));
 	}
@@ -92356,8 +92361,8 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 static void mark_holdee(s7_pointer holder, s7_pointer holdee, const char *root)
 {
   holdee->holders++;
-  holdee->holder = holder;
-  holdee->root = root;
+  if (holder) holdee->holder = holder;
+  if (root) holdee->root = root;
 }
 
 static void mark_stack_holdees(s7_scheme *sc, s7_pointer p, s7_int top)
@@ -92641,16 +92646,19 @@ void s7_heap_scan(s7_scheme *sc, int32_t typ)
       if (unchecked_type(obj) == typ)
 	{
 	  found_one = true;
-	  if ((obj->holders == 0) || (!obj->holder))
-	    fprintf(stderr, "%s has no holder (alloc: %s[%d])\n", display_80(obj), obj->alloc_func, obj->alloc_line);
+	  if (obj->holders == 0)
+	    fprintf(stderr, "%s found no holder (alloc: %s[%d])\n", display_80(obj), obj->alloc_func, obj->alloc_line);
 	  else
-	    if (obj->root)
-	      fprintf(stderr, "%s from %s alloc: %s[%d] (%d holder%s, alloc: %s[%d])\n",
-		      display_80(obj), obj->root, obj->alloc_func, obj->alloc_line,
-		      obj->holders, (obj->holders != 1) ? "s" : "", obj->holder->alloc_func, obj->holder->alloc_line);
-	    else fprintf(stderr, "%s (%s, %p, alloc: %s[%d], holder%s: %d %s alloc: %s[%d])\n",
-			 display_80(obj), s7_type_names[unchecked_type(obj->holder)], obj->holder, obj->alloc_func, obj->alloc_line,
-			 (obj->holders != 1) ? "s" : "", obj->holders, display(obj->holder), obj->holder->alloc_func, obj->holder->alloc_line);
+	    if (!obj->holder)
+	      fprintf(stderr, "%s has built-in holder (holders: %d, alloc: %s[%d])\n", display_80(obj), obj->holders, obj->alloc_func, obj->alloc_line);
+	    else
+	      if (obj->root)
+		fprintf(stderr, "%s from %s alloc: %s[%d] (%d holder%s, alloc: %s[%d])\n",
+			display_80(obj), obj->root, obj->alloc_func, obj->alloc_line,
+			obj->holders, (obj->holders != 1) ? "s" : "", obj->holder->alloc_func, obj->holder->alloc_line);
+	      else fprintf(stderr, "%s (%s, %p, alloc: %s[%d], holder%s: %d %s alloc: %s[%d])\n",
+			   display_80(obj), s7_type_names[unchecked_type(obj->holder)], obj->holder, obj->alloc_func, obj->alloc_line,
+			   (obj->holders != 1) ? "s" : "", obj->holders, display(obj->holder), obj->holder->alloc_func, obj->holder->alloc_line);
 	}}
   if (!found_one)
     fprintf(stderr, "heap-scan: no %s found\n", s7_type_names[typ]);
@@ -92925,7 +92933,7 @@ static s7_pointer memory_usage(s7_scheme *sc)
   for (i = 0; i < NUM_TYPES; i++)
     {
       if (i > 0) in_use += ts[i];
-      if (ts[i] > 50)
+      if (ts[i] > 0) /* was 50, 26-Sep-23 */
 	{
 	  /* can't use bare type name here ("let" is a syntactic symbol) */
 	  const char *tname = (i == 0) ? "free" : type_name_from_type(i, NO_ARTICLE);
@@ -92936,13 +92944,13 @@ static s7_pointer memory_usage(s7_scheme *sc)
 	  name[0] = (uint8_t)toupper((int)name[0]);
 	  sc->w = cons_unchecked(sc, make_integer(sc, ts[i]), cons(sc, make_symbol(sc, (const char *)name, len), sc->w));
 	}}
-  add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "cells-in-use/free", 17),
-			     cons(sc, make_integer(sc, in_use), make_integer(sc, sc->free_heap_top - sc->free_heap)));
   if (is_pair(sc->w))
-    add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "types", 5), s7_inlet(sc, proper_list_reverse_in_place(sc, sc->w)));
+    add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "heap-by-type", 12), s7_inlet(sc, proper_list_reverse_in_place(sc, sc->w)));
   sc->w = sc->unused;
   /* same for semipermanent cells requires traversing saved_pointers and the alloc and big_alloc blocks up to alloc_k, or keeping explicit counts */
 
+  add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "cells-in-use/free", 17),
+			     cons(sc, make_integer(sc, in_use), make_integer(sc, sc->free_heap_top - sc->free_heap)));
   add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "gc-protected-objects", 20),
 			     cons(sc, make_integer(sc, sc->protected_objects_size - sc->protected_objects_free_list_loc),
 				  make_integer(sc, sc->protected_objects_size)));
@@ -93067,15 +93075,26 @@ static s7_pointer memory_usage(s7_scheme *sc)
   /* free-lists (mallocate) */
   {
     block_t *b;
+#if S7_DEBUGGING
+    s7_int num_blocks = 0;
+#endif
     for (i = 0, len = 0, sc->w = sc->nil; i < TOP_BLOCK_LIST; i++)
       {
 	for (b = sc->block_lists[i], k = 0; b; b = block_next(b), k++);
 	sc->w = cons(sc, make_integer(sc, k), sc->w);
 	len += ((sizeof(block_t) + (1LL << i)) * k);
+#if S7_DEBUGGING
+	num_blocks += k;
+#endif
       }
     for (b = sc->block_lists[TOP_BLOCK_LIST], k = 0; b; b = block_next(b), k++)
       len += (sizeof(block_t) + block_size(b));
     sc->w = cons(sc, make_integer(sc, k), sc->w);
+#if S7_DEBUGGING
+    num_blocks += k;
+    add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "blocks allocated", 16), 
+			       cons(sc, make_integer(sc, num_blocks), make_integer(sc, sc->blocks_allocated)));
+#endif
     add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "free-lists", 10),
 			       s7_inlet(sc, list_2(sc, cons(sc, make_symbol(sc, "bytes", 5), kmg(sc, len)),
 						   cons(sc, make_symbol(sc, "bins", 4), proper_list_reverse_in_place(sc, sc->w)))));
@@ -96633,14 +96652,14 @@ int main(int argc, char **argv)
  * thook     ----   ----   2590   2030   2044   2044
  * tauto     ----   ----   2562   2048   2046   2046
  * lt        2187   2172   2150   2185   2198   2198
- * dup       3805   3788   2492   2239   2214   2214
+ * dup       3805   3788   2492   2239   2214   2219
  * tcopy     8035   5546   2539   2375   2381   2381
  * tread     2440   2421   2419   2408   2399   2399
  * fbench    2688   2583   2460   2430   2458   2458
  * trclo     2735   2574   2454   2445   2461   2461
  * titer     2865   2842   2641   2509   2465   2465
  * tload     ----   ----   3046   2404   2502   2502
- * tmat      3065   3042   2524   2578   2582   2589
+ * tmat      3065   3042   2524   2578   2582   2586
  * tb        2735   2681   2612   2604   2630   2630
  * tsort     3105   3104   2856   2804   2828   2828
  * tobj      4016   3970   3828   3577   3511   3511
@@ -96654,19 +96673,19 @@ int main(int argc, char **argv)
  * tstar     6139   5923   5519   4449   4553   4553
  * tmap      8869   8774   4489   4541   4618   4618
  * tshoot    5525   5447   5183   5055   5044   5044
- * tform     5357   5348   5307   5316   5167   5162
+ * tform     5357   5348   5307   5316   5167   5161
  * tstr      6880   6342   5488   5162   5199   5203
  * tnum      6348   6013   5433   5396   5408   5403
  * tlamb     6423   6273   5720   5560   5620   5620
  * tmisc     8869   7612   6435   6076   6216   6216
- * tgsl      8485   7802   6373   6282   6230   6230
+ * tgsl      8485   7802   6373   6282   6230   6233
  * tlist     7896   7546   6558   6240   6280   6280
  * tset      ----   ----   ----   6260   6306   6306
  * tari      13.0   12.7   6827   6543   6490   6490
  * trec      6936   6922   6521   6588   6581   6581
- * tleft     10.4   10.2   7657   7479   7611   7611
+ * tleft     10.4   10.2   7657   7479   7611   7610
  * tgc       11.9   11.1   8177   7857   7958   7958
- * thash     11.8   11.7   9734   9479   9535   9535
+ * thash     11.8   11.7   9734   9479   9535   9536
  * cb        11.2   11.0   9658   9564   9626   9626
  * tgen      11.2   11.4   12.0   12.1   12.1   12.1
  * tall      15.6   15.6   15.6   15.6   15.1   15.1
@@ -96678,5 +96697,9 @@ int main(int argc, char **argv)
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * safety for exp->mac? check-define-macro in lint (given eval-string, we can't do this in s7.c I think)
- * lots of strings in gc-lists at end?
+ * lots of strings in gc-lists at end? track block owners?
+ * s7_free with t725: see t5.c, stack_block if reallocate, what about (*libc* regex) and libgsl stuff? (regex is calloc'd in libc_s7.c -- need_free?
+ *   t5 -> tests7? which stack_block is not freed?
+ *   if (block_data(stack_block(sc->stack))) free(block_data(stack_block(sc->stack))); almost works -- check index? (get index from resize_stack)
+ *   free.supp(?) for leastfix mostfix s7_starlet_immutable_field and the lib gsl stuff above
  */
