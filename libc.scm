@@ -692,6 +692,7 @@
                     {return(s7_make_integer(sc, ((struct stat *)s7_c_pointer_with_type(sc, s7_car(args), s7_make_symbol(sc, \"stat*\"), __func__, 1))->st_ctime));}
                   static s7_pointer g_stat_make(s7_scheme *sc, s7_pointer args)
                     {return(s7_make_c_pointer_with_type(sc, (void *)calloc(1, sizeof(struct stat)), s7_make_symbol(sc, \"stat*\"), s7_f(sc)));}
+                  static s7_pointer g_stat_free(s7_scheme *sc, s7_pointer args) {free(s7_c_pointer(s7_car(args))); return(s7_f(sc));}
                   ")
 	   
 	   (C-function ("S_ISDIR" g_isdir "" 1))
@@ -715,6 +716,7 @@
 	   (C-function ("stat.st_atime" g_st_atime "" 1))
 	   (C-function ("stat.st_mtime" g_st_mtime "" 1))
 	   (C-function ("stat.st_ctime" g_st_ctime "" 1))
+	   (C-function ("stat.free" g_stat_free "" 1))
 	   (C-function ("stat.make" g_stat_make "" 0))
 	   
 	   
@@ -741,6 +743,7 @@
                     (*tm) = (time_t)s7_integer(s7_car(args));
                     return(s7_make_c_pointer_with_type(sc, (void *)tm, s7_make_symbol(sc, \"time_t*\"), s7_f(sc)));
                   }
+                  static s7_pointer g_time_free(s7_scheme *sc, s7_pointer args) {free(s7_c_pointer(s7_car(args))); return(s7_f(sc));}
                   static s7_pointer g_strftime(s7_scheme *sc, s7_pointer args) 
                   {
                     return(s7_make_integer(sc, (s7_int)strftime((char *)s7_string(s7_car(args)), 
@@ -817,6 +820,7 @@
                   }
                   ")
 	   (C-function ("time.make" g_time_make "" 1))
+	   (C-function ("time.free" g_time_free "" 1))
 	   (C-function ("mktime" g_mktime "" 1))
 	   (C-function ("strftime" g_strftime "" 4))
 	   (C-function ("gettimeofday" g_gettimeofday "" 0))
@@ -1018,6 +1022,7 @@
 			 (int wordexp (char* wordexp_t* int))
 			 (void wordfree (wordexp_t*))
 			 (in-C "
+                  static s7_pointer g_wordexp_free(s7_scheme *sc, s7_pointer args) {free(s7_c_pointer(s7_car(args))); return(s7_f(sc));}
                   static s7_pointer g_wordexp_make(s7_scheme *sc, s7_pointer args)
                            {return(s7_make_c_pointer_with_type(sc, (void *)calloc(1, sizeof(wordexp_t)), s7_make_symbol(sc, \"wordexp_t*\"), s7_f(sc)));}
                            static s7_pointer g_wordexp_we_wordc(s7_scheme *sc, s7_pointer args)
@@ -1034,6 +1039,7 @@
                              return(p);
                            }")
 			 (C-function ("wordexp.make" g_wordexp_make "" 0))
+			 (C-function ("wordexp.free" g_wordexp_free "" 1))
 			 (C-function ("wordexp.we_wordc" g_wordexp_we_wordc "" 1))
 			 (C-function ("wordexp.we_wordv" g_wordexp_we_wordv "" 1))))
 	   ;; (with-let (sublet *libc*) (let ((w (wordexp.make))) (wordexp "~/cl/snd-gdraw" w 0) (wordexp.we_wordv w))) -> ("/home/bil/cl/snd-gdraw")

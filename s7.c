@@ -6466,11 +6466,12 @@ static s7_pointer g_immutable(s7_scheme *sc, s7_pointer args)
 #if S7_DEBUGGING
 static s7_int gc_protect_2(s7_scheme *sc, s7_pointer x, int32_t line)
 {
+  static bool already_warned = false;
   s7_int loc = s7_gc_protect(sc, x);
-  if (loc > 8192)
+  if ((sc->safety > NO_SAFETY) && (!already_warned) && (loc > 8192))
     {
-      fprintf(stderr, "infinite loop or memory leak at line %d %s?\n", line, string_value(s7_object_to_string(sc, current_code(sc), false)));
-      abort();
+      already_warned = true;
+      fprintf(stderr, "s7_gc_protect has protected more than 8192 values? (line: %d, code: %s)\n", line, string_value(s7_object_to_string(sc, current_code(sc), false)));
     }
   return(loc);
 }
@@ -8231,6 +8232,7 @@ static uint32_t resize_stack_unchecked(s7_scheme *sc)
   block_t *nb = reallocate(sc, ob, new_size * sizeof(s7_pointer));
   block_info(nb) = NULL;
   stack_block(sc->stack) = nb;
+  /* if (block_index(nb) == TOP_BLOCK_LIST) fprintf(stderr, "top %u\n", new_size); */
   stack_elements(sc->stack) = (s7_pointer *)block_data(nb);
   {
     s7_pointer *orig = stack_elements(sc->stack);
@@ -96291,9 +96293,9 @@ static void gc_list_free(gc_list_t *g)
 
 void s7_free(s7_scheme *sc)
 {
-  /* free the memory associated with sc
+  /* free the memory associated with sc (not globals since we might have multiple s7 interpreters running)
    *   most pointers are in the saved_pointers table, but any that might be realloc'd need to be handled explicitly
-   * valgrind --leak-check=full --show-reachable=yes --suppressions=/home/bil/cl/free.supp repl s7test.scm
+   * valgrind --leak-check=full --show-reachable=no --suppressions=/home/bil/cl/free.supp repl s7test.scm
    * valgrind --leak-check=full --show-reachable=yes --gen-suppressions=all --error-limit=no --log-file=raw.log repl s7test.scm
    */
   s7_int i;
@@ -96417,6 +96419,15 @@ void s7_free(s7_scheme *sc)
   for (block_t *top = sc->block_lists[TOP_BLOCK_LIST]; top; top = block_next(top))
     if (block_data(top))
       free(block_data(top));
+
+  /* an experiment */
+  if ((block_index(stack_block(sc->stack)) == TOP_BLOCK_LIST) && /* realloc'd data not yet freed (via liberate normally) */
+      (block_data(stack_block(sc->stack))))
+    {
+      free(block_data(stack_block(sc->stack)));
+      block_data(stack_block(sc->stack)) = NULL;
+    }
+  /* sc->protected_objects also -- other such blocks need to be found through their holder? top_block_list size is 8192 apparently */
 
   for (i = 0; i < sc->saved_pointers_loc; i++)
     free(sc->saved_pointers[i]);
@@ -96697,9 +96708,6 @@ int main(int argc, char **argv)
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * safety for exp->mac? check-define-macro in lint (given eval-string, we can't do this in s7.c I think)
- * lots of strings in gc-lists at end? track block owners?
- * s7_free with t725: see t5.c, stack_block if reallocate, what about (*libc* regex) and libgsl stuff? (regex is calloc'd in libc_s7.c -- need_free?
- *   t5 -> tests7? which stack_block is not freed?
- *   if (block_data(stack_block(sc->stack))) free(block_data(stack_block(sc->stack))); almost works -- check index? (get index from resize_stack)
- *   free.supp(?) for leastfix mostfix s7_starlet_immutable_field and the lib gsl stuff above
+ * lots of strings in gc-lists at end?
+ * s7_free with t725: see t5.c -- add to tests7? also ffitest for gc_protected_objects size check.
  */

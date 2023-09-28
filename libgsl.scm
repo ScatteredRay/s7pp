@@ -202,7 +202,10 @@
 	 (int (CblasRowMajor CblasColMajor CblasNoTrans CblasTrans CblasConjTrans
 	       CblasUpper CblasLower CblasNonUnit CblasUnit CblasLeft CblasRight))
 	   
-	   
+	 (in-C "static s7_pointer g_free(s7_scheme *sc, s7_pointer args)
+                 {free(s7_c_pointer(s7_car(args))); return(s7_f(sc));}")
+	 (C-function ("free" g_free "" 1))
+
 	 ;; redirect GSL errors to s7_error
 	 (in-C "
                 static s7_scheme *gsl_error_s7;
