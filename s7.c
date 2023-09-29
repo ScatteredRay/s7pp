@@ -92852,7 +92852,11 @@ static void add_gc_list_sizes(s7_scheme *sc, s7_pointer mu_let)
                 sc->multivectors->loc + sc->weak_refs->loc + sc->weak_hash_iterators->loc + sc->opt1_funcs->loc;
 
   add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "gc-lists", 8),
-     s7_list(sc, 4, make_integer(sc, loc), make_integer(sc, len), kmg(sc, len * sizeof(s7_pointer)), /* active, total, space allocated */
+   s7_inlet(sc,
+     s7_list(sc, 6, 
+	     make_symbol(sc, "active/total", 12), cons(sc, make_integer(sc, loc), make_integer(sc, len)),
+	     make_symbol(sc, "total-bytes", 11), kmg(sc, len * sizeof(s7_pointer)),
+	     make_symbol(sc, "lists", 5),
        s7_inlet(sc,
          s7_list(sc, 28,
 	   sc->string_symbol,                    cons(sc, make_integer(sc, sc->strings->loc),             make_integer(sc, sc->strings->size)),
@@ -92868,7 +92872,7 @@ static void add_gc_list_sizes(s7_scheme *sc, s7_pointer mu_let)
 	   make_symbol(sc, "undefined", 9),      cons(sc, make_integer(sc, sc->undefineds->loc),          make_integer(sc, sc->undefineds->size)),
 	   make_symbol(sc, "weak-ref", 8),       cons(sc, make_integer(sc, sc->weak_refs->loc),           make_integer(sc, sc->weak_refs->size)),
 	   make_symbol(sc, "weak-hash-iter", 14),cons(sc, make_integer(sc, sc->weak_hash_iterators->loc), make_integer(sc, sc->weak_hash_iterators->size)),
-	   make_symbol(sc, "opt1-func", 9),      cons(sc, make_integer(sc, sc->opt1_funcs->loc),          make_integer(sc, sc->opt1_funcs->size))))));
+	   make_symbol(sc, "opt1-func", 9),      cons(sc, make_integer(sc, sc->opt1_funcs->loc),          make_integer(sc, sc->opt1_funcs->size)))))));
 }
 
 /* handling all *s7* fields via fallbacks lets us use direct field accesses in the rest of s7, and avoids
@@ -96291,6 +96295,15 @@ static void gc_list_free(gc_list_t *g)
   free(g);
 }
 
+static void big_block_free(s7_scheme *sc, block_t *block)
+{
+  if ((block_index(block) == TOP_BLOCK_LIST) && (block_data(block)))
+    {
+      free(block_data(block));
+      block_data(block) = NULL;
+    }
+}
+
 void s7_free(s7_scheme *sc)
 {
   /* free the memory associated with sc (not globals since we might have multiple s7 interpreters running)
@@ -96420,14 +96433,9 @@ void s7_free(s7_scheme *sc)
     if (block_data(top))
       free(block_data(top));
 
-  /* an experiment */
-  if ((block_index(stack_block(sc->stack)) == TOP_BLOCK_LIST) && /* realloc'd data not yet freed (via liberate normally) */
-      (block_data(stack_block(sc->stack))))
-    {
-      free(block_data(stack_block(sc->stack)));
-      block_data(stack_block(sc->stack)) = NULL;
-    }
-  /* sc->protected_objects also -- other such blocks need to be found through their holder? top_block_list size is 8192 apparently */
+  big_block_free(sc, stack_block(sc->stack));
+  big_block_free(sc, vector_block(sc->protected_objects));
+  big_block_free(sc, rootlet_block(sc->rootlet));
 
   for (i = 0; i < sc->saved_pointers_loc; i++)
     free(sc->saved_pointers[i]);
@@ -96709,5 +96717,4 @@ int main(int argc, char **argv)
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * safety for exp->mac? check-define-macro in lint (given eval-string, we can't do this in s7.c I think)
  * lots of strings in gc-lists at end?
- * s7_free with t725: see t5.c -- add to tests7? also ffitest for gc_protected_objects size check.
  */

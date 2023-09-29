@@ -3,6 +3,7 @@
  * gcc -o ffitest ffitest.c -g3 -Wall s7.o -lm -I. -ldl -Wl,-export-dynamic
  * gcc -o ffitest ffitest.c -g3 -Wall s7.o -DWITH_GMP -lgmp -lmpfr -lmpc -lm -I. -ldl -Wl,-export-dynamic
  * gcc -o ffitest ffitest.c -fsanitize=address -fsanitize=bounds -fsanitize=pointer-compare -g3 -Wall -lasan -lubsan s7.o -lm -I. -ldl -Wl,-export-dynamic
+ * valgrind --leak-check=full --show-reachable=no --suppressions=/home/bil/cl/free.supp ffitest
  */
 
 #include <stdlib.h>
@@ -2801,6 +2802,30 @@ int main(int argc, char **argv)
   }
 
   s7_make_continuation(sc);
+
+  { /* check realloc'd large block handling in s7_free */
+    int i;
+    s7_int addrs[20000];
+    
+    for (i = 0; i < 20000; i++)   /* gc_protected_objects */
+      addrs[i] = s7_gc_protect(sc, s7_cons(sc, s7_f(sc), s7_t(sc)));
+    
+    for (i = 19999; i >= 0; i--)  
+      s7_gc_unprotect_at(sc, addrs[i]);
+    
+    for (i = 0; i < 10000; i++)   /* rootlet */
+      {
+	char buf[128];
+	snprintf(buf, 128, "sym-%d", i);
+	s7_define(sc, s7_nil(sc), s7_make_symbol(sc, (const char *)buf), s7_make_integer(sc, i));
+      }
+    
+    for (i = 0; i < 10000; i++)   /* stack */
+      {
+	s7_pointer p = s7_make_vector(sc, 3);
+	s7_gc_protect_via_stack(sc, p);
+	s7_object_to_string(sc, p, false); /* for check_stack_size */
+      }}
 
   s7_quit(sc);
   free(perm1);
