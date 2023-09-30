@@ -42504,7 +42504,13 @@ static int32_t sort_r_arg_swap(void *s, const void *aa, const void *bb)
 #endif
 
 /* qsort_r in Linux requires _GNU_SOURCE and is different from q_sort_r in FreeBSD, neither matches qsort_s in Windows
- *  this code tested only in Linux and the mac -- my virtualbox freebsd died, netbsd and openbsd run using fallback code.
+ *   this code tested only in Linux and the mac -- my virtualbox freebsd died, netbsd and openbsd run using fallback code.
+ *
+ *   qsort_r allocates an internal array (msort.c line 221) if the original array is > 1024 elements (or whatever),
+ *   then calls the sort comparison function in a loop, after which it frees its temporary array.  This is an unavoidable
+ *   memory leak if the comparison function calls s7_error (or its equivalent) which longjmps to the nearest catch
+ *   (or, sigh, segfaults if none exists).  I can't see any way to hack around this memory leak -- don't raise
+ *   an error in the sort function!
  */
 static void local_qsort_r(void *base, size_t nmemb, size_t size, int32_t (*compar)(const void *, const void *, void *), void *arg)
 {
@@ -51041,6 +51047,8 @@ static s7_pointer stacktrace_1(s7_scheme *sc, s7_int frames_max, s7_int code_col
 	    notes = stacktrace_walker(sc, err_code, current_let, NULL, code_cols, total_cols, notes_start_col, as_comment, 0);
 	  strp = stacktrace_add_func(sc, f, err_code, string_value(errstr), notes, code_cols, as_comment);
 	  str = (char *)block_data(strp);
+	  if ((S7_DEBUGGING) && (notes == str)) fprintf(stderr, "%s[%d]: notes==str\n", __func__, __LINE__);
+	  if (notes) free(notes); /* copied into strp, 29-Sep-23 -- see below: maybe check that notes!=str? */
 	}
       loc = stacktrace_find_error_hook_quit(sc); /* if OP_ERROR_HOOK_QUIT is in the stack, jump past it! */
       if (loc > 0) top = (loc + 1) / 4;
@@ -51077,7 +51085,7 @@ static s7_pointer stacktrace_1(s7_scheme *sc, s7_int frames_max, s7_int code_col
 			notes = stacktrace_walker(sc, code, e, NULL, code_cols, total_cols, notes_start_col, as_comment, 0);
 		      newp = stacktrace_add_func(sc, f, code, codestr, notes, code_cols, as_comment);
 		      newstr = (char *)block_data(newp);
-
+		      if ((S7_DEBUGGING) && (notes == newstr)) fprintf(stderr, "%s[%d]: notes=newstr\n", __func__, __LINE__);
 		      if ((notes) && (notes != newstr) && (is_let(e)) && (e != sc->rootlet))
 			free(notes);
 
@@ -52237,7 +52245,7 @@ static noreturn void error_nr(s7_scheme *sc, s7_pointer type, s7_pointer info)
       (hook_has_functions(sc->error_hook)))
     {
       s7_pointer error_hook_funcs = s7_hook_functions(sc, sc->error_hook);
-      /* (set! (hook-functions *error-hook*) (list (lambda (h) (format *stderr* "got error ~A~%" (h 'args))))) */
+      /* (set! (hook-functions *error-hook*) (list (lambda (h) (format *stderr* "got error ~A~%" (h 'data))))) */
       let_set(sc, closure_let(sc->error_hook), sc->body_symbol, sc->nil);
       let_set(sc, closure_let(sc->let_temp_hook), sc->body_symbol, error_hook_funcs);
       /* if the *error-hook* functions trigger an error, we had better not have hook_functions(*error-hook*) still set! */
@@ -52251,6 +52259,7 @@ static noreturn void error_nr(s7_scheme *sc, s7_pointer type, s7_pointer info)
        */
       sc->curlet = make_let(sc, closure_let(sc->code));
       eval(sc, OP_APPLY_LAMBDA);
+      /* we'll longjmp below -- is that really what we want? */
     }
   else
     {
@@ -96653,6 +96662,8 @@ int main(int argc, char **argv)
  *
  * (s7.c compile time 27-Oct-22 49 secs)
  * musl works, but there is some problem in libgsl.scm with gsl/gsl_blas.h I think
+ *
+ * valgrind --leak-check=full --show-reachable=no --suppressions=/home/bil/cl/free.supp repl s7test.scm
  */
 #endif
 #endif
@@ -96717,4 +96728,6 @@ int main(int argc, char **argv)
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * safety for exp->mac? check-define-macro in lint (given eval-string, we can't do this in s7.c I think)
  * lots of strings in gc-lists at end?
+ * stack_trace_walker -> ffitest if possible, big allocs in t725 to probe?
+ * catch in C outside scheme code? setting *error-hook* doesn't help -- it falls into the longjmp
  */

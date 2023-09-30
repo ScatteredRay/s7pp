@@ -2801,8 +2801,6 @@ int main(int argc, char **argv)
     s7_set_current_input_port(sc, old_port);
   }
 
-  s7_make_continuation(sc);
-
   { /* check realloc'd large block handling in s7_free */
     int i;
     s7_int addrs[20000];

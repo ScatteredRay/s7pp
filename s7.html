@@ -2101,6 +2101,10 @@ function passed as its second argument:
 <em class="gray">(0 1 2 3 4 5 6 7 8 9)</em>
 </pre>
 
+<p>sort! calls qsort or qsort_r; if the sequence is large (more than 1024 elements?), qsort_r may allocate an internal array;
+if the comparison function raises an error, this internal array will probably not be freed.
+</p>
+
 <p>Underlying some of these functions are generic iterators, also built-into s7:
 </p>
 
@@ -4797,7 +4801,7 @@ constants.  *read-error-hook* provides a way to handle these weird cases.  If a 
 is encountered that s7 can't deal with, *read-error-hook* is called with two arguments,
  #t and the string representing the constant.  If you set (hook 'result), that result is
 returned to the reader.  Otherwise a 'read-error is raised and you drop into the error handler.
-Similarly, if some bizaare \ use occurs, *read-error-hook* is called with two arguments,
+Similarly, if some bizarre \ use occurs, *read-error-hook* is called with two arguments,
 #f and the offending character.  If you return a character, it is passed to the reader;
 otherwise you get an error.  lint.scm has an example.
 </p>
