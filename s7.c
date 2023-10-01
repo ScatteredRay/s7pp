@@ -96730,4 +96730,6 @@ int main(int argc, char **argv)
  * lots of strings in gc-lists at end?
  * stack_trace_walker -> ffitest if possible, big allocs in t725 to probe?
  * catch in C outside scheme code? setting *error-hook* doesn't help -- it falls into the longjmp
+ * dumb errmsg: (let ((#_abs 3)) abs): error: bad variable (abs 3) in let (it is not a symbol) in (let ((abs 3)) abs)
+ * s7test or6 t101 6, 7, 8, 9, 15 etc
  */
