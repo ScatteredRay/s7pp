@@ -96731,5 +96731,8 @@ int main(int argc, char **argv)
  * stack_trace_walker -> ffitest if possible, big allocs in t725 to probe?
  * catch in C outside scheme code? setting *error-hook* doesn't help -- it falls into the longjmp
  * dumb errmsg: (let ((#_abs 3)) abs): error: bad variable (abs 3) in let (it is not a symbol) in (let ((abs 3)) abs)
- * s7test or6 t101 6, 7, 8, 9, 15 etc
+ * s7.html: replace name-of-thing with thing-itself in expanded code, #_ for built-ins, , for locals (and exprs regarding macro args)
+ *   give more examples (cond+#_else) maybe 'or (let ((else #f)) (cond ((= 1 2) 1) (#_else 3)))
+ *   gensym guarantees symbol is unique, and gensym's can only set their env once
+ * apply <mumble>: try to give var that gave the function being applied
  */

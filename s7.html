@@ -85,6 +85,16 @@
 		      -moz-border-radius: 4px;
 		      -webkit-border-radius: 4px;
 		      } 
+        DIV.smallseparator {margin-top: 10px;
+	               margin-bottom: 10px;
+	               border: 2px solid #00ff00; /* green */
+		       background-color: #f5f5dc; /* beige */
+		       padding-top: 4px;
+		       width: 20%;
+		      border-radius: 4px;
+		      -moz-border-radius: 4px;
+		      -webkit-border-radius: 4px;
+		      } 
         BODY.body {background-color: #ffffff;    /* white */
 	           margin-right: 20px;
 	           margin-left: 20px; 
@@ -1187,8 +1197,17 @@ other hand, seem unnecessary.
 </div>
 </blockquote>
 
+<div class="smallseparator" id="hygmac"><h4><center>hygienic macros</center></h4></div>
+
+<div class="indented">
+tldr: To make a macro hygienic, in the expanded code replace the names of things with the things themselves.  For built-in values, use "#_",
+#_abs rather than abs.  For macro-definition-time variables, use ",".  If possible, replace other names with gensyms.
+As a last resort, use the explicit environment functions like let-ref and with-let.
+</div>
+
 <p>s7 macros are not hygienic.  For example,
 </p>
+
 
 <pre class="indented">
 &gt; (define-macro (mac b) 
@@ -1368,14 +1387,10 @@ control over the environment at any point:
 </pre>
 
 <p>Hygienic macros are trivial!  Who needs syntax-rules?
-To avoid the variable capture, avoid local variables in the generated code, or
+To avoid the variable capture, avoid local variables in the generated code, use gensym, or
 protect them via with-let; to avoid shadowing of functions and syntax, make the
 environment explicit (via #_ for example).
-s7's lint.scm will warn you about a problematic macro expansion, so I'd
-say just write macros as simply as possible, then let lint tell you
-that it's time to do the with-let shuffle. When that happens, wrap the macro body in
-a with-let that captures the current environment, and at each use of a macro argument
-wrap it in a with-let that re-establishes that environment. 
+s7's lint.scm will try to warn you about a problematic macro expansion.
 </p>
 
 <blockquote>
@@ -1418,6 +1433,7 @@ wrap it in a with-let that re-establishes that environment.
 </div>
 </blockquote>
 
+<br>
 <p>
 If you want the macro's expanded result
 to be evaluated in its definition environment:
@@ -1434,6 +1450,8 @@ to be evaluated in its definition environment:
 	  (mac-1 1))))
 </pre>
 
+
+<!--
 <blockquote>
 <div class="indented">
 <p>Here are some variations on "unless", inspired by the wikipedia hygienic macro page:
@@ -1489,6 +1507,8 @@ to be evaluated in its definition environment:
 </pre>
 </div>
 </blockquote>      
+-->
+
 
 <!--
 (define (tree-quote tree args)
