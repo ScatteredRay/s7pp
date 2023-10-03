@@ -959,7 +959,7 @@ wants an expression:
 <em class="gray">(+ 1 32)</em>
 </pre>
 
-<p>gensym returns a symbol that is guaranteed to be unused.  It takes an optional string argument
+<p>gensym returns a symbol that is guaranteed to be unique.  It takes an optional string argument
 giving the new symbol name's prefix.  gensym? returns #t if its argument is a symbol created by gensym.
 </p>
 
@@ -1201,13 +1201,12 @@ other hand, seem unnecessary.
 
 <div class="indented">
 tldr: To make a macro hygienic, in the expanded code replace the names of things with the things themselves.  For built-in values, use "#_",
-#_abs rather than abs.  For macro-definition-time variables, use ",".  If possible, replace other names with gensyms.
+#_abs rather than abs.  For macro-definition-time variables, use ",abs" rather than "abs".  If possible, replace other names with gensyms.
 As a last resort, use the explicit environment functions like let-ref and with-let.
 </div>
 
 <p>s7 macros are not hygienic.  For example,
 </p>
-
 
 <pre class="indented">
 &gt; (define-macro (mac b) 
@@ -1387,10 +1386,34 @@ control over the environment at any point:
 </pre>
 
 <p>Hygienic macros are trivial!  Who needs syntax-rules?
-To avoid the variable capture, avoid local variables in the generated code, use gensym, or
-protect them via with-let; to avoid shadowing of functions and syntax, make the
-environment explicit (via #_ for example).
-s7's lint.scm will try to warn you about a problematic macro expansion.
+Here's an example of the while macro in stuff.scm before and after 
+hygienification (using "exit" rather than "break"):
+</p>
+
+<pre>
+(define-macro (innocent-while test . body)
+  `(call-with-exit
+    (lambda (exit)
+      (let loop ()
+	(call-with-exit
+	 (lambda (continue)
+	   (do () ((not ,test) (exit))
+	     ,@body)))
+	(loop)))))
+
+(define-macro (cynical-while test . body)
+  (let ((loop (gensym)))
+    `(#_call-with-exit
+       (#_lambda (exit)
+         (#_let ,loop ()
+           (#_call-with-exit
+	     (#_lambda (continue)
+	       (#_do () ((#_not ,test) (exit))
+	         ,@body)))
+	   (,loop))))))
+</pre>
+<p>There are many more examples in s7test.scm (see especially the "or" macros
+toward the end of s7test.scm).
 </p>
 
 <blockquote>
@@ -1433,6 +1456,7 @@ s7's lint.scm will try to warn you about a problematic macro expansion.
 </div>
 </blockquote>
 
+<!--
 <br>
 <p>
 If you want the macro's expanded result
@@ -1449,7 +1473,7 @@ to be evaluated in its definition environment:
     (list (mac 1) 
 	  (mac-1 1))))
 </pre>
-
+-->
 
 <!--
 <blockquote>

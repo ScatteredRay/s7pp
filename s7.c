@@ -8552,7 +8552,7 @@ s7_pointer s7_gensym(s7_scheme *sc, const char *prefix)
     s7_int slen = catstrs(name, len, "{", (prefix) ? prefix : "", "}-", pos_int_to_str_direct(sc, sc->gensym_counter++), (char *)NULL);
     uint64_t hash = raw_string_hash((const uint8_t *)name, slen);
     int32_t location = hash % SYMBOL_TABLE_SIZE;
-    s7_pointer x = new_symbol(sc, name, slen, hash, location);  /* not T_GENSYM -- might be called from outside */
+    s7_pointer x = new_symbol(sc, name, slen, hash, location);  /* not T_GENSYM -- might be called from outside -- what?? (2-Oct-23) */
     liberate(sc, b);
     return(x);
   }
@@ -8573,7 +8573,7 @@ static s7_pointer g_gensym(s7_scheme *sc, s7_pointer args)
   #define Q_gensym s7_make_signature(sc, 2, sc->is_gensym_symbol, sc->is_string_symbol)
 
   const char *prefix;
-  char *name, *p, *base;
+  char *name, *base;
   s7_int len, plen, nlen;
   uint32_t location;
   uint64_t hash;
@@ -8594,7 +8594,7 @@ static s7_pointer g_gensym(s7_scheme *sc, s7_pointer args)
       prefix = "gensym";
       plen = 6;
     }
-  len = plen + 32; /* why 32 -- we need room for the gensym_counter integer, but (length "9223372036854775807") = 19 */
+  len = plen + 32; /* why 32 -- we need room for the gensym_counter integer, but (length "9223372036854775807") = 19, see gensym name collision loop below */
 
   b = mallocate(sc, len + sizeof(block_t) + 2 * sizeof(s7_cell));
   base = (char *)block_data(b);
@@ -8608,14 +8608,16 @@ static s7_pointer g_gensym(s7_scheme *sc, s7_pointer args)
   name[plen + 1] = '}';
   name[plen + 2] = '-'; /* {gensym}-nnn */
 
-  p = pos_int_to_str(sc, sc->gensym_counter++, &len, '\0');
-  memcpy((void *)(name + plen + 3), (void *)p, len);
-  nlen = len + plen + 2;
-  hash = raw_string_hash((const uint8_t *)name, nlen);
-  location = hash % SYMBOL_TABLE_SIZE;
-
-  if ((WITH_WARNINGS) && (!is_null(symbol_table_find_by_name(sc, name, hash, location, nlen))))
-    s7_warn(sc, nlen + 32, "%s is already in use!", name);
+  while (true)
+    {
+      char *p = pos_int_to_str(sc, sc->gensym_counter++, &len, '\0');
+      memcpy((void *)(name + plen + 3), (void *)p, len);
+      nlen = len + plen + 2;
+      hash = raw_string_hash((const uint8_t *)name, nlen);
+      location = hash % SYMBOL_TABLE_SIZE;
+      if (is_null(symbol_table_find_by_name(sc, name, hash, location, nlen))) break;
+      if (sc->safety > NO_SAFETY) s7_warn(sc, nlen, "%s collides with gensym?\n", name);
+    }
 
   /* make-string for symbol name */
   if (S7_DEBUGGING) full_type(str) = 0; /* here and below, this is needed to avoid set_type check errors (mallocate above) */
@@ -9261,6 +9263,8 @@ s7_pointer s7_make_slot(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7_poi
       if (is_slot(global_slot(symbol)))
 	{
 	  slot = global_slot(symbol);
+	  if (is_immutable_slot(slot))     /* 2-Oct-23: (immutable! 'abs) (set! abs 3) */
+	    immutable_object_error_nr(sc, set_elist_3(sc, immutable_error_string, sc->set_symbol, symbol));
 	  symbol_increment_ctr(symbol);
 	  slot_set_value_with_hook(slot, value);
 	  return(slot);
@@ -30778,7 +30782,7 @@ void s7_autoload_set_names(s7_scheme *sc, const char **names, s7_int size)
    *   with less start-up memory.  Then eventually we'll add C libraries and every name in those libraries
    *   will come as an import once dlopen has picked up the library.
    */
-  if (sc->safety > 1)
+  if (sc->safety > IMMUTABLE_VECTOR_SAFETY)
     for (int32_t i = 0, k = 2; k < (size * 2); i += 2, k += 2)
       if ((names[i]) && (names[k]) && (strcmp(names[i], names[k]) > 0))
 	{
@@ -75215,7 +75219,7 @@ static s7_pointer check_let(s7_scheme *sc) /* called only from op_let */
       y = car(carx);
       if (!(is_symbol(y)))
 	error_nr(sc, sc->syntax_error_symbol,
-		 set_elist_3(sc, wrap_string(sc, "bad variable ~S in let (it is not a symbol) in ~A", 49),
+		 set_elist_3(sc, wrap_string(sc, "bad variable name ~S in let (it is not a symbol) in ~A", 54),
 			     carx, object_to_truncated_string(sc, form, 80)));
 
       if (is_constant_symbol(sc, y))
@@ -83960,7 +83964,7 @@ static bool op_define1(s7_scheme *sc)
 	    (s7_is_equivalent(sc, sc->value, slot_value(x)))))                                    /* if value is unchanged, just ignore this (re)definition */
 	syntax_error_with_caller_nr(sc, "~A: ~S is immutable", 19, define1_caller(sc), sc->code); /*   can't use s7_is_equal because value might be NaN, etc */
 
-      if ((sc->safety > 0) &&          /* (define-constant x 3) (define x 3)... */
+      if ((sc->safety > NO_SAFETY) &&          /* (define-constant x 3) (define x 3)... */
 	  (sc->cur_op == OP_DEFINE))
 	s7_warn(sc, 256, "(define %s %s), but %s is a constant\n", display(sc->code), display(sc->value), display(sc->code));
     }
@@ -96714,7 +96718,7 @@ int main(int argc, char **argv)
  * tari      13.0   12.7   6827   6543   6490   6490
  * trec      6936   6922   6521   6588   6581   6581
  * tleft     10.4   10.2   7657   7479   7611   7610
- * tgc       11.9   11.1   8177   7857   7958   7958
+ * tgc       11.9   11.1   8177   7857   7958   7958 [7965 with gensym check]
  * thash     11.8   11.7   9734   9479   9535   9536
  * cb        11.2   11.0   9658   9564   9626   9626
  * tgen      11.2   11.4   12.0   12.1   12.1   12.1
@@ -96730,9 +96734,7 @@ int main(int argc, char **argv)
  * lots of strings in gc-lists at end?
  * stack_trace_walker -> ffitest if possible, big allocs in t725 to probe?
  * catch in C outside scheme code? setting *error-hook* doesn't help -- it falls into the longjmp
- * dumb errmsg: (let ((#_abs 3)) abs): error: bad variable (abs 3) in let (it is not a symbol) in (let ((abs 3)) abs)
- * s7.html: replace name-of-thing with thing-itself in expanded code, #_ for built-ins, , for locals (and exprs regarding macro args)
- *   give more examples (cond+#_else) maybe 'or (let ((else #f)) (cond ((= 1 2) 1) (#_else 3)))
- *   gensym guarantees symbol is unique, and gensym's can only set their env once
+ * dumb errmsg: (let ((#_abs 3)) abs): error: bad variable (abs 3) in let (it is not a symbol) in (let ((abs 3)) abs) 75222
  * apply <mumble>: try to give var that gave the function being applied
+ * rest of immutable rootlet slot checks t718
  */
