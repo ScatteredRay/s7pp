@@ -94,6 +94,7 @@
 		      border-radius: 4px;
 		      -moz-border-radius: 4px;
 		      -webkit-border-radius: 4px;
+		      text-align: center;
 		      } 
         BODY.body {background-color: #ffffff;    /* white */
 	           margin-right: 20px;
@@ -1197,11 +1198,11 @@ other hand, seem unnecessary.
 </div>
 </blockquote>
 
-<div class="smallseparator" id="hygmac"><h4><center>hygienic macros</center></h4></div>
+<div class="smallseparator" id="hygmac"><h4>hygienic macros</h4></div>
 
 <div class="indented">
 tldr: To make a macro hygienic, in the expanded code replace the names of things with the things themselves.  For built-in values, use "#_",
-#_abs rather than abs.  For macro-definition-time variables, use ",abs" rather than "abs".  If possible, replace other names with gensyms.
+"#_abs" rather than "abs".  For macro-definition-time variables, use ",abs" rather than "abs".  If possible, replace other names with gensyms.
 As a last resort, use the explicit environment functions like let-ref and with-let.
 </div>
 

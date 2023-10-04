@@ -2572,6 +2572,10 @@ static void init_types(void)
 #define is_int_optable(p)              has_type1_bit(T_Pair(p), T_INT_OPTABLE)
 #define set_is_int_optable(p)          set_type1_bit(T_Pair(p), T_INT_OPTABLE)
 
+#define T_UNLET                        T_SYMCONS
+#define is_unlet(p)                    has_type1_bit(T_Let(p), T_UNLET)
+#define set_is_unlet(p)                set_type1_bit(T_Let(p), T_UNLET)
+
 /* symbol free here */
 #define T_FULL_HAS_LET_FILE            (1LL << (TYPE_BITS + BIT_ROOM + 25))
 #define T_HAS_LET_FILE                 (1 << 1)
@@ -4807,7 +4811,8 @@ static char *describe_type_bits(s7_scheme *sc, s7_pointer obj)
 						  ((is_pair(obj)) ? " allow-other-keys|no-int-opt" :
 						   ((is_slot(obj)) ? " has-expression" :
 						    ((is_c_function_star(obj)) ? " allow-other-keys" :
-						     " ?17?")))) : "",
+						     ((is_let(obj)) ? " let-removed-from-heap" :
+						      " ?17?"))))) : "",
 	  /* bit 26 */
 	  ((full_typ & T_MUTABLE) != 0) ?        ((is_number(obj)) ? " mutable" :
 						  ((is_symbol(obj)) ? " has-keyword" :
@@ -4855,7 +4860,8 @@ static char *describe_type_bits(s7_scheme *sc, s7_pointer obj)
 						  ((is_any_procedure(obj)) ? " has-let-arg" :
 						   ((is_hash_table(obj)) ? " has-value-type" :
 						    ((is_pair(obj)) ? " int-optable" :
-						     " ?24?")))) : "",
+						     ((is_let(obj)) ? " unlet" :
+						      " ?24?"))))) : "",
 	  /* bit 25+24 */
 	  ((full_typ & T_FULL_HAS_LET_FILE) != 0) ? ((is_let(obj)) ? " has-let-file" :
 						     ((is_any_vector(obj)) ? " typed-vector" :
@@ -4987,7 +4993,7 @@ static bool has_odd_bits(s7_pointer obj)
       (!is_any_macro(obj)) && (!is_any_closure(obj)) && (!is_c_function(obj)) && (!is_syntax(obj)))
     return(true);
   if (((full_typ & T_FULL_SYMCONS) != 0) &&
-      (!is_symbol(obj)) && (!is_any_procedure(obj)) && (!is_hash_table(obj)) && (!is_pair(obj)))
+      (!is_symbol(obj)) && (!is_any_procedure(obj)) && (!is_hash_table(obj)) && (!is_pair(obj)) && (!is_let(obj)))
     return(true);
   if (((full_typ & T_FULL_BINDER) != 0) &&
       ((!is_pair(obj)) && (!is_hash_table(obj)) && (!is_normal_symbol(obj)) && (!is_c_function(obj)) && (!is_syntax(obj))))
@@ -5005,7 +5011,7 @@ static bool has_odd_bits(s7_pointer obj)
       (!is_pair(obj)) && (!is_hash_table(obj)) && (!is_any_macro(obj)) && (!is_symbol(obj)))
     return(true);
   if (((full_typ & T_SETTER) != 0) &&
-      (!is_slot(obj)) && (!is_normal_symbol(obj)) && (!is_pair(obj)) && (!is_let(obj)) && (!is_c_function_star(obj)))
+      (!is_slot(obj)) && (!is_normal_symbol(obj)) && (!is_pair(obj)) && (!is_let(obj)) && (!is_c_function_star(obj)) && (!is_let(obj)))
     return(true);
   if (((full_typ & T_LOCATION) != 0) &&
       (!is_pair(obj)) && (!is_input_port(obj)) && (!is_let(obj)) && (!is_any_procedure(obj)) && (!is_slot(obj)))
@@ -9264,7 +9270,7 @@ s7_pointer s7_make_slot(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7_poi
 	{
 	  slot = global_slot(symbol);
 	  if (is_immutable_slot(slot))     /* 2-Oct-23: (immutable! 'abs) (set! abs 3) */
-	    immutable_object_error_nr(sc, set_elist_3(sc, immutable_error_string, sc->set_symbol, symbol));
+	    immutable_object_error_nr(sc, set_elist_3(sc, immutable_error_string, sc->set_symbol, symbol)); /* TODO: is symbol correct? or "abs in rootlet"? */
 	  symbol_increment_ctr(symbol);
 	  slot_set_value_with_hook(slot, value);
 	  return(slot);
@@ -9378,7 +9384,10 @@ static s7_pointer g_unlet(s7_scheme *sc, s7_pointer unused_args)
   s7_pointer res;
 
   sc->w = make_let(sc, sc->curlet);
-  for (int32_t i = 0; (i < UNLET_ENTRIES) && (is_slot(inits[i])); i++)
+  set_is_unlet(sc->w);
+  if (global_value(sc->else_symbol) != sc->else_symbol)
+    add_slot_checked_with_id(sc, sc->w, sc->else_symbol, initial_value(sc->else_symbol));
+  for (int32_t i = 1; (i < UNLET_ENTRIES) && (is_slot(inits[i])); i++)
     {
       s7_pointer sym = slot_symbol(inits[i]);
       s7_pointer x = slot_value(inits[i]);
@@ -9559,8 +9568,7 @@ to the let target-let, and returns target-let.  (varlet (curlet) 'a 1) adds 'a t
       if (!is_let(e))
 	wrong_type_error_nr(sc, sc->varlet_symbol, 1, e, a_let_string);
       if ((is_immutable_let(e)) || (e == sc->s7_starlet))
-	error_nr(sc, sc->immutable_error_symbol,
-		 set_elist_3(sc, wrap_string(sc, "can't (varlet ~{~S~^ ~}), ~S is immutable", 41), args, e));
+	immutable_object_error_nr(sc, set_elist_3(sc, wrap_string(sc, "can't (varlet ~{~S~^ ~}), ~S is immutable", 41), args, e));
     }
   for (s7_pointer x = cdr(args); is_pair(x); x = cdr(x))
     {
@@ -10171,7 +10179,6 @@ static s7_pointer let_set_1(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7
 {
   if (is_keyword(symbol))
     symbol = keyword_symbol(symbol);
-  symbol_increment_ctr(symbol);
 
   if (let == sc->rootlet)
     {
@@ -10188,20 +10195,28 @@ static s7_pointer let_set_1(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7
 		 set_elist_3(sc, wrap_string(sc, "let-set!: ~A is not defined in ~A", 33), symbol, let));
       if (is_syntax(slot_value(slot)))
 	wrong_type_error_nr(sc, sc->let_set_symbol, 2, symbol, wrap_string(sc, "a non-syntactic symbol", 22));
+      symbol_increment_ctr(symbol);
       slot_set_value(slot, (slot_has_setter(slot)) ? call_setter(sc, slot, value) : value);
       return(slot_value(slot));
     }
+  if (is_unlet(let))
+    immutable_object_error_nr(sc, set_elist_3(sc, wrap_string(sc, "unlet is immutable: (set! ((unlet) '~S) ~S)", 43), symbol, value));
 
   if (let_id(let) == symbol_id(symbol))
    {
      s7_pointer slot = local_slot(symbol);
      if (is_slot(slot))
-       return(checked_slot_set_value(sc, slot, value));
-   }
+       {
+	 symbol_increment_ctr(symbol);
+	 return(checked_slot_set_value(sc, slot, value));
+       }}
   for (s7_pointer x = let; is_let(x); x = let_outlet(x))
     for (s7_pointer y = let_slots(x); tis_slot(y); y = next_slot(y))
       if (slot_symbol(y) == symbol)
-	return(checked_slot_set_value(sc, y, value));
+	{
+	  symbol_increment_ctr(symbol);
+	  return(checked_slot_set_value(sc, y, value));
+	}
 
   if (!has_let_set_fallback(let))
     error_nr(sc, sc->wrong_type_arg_symbol,
@@ -10220,11 +10235,7 @@ static s7_pointer let_set(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7_p
 	return(call_let_set_fallback(sc, let, symbol, value));
       wrong_type_error_nr(sc, sc->let_set_symbol, 2, symbol, a_symbol_string);
     }
-#if 0
-  /* currently let-set! is immutable */
-  if (!is_global(sc->let_set_symbol))
-    check_method(sc, let, sc->let_set_symbol, set_plist_3(sc, let, symbol, value));
-#endif
+  /* currently let-set! is immutable, so we don't have to check for a let-set! method (so let_set! is always global) */
   return(let_set_1(sc, let, symbol, value));
 }
 
@@ -31054,8 +31065,7 @@ static s7_pointer g_provide(s7_scheme *sc, s7_pointer args)
 
   if ((is_immutable(sc->curlet)) &&
       (sc->curlet != sc->nil))
-    error_nr(sc, sc->immutable_error_symbol,
-	     set_elist_2(sc, wrap_string(sc, "can't provide '~S (current environment is immutable)", 52), car(args)));
+    immutable_object_error_nr(sc, set_elist_2(sc, wrap_string(sc, "can't provide '~S (current environment is immutable)", 52), car(args)));
   return(c_provide(sc, car(args)));
 }
 
@@ -34048,6 +34058,7 @@ static void let_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, use_writ
 	}}
   if (obj == sc->rootlet)    {port_write_string(port)(sc, "(rootlet)", 9, port); return;}
   if (obj == sc->s7_starlet) {port_write_string(port)(sc, "*s7*", 4, port);      return;}
+  if (is_unlet(obj))         {port_write_string(port)(sc, "(unlet)", 7, port);   return;}
   if (sc->short_print)       {port_write_string(port)(sc, "#<let>", 6, port);    return;}
 
   /* circles can happen here:
@@ -56692,7 +56703,8 @@ static s7_function fx_choose(s7_scheme *sc, s7_pointer holder, s7_pointer cur_en
     {
       if (is_symbol(arg))
 	{
-	  if ((is_keyword(arg)) || ((arg == sc->else_symbol) && (is_global(arg)))) return(fx_c);
+	  /* if ((is_keyword(arg)) || ((arg == sc->else_symbol) && (is_global(arg)))) return(fx_c); */ /* can't depend on is_global here */
+	  if (is_keyword(arg)) return(fx_c);
 	  return((is_global(arg)) ? fx_g : ((checker(sc, arg, cur_env)) ? fx_s : fx_unsafe_s));
 	}
       return(fx_c);
@@ -76529,8 +76541,7 @@ static bool op_let_temp_s7(s7_scheme *sc) /* all entries are of the form ((*s7* 
     {
       s7_pointer old_value, field = cadadr(caar(p)); /* p: (((*s7* 'expansions?) #f)) -- no keywords here (see check_let_temporarily) */
       if (s7_starlet_immutable_field[s7_starlet_symbol(field)])
-	error_nr(sc, sc->immutable_error_symbol,
-		 set_elist_2(sc, wrap_string(sc, "let-temporarily: can't set! (*s7* '~S)", 38), field));
+	immutable_object_error_nr(sc, set_elist_2(sc, wrap_string(sc, "let-temporarily: can't set! (*s7* '~S)", 38), field));
       old_value = s7_starlet(sc, s7_starlet_symbol(field));
       push_stack(sc, OP_LET_TEMP_S7_UNWIND, old_value, field);
     }
@@ -77375,13 +77386,13 @@ static void check_define(s7_scheme *sc)
   else caller = (sc->cur_op == OP_DEFINE) ? sc->define_symbol : sc->define_constant_symbol;
 
   if (!is_pair(code))
-    syntax_error_with_caller_nr(sc, "~A: nothing to define? ~A", 25, caller, sc->code);     /* (define) */
+    syntax_error_with_caller_nr(sc, "~A: nothing to define? ~A", 25, caller, sc->code); /* (define) */
 
   if (!is_pair(cdr(code)))
     {
       if (is_null(cdr(code)))
-	syntax_error_with_caller_nr(sc, "~A: no value? ~A", 16, caller, sc->code);    /* (define var) */
-      syntax_error_with_caller_nr(sc, "~A: stray dot? ~A", 17, caller, sc->code);     /* (define var . 1) */
+	syntax_error_with_caller_nr(sc, "~A: no value? ~A", 16, caller, sc->code);  /* (define var) */
+      syntax_error_with_caller_nr(sc, "~A: stray dot? ~A", 17, caller, sc->code);   /* (define var . 1) */
     }
   if (!is_pair(car(code)))
     {
@@ -77428,6 +77439,10 @@ static void check_define(s7_scheme *sc)
 	    s7_warn(sc, 256, "%s: syntactic keywords tend to behave badly if redefined: %s\n", display(func), display_80(sc->code));
 	  set_local(func);
 	}
+
+      if ((is_global(func)) && (is_slot(global_slot(func))) && (is_immutable(global_value(func))) && (is_slot(initial_slot(func)))) /* (define (abs x) 1) after (immutable! abs) */
+	immutable_object_error_nr(sc, set_elist_3(sc, wrap_string(sc, "can't ~A ~S: it is immutable", 28), caller, func));
+
       if (starred)
 	set_cdar(code, check_lambda_star_args(sc, cdar(code), cdr(code), sc->code));
       else check_lambda_args(sc, cdar(code), NULL, sc->code);
@@ -78716,7 +78731,7 @@ static void op_set_s_c(s7_scheme *sc)
 {
   s7_pointer slot = T_Slt(s7_slot(sc, cadr(sc->code)));
   if (is_immutable(slot))
-    error_nr(sc, sc->immutable_error_symbol, set_elist_3(sc, wrap_string(sc, "~S, but ~S is immutable", 23), sc->code, cadr(sc->code)));
+    immutable_object_error_nr(sc, set_elist_3(sc, wrap_string(sc, "~S, but ~S is immutable", 23), sc->code, cadr(sc->code)));
   slot_set_value(slot, sc->value = opt2_con(cdr(sc->code)));
 }
 
@@ -78724,7 +78739,7 @@ static inline void op_set_s_s(s7_scheme *sc)
 {
   s7_pointer slot = T_Slt(s7_slot(sc, cadr(sc->code)));
   if (is_immutable(slot))
-    error_nr(sc, sc->immutable_error_symbol, set_elist_3(sc, wrap_string(sc, "~S, but ~S is immutable", 23), sc->code, cadr(sc->code)));
+    immutable_object_error_nr(sc, set_elist_3(sc, wrap_string(sc, "~S, but ~S is immutable", 23), sc->code, cadr(sc->code)));
   slot_set_value(slot, sc->value = lookup(sc, opt2_sym(cdr(sc->code))));
 }
 
@@ -78732,7 +78747,7 @@ static Inline void op_set_s_a(s7_scheme *sc)
 {
   s7_pointer slot = T_Slt(s7_slot(sc, cadr(sc->code)));
   if (is_immutable(slot))
-    error_nr(sc, sc->immutable_error_symbol, set_elist_3(sc, wrap_string(sc, "~S, but ~S is immutable", 23), sc->code, cadr(sc->code)));
+    immutable_object_error_nr(sc, set_elist_3(sc, wrap_string(sc, "~S, but ~S is immutable", 23), sc->code, cadr(sc->code)));
   slot_set_value(slot, sc->value = fx_call(sc, cddr(sc->code)));
 }
 
@@ -84018,8 +84033,7 @@ static void op_define_with_setter(s7_scheme *sc)
   s7_pointer code = sc->code;
   if ((is_immutable(sc->curlet)) &&
       (is_let(sc->curlet))) /* not () */
-    error_nr(sc, sc->immutable_error_symbol,
-	     set_elist_2(sc, wrap_string(sc, "can't define ~S: curlet is immutable", 36), code));
+    immutable_object_error_nr(sc, set_elist_2(sc, wrap_string(sc, "can't define ~S: curlet is immutable", 36), code));
 
   if ((is_any_closure(sc->value)) &&
       ((!(is_let(closure_let(sc->value)))) ||
@@ -93531,7 +93545,7 @@ static s7_pointer sl_set_bignum_precision(s7_scheme *sc, s7_pointer sym, s7_poin
 
 static noreturn void sl_unsettable_error_nr(s7_scheme *sc, s7_pointer sym)
 {
-  error_nr(sc, sc->immutable_error_symbol, set_elist_2(sc, wrap_string(sc, "can't set (*s7* '~S)", 20), sym));
+  immutable_object_error_nr(sc, set_elist_2(sc, wrap_string(sc, "can't set (*s7* '~S)", 20), sym));
 }
 
 static s7_pointer s7_starlet_set_1(s7_scheme *sc, s7_pointer sym, s7_pointer val)
@@ -93813,6 +93827,7 @@ static const char *decoded_name(s7_scheme *sc, const s7_pointer p)
   if (p == current_input_port(sc))  return("current-input-port");
   if (p == current_output_port(sc)) return("current-output-port");
   if (p == current_error_port(sc))  return("current-error_port");
+  if ((is_let(p)) && (is_unlet(p))) return("unlet");
   return((p == sc->stack) ? "stack" : NULL);
 }
 
@@ -95039,10 +95054,11 @@ then returns each var to its original value."
   sc->file_symbol =                 make_symbol(sc, "file", 4);
   sc->line_symbol =                 make_symbol(sc, "line", 4);
   sc->function_symbol =             make_symbol(sc, "function", 8);
+
   sc->else_symbol =                 make_symbol(sc, "else", 4);
   s7_make_slot(sc, sc->nil, sc->else_symbol, sc->else_symbol);
-  slot_set_value(initial_slot(sc->else_symbol), sc->T);
-  /* if we set #_else to 'else, it can pick up a local else value: (let ((else #f)) (cond (#_else 2)...)) */
+  slot_set_value(initial_slot(sc->else_symbol), s7_make_keyword(sc, "else")); /* an experiment 3-Oct-23 was #t */
+  /* if we set #_else to 'else, it can pick up a local else value: (let ((else #f)) (cond (#_else 2)...)) -- #_* is read-time */
 
   sc->allow_other_keys_keyword =    s7_make_keyword(sc, "allow-other-keys");
   sc->rest_keyword =                s7_make_keyword(sc, "rest");
@@ -96676,14 +96692,14 @@ int main(int argc, char **argv)
  *            20.9   21.0   22.0   23.0   23.7   23.8
  * ---------------------------------------------------
  * tpeak      115    114    108    105    102    102
- * tref       691    687    463    459    459    459
- * index     1026   1016    973    967    970    970
+ * tref       691    687    463    459    459    464
+ * index     1026   1016    973    967    970    968
  * tmock     1177   1165   1057   1019   1027   1027
  * tvect     2519   2464   1772   1669   1647   1647
  * timp      2637   2575   1930   1694   1709   1709
  * texit     ----   ----   1778   1741   1765   1765
  * s7test    1873   1831   1818   1829   1859   1846
- * thook     ----   ----   2590   2030   2044   2044
+ * thook     ----   ----   2590   2030   2044   2048
  * tauto     ----   ----   2562   2048   2046   2046
  * lt        2187   2172   2150   2185   2198   2198
  * dup       3805   3788   2492   2239   2214   2219
@@ -96701,32 +96717,32 @@ int main(int argc, char **argv)
  * tio       3816   3752   3683   3620   3604   3607
  * tmac      3950   3873   3033   3677   3685   3685
  * tclo      4787   4735   4390   4384   4445   4445
- * tcase     4960   4793   4439   4430   4448   4448
+ * tcase     4960   4793   4439   4430   4448   4436
  * tlet      7775   5640   4450   4427   4452   4452
  * tfft      7820   7729   4755   4476   4512   4512
- * tstar     6139   5923   5519   4449   4553   4553
+ * tstar     6139   5923   5519   4449   4553   4560
  * tmap      8869   8774   4489   4541   4618   4618
  * tshoot    5525   5447   5183   5055   5044   5044
  * tform     5357   5348   5307   5316   5167   5161
  * tstr      6880   6342   5488   5162   5199   5203
  * tnum      6348   6013   5433   5396   5408   5403
  * tlamb     6423   6273   5720   5560   5620   5620
- * tmisc     8869   7612   6435   6076   6216   6216
+ * tmisc     8869   7612   6435   6076   6216   6220
  * tgsl      8485   7802   6373   6282   6230   6233
- * tlist     7896   7546   6558   6240   6280   6280
- * tset      ----   ----   ----   6260   6306   6306
+ * tlist     7896   7546   6558   6240   6280   6284
+ * tset      ----   ----   ----   6260   6306   6308
  * tari      13.0   12.7   6827   6543   6490   6490
  * trec      6936   6922   6521   6588   6581   6581
  * tleft     10.4   10.2   7657   7479   7611   7610
- * tgc       11.9   11.1   8177   7857   7958   7958 [7965 with gensym check]
+ * tgc       11.9   11.1   8177   7857   7958   7965
  * thash     11.8   11.7   9734   9479   9535   9536
- * cb        11.2   11.0   9658   9564   9626   9626
+ * cb        11.2   11.0   9658   9564   9626   9603
  * tgen      11.2   11.4   12.0   12.1   12.1   12.1
  * tall      15.6   15.6   15.6   15.6   15.1   15.1
- * calls     36.7   37.5   37.0   37.5   37.3   37.1
+ * calls     36.7   37.5   37.0   37.5   37.3   37.2
  * sg        ----   ----   55.9   55.8   55.3   55.3
  * lg        ----   ----  105.2  106.4  107.1  107.1
- * tbig     177.4  175.8  156.5  148.1  145.9  145.9
+ * tbig     177.4  175.8  156.5  148.1  145.9  146.0
  * ---------------------------------------------------
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
@@ -96737,4 +96753,6 @@ int main(int argc, char **argv)
  * dumb errmsg: (let ((#_abs 3)) abs): error: bad variable (abs 3) in let (it is not a symbol) in (let ((abs 3)) abs) 75222
  * apply <mumble>: try to give var that gave the function being applied
  * rest of immutable rootlet slot checks t718
+ * unlet symbol -> #_?
+ * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit
  */
