@@ -3,12 +3,15 @@
 (define-constant stable (symbol-table))
 (define-constant stable-len (length stable))
 
-(define with-mock-data #t)
+(define with-mock-data #f)
 ;(set! (*s7* 'profile) 1)
 (when (provided? 'number-separator) (set! (*s7* 'number-separator) #\,))
-;(set! (*s7* 'gc-stats) #t)
+;(set! (*s7* 'gc-stats) 4) ; heap-stats
 
-(define with-continuations #f)
+(unless (defined? 'fuzzies)
+  (define fuzzies 100000))
+
+(define with-continuations #t)
 
 (for-each (lambda (x)
 	    (unless (memq (car x) '(*features* *libraries* *#readers*)) ; last 2 for sandbox
@@ -332,7 +335,8 @@
 (define (tf27 x)
   (fop24 (values x x x) (fop24-1 x) (fop24-1 x)))
 (define (fop29 x)
-  (sort! x (lambda (a b) (unless (and a b) (error "oops")) (< a b))))
+  (and (int-vector? x)
+       (sort! x (lambda (a b) (unless (and a b) (error "oops")) (< a b)))))
 (define (fop30 a b c)
   (+ a b c))
 (define (tf30 x)
@@ -507,6 +511,8 @@
 (define (checked-procedure-source . args) (copy (procedure-source (car args)) :readable))
 
 (load "s7test-block.so" (sublet (curlet) (cons 'init_func 'block_init)))
+
+(define-expansion (t725-comment str) (values)) ; this must be at the top-level, "comment" used as local var in lint.scm
 
 #|
 ;; infinite loop if cyclic
@@ -874,6 +880,8 @@
 
 (set! (hook-functions *read-error-hook*) ())
 
+(immutable! 'cosh)
+
 (when (not (defined? 'loading-t718))
 (let ((functions (vector 'not '= '+ 'cdr 'real? 'rational? 'number? '> '- 'integer? 'apply 'subvector? 'subvector-position 'subvector-vector
 			  'abs '* 'null? 'imag-part '/ 'vector-set! 'equal? 'magnitude 'real-part 'pair? 'max 'nan? 'string->number 'list
@@ -886,7 +894,8 @@
 			  'char-alphabetic? 'odd? 'call-with-exit 'tanh 'copy 'sinh 'make-vector
 			  'string 'char-ci=? 'caddr 'tan 'reverse 'cddr 'append 'vector? 'list? 'exp 'acos 'asin 'symbol? 'char-numeric? 'string-ci=?
 			  'char-downcase 'acosh 'vector-length 'asinh 'format 'make-list 'goto?
-			  'sort! 'atanh 'modulo 'make-polar 'gcd 'angle 'remainder 'quotient 'lcm
+			  ;'sort! ; qsort_r has a memory leak if error raised by comparison function
+			  'atanh 'modulo 'make-polar 'gcd 'angle 'remainder 'quotient 'lcm
 			  'char-whitespace? 'assoc 'procedure? 'char<?
 			  'inexact->exact 'vector->list 'boolean? 'undefined? 'unspecified?
 			  'caar (if with-bignums '* 'ash) 'list-tail 'symbol->string 'string->symbol 'exact->inexact
@@ -936,7 +945,8 @@
 			  'let 'let* 'letrec 'letrec*
 			  ;'lambda 'lambda*  ; these cause built-ins to become locals if with-method=#f?
 			  ;'macro 'macro* 'bacro 'bacro* ; -- same as lambda above
-			  ;'define* 'define-macro 'define-macro* 'define-bacro 'define-bacro* 'define 'define-constant
+			  ;'define* 'define-macro 'define-macro* 'define-bacro 'define-bacro* 'define-constant
+			  'define
 			  ;'multiple-value-bind ; (multiple-value-bind (if) ...) gets all kinds of trouble
 			  'call-with-values
 			  'object->let
@@ -960,7 +970,7 @@
 			  'write 'display
 			  (reader-cond ((not with-mock-data) 'outlet))
 			  'directory->list
-			  ;'set! ; this can clobber stuff making recreating a bug tricky
+			  'set! ; this can clobber stuff making recreating a bug tricky
 			  'set-car!
 			  'call-with-output-file 'with-output-to-file
 			  ;'read-char 'read-byte 'read-line 'read-string 'read ; stdin=>hangs
@@ -1011,7 +1021,6 @@
 			  '=>
 
 			  'constant?
-			  (reader-cond ((not with-mock-data) 'openlet))
 			  '*unbound-variable-hook* '*load-hook* '*rootlet-redefinition-hook* '*missing-close-paren-hook* ;'*read-error-hook* 
 			  '*after-gc-hook*
 			  '*autoload*
@@ -1145,6 +1154,7 @@
 		    "float-var" "int-var" "ratio-var" "complex-var"
 		    (reader-cond ((provided? 'number-separator) "1,232"))
 		    "(eval-string \"(reader-cond ((provided? 'surreals) 123))\")"
+		    "(eval-string \"(t725-comment this is a comment)\")"
 
                     "(apply + (make-list 2 3))" "(let ((a 1) (b 2) (c 3)) (+ a b c))" "(let ((x '(\"asdf\"))) (apply #_format #f x))"
                     "(cons (cons + -) *)" "(list (list quasiquote +) -1)" "(let ((s '(1 2))) (list (car s) (cdr s)))"
@@ -1346,9 +1356,10 @@
 
 		    "(let loop ((i 2)) (if (> i 0) (loop (- i 1)) i))"
 
-		    ;"(rootlet)" 
+		    "(rootlet)" ; why was this commented out?
+		    ;"(unlet)"  ; variable
 		    "(let? (curlet))"
-		    ;"*s7*" ;variable
+		    ;"*s7*"     ;variable
 
 		    "(symbol (make-string 130 #\\a))" "(symbol \"a\" \"b\")"
 		    "(symbol \"1\\\\\")" "#\\xff"  "#\\backspace" ":0" "(list (list 1 2) (cons 1 2))"
@@ -1455,8 +1466,8 @@
                     (lambda (s) (string-append "(let ((__x__ 1)) (do ((i 0 (+ i __x__))) ((= i __x__)) " s "))")))
 	      (list (lambda (s) (string-append "(cond ((eqv? x 0) " s "))"))
                     (lambda (s) (string-append "(when (eqv? x 0) " s ")")))
-              (list (lambda (s) (string-append "((lambda (a) (sort! a >)) " s ")"))
-                    (lambda (s) (string-append "((lambda (a) (sort! a (lambda (x y) (not (<= x y))))) " s ")")))
+              (list (lambda (s) (string-append "((lambda (a) (and (int-vector? a) (sort! a >))) " s ")"))
+                    (lambda (s) (string-append "((lambda (a) (and (int-vector? a) (sort! a (lambda (x y) (not (<= x y)))))) " s ")")))
 	      (list (lambda (s) (string-append "(_iter_ " s ")"))
                     (lambda (s) (string-append "(_map_ " s ")")))
 	      (list (lambda (s) (string-append "(_cat1_ " s ")"))
@@ -1928,8 +1939,10 @@
     (define dots (vector "." "-" "+" "-"))
     (define (test-it)
       (do ((m 0 (+ m 1))
-	   (n 0))
-	  ((= m 100000000)
+	   (n 0)
+	   ;(p 0 (+ p 1))
+	   )
+	  (#f ;(= p fuzzies)
 	   (format *stderr* "reached end of loop??~%"))
 
 	(when (= m 100000)

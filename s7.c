@@ -5418,7 +5418,7 @@ static s7_pointer check_ref19(s7_pointer p, const char *func, int32_t line)
   if (t_ext_p[typ])
     {
       fprintf(stderr, "%s%s[%d]: attempt to use (internal) %s cell%s\n", bold_text, func, line, s7_type_names[typ], unbold_text);
-      if (cur_sc->stop_at_error) abort();
+      /* if (cur_sc->stop_at_error) abort(); */
     }
   return(p);
 }
@@ -9606,15 +9606,18 @@ to the let target-let, and returns target-let.  (varlet (curlet) 'a 1) adds 'a t
 	}
       if (e == sc->rootlet)
 	{
-	  if (is_slot(global_slot(sym)))
+	  s7_pointer gslot = global_slot(sym);
+	  if (is_slot(gslot))
 	    {
-	      if (is_syntax(global_value(sym)))
+	      if (is_syntax(slot_value(gslot)))
 		wrong_type_error_nr(sc, sc->varlet_symbol, position_of(x, args), p, wrap_string(sc, "a non-syntactic symbol", 22));
 	      /*  without this check we can end up turning our code into gibberish:
 	       *    (set! quote 1) -> ;can't set! quote
 	       *    (varlet (rootlet) '(quote . 1)), :quote -> 1
 	       * or worse set quote to a function of one arg that tries to quote something -- infinite loop
 	       */
+	      if (is_immutable(gslot)) /* (immutable! 'abs) (varlet (rootlet) 'abs 1) */
+		immutable_object_error_nr(sc, set_elist_5(sc, wrap_string(sc, "~S is immutable in (varlet ~S '~S ~S)", 37), sym, car(args), p, val));
 	      slot_set_value_with_hook(global_slot(sym), val);
 	    }
 	  else s7_make_slot(sc, e, sym, val);
@@ -10195,6 +10198,8 @@ static s7_pointer let_set_1(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7
 		 set_elist_3(sc, wrap_string(sc, "let-set!: ~A is not defined in ~A", 33), symbol, let));
       if (is_syntax(slot_value(slot)))
 	wrong_type_error_nr(sc, sc->let_set_symbol, 2, symbol, wrap_string(sc, "a non-syntactic symbol", 22));
+      if (is_immutable(slot))
+	immutable_object_error_nr(sc, set_elist_4(sc, wrap_string(sc, "~S is immutable in (let-set! (rootlet) '~S ~S)", 46), symbol, symbol, value)); /* also (set! (with-let...)...) */
       symbol_increment_ctr(symbol);
       slot_set_value(slot, (slot_has_setter(slot)) ? call_setter(sc, slot, value) : value);
       return(slot_value(slot));
@@ -11171,11 +11176,11 @@ Only the let is searched if ignore-globals is not #f."
   return((is_global(sym)) ? sc->T : make_boolean(sc, is_slot(s7_slot(sc, sym))));
 }
 
-static s7_pointer g_is_defined_in_rootlet(s7_scheme *sc, s7_pointer args)
+static s7_pointer g_is_defined_in_rootlet(s7_scheme *sc, s7_pointer args) /* aimed at lint.scm */
 {
-  /* here we know arg2=(rootlet), and no arg3, arg1 is a symbol (see chooser below) */
-  s7_pointer sym = lookup(sc, car(args)); /* args are unevalled because the chooser calls us through op_safe_c_nc?? */
-  if (!is_symbol(sym)) /* if sym is openlet with defined? perhaps it makes sense to call it, but we need to include the rootlet arg */
+  /* here we know arg2=(rootlet), and no arg3, arg1 is a symbol (see chooser below), keyword case (defined? :asdf (rootlet)) should not get here */
+  s7_pointer sym = lookup(sc, car(args)); /* chooser below uses safe_c_nc(!), so args are unevalled when we get here */
+  if (!is_symbol(sym))                    /* if sym is openlet with defined? perhaps it makes sense to call it, but we need to include the rootlet arg */
     return(method_or_bust_pp(sc, sym, sc->is_defined_symbol, sym, sc->rootlet, sc->type_names[T_SYMBOL], 1));
   return(make_boolean(sc, is_slot(global_slot(sym))));
 }
@@ -11183,7 +11188,7 @@ static s7_pointer g_is_defined_in_rootlet(s7_scheme *sc, s7_pointer args)
 static s7_pointer is_defined_chooser(s7_scheme *sc, s7_pointer f, int32_t args, s7_pointer expr, bool ops)
 {
   if (!ops) return(f);
-  if ((args == 2) && (is_symbol(cadr(expr))))
+  if ((args == 2) && (is_normal_symbol(cadr(expr)))) /* i.e. not a keyword */
     {
       s7_pointer e = caddr(expr);
       if ((is_pair(e)) && (is_null(cdr(e))) && (car(e) == sc->rootlet_symbol))
@@ -77413,11 +77418,15 @@ static void check_define(s7_scheme *sc)
 	    s7_warn(sc, 256, "%s: syntactic keywords tend to behave badly if redefined: %s\n", display(func), display_80(sc->code));
 	  set_local(func);
 	}
+
       if ((is_pair(cadr(code))) &&               /* look for (define sym (lambda ...)) and treat it like (define (sym ...)...) */
 	  ((caadr(code) == sc->lambda_symbol) ||
 	   (caadr(code) == sc->lambda_star_symbol)) &&
 	  (symbol_id(caadr(code)) == 0))
 	{
+	  if ((is_global(func)) && (is_slot(global_slot(func))) && (is_immutable(global_slot(func))) && (is_slot(initial_slot(func))))
+	    immutable_object_error_nr(sc, set_elist_3(sc, wrap_string(sc, "can't ~A ~S: it is immutable", 28), caller, func));
+
 	  /* not is_global here because that bit might not be set for initial symbols (why not? -- redef as method etc) */
 	  if (!is_pair(cdadr(code)))                                             /* (define x (lambda . 1)) */
 	    syntax_error_with_caller_nr(sc, "~A: stray dot? ~A", 17, caller, sc->code);
@@ -77439,10 +77448,9 @@ static void check_define(s7_scheme *sc)
 	    s7_warn(sc, 256, "%s: syntactic keywords tend to behave badly if redefined: %s\n", display(func), display_80(sc->code));
 	  set_local(func);
 	}
-
-      if ((is_global(func)) && (is_slot(global_slot(func))) && (is_immutable(global_value(func))) && (is_slot(initial_slot(func)))) /* (define (abs x) 1) after (immutable! abs) */
+      /* TODO: move this elsewhere? */
+      if ((is_global(func)) && (is_slot(global_slot(func))) && (is_immutable(global_slot(func))) && (is_slot(initial_slot(func)))) /* (define (abs x) 1) after (immutable! abs) */
 	immutable_object_error_nr(sc, set_elist_3(sc, wrap_string(sc, "can't ~A ~S: it is immutable", 28), caller, func));
-
       if (starred)
 	set_cdar(code, check_lambda_star_args(sc, cdar(code), cdr(code), sc->code));
       else check_lambda_args(sc, cdar(code), NULL, sc->code);
@@ -81316,6 +81324,8 @@ static goto_t op_dox(s7_scheme *sc)
 	  s7_pointer val = cddr(body), stepa;
 	  s7_function stepf, valf;
 	  s7_pointer slot = s7_slot(sc, cadr(body));
+	  if (is_immutable(slot)) /* (define-constant x 1) (do ((i 0 (+ i 1))) ((= i lim)) (set! x expr)) */
+	    immutable_object_error_nr(sc, set_elist_3(sc, wrap_string(sc, "~S is immutable in ~S", 21), cadr(body), body));
 	  if (!has_fx(val))
 	    set_fx(val, fx_choose(sc, val, sc->curlet, let_symbol_is_safe));
 	  valf = fx_proc(val);
@@ -96748,11 +96758,16 @@ int main(int argc, char **argv)
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * safety for exp->mac? check-define-macro in lint (given eval-string, we can't do this in s7.c I think)
  * lots of strings in gc-lists at end?
- * stack_trace_walker -> ffitest if possible, big allocs in t725 to probe?
+ * big allocs in t725 to probe s7_free?
  * catch in C outside scheme code? setting *error-hook* doesn't help -- it falls into the longjmp
  * dumb errmsg: (let ((#_abs 3)) abs): error: bad variable (abs 3) in let (it is not a symbol) in (let ((abs 3)) abs) 75222
  * apply <mumble>: try to give var that gave the function being applied
- * rest of immutable rootlet slot checks t718
+ * rest of immutable rootlet slot checks t718/t653, see s7test 110156
  * unlet symbol -> #_?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit
+ * t653 gensym tests -> s7test
+ * more of: (let () (define-constant bigcmp 1+2i) (define (func) (let ((_x_ 1)) (do ((i 0 (+ i _x_))) ((= i _x_)) (set! bigcmp (bignum 0+i))))) (func))
+ * t718 func set! troubles
+ * why are outlet rootlet curlet unsafe_defuns?
+ * t725 add error message checks
  */
