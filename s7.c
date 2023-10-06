@@ -68706,6 +68706,33 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
       syntax_error_with_caller_nr(sc, "set!: can't set ~A to ~S", 24, stack_top_code(sc), set_ulist_1(sc, sc->values_symbol, args));
 
     case OP_SET_opSAq_P_1: case OP_SET_opSAAq_P_1:
+      /* if the target has a setter, this might not be too many arguments since the setter can do what it wants with the arguments, P might be (values ...) */
+      /* this is a problem with setters -- should we insist that set! takes 3 arguments in all cases?
+       *   (define (a3 x) x)
+       *   (set! (setter a3) (lambda (x y z) (list x y z)))
+       *   <11> (set! (a3 1) 2)
+       *   error: <10>: not enough arguments: ((lambda (x y z) ...) 1 2)
+       *   <12> (set! (a3 1) 2 3)
+       *   error: (set! (a3 1) 2 3): too many arguments to set!
+       *   <13> (set! (a3 1) (values 2 3))
+       *   (1 2 3)  ; wrong...
+       *   <14> (define (f3) (set! (a3 1) (values 2 3)))
+       *   <15> (f3)
+       *   (1 2 3)  ; wrong...
+       *   <16> (f3)
+       *   error: too many arguments to set! (values 2 3)
+       * I think this error (raised below) is correct, and the previous (eval?) cases need to raise an error
+       *   but by the time we get the values, it's too late unless we can see that we're calling a setter??? see is_setter -- a type bit
+       *   and what about (set! (values a 1) 2) where a is defined?
+       *   (set! (setter values) (lambda (x y z) (list x y z)))
+       *   (set! (values 1 2) 3)
+       *   (1 2 3)
+       * so disallow a setter for values? Accepting any setter means we can't check (set! (...) ...) for too many args
+       *   but setter can take any number of args (set! (f ...) 1) is ok, as is (set! (f ...) (values 1)).
+       * we get here from (set! (f sym expr [expr]) (values ...)) so this error (below) is correct since (values 1) won't get here
+       * so: disallow setter for values and somehow limit values to 0|1 expr if 3rd arg of set!
+       *   maybe when we call the setter mark splice point?
+       */
       syntax_error_nr(sc, "too many arguments to set! ~S", 29, set_ulist_1(sc, sc->values_symbol, args));
 
     case OP_LET1:                         /* (let ((var (values 1 2 3))) ...) */
@@ -88497,6 +88524,7 @@ static void op_eval_args2(s7_scheme *sc)
 {
   sc->code = pop_op_stack(sc);
   sc->args = (is_null(sc->args)) ? list_1(sc, sc->value) : proper_list_reverse_in_place(sc, cons(sc, sc->value, sc->args));
+  /* fprintf(stderr, "%s[%d]: code: %s, args: %s\n", __func__, __LINE__, display(sc->code), display(sc->args)); */
 }
 
 static void op_eval_args3(s7_scheme *sc)
@@ -96765,9 +96793,12 @@ int main(int argc, char **argv)
  * rest of immutable rootlet slot checks t718/t653, see s7test 110156
  * unlet symbol -> #_?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit
- * t653 gensym tests -> s7test
+ * t653 gensym cases [tricky!]
  * more of: (let () (define-constant bigcmp 1+2i) (define (func) (let ((_x_ 1)) (do ((i 0 (+ i _x_))) ((= i _x_)) (set! bigcmp (bignum 0+i))))) (func))
- * t718 func set! troubles
+ * t718 func set! troubles [values as 3rd arg]
  * why are outlet rootlet curlet unsafe_defuns?
  * t725 add error message checks
+ * maybe env args for immutable? and immutable! ? (kinda dumb to have to use with-let)
+ * (values (values ...)) -> line
+ * cutlet immutable ?
  */
