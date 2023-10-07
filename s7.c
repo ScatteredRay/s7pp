@@ -6431,6 +6431,12 @@ static s7_pointer g_is_immutable(s7_scheme *sc, s7_pointer args)
   #define Q_is_immutable sc->pl_bt
   s7_pointer p = car(args);
   if (is_number(p)) return(sc->T); /* should these be marked immutable? should we use (type != SYMBOL) as above? */
+  if (is_normal_symbol(p))         /* parallel immutable! below */
+    {
+      s7_pointer slot = s7_slot(sc, p);
+      if (is_slot(slot))
+	return(make_boolean(sc, is_immutable_slot(slot)));
+    }
   return(make_boolean(sc, is_immutable(p)));
 }
 
@@ -6447,7 +6453,7 @@ static s7_pointer g_immutable(s7_scheme *sc, s7_pointer args)
   #define H_immutable "(immutable! x) declares that the x can't be changed. x is returned."
   #define Q_immutable s7_make_signature(sc, 2, sc->T, sc->T)
   s7_pointer p = car(args);
-  if (is_symbol(p))
+  if (is_normal_symbol(p))
     {
       s7_pointer slot = s7_slot(sc, p);
       if (is_slot(slot))
@@ -10858,7 +10864,6 @@ static s7_pointer make_macro(s7_scheme *sc, opcode_t op, bool named)
     {
       s7_pointer mac_slot;
       mac_name = caar(sc->code);
-
       if (((op == OP_DEFINE_EXPANSION) || (op == OP_DEFINE_EXPANSION_STAR)) &&
 	  (!is_let(sc->curlet)))
 	set_full_type(mac_name, T_EXPANSION | T_SYMBOL | (full_type(mac_name) & T_UNHEAP));
@@ -47110,6 +47115,8 @@ static s7_pointer g_set_setter(s7_scheme *sc, s7_pointer args)
     case T_C_FUNCTION: case T_C_FUNCTION_STAR: case T_C_RST_NO_REQ_FUNCTION:
       if (p == global_value(sc->setter_symbol))      /* (immutable? (setter setter)) is #t, but we aren't checking immutable? here -- maybe we should? */
 	immutable_object_error_nr(sc, set_elist_2(sc, wrap_string(sc, "can't set (setter setter) to ~S", 31), setter));
+      if (p == global_value(sc->values_symbol))       /* 6-Oct-23 (set! (setter values) ...) is problematic, see splice_in_values */
+	immutable_object_error_nr(sc, set_elist_2(sc, wrap_string(sc, "can't set (setter values) to ~S", 31), setter));
       c_function_set_setter(p, setter);
       if ((is_any_closure(setter)) ||
 	  (is_any_macro(setter)))
@@ -68727,11 +68734,10 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
        *   (set! (setter values) (lambda (x y z) (list x y z)))
        *   (set! (values 1 2) 3)
        *   (1 2 3)
-       * so disallow a setter for values? Accepting any setter means we can't check (set! (...) ...) for too many args
+       * so disallow a setter for values (see g_set_setter). Accepting any setter means we can't check (set! (...) ...) for too many args
        *   but setter can take any number of args (set! (f ...) 1) is ok, as is (set! (f ...) (values 1)).
        * we get here from (set! (f sym expr [expr]) (values ...)) so this error (below) is correct since (values 1) won't get here
-       * so: disallow setter for values and somehow limit values to 0|1 expr if 3rd arg of set!
-       *   maybe when we call the setter mark splice point?
+       * so: somehow limit values to 0|1 expr if 3rd arg of set! maybe when we call the setter mark splice point?
        */
       syntax_error_nr(sc, "too many arguments to set! ~S", 29, set_ulist_1(sc, sc->values_symbol, args));
 
@@ -75262,10 +75268,18 @@ static s7_pointer check_let(s7_scheme *sc) /* called only from op_let */
 			     x, object_to_truncated_string(sc, form, 80)));
       y = car(carx);
       if (!(is_symbol(y)))
-	error_nr(sc, sc->syntax_error_symbol,
-		 set_elist_3(sc, wrap_string(sc, "bad variable name ~S in let (it is not a symbol) in ~A", 54),
-			     carx, object_to_truncated_string(sc, form, 80)));
-
+	{
+	  if (is_c_function(y))                      /* (let ((#_abs 3)) ...) */
+	    {
+	      s7_pointer sym = c_function_name_to_symbol(sc, y);
+	      if (is_slot(initial_slot(sym)))
+		error_nr(sc, sc->syntax_error_symbol, 
+			 set_elist_2(sc, wrap_string(sc, "variable name #_~S in let is a function, not a symbol", 53), y));
+	    }
+	  error_nr(sc, sc->syntax_error_symbol,
+		   set_elist_3(sc, wrap_string(sc, "bad variable name ~S in let (it is not a symbol) in ~A", 54),
+			       carx, object_to_truncated_string(sc, form, 80)));
+	}
       if (is_constant_symbol(sc, y))
 	error_nr(sc, sc->wrong_type_arg_symbol, set_elist_3(sc, cant_bind_immutable_string, sc->let_symbol, x));
 
@@ -95634,9 +95648,12 @@ static void init_rootlet(s7_scheme *sc)
   sc->stacktrace_symbol =            defun("stacktrace",	stacktrace,		0, 5, false);
 
   /* sc->values_symbol = */          unsafe_defun("values",	values,			0, 0, true); /* values_symbol set above for signatures, not semisafe! */
+  /* set_immutable(c_function_setter(global_value(sc->values_symbol))); */ /* not needed, I think */
+
   sc->apply_values_symbol =          unsafe_defun("apply-values", apply_values,         0, 1, false);
-  set_immutable(sc->apply_values_symbol);
+  set_immutable(sc->apply_values_symbol); /* why this? */
   set_immutable_slot(global_slot(sc->apply_values_symbol));
+
   sc->list_values_symbol =           defun("list-values",       list_values,            0, 0, true);
   set_immutable(sc->list_values_symbol);
   set_immutable_slot(global_slot(sc->list_values_symbol));
@@ -96788,17 +96805,13 @@ int main(int argc, char **argv)
  * lots of strings in gc-lists at end?
  * big allocs in t725 to probe s7_free?
  * catch in C outside scheme code? setting *error-hook* doesn't help -- it falls into the longjmp
- * dumb errmsg: (let ((#_abs 3)) abs): error: bad variable (abs 3) in let (it is not a symbol) in (let ((abs 3)) abs) 75222
  * apply <mumble>: try to give var that gave the function being applied
- * rest of immutable rootlet slot checks t718/t653, see s7test 110156
- * unlet symbol -> #_?
+ * rest of immutable rootlet slot checks t718/t653, see s7test 110156 -- this is confusion about curlet -- why define different from define-macro?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit
  * t653 gensym cases [tricky!]
  * more of: (let () (define-constant bigcmp 1+2i) (define (func) (let ((_x_ 1)) (do ((i 0 (+ i _x_))) ((= i _x_)) (set! bigcmp (bignum 0+i))))) (func))
- * t718 func set! troubles [values as 3rd arg]
- * why are outlet rootlet curlet unsafe_defuns?
+ * t718 func set! troubles [values as 3rd arg][what about apply-values?]
+ * why are outlet rootlet curlet unsafe_defuns? why is apply-values immutable? [maybe to ensure quasiquote is ok]
  * t725 add error message checks
  * maybe env args for immutable? and immutable! ? (kinda dumb to have to use with-let)
- * (values (values ...)) -> line
- * cutlet immutable ?
  */
