@@ -11180,11 +11180,13 @@ Only the let is searched if ignore-globals is not #f."
     }
   return((is_global(sym)) ? sc->T : make_boolean(sc, is_slot(s7_slot(sc, sym))));
 }
+/* TODO: (defined? ... (rootlet)) at top-level gets unbound error (eval 91484), should be #f, add both cases to s7test */
 
 static s7_pointer g_is_defined_in_rootlet(s7_scheme *sc, s7_pointer args) /* aimed at lint.scm */
 {
   /* here we know arg2=(rootlet), and no arg3, arg1 is a symbol (see chooser below), keyword case (defined? :asdf (rootlet)) should not get here */
-  s7_pointer sym = lookup(sc, car(args)); /* chooser below uses safe_c_nc(!), so args are unevalled when we get here */
+  s7_pointer sym = lookup_unexamined(sc, car(args)); /* chooser below uses safe_c_nc(!), so args are unevalled when we get here */
+  if (!sym) return(sc->F);                /* car(args) is unbound, (define (f) (defined? ... (rootlet))) (f) */
   if (!is_symbol(sym))                    /* if sym is openlet with defined? perhaps it makes sense to call it, but we need to include the rootlet arg */
     return(method_or_bust_pp(sc, sym, sc->is_defined_symbol, sym, sc->rootlet, sc->type_names[T_SYMBOL], 1));
   return(make_boolean(sc, is_slot(global_slot(sym))));
@@ -46243,18 +46245,28 @@ static s7_pointer g_is_c_object(s7_scheme *sc, s7_pointer args)
 /* -------------------------------- c-object-type -------------------------------- */
 static noreturn void apply_error_nr(s7_scheme *sc, s7_pointer obj, s7_pointer args)
 {
-  /* the operator type is needed here else the error message is confusing:
-   *    (apply '+ (list 1 2))) -> ;attempt to apply + to (1 2)?
-   * but using current_code(sc) to get the context is not optimal:
-   *    (1 (bignum 4))) -> ;attempt to apply an integer 1 to (4) in (bignum 4)?
+  /* the operator type is needed here else the error message is confusing: (apply '+ (list 1 2))) -> ;attempt to apply + to (1 2)? 
+   * but using current_code(sc) to get the context sometimes gets local code not the original full form (or even the reverse: args is the form!)
+   *
+   * apply_c_function, func:apply, args=args to apply
+   *   this error handles both (:asdf 1) and (apply :asdf 1)? so apply-based calls need to edit obj/args? 9 calls:
+   *   (apply '+ '(1 2)) from g_apply 52803: "attempt to apply a symbol '+ to '((1 2)) in '(1 2)"!?!
+   *   ('+ 1 2): "attempt to apply a symbol '+ to '(1 2) in ('+ 1 2)" from eval 91534
+   *   (#2d((0 0)(0 0)) 0 0 0) from implicit_index 52985 "attempt to apply an integer 0 to '(0) in (#2d((0 0) (0 0)) 0 0 0)"
+   *   ('and #f) from eval_car_pair 88665 "attempt to apply a symbol 'and to '(#f) in ('and #f)"
+   *   fallback_ref 46271
+   *   op_s: (define (f) (pi)) (f) "attempt to apply a real 3.141592653589793 to () in (f)"
+   * op_s_g op_x_a op_x_aa
+   * need to pass calling form I think
    */
-  if (is_null(obj))
-    error_nr(sc, sc->syntax_error_symbol,
-	     set_elist_3(sc, wrap_string(sc, "attempt to apply nil to ~S in ~S?", 33),
-			 args, current_code(sc)));
+  /* (apply '+ '(1 2)), args=(+ (1 2))! called from apply_c_function, current_code='(1 2)! */
   error_nr(sc, sc->syntax_error_symbol,
-	   set_elist_5(sc, wrap_string(sc, "attempt to apply ~A ~S to ~S in ~S?", 35),
-		       type_name_string(sc, obj), obj, args, current_code(sc)));
+	   set_elist_6(sc, wrap_string(sc, "attempt to apply ~A ~$ to ~A~S in ~S?", 36),
+		       (is_null(obj)) ? wrap_string(sc, "nil", 3) : ((is_symbol_and_keyword(obj)) ? wrap_string(sc, "a keyword", 9) : type_name_string(sc, obj)), 
+		       obj,
+		       (is_null(args)) ? nil_string : chars[(uint8_t)'\''],
+		       args,
+		       current_code(sc)));
 }
 
 static void fallback_free(void *value) {}
@@ -52801,7 +52813,7 @@ static s7_pointer g_apply(s7_scheme *sc, s7_pointer args)
    */
   s7_pointer func = car(args);
   if (!is_applicable(func))
-    apply_error_nr(sc, func, args);
+    apply_error_nr(sc, func, cdr(args));
 
   if (is_null(cdr(args)))
     {
@@ -52974,7 +52986,7 @@ static s7_pointer implicit_index(s7_scheme *sc, s7_pointer obj, s7_pointer indic
       return(c_function_call(obj)(sc, indices));
 
     default:
-      if (!is_applicable(obj))            /* (apply (list cons cons) (list 1 2)) needs the argnum check mentioned below */
+      if (!is_applicable(obj)) /* (#2d((0 0)(0 0)) 0 0 0) */
 	apply_error_nr(sc, obj, indices);
       sc->temp10 = indices; /* (needs_copied_args(obj)) ? copy_proper_list(sc, indices) : indices; */ /* do not use sc->args here! */
       sc->value = s7_call(sc, obj, sc->temp10);
@@ -68722,24 +68734,9 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
        *   <12> (set! (a3 1) 2 3)
        *   error: (set! (a3 1) 2 3): too many arguments to set!
        *   <13> (set! (a3 1) (values 2 3))
-       *   (1 2 3)  ; wrong...
-       *   <14> (define (f3) (set! (a3 1) (values 2 3)))
-       *   <15> (f3)
-       *   (1 2 3)  ; wrong...
-       *   <16> (f3)
-       *   error: too many arguments to set! (values 2 3)
-       * I think this error (raised below) is correct, and the previous (eval?) cases need to raise an error
-       *   but by the time we get the values, it's too late unless we can see that we're calling a setter??? see is_setter -- a type bit
-       *   and what about (set! (values a 1) 2) where a is defined?
-       *   (set! (setter values) (lambda (x y z) (list x y z)))
-       *   (set! (values 1 2) 3)
-       *   (1 2 3)
-       * so disallow a setter for values (see g_set_setter). Accepting any setter means we can't check (set! (...) ...) for too many args
-       *   but setter can take any number of args (set! (f ...) 1) is ok, as is (set! (f ...) (values 1)).
-       * we get here from (set! (f sym expr [expr]) (values ...)) so this error (below) is correct since (values 1) won't get here
-       * so: somehow limit values to 0|1 expr if 3rd arg of set! maybe when we call the setter mark splice point?
+       *   (set! (a3 1) (values 2 3)): too many arguments to set!
        */
-      syntax_error_nr(sc, "too many arguments to set! ~S", 29, set_ulist_1(sc, sc->values_symbol, args));
+      syntax_error_nr(sc, "too many arguments to set! ~S", 29, set_ulist_1(sc, sc->values_symbol, args)); /* perhaps wrong_number_of_args error? */
 
     case OP_LET1:                         /* (let ((var (values 1 2 3))) ...) */
       {
@@ -78584,7 +78581,11 @@ static void check_set(s7_scheme *sc)
 	syntax_error_nr(sc, "set!: not enough arguments: ~A", 30, form);
       syntax_error_nr(sc, "set!: stray dot? ~A", 19, form);          /* (set! var . 1) */
     }
-  if (is_not_null(cddr(code)))                                       /* (set! var 1 2) */
+  if ((is_not_null(cddr(code))) ||                                   /* (set! var 1 2) */
+      ((is_pair(cadr(code))) && 
+       (caadr(code) == sc->values_symbol) &&                         /* (set! var (values...) but 0 or 1 arg is ok */
+       (is_pair(cdadr(code))) &&                                     /*    this can be fooled if we rename values, etc */
+       (is_pair(cddadr(code)))))
     syntax_error_nr(sc, "~A: too many arguments to set!", 30, form);
 
   /* cadr (the value) has not yet been evaluated */
@@ -95252,9 +95253,9 @@ static void init_rootlet(s7_scheme *sc)
   sc->symbol_to_keyword_symbol =     defun("symbol->keyword",	symbol_to_keyword,	1, 0, false);
   sc->keyword_to_symbol_symbol =     defun("keyword->symbol",	keyword_to_symbol,	1, 0, false);
 
-  sc->outlet_symbol =                unsafe_defun("outlet",	outlet,			1, 0, false);
-  sc->rootlet_symbol =               unsafe_defun("rootlet",    rootlet,		0, 0, false); /* unsafe else unbound var in g_is_defined_in_rootlet? */
-  sc->curlet_symbol =                unsafe_defun("curlet",     curlet,			0, 0, false); /* (define (f a) (curlet)) exports the funclet */
+  sc->outlet_symbol =                /* unsafe_ */ defun("outlet",	outlet,		1, 0, false); /* was unsafe 7-Oct-23 */
+  sc->rootlet_symbol =               /* unsafe_ */ defun("rootlet",    rootlet,		0, 0, false); /* unsafe else unbound var in g_is_defined_in_rootlet? dubious... */
+  sc->curlet_symbol =                unsafe_defun("curlet",     curlet,			0, 0, false); /* (define (f a) (curlet)) exports the funclet, see s7test 50215 */
   set_func_is_definer(sc->curlet_symbol);
   sc->unlet_symbol =                 defun("unlet",		unlet,			0, 0, false);
   set_local_slot(sc->unlet_symbol, global_slot(sc->unlet_symbol)); /* for set_locals */
@@ -95651,7 +95652,7 @@ static void init_rootlet(s7_scheme *sc)
   /* set_immutable(c_function_setter(global_value(sc->values_symbol))); */ /* not needed, I think */
 
   sc->apply_values_symbol =          unsafe_defun("apply-values", apply_values,         0, 1, false);
-  set_immutable(sc->apply_values_symbol); /* why this? */
+  set_immutable(sc->apply_values_symbol); /* is this to protect quasiquote? */
   set_immutable_slot(global_slot(sc->apply_values_symbol));
 
   sc->list_values_symbol =           defun("list-values",       list_values,            0, 0, true);
@@ -96805,13 +96806,13 @@ int main(int argc, char **argv)
  * lots of strings in gc-lists at end?
  * big allocs in t725 to probe s7_free?
  * catch in C outside scheme code? setting *error-hook* doesn't help -- it falls into the longjmp
- * apply <mumble>: try to give var that gave the function being applied
+ * apply <mumble>: try to give var that gave the function being applied [need to check all 9 paths to this]
  * rest of immutable rootlet slot checks t718/t653, see s7test 110156 -- this is confusion about curlet -- why define different from define-macro?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit
  * t653 gensym cases [tricky!]
  * more of: (let () (define-constant bigcmp 1+2i) (define (func) (let ((_x_ 1)) (do ((i 0 (+ i _x_))) ((= i _x_)) (set! bigcmp (bignum 0+i))))) (func))
- * t718 func set! troubles [values as 3rd arg][what about apply-values?]
- * why are outlet rootlet curlet unsafe_defuns? why is apply-values immutable? [maybe to ensure quasiquote is ok]
+ * t718 func set! troubles [what about apply-values as 3rd arg?]
  * t725 add error message checks
  * maybe env args for immutable? and immutable! ? (kinda dumb to have to use with-let)
+ * (defined? ... (rootlet)) bug
  */
