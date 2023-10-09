@@ -6423,14 +6423,14 @@ static s7_pointer is_constant_p_p(s7_scheme *sc, s7_pointer p) {return(make_bool
 
 
 /* -------------------------------- immutable? -------------------------------- */
-bool s7_is_immutable(s7_pointer p) {return(is_immutable(p));}
+bool s7_is_immutable(s7_pointer p) {return(is_immutable(p));} /* TODO: mimic g_is_immutable or merge both */
 
 static s7_pointer g_is_immutable(s7_scheme *sc, s7_pointer args)
 {
-  #define H_is_immutable "(immutable? sequence) returns #t if the sequence is immutable"
+  #define H_is_immutable "(immutable? obj) returns #t if its argument is immutable"
   #define Q_is_immutable sc->pl_bt
   s7_pointer p = car(args);
-  if (is_number(p)) return(sc->T); /* should these be marked immutable? should we use (type != SYMBOL) as above? */
+  if ((is_number(p)) || ((is_any_vector(p)) && (vector_length(p) == 0))) return(sc->T); /* can't mark #() immutable else "can't reverse! #() (it is immutable)" */
   if (is_normal_symbol(p))         /* parallel immutable! below */
     {
       s7_pointer slot = s7_slot(sc, p);
@@ -6442,7 +6442,7 @@ static s7_pointer g_is_immutable(s7_scheme *sc, s7_pointer args)
 
 
 /* -------------------------------- immutable! -------------------------------- */
-s7_pointer s7_immutable(s7_pointer p)
+s7_pointer s7_immutable(s7_pointer p)  /* TODO: mimic g_immutable or merge both */
 {
   set_immutable(p);
   return(p);
@@ -6450,7 +6450,7 @@ s7_pointer s7_immutable(s7_pointer p)
 
 static s7_pointer g_immutable(s7_scheme *sc, s7_pointer args)
 {
-  #define H_immutable "(immutable! x) declares that the x can't be changed. x is returned."
+  #define H_immutable "(immutable! obj) declares that the object obj can't be changed. obj is returned."
   #define Q_immutable s7_make_signature(sc, 2, sc->T, sc->T)
   s7_pointer p = car(args);
   if (is_normal_symbol(p))
@@ -6462,6 +6462,7 @@ static s7_pointer g_immutable(s7_scheme *sc, s7_pointer args)
 	  return(p);  /* symbol is not set immutable ? */
 	}}
   set_immutable(p);   /* could set_immutable save the current file/line? Then the immutable error checks for define-constant and this setting */
+                      /*   T_LOCATION -> T_IMMUTABLE_LOCATION but can't do this for a pair */
   return(p);
 }
 
@@ -11180,14 +11181,15 @@ Only the let is searched if ignore-globals is not #f."
     }
   return((is_global(sym)) ? sc->T : make_boolean(sc, is_slot(s7_slot(sc, sym))));
 }
-/* TODO: (defined? ... (rootlet)) at top-level gets unbound error (eval 91484), should be #f, add both cases to s7test */
 
 static s7_pointer g_is_defined_in_rootlet(s7_scheme *sc, s7_pointer args) /* aimed at lint.scm */
 {
-  /* here we know arg2=(rootlet), and no arg3, arg1 is a symbol (see chooser below), keyword case (defined? :asdf (rootlet)) should not get here */
-  s7_pointer sym = lookup_unexamined(sc, car(args)); /* chooser below uses safe_c_nc(!), so args are unevalled when we get here */
-  if (!sym) return(sc->F);                /* car(args) is unbound, (define (f) (defined? ... (rootlet))) (f) */
-  if (!is_symbol(sym))                    /* if sym is openlet with defined? perhaps it makes sense to call it, but we need to include the rootlet arg */
+  /* called because is_defined_chooser below noticed arg2=(rootlet) and no arg3 and arg1 is a normal symbol (not a keyword).
+   *   since the chooser sets this up to be called via safe_c_nc, the args are unevalled when we get here.
+   *   This is aimed at lint.scm which has stuff like (defined? head (rootlet)) a lot.
+   */
+  s7_pointer sym = lookup_checked(sc, car(args)); /* ok because we know car(args) is an unquoted symbol, lookup_checked for (defined? ... (rootlet)) */
+  if (!is_symbol(sym))                            /* if sym is openlet with defined? perhaps it makes sense to call it, but we need to include the rootlet arg */
     return(method_or_bust_pp(sc, sym, sc->is_defined_symbol, sym, sc->rootlet, sc->type_names[T_SYMBOL], 1));
   return(make_boolean(sc, is_slot(global_slot(sym))));
 }
@@ -26675,7 +26677,7 @@ s7_pointer s7_make_permanent_string(s7_scheme *sc, const char *str) /* keep s7_s
 static void init_strings(void)
 {
   nil_string = make_permanent_string("");
-  nil_string->tf.flag = T_STRING | T_UNHEAP;
+  nil_string->tf.flag = T_STRING | T_UNHEAP; /* turn off T_IMMUTABLE?? -- reverse!?? copy destination??! */
   set_optimize_op(nil_string, OP_CONSTANT);
 
   car_a_list_string = make_permanent_string("a pair whose car is also a pair");
@@ -78599,8 +78601,8 @@ static void check_set(s7_scheme *sc)
     }
   else
     if (!is_symbol(car(code)))                                      /* (set! 12345 1) */
-      error_nr(sc, sc->syntax_error_symbol,
-	       set_elist_3(sc, wrap_string(sc, "set! can't change ~S, ~S", 24), car(code), form));
+      error_nr(sc, sc->syntax_error_symbol,                         /* (set! #_abs 32) -> "error: set! can't change abs (a c-function), (set! abs 32)" */
+	       set_elist_4(sc, wrap_string(sc, "set! can't change ~S (~A), ~S", 29), car(code), sc->type_names[type(car(code))], form));
     else
       if (is_constant_symbol(sc, car(code)))                        /* (set! pi 3) */
 	error_nr(sc, sc->syntax_error_symbol,
@@ -95159,55 +95161,55 @@ static void init_rootlet(s7_scheme *sc)
   #define semisafe_defun(Scheme_Name, C_Name, Req, Opt, Rst) \
     s7_define_semisafe_typed_function(sc, Scheme_Name, g_ ## C_Name, Req, Opt, Rst, H_ ## C_Name, Q_ ## C_Name)
 
-  #define b_defun(Scheme_Name, C_Name, Opt, SymId, Marker, Simple) \
+  #define bool_defun(Scheme_Name, C_Name, Opt, SymId, Marker, Simple) \
     define_bool_function(sc, Scheme_Name, g_ ## C_Name, Opt, H_ ## C_Name, Q_ ## C_Name, SymId, Marker, Simple, b_ ## C_Name ## _setter)
 
   /* we need the sc->is_* symbols first for the procedure signature lists */
   sc->is_boolean_symbol = make_symbol(sc, "boolean?", 8);
   sc->pl_bt = s7_make_signature(sc, 2, sc->is_boolean_symbol, sc->T);
 
-  sc->is_symbol_symbol =          b_defun("symbol?",	      is_symbol,	  0, T_SYMBOL,       mark_symbol_vector, true);
-  sc->is_syntax_symbol =          b_defun("syntax?",	      is_syntax,	  0, T_SYNTAX,       just_mark_vector,   true);
-  sc->is_gensym_symbol =          b_defun("gensym?",	      is_gensym,	  0, T_FREE,         mark_symbol_vector, true);
-  sc->is_keyword_symbol =         b_defun("keyword?",	      is_keyword,	  0, T_FREE,         just_mark_vector,   true);
-  sc->is_let_symbol =             b_defun("let?",	      is_let,		  0, T_LET,          mark_vector_1,      false);
-  sc->is_openlet_symbol =         b_defun("openlet?",	      is_openlet,	  0, T_FREE,         mark_vector_1,      false);
-  sc->is_iterator_symbol =        b_defun("iterator?",	      is_iterator,	  0, T_ITERATOR,     mark_vector_1,      false);
-  sc->is_macro_symbol =           b_defun("macro?",	      is_macro,		  0, T_FREE,         mark_vector_1,      false);
-  sc->is_c_pointer_symbol =       b_defun("c-pointer?",	      is_c_pointer,	  1, T_C_POINTER,    mark_vector_1,      false);
-  sc->is_input_port_symbol =      b_defun("input-port?",      is_input_port,	  0, T_INPUT_PORT,   mark_vector_1,      true);
-  sc->is_output_port_symbol =     b_defun("output-port?",     is_output_port,	  0, T_OUTPUT_PORT,  mark_simple_vector, true);
-  sc->is_eof_object_symbol =      b_defun("eof-object?",      is_eof_object,	  0, T_EOF,          just_mark_vector,   true);
-  sc->is_integer_symbol =         b_defun("integer?",	      is_integer,	  0, (WITH_GMP) ? T_FREE : T_INTEGER, mark_simple_vector, true);
-  sc->is_byte_symbol =            b_defun("byte?",	      is_byte,		  0, T_FREE,         mark_simple_vector, true);
-  sc->is_number_symbol =          b_defun("number?",	      is_number,	  0, T_FREE,         mark_simple_vector, true);
-  sc->is_real_symbol =            b_defun("real?",	      is_real,		  0, T_FREE,         mark_simple_vector, true);
-  sc->is_float_symbol =           b_defun("float?",           is_float,           0, T_FREE,         mark_simple_vector, true);
-  sc->is_complex_symbol =         b_defun("complex?",	      is_complex,	  0, T_FREE,         mark_simple_vector, true);
-  sc->is_rational_symbol =        b_defun("rational?",	      is_rational,	  0, T_FREE,         mark_simple_vector, true);
-  sc->is_random_state_symbol =    b_defun("random-state?",    is_random_state,	  0, T_RANDOM_STATE, mark_simple_vector, true);
-  sc->is_char_symbol =            b_defun("char?",	      is_char,		  0, T_CHARACTER,    just_mark_vector,   true);
-  sc->is_string_symbol =          b_defun("string?",	      is_string,	  0, T_STRING,       mark_simple_vector, true);
-  sc->is_list_symbol =            b_defun("list?",	      is_list,		  0, T_FREE,         mark_vector_1,      false);
-  sc->is_pair_symbol =            b_defun("pair?",	      is_pair,		  0, T_PAIR,         mark_vector_1,      false);
-  sc->is_vector_symbol =          b_defun("vector?",	      is_vector,	  0, T_FREE,         mark_vector_1,      false);
-  sc->is_float_vector_symbol =    b_defun("float-vector?",    is_float_vector,	  0, T_FLOAT_VECTOR, mark_simple_vector, true);
-  sc->is_int_vector_symbol =      b_defun("int-vector?",      is_int_vector,	  0, T_INT_VECTOR,   mark_simple_vector, true);
-  sc->is_byte_vector_symbol =     b_defun("byte-vector?",     is_byte_vector,	  0, T_BYTE_VECTOR,  mark_simple_vector, true);
-  sc->is_hash_table_symbol =      b_defun("hash-table?",      is_hash_table,      0, T_HASH_TABLE,   mark_vector_1,      false);
-  sc->is_continuation_symbol =    b_defun("continuation?",    is_continuation,	  0, T_CONTINUATION, mark_vector_1,      false);
-  sc->is_procedure_symbol =       b_defun("procedure?",	      is_procedure,	  0, T_FREE,         mark_vector_1,      false);
-  sc->is_dilambda_symbol =        b_defun("dilambda?",	      is_dilambda,	  0, T_FREE,         mark_vector_1,      false);
-  /* set above */                 b_defun("boolean?",	      is_boolean,	  0, T_BOOLEAN,      just_mark_vector,   true);
-  sc->is_proper_list_symbol =     b_defun("proper-list?",     is_proper_list,     0, T_FREE,         mark_vector_1,      false);
-  sc->is_sequence_symbol =        b_defun("sequence?",	      is_sequence,	  0, T_FREE,         mark_vector_1,      false);
-  sc->is_null_symbol =            b_defun("null?",	      is_null,		  0, T_NIL,          just_mark_vector,   true);
-  sc->is_undefined_symbol =       b_defun("undefined?",       is_undefined,       0, T_UNDEFINED,    just_mark_vector,   true);
-  sc->is_unspecified_symbol =     b_defun("unspecified?",     is_unspecified,     0, T_UNSPECIFIED,  just_mark_vector,   true);
-  sc->is_c_object_symbol =        b_defun("c-object?",	      is_c_object,	  0, T_C_OBJECT,     mark_vector_1,      false);
-  sc->is_subvector_symbol =       b_defun("subvector?",	      is_subvector,	  0, T_FREE,         mark_vector_1,      false);
-  sc->is_weak_hash_table_symbol = b_defun("weak-hash-table?", is_weak_hash_table, 0, T_FREE,         mark_vector_1,      false);
-  sc->is_goto_symbol =            b_defun("goto?",	      is_goto,	          0, T_GOTO,         mark_vector_1,      true);
+  sc->is_symbol_symbol =          bool_defun("symbol?",	         is_symbol,	     0, T_SYMBOL,       mark_symbol_vector, true);
+  sc->is_syntax_symbol =          bool_defun("syntax?",	         is_syntax,	     0, T_SYNTAX,       just_mark_vector,   true);
+  sc->is_gensym_symbol =          bool_defun("gensym?",	         is_gensym,	     0, T_FREE,         mark_symbol_vector, true);
+  sc->is_keyword_symbol =         bool_defun("keyword?",         is_keyword,	     0, T_FREE,         just_mark_vector,   true);
+  sc->is_let_symbol =             bool_defun("let?",	         is_let,	     0, T_LET,          mark_vector_1,      false);
+  sc->is_openlet_symbol =         bool_defun("openlet?",         is_openlet,	     0, T_FREE,         mark_vector_1,      false);
+  sc->is_iterator_symbol =        bool_defun("iterator?",        is_iterator,	     0, T_ITERATOR,     mark_vector_1,      false);
+  sc->is_macro_symbol =           bool_defun("macro?",	         is_macro,	     0, T_FREE,         mark_vector_1,      false);
+  sc->is_c_pointer_symbol =       bool_defun("c-pointer?",       is_c_pointer,	     1, T_C_POINTER,    mark_vector_1,      false);
+  sc->is_input_port_symbol =      bool_defun("input-port?",      is_input_port,	     0, T_INPUT_PORT,   mark_vector_1,      true);
+  sc->is_output_port_symbol =     bool_defun("output-port?",     is_output_port,     0, T_OUTPUT_PORT,  mark_simple_vector, true);
+  sc->is_eof_object_symbol =      bool_defun("eof-object?",      is_eof_object,	     0, T_EOF,          just_mark_vector,   true);
+  sc->is_integer_symbol =         bool_defun("integer?",         is_integer,	     0, (WITH_GMP) ? T_FREE : T_INTEGER, mark_simple_vector, true);
+  sc->is_byte_symbol =            bool_defun("byte?",	         is_byte,	     0, T_FREE,         mark_simple_vector, true);
+  sc->is_number_symbol =          bool_defun("number?",	         is_number,	     0, T_FREE,         mark_simple_vector, true);
+  sc->is_real_symbol =            bool_defun("real?",	         is_real,	     0, T_FREE,         mark_simple_vector, true);
+  sc->is_float_symbol =           bool_defun("float?",           is_float,           0, T_FREE,         mark_simple_vector, true);
+  sc->is_complex_symbol =         bool_defun("complex?",         is_complex,	     0, T_FREE,         mark_simple_vector, true);
+  sc->is_rational_symbol =        bool_defun("rational?",        is_rational,	     0, T_FREE,         mark_simple_vector, true);
+  sc->is_random_state_symbol =    bool_defun("random-state?",    is_random_state,    0, T_RANDOM_STATE, mark_simple_vector, true);
+  sc->is_char_symbol =            bool_defun("char?",	         is_char,	     0, T_CHARACTER,    just_mark_vector,   true);
+  sc->is_string_symbol =          bool_defun("string?",	         is_string,	     0, T_STRING,       mark_simple_vector, true);
+  sc->is_list_symbol =            bool_defun("list?",	         is_list,	     0, T_FREE,         mark_vector_1,      false);
+  sc->is_pair_symbol =            bool_defun("pair?",	         is_pair,	     0, T_PAIR,         mark_vector_1,      false);
+  sc->is_vector_symbol =          bool_defun("vector?",	         is_vector,	     0, T_FREE,         mark_vector_1,      false);
+  sc->is_float_vector_symbol =    bool_defun("float-vector?",    is_float_vector,    0, T_FLOAT_VECTOR, mark_simple_vector, true);
+  sc->is_int_vector_symbol =      bool_defun("int-vector?",      is_int_vector,	     0, T_INT_VECTOR,   mark_simple_vector, true);
+  sc->is_byte_vector_symbol =     bool_defun("byte-vector?",     is_byte_vector,     0, T_BYTE_VECTOR,  mark_simple_vector, true);
+  sc->is_hash_table_symbol =      bool_defun("hash-table?",      is_hash_table,      0, T_HASH_TABLE,   mark_vector_1,      false);
+  sc->is_continuation_symbol =    bool_defun("continuation?",    is_continuation,    0, T_CONTINUATION, mark_vector_1,      false);
+  sc->is_procedure_symbol =       bool_defun("procedure?",       is_procedure,	     0, T_FREE,         mark_vector_1,      false);
+  sc->is_dilambda_symbol =        bool_defun("dilambda?",        is_dilambda,	     0, T_FREE,         mark_vector_1,      false);
+  /* set above */                 bool_defun("boolean?",         is_boolean,	     0, T_BOOLEAN,      just_mark_vector,   true);
+  sc->is_proper_list_symbol =     bool_defun("proper-list?",     is_proper_list,     0, T_FREE,         mark_vector_1,      false);
+  sc->is_sequence_symbol =        bool_defun("sequence?",        is_sequence,	     0, T_FREE,         mark_vector_1,      false);
+  sc->is_null_symbol =            bool_defun("null?",	         is_null,	     0, T_NIL,          just_mark_vector,   true);
+  sc->is_undefined_symbol =       bool_defun("undefined?",       is_undefined,       0, T_UNDEFINED,    just_mark_vector,   true);
+  sc->is_unspecified_symbol =     bool_defun("unspecified?",     is_unspecified,     0, T_UNSPECIFIED,  just_mark_vector,   true);
+  sc->is_c_object_symbol =        bool_defun("c-object?",        is_c_object,	     0, T_C_OBJECT,     mark_vector_1,      false);
+  sc->is_subvector_symbol =       bool_defun("subvector?",       is_subvector,	     0, T_FREE,         mark_vector_1,      false);
+  sc->is_weak_hash_table_symbol = bool_defun("weak-hash-table?", is_weak_hash_table, 0, T_FREE,         mark_vector_1,      false);
+  sc->is_goto_symbol =            bool_defun("goto?",	         is_goto,            0, T_GOTO,         mark_vector_1,      true);
 
   /* these are for signatures */
   sc->not_symbol = defun("not",	not, 1, 0, false);
@@ -96806,13 +96808,26 @@ int main(int argc, char **argv)
  * lots of strings in gc-lists at end?
  * big allocs in t725 to probe s7_free?
  * catch in C outside scheme code? setting *error-hook* doesn't help -- it falls into the longjmp
- * apply <mumble>: try to give var that gave the function being applied [need to check all 9 paths to this]
- * rest of immutable rootlet slot checks t718/t653, see s7test 110156 -- this is confusion about curlet -- why define different from define-macro?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit
  * t653 gensym cases [tricky!]
  * more of: (let () (define-constant bigcmp 1+2i) (define (func) (let ((_x_ 1)) (do ((i 0 (+ i _x_))) ((= i _x_)) (set! bigcmp (bignum 0+i))))) (func))
  * t718 func set! troubles [what about apply-values as 3rd arg?]
  * t725 add error message checks
- * maybe env args for immutable? and immutable! ? (kinda dumb to have to use with-let)
- * (defined? ... (rootlet)) bug
+ * rest of immutable rootlet slot checks t718/t653/t654, see s7test 110156 -- this is confusion about curlet -- why define different from define-macro?
+ *   maybe env args for immutable? and immutable! ? (kinda dumb to have to use with-let)
+ *   currently s7_* here ignores symbol case etc, also perhaps pair/line saved, also let arg for symbol complicates error checks
+ *   set_immutable save the current file/line? Then the immutable error checks for define-constant and this setting 6464
+ *   make "" immutable and fix all the idiotic error cases, probably same for empty vectors, also (immutable? #_abs|when|with-let|apply-values|quasiquote)
+ *   see also the vals3 t718 set! problem
+ * apply <mumble>: try to give var that gave the function being applied [need to check all 9 paths to this]
+ *   another bad error msg: (defined? ...) -> "unbound variable ... in (...)"
+ * these are all correct, I think:
+ * <1> (reverse #())
+ * #()
+ * <2> (reverse! #())
+ * #()
+ * <3> (reverse! ())
+ * ()
+ * <4> (reverse! "")
+ * ""
  */
