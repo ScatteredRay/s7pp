@@ -480,14 +480,14 @@ static const char *s7_type_names[] =
    "c_macro", "c_function*", "c_function", "c_rst_no_req_function",
    };
 
-/* 1:T_PAIR, 2:T_NIL, 3:T_UNUSED, 4:T_UNDEFINED, 5:T_UNSPECIFIED, 6:T_EOF, 7:T_BOOLEAN, 8:T_CHARACTER, 9:T_SYNTAX, 10:T_SYMBOL,
-   11:T_INTEGER, 12:T_RATIO, 13:T_REAL, 14:T_COMPLEX, 15:T_BIG_INTEGER, 16:T_BIG_RATIO, 17:T_BIG_REAL, 18:T_BIG_COMPLEX,
-   19:T_STRING, 20:T_C_OBJECT, 21:T_VECTOR, 22:T_INT_VECTOR, 23:T_FLOAT_VECTOR, 24:T_BYTE_VECTOR,
-   25:T_CATCH, 26:T_DYNAMIC_WIND, 27:T_HASH_TABLE, 28:T_LET, 29:T_ITERATOR,
-   30:T_STACK, 31:T_COUNTER, 32:T_SLOT, 33:T_C_POINTER, 34:T_OUTPUT_PORT, 35:T_INPUT_PORT, 36:T_RANDOM_STATE, 37:T_CONTINUATION, 38:T_GOTO,
-   39:T_CLOSURE, 40:T_CLOSURE_STAR, 41:T_MACRO, 42:T_MACRO_STAR, 43:T_BACRO, 44:T_BACRO_STAR,
-   45:T_C_MACRO, 46:T_C_FUNCTION_STAR, 47:T_C_FUNCTION, 48:T_C_RST_NO_REQ_FUNCTION,
-   49:NUM_TYPES
+/* 1:t_pair, 2:t_nil, 3:t_unused, 4:t_undefined, 5:t_unspecified, 6:t_eof, 7:t_boolean, 8:t_character, 9:t_syntax, 10:t_symbol,
+   11:t_integer, 12:t_ratio, 13:t_real, 14:t_complex, 15:t_big_integer, 16:t_big_ratio, 17:t_big_real, 18:t_big_complex,
+   19:t_string, 20:t_c_object, 21:t_vector, 22:t_int_vector, 23:t_float_vector, 24:t_byte_vector,
+   25:t_catch, 26:t_dynamic_wind, 27:t_hash_table, 28:t_let, 29:t_iterator,
+   30:t_stack, 31:t_counter, 32:t_slot, 33:t_c_pointer, 34:t_output_port, 35:t_input_port, 36:t_random_state, 37:t_continuation, 38:t_goto,
+   39:t_closure, 40:t_closure_star, 41:t_macro, 42:t_macro_star, 43:t_bacro, 44:t_bacro_star,
+   45:t_c_macro, 46:t_c_function_star, 47:t_c_function, 48:t_c_rst_no_req_function,
+   49:num_types
 */
 
 typedef struct block_t {
@@ -1070,6 +1070,10 @@ typedef struct {
   s7_int *timing_data, *excl, *lines;
 } profile_data_t;
 
+typedef enum {NO_JUMP, CALL_WITH_EXIT_JUMP, THROW_JUMP, CATCH_JUMP, ERROR_JUMP, ERROR_QUIT_JUMP} jump_loc_t;
+typedef enum {NO_SET_JUMP, READ_SET_JUMP, LOAD_SET_JUMP, DYNAMIC_WIND_SET_JUMP, S7_CALL_SET_JUMP, EVAL_SET_JUMP} setjmp_loc_t;
+
+static const char *jump_string[6] = {"no_jump", "call_with_exit_jump", "throw_jump", "catch_jump", "error_jump", "error_quit_jump"};
 
 /* -------------------------------- s7_scheme struct -------------------------------- */
 struct s7_scheme {
@@ -1197,7 +1201,7 @@ struct s7_scheme {
 
   Jmp_Buf *goto_start;
   bool longjmp_ok;
-  int32_t setjmp_loc;
+  setjmp_loc_t setjmp_loc;
 
   void (*begin_hook)(s7_scheme *sc, bool *val);
   opcode_t begin_op;
@@ -1736,7 +1740,7 @@ static s7_pointer too_many_arguments_string, not_enough_arguments_string, cant_b
   format_string_1, format_string_2, format_string_3, format_string_4, keyword_value_missing_string;
 
 static bool t_number_p[NUM_TYPES], t_small_real_p[NUM_TYPES], t_rational_p[NUM_TYPES], t_real_p[NUM_TYPES], t_big_number_p[NUM_TYPES];
-static bool t_simple_p[NUM_TYPES], t_structure_p[NUM_TYPES];
+static bool t_simple_p[NUM_TYPES], t_structure_p[NUM_TYPES], t_immutable_p[NUM_TYPES];
 static bool t_any_macro_p[NUM_TYPES], t_any_closure_p[NUM_TYPES], t_has_closure_let[NUM_TYPES];
 static bool t_mappable_p[NUM_TYPES], t_sequence_p[NUM_TYPES], t_vector_p[NUM_TYPES];
 static bool t_procedure_p[NUM_TYPES], t_applicable_p[NUM_TYPES], t_macro_setter_p[NUM_TYPES];
@@ -1764,40 +1768,24 @@ static void init_types(void)
       t_applicable_p[i] = false;
       t_procedure_p[i] = false;
       t_macro_setter_p[i] = false;
+      t_immutable_p[i] = false;
 #if S7_DEBUGGING
       t_freeze_p[i] = false;
       t_ext_p[i] = false;
 #endif
     }
-  t_number_p[T_INTEGER] = true;
-  t_number_p[T_RATIO] = true;
-  t_number_p[T_REAL] = true;
-  t_number_p[T_COMPLEX] = true;
-  t_number_p[T_BIG_INTEGER] = true;
-  t_number_p[T_BIG_RATIO] = true;
-  t_number_p[T_BIG_REAL] = true;
-  t_number_p[T_BIG_COMPLEX] = true;
+  t_number_p[T_INTEGER] = true; t_number_p[T_RATIO] = true; t_number_p[T_REAL] = true; t_number_p[T_COMPLEX] = true;
+  t_number_p[T_BIG_INTEGER] = true; t_number_p[T_BIG_RATIO] = true; t_number_p[T_BIG_REAL] = true; t_number_p[T_BIG_COMPLEX] = true;
 
-  t_rational_p[T_INTEGER] = true;
-  t_rational_p[T_RATIO] = true;
-  t_rational_p[T_BIG_INTEGER] = true;
-  t_rational_p[T_BIG_RATIO] = true;
+  t_rational_p[T_INTEGER] = true; t_rational_p[T_RATIO] = true;
+ t_rational_p[T_BIG_INTEGER] = true; t_rational_p[T_BIG_RATIO] = true;
 
-  t_small_real_p[T_INTEGER] = true;
-  t_small_real_p[T_RATIO] = true;
-  t_small_real_p[T_REAL] = true;
+  t_small_real_p[T_INTEGER] = true; t_small_real_p[T_RATIO] = true; t_small_real_p[T_REAL] = true;
 
-  t_real_p[T_INTEGER] = true;
-  t_real_p[T_RATIO] = true;
-  t_real_p[T_REAL] = true;
-  t_real_p[T_BIG_INTEGER] = true;
-  t_real_p[T_BIG_RATIO] = true;
-  t_real_p[T_BIG_REAL] = true;
+  t_real_p[T_INTEGER] = true; t_real_p[T_RATIO] = true; t_real_p[T_REAL] = true;
+  t_real_p[T_BIG_INTEGER] = true; t_real_p[T_BIG_RATIO] = true; t_real_p[T_BIG_REAL] = true;
 
-  t_big_number_p[T_BIG_INTEGER] = true;
-  t_big_number_p[T_BIG_RATIO] = true;
-  t_big_number_p[T_BIG_REAL] = true;
-  t_big_number_p[T_BIG_COMPLEX] = true;
+  t_big_number_p[T_BIG_INTEGER] = true; t_big_number_p[T_BIG_RATIO] = true; t_big_number_p[T_BIG_REAL] = true; t_big_number_p[T_BIG_COMPLEX] = true;
 
   t_structure_p[T_PAIR] = true;
   t_structure_p[T_VECTOR] = true;
@@ -1808,91 +1796,59 @@ static void init_types(void)
   t_structure_p[T_C_POINTER] = true;
   t_structure_p[T_C_OBJECT] = true;
 
-  t_sequence_p[T_NIL] = true;
-  t_sequence_p[T_PAIR] = true;
+  t_sequence_p[T_NIL] = true; t_sequence_p[T_PAIR] = true;
   t_sequence_p[T_STRING] = true;
-  t_sequence_p[T_VECTOR] = true;
-  t_sequence_p[T_INT_VECTOR] = true;
-  t_sequence_p[T_FLOAT_VECTOR] = true;
-  t_sequence_p[T_BYTE_VECTOR] = true;
+  t_sequence_p[T_VECTOR] = true; t_sequence_p[T_INT_VECTOR] = true; t_sequence_p[T_FLOAT_VECTOR] = true; t_sequence_p[T_BYTE_VECTOR] = true;
   t_sequence_p[T_HASH_TABLE] = true;
   t_sequence_p[T_LET] = true;
   t_sequence_p[T_C_OBJECT] = true; /* this assumes the object has a length method? */
 
   t_mappable_p[T_PAIR] = true;
   t_mappable_p[T_STRING] = true;
-  t_mappable_p[T_VECTOR] = true;
-  t_mappable_p[T_INT_VECTOR] = true;
-  t_mappable_p[T_FLOAT_VECTOR] = true;
-  t_mappable_p[T_BYTE_VECTOR] = true;
+  t_mappable_p[T_VECTOR] = true; t_mappable_p[T_INT_VECTOR] = true; t_mappable_p[T_FLOAT_VECTOR] = true; t_mappable_p[T_BYTE_VECTOR] = true;
   t_mappable_p[T_HASH_TABLE] = true;
   t_mappable_p[T_LET] = true;
   t_mappable_p[T_C_OBJECT] = true;
   t_mappable_p[T_ITERATOR] = true;
   t_mappable_p[T_C_MACRO] = true;
-  t_mappable_p[T_MACRO] = true;
-  t_mappable_p[T_BACRO] = true;
-  t_mappable_p[T_MACRO_STAR] = true;
-  t_mappable_p[T_BACRO_STAR] = true;
-  t_mappable_p[T_CLOSURE] = true;
-  t_mappable_p[T_CLOSURE_STAR] = true;
+  t_mappable_p[T_MACRO] = true; t_mappable_p[T_MACRO_STAR] = true;
+  t_mappable_p[T_BACRO] = true; t_mappable_p[T_BACRO_STAR] = true;
+  t_mappable_p[T_CLOSURE] = true; t_mappable_p[T_CLOSURE_STAR] = true;
 
-  t_vector_p[T_VECTOR] = true;
-  t_vector_p[T_INT_VECTOR] = true;
-  t_vector_p[T_FLOAT_VECTOR] = true;
-  t_vector_p[T_BYTE_VECTOR] = true;
+  t_vector_p[T_VECTOR] = true; t_vector_p[T_INT_VECTOR] = true; t_vector_p[T_FLOAT_VECTOR] = true; t_vector_p[T_BYTE_VECTOR] = true;
 
   t_applicable_p[T_PAIR] = true;
   t_applicable_p[T_STRING] = true;
-  t_applicable_p[T_VECTOR] = true;
-  t_applicable_p[T_INT_VECTOR] = true;
-  t_applicable_p[T_FLOAT_VECTOR] = true;
-  t_applicable_p[T_BYTE_VECTOR] = true;
+  t_applicable_p[T_VECTOR] = true; t_applicable_p[T_INT_VECTOR] = true; t_applicable_p[T_FLOAT_VECTOR] = true; t_applicable_p[T_BYTE_VECTOR] = true;
   t_applicable_p[T_HASH_TABLE] = true;
   t_applicable_p[T_ITERATOR] = true;
   t_applicable_p[T_LET] = true;
   t_applicable_p[T_C_OBJECT] = true;
   t_applicable_p[T_C_MACRO] = true;
-  t_applicable_p[T_MACRO] = true;
-  t_applicable_p[T_BACRO] = true;
-  t_applicable_p[T_MACRO_STAR] = true;
-  t_applicable_p[T_BACRO_STAR] = true;
+  t_applicable_p[T_MACRO] = true; t_applicable_p[T_MACRO_STAR] = true;
+  t_applicable_p[T_BACRO] = true; t_applicable_p[T_BACRO_STAR] = true;
   t_applicable_p[T_SYNTAX] = true;
-  t_applicable_p[T_C_FUNCTION] = true;
-  t_applicable_p[T_C_FUNCTION_STAR] = true;
-  t_applicable_p[T_C_RST_NO_REQ_FUNCTION] = true;
-  t_applicable_p[T_CLOSURE] = true;
-  t_applicable_p[T_CLOSURE_STAR] = true;
-  t_applicable_p[T_GOTO] = true;
-  t_applicable_p[T_CONTINUATION] = true;
+  t_applicable_p[T_C_FUNCTION] = true; t_applicable_p[T_C_FUNCTION_STAR] = true; t_applicable_p[T_C_RST_NO_REQ_FUNCTION] = true;
+  t_applicable_p[T_CLOSURE] = true; t_applicable_p[T_CLOSURE_STAR] = true;
+  t_applicable_p[T_GOTO] = true; t_applicable_p[T_CONTINUATION] = true;
 
   /* t_procedure_p[T_C_OBJECT] = true; */
-  t_procedure_p[T_C_FUNCTION] = true;
-  t_procedure_p[T_C_FUNCTION_STAR] = true;
-  t_procedure_p[T_C_RST_NO_REQ_FUNCTION] = true;
-  t_procedure_p[T_CLOSURE] = true;
-  t_procedure_p[T_CLOSURE_STAR] = true;
-  t_procedure_p[T_GOTO] = true;
-  t_procedure_p[T_CONTINUATION] = true;
+  t_procedure_p[T_C_FUNCTION] = true; t_procedure_p[T_C_FUNCTION_STAR] = true; t_procedure_p[T_C_RST_NO_REQ_FUNCTION] = true;
+  t_procedure_p[T_CLOSURE] = true; t_procedure_p[T_CLOSURE_STAR] = true;
+  t_procedure_p[T_GOTO] = true; t_procedure_p[T_CONTINUATION] = true;
 
   for (int32_t i = T_CLOSURE; i < NUM_TYPES; i++) t_macro_setter_p[i] = true;
   t_macro_setter_p[T_SYMBOL] = true; /* (slot setter); apparently T_LET and T_C_OBJECT are not possible here */
 
   t_any_macro_p[T_C_MACRO] = true;
-  t_any_macro_p[T_MACRO] = true;
-  t_any_macro_p[T_BACRO] = true;
-  t_any_macro_p[T_MACRO_STAR] = true;
-  t_any_macro_p[T_BACRO_STAR] = true;
+  t_any_macro_p[T_MACRO] = true; t_any_macro_p[T_MACRO_STAR] = true;
+  t_any_macro_p[T_BACRO] = true; t_any_macro_p[T_BACRO_STAR] = true;
 
-  t_any_closure_p[T_CLOSURE] = true;
-  t_any_closure_p[T_CLOSURE_STAR] = true;
+  t_any_closure_p[T_CLOSURE] = true; t_any_closure_p[T_CLOSURE_STAR] = true;
 
-  t_has_closure_let[T_MACRO] = true;
-  t_has_closure_let[T_BACRO] = true;
-  t_has_closure_let[T_MACRO_STAR] = true;
-  t_has_closure_let[T_BACRO_STAR] = true;
-  t_has_closure_let[T_CLOSURE] = true;
-  t_has_closure_let[T_CLOSURE_STAR] = true;
+  t_has_closure_let[T_MACRO] = true; t_has_closure_let[T_MACRO_STAR] = true;
+  t_has_closure_let[T_BACRO] = true; t_has_closure_let[T_BACRO_STAR] = true;
+  t_has_closure_let[T_CLOSURE] = true; t_has_closure_let[T_CLOSURE_STAR] = true;
 
   t_simple_p[T_NIL] = true;
   /* t_simple_p[T_UNDEFINED] = true; */ /* only #<undefined> itself will work with eq? */
@@ -1902,32 +1858,37 @@ static void init_types(void)
   t_simple_p[T_SYMBOL] = true;
   t_simple_p[T_SYNTAX] = true;
   t_simple_p[T_C_MACRO] = true;
-  t_simple_p[T_C_FUNCTION] = true;
-  t_simple_p[T_C_FUNCTION_STAR] = true;
-  t_simple_p[T_C_RST_NO_REQ_FUNCTION] = true;
+  t_simple_p[T_C_FUNCTION] = true; t_simple_p[T_C_FUNCTION_STAR] = true; t_simple_p[T_C_RST_NO_REQ_FUNCTION] = true;
   /* not completely sure about the next ones */
   /* t_simple_p[T_LET] = true; */ /* this needs let_equal in member et al, 29-Nov-22 */
-  t_simple_p[T_INPUT_PORT] = true;
-  t_simple_p[T_OUTPUT_PORT] = true;
+  t_simple_p[T_INPUT_PORT] = true; t_simple_p[T_OUTPUT_PORT] = true;
+
+  t_immutable_p[T_NIL] = true; 
+  t_immutable_p[T_UNSPECIFIED] = true; 
+  t_immutable_p[T_EOF] = true; 
+  t_immutable_p[T_BOOLEAN] = true; 
+  t_immutable_p[T_CHARACTER] = true; 
+  t_immutable_p[T_SYNTAX] = true; 
+  t_immutable_p[T_INTEGER] = true; t_immutable_p[T_RATIO] = true; t_immutable_p[T_REAL] = true; t_immutable_p[T_COMPLEX] = true; 
+  t_immutable_p[T_BIG_INTEGER] = true; t_immutable_p[T_BIG_RATIO] = true; t_immutable_p[T_BIG_REAL] = true; t_immutable_p[T_BIG_COMPLEX] = true; 
+  t_immutable_p[T_CONTINUATION] = true; t_immutable_p[T_GOTO] = true; 
+  t_immutable_p[T_CLOSURE] = true; t_immutable_p[T_CLOSURE_STAR] = true; 
+  t_immutable_p[T_MACRO] = true; t_immutable_p[T_MACRO_STAR] = true; 
+  t_immutable_p[T_BACRO] = true; t_immutable_p[T_BACRO_STAR] = true; 
+  t_immutable_p[T_C_MACRO] = true; 
+  t_immutable_p[T_C_FUNCTION_STAR] = true; t_immutable_p[T_C_FUNCTION] = true; t_immutable_p[T_C_RST_NO_REQ_FUNCTION] = true;
 
 #if S7_DEBUGGING
   t_freeze_p[T_STRING] = true;
-  t_freeze_p[T_BYTE_VECTOR] = true;
-  t_freeze_p[T_VECTOR] = true;
-  t_freeze_p[T_FLOAT_VECTOR] = true;
-  t_freeze_p[T_INT_VECTOR] = true;
+  t_freeze_p[T_VECTOR] = true; t_freeze_p[T_FLOAT_VECTOR] = true; t_freeze_p[T_INT_VECTOR] = true; t_freeze_p[T_BYTE_VECTOR] = true;
   t_freeze_p[T_UNDEFINED] = true;
   t_freeze_p[T_C_OBJECT] = true;
   t_freeze_p[T_HASH_TABLE] = true;
   t_freeze_p[T_C_FUNCTION] = true;
   t_freeze_p[T_CONTINUATION] = true;
-  t_freeze_p[T_INPUT_PORT] = true;
-  t_freeze_p[T_OUTPUT_PORT] = true;
+  t_freeze_p[T_INPUT_PORT] = true; t_freeze_p[T_OUTPUT_PORT] = true;
 #if WITH_GMP
-  t_freeze_p[T_BIG_INTEGER] = true;
-  t_freeze_p[T_BIG_RATIO] = true;
-  t_freeze_p[T_BIG_REAL] = true;
-  t_freeze_p[T_BIG_COMPLEX] = true;
+  t_freeze_p[T_BIG_INTEGER] = true; t_freeze_p[T_BIG_RATIO] = true; t_freeze_p[T_BIG_REAL] = true; t_freeze_p[T_BIG_COMPLEX] = true;
   t_freeze_p[T_RANDOM_STATE] = true;
 #endif
   t_ext_p[T_UNUSED] = true;
@@ -1937,10 +1898,7 @@ static void init_types(void)
   t_ext_p[T_CATCH] = true;
   t_ext_p[T_COUNTER] = true;
 #if (!WITH_GMP)
-  t_ext_p[T_BIG_INTEGER] = true;
-  t_ext_p[T_BIG_RATIO] = true;
-  t_ext_p[T_BIG_REAL] = true;
-  t_ext_p[T_BIG_COMPLEX] = true;
+  t_ext_p[T_BIG_INTEGER] = true; t_ext_p[T_BIG_RATIO] = true; t_ext_p[T_BIG_REAL] = true; t_ext_p[T_BIG_COMPLEX] = true;
 #endif
 #endif
 }
@@ -6423,6 +6381,7 @@ static s7_pointer is_constant_p_p(s7_scheme *sc, s7_pointer p) {return(make_bool
 
 
 /* -------------------------------- immutable? -------------------------------- */
+
 bool s7_is_immutable(s7_pointer p) {return(is_immutable(p));} /* TODO: mimic g_is_immutable or merge both */
 
 static s7_pointer g_is_immutable(s7_scheme *sc, s7_pointer args)
@@ -6430,14 +6389,13 @@ static s7_pointer g_is_immutable(s7_scheme *sc, s7_pointer args)
   #define H_is_immutable "(immutable? obj) returns #t if its argument is immutable"
   #define Q_is_immutable sc->pl_bt
   s7_pointer p = car(args);
-  if ((is_number(p)) || ((is_any_vector(p)) && (vector_length(p) == 0))) return(sc->T); /* can't mark #() immutable else "can't reverse! #() (it is immutable)" */
   if (is_normal_symbol(p))         /* parallel immutable! below */
     {
       s7_pointer slot = s7_slot(sc, p);
       if (is_slot(slot))
 	return(make_boolean(sc, is_immutable_slot(slot)));
     }
-  return(make_boolean(sc, is_immutable(p)));
+  return(make_boolean(sc, (is_immutable(p)) || (t_immutable_p[type(p)]) || ((is_any_vector(p)) && (vector_length(p) == 0))));
 }
 
 
@@ -11527,9 +11485,6 @@ static s7_pointer g_c_pointer_to_list(s7_scheme *sc, s7_pointer args)
 
 
 /* -------------------------------- continuations and gotos -------------------------------- */
-enum {NO_JUMP, CALL_WITH_EXIT_JUMP, THROW_JUMP, CATCH_JUMP, ERROR_JUMP, ERROR_QUIT_JUMP};
-enum {NO_SET_JUMP, READ_SET_JUMP, LOAD_SET_JUMP, DYNAMIC_WIND_SET_JUMP, S7_CALL_SET_JUMP, EVAL_SET_JUMP};
-
 
 /* ----------------------- continuation? -------------------------------- */
 static s7_pointer g_is_continuation(s7_scheme *sc, s7_pointer args)
@@ -26677,7 +26632,7 @@ s7_pointer s7_make_permanent_string(s7_scheme *sc, const char *str) /* keep s7_s
 static void init_strings(void)
 {
   nil_string = make_permanent_string("");
-  nil_string->tf.flag = T_STRING | T_UNHEAP; /* turn off T_IMMUTABLE?? -- reverse!?? copy destination??! */
+  nil_string->tf.flag = T_STRING | T_UNHEAP; /* turn off T_IMMUTABLE?? */
   set_optimize_op(nil_string, OP_CONSTANT);
 
   car_a_list_string = make_permanent_string("a pair whose car is also a pair");
@@ -30273,7 +30228,7 @@ static s7_pointer g_read_string(s7_scheme *sc, s7_pointer args)
 
 
 /* -------------------------------- read -------------------------------- */
-#define declare_jump_info() bool old_longjmp; int32_t old_jump_loc, jump_loc; Jmp_Buf *old_goto_start; Jmp_Buf new_goto_start
+#define declare_jump_info() bool old_longjmp; setjmp_loc_t old_jump_loc; jump_loc_t jump_loc; Jmp_Buf *old_goto_start; Jmp_Buf new_goto_start
 
 #define store_jump_info(Sc)			\
   do {						\
@@ -30296,7 +30251,7 @@ static s7_pointer g_read_string(s7_scheme *sc, s7_pointer args)
   do {						\
     Sc->longjmp_ok = true;			\
     Sc->setjmp_loc = Tag;			\
-    jump_loc = SetJmp(new_goto_start, 1);	\
+    jump_loc = (jump_loc_t)SetJmp(new_goto_start, 1);	\
     Sc->goto_start = &new_goto_start;		\
   } while (0)
 
@@ -49709,9 +49664,6 @@ static s7_pointer string_or_byte_vector_reverse_in_place(s7_scheme *sc, s7_point
   s7_int len;
   uint8_t *bytes;
 
-  if (is_immutable(p))
-    immutable_object_error_nr(sc, set_elist_3(sc, immutable_error_string, sc->reverseb_symbol, p));
-
   if (is_string(p))
     {
       len = string_length(p);
@@ -49723,6 +49675,9 @@ static s7_pointer string_or_byte_vector_reverse_in_place(s7_scheme *sc, s7_point
       bytes = byte_vector_bytes(p);
     }
   if (len < 2) return(p);
+
+  if (is_immutable(p)) /* "" might be immutable but we want (reverse! "") to return "" */
+    immutable_object_error_nr(sc, set_elist_3(sc, immutable_error_string, sc->reverseb_symbol, p));
 
 #if (defined(__linux__)) && (defined(__GLIBC__)) /* need byteswp.h */
   /* this code (from StackOverflow with changes) is much faster: */
@@ -49761,91 +49716,87 @@ static s7_pointer string_or_byte_vector_reverse_in_place(s7_scheme *sc, s7_point
 
 static s7_pointer int_vector_reverse_in_place(s7_scheme *sc, s7_pointer p)
 {
+  s7_int len = vector_length(p);
+  s7_int *s1 = int_vector_ints(p), *s2;
+
+  if (len < 2) return(p); /* (reverse! #i()) -> #i() independent of immutable bit */
   if (is_immutable_vector(p))
     immutable_object_error_nr(sc, set_elist_3(sc, immutable_error_string, sc->reverseb_symbol, p));
-  {
-    s7_int len = vector_length(p);
-    s7_int *s1 = int_vector_ints(p), *s2;
-    if (len < 2) return(p);
-    s2 = (s7_int *)(s1 + len - 1);
-    if ((len & 0x3f) == 0) /* 63 for 2 32's */
+
+  s2 = (s7_int *)(s1 + len - 1);
+  if ((len & 0x3f) == 0) /* 63 for 2 32's */
+    while (s1 < s2)
+      {
+	s7_int c;
+	LOOP_8(c = *s1; *s1++ = *s2; *s2-- = c);
+	LOOP_8(c = *s1; *s1++ = *s2; *s2-- = c);
+	LOOP_8(c = *s1; *s1++ = *s2; *s2-- = c);
+	LOOP_8(c = *s1; *s1++ = *s2; *s2-- = c);
+      }
+  else
+    if ((len & 0xf) == 0) /* not 0x7 -- odd multiple of 8 will leave center ints unreversed (we're moving 2 at a time) */
       while (s1 < s2)
 	{
 	  s7_int c;
 	  LOOP_8(c = *s1; *s1++ = *s2; *s2-- = c);
-	  LOOP_8(c = *s1; *s1++ = *s2; *s2-- = c);
-	  LOOP_8(c = *s1; *s1++ = *s2; *s2-- = c);
-	  LOOP_8(c = *s1; *s1++ = *s2; *s2-- = c);
 	}
-    else
-      if ((len & 0xf) == 0) /* not 0x7 -- odd multiple of 8 will leave center ints unreversed (we're moving 2 at a time) */
-	while (s1 < s2)
-	  {
-	    s7_int c;
-	    LOOP_8(c = *s1; *s1++ = *s2; *s2-- = c);
-	  }
-      else while (s1 < s2) {s7_int c; c = *s1; *s1++ = *s2; *s2-- = c;}
-  }
+    else while (s1 < s2) {s7_int c; c = *s1; *s1++ = *s2; *s2-- = c;}
   return(p);
 }
 
 static s7_pointer float_vector_reverse_in_place(s7_scheme *sc, s7_pointer p)
 {
+  s7_int len = vector_length(p);
+  s7_double *s1 = float_vector_floats(p), *s2;
+  if (len < 2) return(p);
   if (is_immutable_vector(p))
     immutable_object_error_nr(sc, set_elist_3(sc, immutable_error_string, sc->reverseb_symbol, p));
-  {
-    s7_int len = vector_length(p);
-    s7_double *s1 = float_vector_floats(p), *s2;
-    if (len < 2) return(p);
-    s2 = (s7_double *)(s1 + len - 1);
-    if ((len & 0x3f) == 0) /* 63 for 2 32's */
+  s2 = (s7_double *)(s1 + len - 1);
+  if ((len & 0x3f) == 0) /* 63 for 2 32's */
+    while (s1 < s2)
+      {
+	s7_double c;
+	LOOP_8(c = *s1; *s1++ = *s2; *s2-- = c);
+	LOOP_8(c = *s1; *s1++ = *s2; *s2-- = c);
+	LOOP_8(c = *s1; *s1++ = *s2; *s2-- = c);
+	LOOP_8(c = *s1; *s1++ = *s2; *s2-- = c);
+      }
+  else
+    if ((len & 0xf) == 0)
       while (s1 < s2)
 	{
 	  s7_double c;
 	  LOOP_8(c = *s1; *s1++ = *s2; *s2-- = c);
-	  LOOP_8(c = *s1; *s1++ = *s2; *s2-- = c);
-	  LOOP_8(c = *s1; *s1++ = *s2; *s2-- = c);
-	  LOOP_8(c = *s1; *s1++ = *s2; *s2-- = c);
 	}
-    else
-      if ((len & 0xf) == 0)
-	while (s1 < s2)
-	  {
-	    s7_double c;
-	    LOOP_8(c = *s1; *s1++ = *s2; *s2-- = c);
-	  }
-      else while (s1 < s2) {s7_double c; c = *s1; *s1++ = *s2; *s2-- = c;}
-  }
+    else while (s1 < s2) {s7_double c; c = *s1; *s1++ = *s2; *s2-- = c;}
   return(p);
 }
 
 static s7_pointer vector_reverse_in_place(s7_scheme *sc, s7_pointer p)
 {
+  s7_int len = vector_length(p);
+  s7_pointer *s1 = vector_elements(p), *s2;
+  if (len < 2) return(p);
   if (is_immutable_vector(p))
     immutable_object_error_nr(sc, set_elist_3(sc, immutable_error_string, sc->reverseb_symbol, p));
-  {
-    s7_int len = vector_length(p);
-    s7_pointer *s1 = vector_elements(p), *s2;
-    if (len < 2) return(p);
-    s2 = (s7_pointer *)(s1 + len - 1);
-    if ((len & 0x3f) == 0) /* 63 for 2 32's */
+  s2 = (s7_pointer *)(s1 + len - 1);
+  if ((len & 0x3f) == 0) /* 63 for 2 32's */
+    while (s1 < s2)
+      {
+	s7_pointer c;
+	LOOP_8(c = *s1; *s1++ = *s2; *s2-- = c);
+	LOOP_8(c = *s1; *s1++ = *s2; *s2-- = c);
+	LOOP_8(c = *s1; *s1++ = *s2; *s2-- = c);
+	LOOP_8(c = *s1; *s1++ = *s2; *s2-- = c);
+      }
+  else
+    if ((len & 0xf) == 0)
       while (s1 < s2)
 	{
 	  s7_pointer c;
 	  LOOP_8(c = *s1; *s1++ = *s2; *s2-- = c);
-	  LOOP_8(c = *s1; *s1++ = *s2; *s2-- = c);
-	  LOOP_8(c = *s1; *s1++ = *s2; *s2-- = c);
-	  LOOP_8(c = *s1; *s1++ = *s2; *s2-- = c);
 	}
-    else
-      if ((len & 0xf) == 0)
-	while (s1 < s2)
-	  {
-	    s7_pointer c;
-	    LOOP_8(c = *s1; *s1++ = *s2; *s2-- = c);
-	  }
-      else while (s1 < s2) {s7_pointer c; c = *s1; *s1++ = *s2; *s2-- = c;}
-  }
+    else while (s1 < s2) {s7_pointer c; c = *s1; *s1++ = *s2; *s2-- = c;}
   return(p);
 }
 
@@ -49858,7 +49809,7 @@ static s7_pointer g_reverse_in_place(s7_scheme *sc, s7_pointer args)
   s7_pointer p = car(args);
   switch (type(p))
     {
-    case T_NIL:
+    case T_NIL:       /* (reverse! ()) -> () */
       return(sc->nil);
 
     case T_PAIR:
@@ -51580,7 +51531,7 @@ s7_pointer s7_call_with_catch(s7_scheme *sc, s7_pointer tag, s7_pointer body, s7
     store_jump_info(sc);
     set_jump_info(sc, S7_CALL_SET_JUMP);
 
-    if (SHOW_EVAL_OPS) fprintf(stderr, "jump_loc: %d\n", jump_loc);
+    if (SHOW_EVAL_OPS) fprintf(stderr, "jump_loc: %s\n", jump_string[(int)jump_loc]);
     if (jump_loc == NO_JUMP)
       {
 	catch_cstack(p) = &new_goto_start;
@@ -51591,7 +51542,7 @@ s7_pointer s7_call_with_catch(s7_scheme *sc, s7_pointer tag, s7_pointer body, s7
       }
     else
       {
-	if (SHOW_EVAL_OPS) fprintf(stderr, "  jump back with %d (%d)\n", jump_loc, (sc->stack_end == sc->stack_start));
+	if (SHOW_EVAL_OPS) fprintf(stderr, "  jump back with %s (%d)\n", jump_string[(int)jump_loc], (sc->stack_end == sc->stack_start));
 	if (jump_loc != ERROR_JUMP)
 	  eval(sc, sc->cur_op);
 	if ((jump_loc == CATCH_JUMP) &&    /* we're returning from an error in catch */
@@ -56729,8 +56680,12 @@ static s7_function fx_choose(s7_scheme *sc, s7_pointer holder, s7_pointer cur_en
     {
       if (is_symbol(arg))
 	{
-	  /* if ((is_keyword(arg)) || ((arg == sc->else_symbol) && (is_global(arg)))) return(fx_c); */ /* can't depend on is_global here */
 	  if (is_keyword(arg)) return(fx_c);
+	  if (arg == sc->else_symbol)
+	    {
+	      if (is_let(cur_env)) {if (s7_symbol_local_value(sc, arg, cur_env) == sc->else_symbol) return(fx_c);}
+	      else if ((is_pair(cur_env)) && (!direct_memq(arg, cur_env))) return(fx_c);
+	    }
 	  return((is_global(arg)) ? fx_g : ((checker(sc, arg, cur_env)) ? fx_s : fx_unsafe_s));
 	}
       return(fx_c);
@@ -68728,7 +68683,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 
     case OP_SET_opSAq_P_1: case OP_SET_opSAAq_P_1:
       /* if the target has a setter, this might not be too many arguments since the setter can do what it wants with the arguments, P might be (values ...) */
-      /* this is a problem with setters -- should we insist that set! takes 3 arguments in all cases?
+      /* this is a problem with setters -- I think we should insist that set! takes 3 arguments in all cases.
        *   (define (a3 x) x)
        *   (set! (setter a3) (lambda (x y z) (list x y z)))
        *   <11> (set! (a3 1) 2)
@@ -86747,9 +86702,9 @@ static s7_pointer op_recur_cond_a_a_opa_laq(s7_scheme *sc)
 }
 
 /* -------- if_a_a_opa_laaq and if_a_opa_laaq_a and cond_a_a_opa_laaq -------- */
-enum {IF1A_LA2, IF2A_LA2, COND2A_LA2};
+typedef enum {IF1A_LA2, IF2A_LA2, COND2A_LA2} laaq_t;
 
-static void opinit_if_a_a_opa_laaq(s7_scheme *sc, int32_t a_op)
+static void opinit_if_a_a_opa_laaq(s7_scheme *sc, laaq_t a_op)
 {
   s7_pointer caller = opt3_pair(sc->code);
   rec_set_test(sc, (a_op == COND2A_LA2) ? cadr(sc->code) : cdr(sc->code));
@@ -86805,7 +86760,8 @@ static s7_pointer op_recur_if_a_a_opa_laaq(s7_scheme *sc)
 
 static s7_pointer op_recur_if_a_opa_laaq_a(s7_scheme *sc)
 {
-  opinit_if_a_a_opa_laaq(sc, IF1A_LA2);
+  opinit_if_a_a_opa_laaq(sc, IF1A_LA2
+);
   return(oprec_if_a_opa_laaq_a(sc));
 }
 
@@ -96751,7 +96707,7 @@ int main(int argc, char **argv)
  * ---------------------------------------------------
  * tpeak      115    114    108    105    102    102
  * tref       691    687    463    459    459    464
- * index     1026   1016    973    967    970    968
+ * index     1026   1016    973    967    970    966
  * tmock     1177   1165   1057   1019   1027   1027
  * tvect     2519   2464   1772   1669   1647   1647
  * timp      2637   2575   1930   1694   1709   1709
@@ -96762,13 +96718,13 @@ int main(int argc, char **argv)
  * lt        2187   2172   2150   2185   2198   2198
  * dup       3805   3788   2492   2239   2214   2219
  * tcopy     8035   5546   2539   2375   2381   2381
- * tread     2440   2421   2419   2408   2399   2399
+ * tread     2440   2421   2419   2408   2399   2403
  * fbench    2688   2583   2460   2430   2458   2458
  * trclo     2735   2574   2454   2445   2461   2461
  * titer     2865   2842   2641   2509   2465   2465
  * tload     ----   ----   3046   2404   2502   2502
  * tmat      3065   3042   2524   2578   2582   2586
- * tb        2735   2681   2612   2604   2630   2630
+ * tb        2735   2681   2612   2604   2630   2633
  * tsort     3105   3104   2856   2804   2828   2828
  * tobj      4016   3970   3828   3577   3511   3511
  * teq       4068   4045   3536   3486   3568   3568
@@ -96780,9 +96736,9 @@ int main(int argc, char **argv)
  * tfft      7820   7729   4755   4476   4512   4512
  * tstar     6139   5923   5519   4449   4553   4560
  * tmap      8869   8774   4489   4541   4618   4618
- * tshoot    5525   5447   5183   5055   5044   5044
+ * tshoot    5525   5447   5183   5055   5044   5047
  * tform     5357   5348   5307   5316   5167   5161
- * tstr      6880   6342   5488   5162   5199   5203
+ * tstr      6880   6342   5488   5162   5199   5206
  * tnum      6348   6013   5433   5396   5408   5403
  * tlamb     6423   6273   5720   5560   5620   5620
  * tmisc     8869   7612   6435   6076   6216   6220
@@ -96794,12 +96750,12 @@ int main(int argc, char **argv)
  * tleft     10.4   10.2   7657   7479   7611   7610
  * tgc       11.9   11.1   8177   7857   7958   7965
  * thash     11.8   11.7   9734   9479   9535   9536
- * cb        11.2   11.0   9658   9564   9626   9603
+ * cb        11.2   11.0   9658   9564   9626   9611
  * tgen      11.2   11.4   12.0   12.1   12.1   12.1
  * tall      15.6   15.6   15.6   15.6   15.1   15.1
  * calls     36.7   37.5   37.0   37.5   37.3   37.2
- * sg        ----   ----   55.9   55.8   55.3   55.3
- * lg        ----   ----  105.2  106.4  107.1  107.1
+ * sg        ----   ----   55.9   55.8   55.3   55.4
+ * lg        ----   ----  105.2  106.4  107.1  107.2
  * tbig     177.4  175.8  156.5  148.1  145.9  146.0
  * ---------------------------------------------------
  *
@@ -96812,22 +96768,12 @@ int main(int argc, char **argv)
  * t653 gensym cases [tricky!]
  * more of: (let () (define-constant bigcmp 1+2i) (define (func) (let ((_x_ 1)) (do ((i 0 (+ i _x_))) ((= i _x_)) (set! bigcmp (bignum 0+i))))) (func))
  * t718 func set! troubles [what about apply-values as 3rd arg?]
+ *   also the vals3 t718 set! problem
  * t725 add error message checks
  * rest of immutable rootlet slot checks t718/t653/t654, see s7test 110156 -- this is confusion about curlet -- why define different from define-macro?
  *   maybe env args for immutable? and immutable! ? (kinda dumb to have to use with-let)
- *   currently s7_* here ignores symbol case etc, also perhaps pair/line saved, also let arg for symbol complicates error checks
+ *   currently s7_* here ignores symbol case etc, also let arg for symbol complicates error checks
  *   set_immutable save the current file/line? Then the immutable error checks for define-constant and this setting 6464
- *   make "" immutable and fix all the idiotic error cases, probably same for empty vectors, also (immutable? #_abs|when|with-let|apply-values|quasiquote)
- *   see also the vals3 t718 set! problem
  * apply <mumble>: try to give var that gave the function being applied [need to check all 9 paths to this]
  *   another bad error msg: (defined? ...) -> "unbound variable ... in (...)"
- * these are all correct, I think:
- * <1> (reverse #())
- * #()
- * <2> (reverse! #())
- * #()
- * <3> (reverse! ())
- * ()
- * <4> (reverse! "")
- * ""
  */
