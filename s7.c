@@ -1768,7 +1768,7 @@ static void init_types(void)
       t_applicable_p[i] = false;
       t_procedure_p[i] = false;
       t_macro_setter_p[i] = false;
-      t_immutable_p[i] = false;
+      t_immutable_p[i] = true;
 #if S7_DEBUGGING
       t_freeze_p[i] = false;
       t_ext_p[i] = false;
@@ -1793,8 +1793,7 @@ static void init_types(void)
   t_structure_p[T_SLOT] = true;
   t_structure_p[T_LET] = true;
   t_structure_p[T_ITERATOR] = true;
-  t_structure_p[T_C_POINTER] = true;
-  t_structure_p[T_C_OBJECT] = true;
+  t_structure_p[T_C_OBJECT] = true; t_structure_p[T_C_POINTER] = true;
 
   t_sequence_p[T_NIL] = true; t_sequence_p[T_PAIR] = true;
   t_sequence_p[T_STRING] = true;
@@ -1863,20 +1862,17 @@ static void init_types(void)
   /* t_simple_p[T_LET] = true; */ /* this needs let_equal in member et al, 29-Nov-22 */
   t_simple_p[T_INPUT_PORT] = true; t_simple_p[T_OUTPUT_PORT] = true;
 
-  t_immutable_p[T_NIL] = true; 
-  t_immutable_p[T_UNSPECIFIED] = true; 
-  t_immutable_p[T_EOF] = true; 
-  t_immutable_p[T_BOOLEAN] = true; 
-  t_immutable_p[T_CHARACTER] = true; 
-  t_immutable_p[T_SYNTAX] = true; 
-  t_immutable_p[T_INTEGER] = true; t_immutable_p[T_RATIO] = true; t_immutable_p[T_REAL] = true; t_immutable_p[T_COMPLEX] = true; 
-  t_immutable_p[T_BIG_INTEGER] = true; t_immutable_p[T_BIG_RATIO] = true; t_immutable_p[T_BIG_REAL] = true; t_immutable_p[T_BIG_COMPLEX] = true; 
-  t_immutable_p[T_CONTINUATION] = true; t_immutable_p[T_GOTO] = true; 
-  t_immutable_p[T_CLOSURE] = true; t_immutable_p[T_CLOSURE_STAR] = true; 
-  t_immutable_p[T_MACRO] = true; t_immutable_p[T_MACRO_STAR] = true; 
-  t_immutable_p[T_BACRO] = true; t_immutable_p[T_BACRO_STAR] = true; 
-  t_immutable_p[T_C_MACRO] = true; 
-  t_immutable_p[T_C_FUNCTION_STAR] = true; t_immutable_p[T_C_FUNCTION] = true; t_immutable_p[T_C_RST_NO_REQ_FUNCTION] = true;
+  t_immutable_p[T_PAIR] = false;
+  t_immutable_p[T_UNDEFINED] = false;
+  t_immutable_p[T_SYMBOL] = false;
+  t_immutable_p[T_STRING] = false;
+  t_immutable_p[T_C_OBJECT] = false; t_immutable_p[T_C_POINTER] = false;
+  t_immutable_p[T_VECTOR] = false; t_immutable_p[T_FLOAT_VECTOR] = false; t_immutable_p[T_INT_VECTOR] = false; t_immutable_p[T_BYTE_VECTOR] = false;
+  t_immutable_p[T_HASH_TABLE] = false;
+  t_immutable_p[T_LET] = false;
+  /* t_immutable_p[T_ITERATOR] = false; t_immutable_p[T_INPUT_PORT] = false; t_immutable_p[T_OUTPUT_PORT] = false; */ /* ?? */
+  t_immutable_p[T_SLOT] = false;
+  t_immutable_p[T_RANDOM_STATE] = false;
 
 #if S7_DEBUGGING
   t_freeze_p[T_STRING] = true;
@@ -1891,6 +1887,7 @@ static void init_types(void)
   t_freeze_p[T_BIG_INTEGER] = true; t_freeze_p[T_BIG_RATIO] = true; t_freeze_p[T_BIG_REAL] = true; t_freeze_p[T_BIG_COMPLEX] = true;
   t_freeze_p[T_RANDOM_STATE] = true;
 #endif
+
   t_ext_p[T_UNUSED] = true;
   t_ext_p[T_STACK] = true;
   t_ext_p[T_SLOT] = true;
@@ -10791,6 +10788,24 @@ static bool tree_has_definers(s7_scheme *sc, s7_pointer tree)
   return((is_symbol(tree)) && (is_definer(tree)));
 }
 
+static s7_pointer cur_op_to_caller(s7_scheme *sc, opcode_t op)
+{
+  switch (op)
+    {
+    case OP_DEFINE_MACRO:          return(sc->define_macro_symbol);
+    case OP_DEFINE_MACRO_STAR:     return(sc->define_macro_star_symbol);
+    case OP_DEFINE_BACRO:          return(sc->define_bacro_symbol);
+    case OP_DEFINE_BACRO_STAR:     return(sc->define_bacro_star_symbol);
+    case OP_DEFINE_EXPANSION:      return(sc->define_expansion_symbol);
+    case OP_DEFINE_EXPANSION_STAR: return(sc->define_expansion_star_symbol);
+    case OP_MACRO:                 return(sc->macro_symbol);
+    case OP_MACRO_STAR:            return(sc->macro_star_symbol);
+    case OP_BACRO:                 return(sc->bacro_symbol);
+    case OP_BACRO_STAR:            return(sc->bacro_star_symbol);
+    }
+  return(sc->define_macro_symbol);
+}
+
 static s7_pointer make_macro(s7_scheme *sc, opcode_t op, bool named)
 {
   s7_pointer mac, body, mac_name = NULL;
@@ -10829,8 +10844,12 @@ static s7_pointer make_macro(s7_scheme *sc, opcode_t op, bool named)
 
       /* symbol? macro name has already been checked, find name in let, and define it */
       mac_slot = symbol_to_local_slot(sc, mac_name, sc->curlet); /* returns global_slot(symbol) if sc->curlet == nil */
+      
       if (is_slot(mac_slot))
 	{
+	  if (is_immutable_slot(mac_slot))
+	    immutable_object_error_nr(sc, set_elist_3(sc, wrap_string(sc, "can't ~S ~S; it is immutable", 28), cur_op_to_caller(sc, op), mac_name));
+
 	  if ((sc->curlet == sc->nil) && (!in_rootlet(mac_slot)))
 	    add_slot_to_rootlet(sc, mac_slot);
 	  slot_set_value_with_hook(mac_slot, mac);
@@ -69527,19 +69546,22 @@ static void pair_set_current_input_location(s7_scheme *sc, s7_pointer p)
 static noreturn void unbound_variable_error_nr(s7_scheme *sc, s7_pointer sym)
 {
   s7_pointer err_code = NULL;
-
-  if ((is_pair(current_code(sc))) && (s7_tree_memq(sc, sym, current_code(sc)))) err_code = current_code(sc);
-  if ((is_pair(sc->code)) && (s7_tree_memq(sc, sym, sc->code))) err_code = sc->code;
+  if ((is_pair(current_code(sc))) && (s7_tree_memq(sc, sym, current_code(sc)))) 
+    err_code = current_code(sc);
+  else 
+    if ((is_pair(sc->code)) && (s7_tree_memq(sc, sym, sc->code))) 
+      err_code = sc->code;
 #if WITH_HISTORY
-  {
-    s7_pointer p;
-    for (p = cdr(sc->cur_code); cdr(p) != sc->cur_code; p = cdr(p));
-    if ((is_pair(car(p))) && (s7_tree_memq(sc, sym, car(p)))) err_code = car(p);
-  }
+  else
+    {
+      s7_pointer p;
+      for (p = cdr(sc->cur_code); cdr(p) != sc->cur_code; p = cdr(p));
+      if ((is_pair(car(p))) && (s7_tree_memq(sc, sym, car(p)))) err_code = car(p);
+    }
 #endif
-    if (err_code)
-      error_nr(sc, sc->unbound_variable_symbol,
-	       set_elist_3(sc, wrap_string(sc, "unbound variable ~S in ~S", 25), sym, err_code));
+  if (err_code)
+    error_nr(sc, sc->unbound_variable_symbol,
+	     set_elist_3(sc, wrap_string(sc, "unbound variable ~S in ~S", 25), sym, err_code));
 
   if ((symbol_name(sym)[symbol_name_length(sym) - 1] == ',') &&
       (lookup_unexamined(sc, make_symbol(sc, symbol_name(sym), symbol_name_length(sym) - 1))))
@@ -77681,24 +77703,6 @@ static inline void define_funchecked(s7_scheme *sc)
     sc->let_number++; /* dummy let, force symbol lookup */
   add_slot_unchecked(sc, sc->curlet, sc->value, new_func, sc->let_number);
   sc->value = new_func;
-}
-
-static s7_pointer cur_op_to_caller(s7_scheme *sc, opcode_t op)
-{
-  switch (op)
-    {
-    case OP_DEFINE_MACRO:          return(sc->define_macro_symbol);
-    case OP_DEFINE_MACRO_STAR:     return(sc->define_macro_star_symbol);
-    case OP_DEFINE_BACRO:          return(sc->define_bacro_symbol);
-    case OP_DEFINE_BACRO_STAR:     return(sc->define_bacro_star_symbol);
-    case OP_DEFINE_EXPANSION:      return(sc->define_expansion_symbol);
-    case OP_DEFINE_EXPANSION_STAR: return(sc->define_expansion_star_symbol);
-    case OP_MACRO:                 return(sc->macro_symbol);
-    case OP_MACRO_STAR:            return(sc->macro_star_symbol);
-    case OP_BACRO:                 return(sc->bacro_symbol);
-    case OP_BACRO_STAR:            return(sc->bacro_star_symbol);
-    }
-  return(sc->define_macro_symbol);
 }
 
 static s7_pointer check_define_macro(s7_scheme *sc, opcode_t op, s7_pointer form)
@@ -86760,8 +86764,7 @@ static s7_pointer op_recur_if_a_a_opa_laaq(s7_scheme *sc)
 
 static s7_pointer op_recur_if_a_opa_laaq_a(s7_scheme *sc)
 {
-  opinit_if_a_a_opa_laaq(sc, IF1A_LA2
-);
+  opinit_if_a_a_opa_laaq(sc, IF1A_LA2);
   return(oprec_if_a_opa_laaq_a(sc));
 }
 
@@ -96193,64 +96196,6 @@ s7_scheme *s7_init(void)
   sc->s7_starlet = make_s7_starlet(sc);
   s7_set_history_enabled(sc, true);
 
-#if (!WITH_PURE_S7)
-  s7_define_variable(sc, "make-rectangular", global_value(sc->complex_symbol));
-  s7_eval_c_string(sc, "(define make-polar                                                                \n\
-                          (let ((+signature+ '(number? real? real?)))                                     \n\
-                            (lambda (mag ang)                                                             \n\
-                              (if (and (real? mag) (real? ang))                                           \n\
-                                  (complex (* mag (cos ang)) (* mag (sin ang)))                           \n\
-                                  (error 'wrong-type-arg \"make-polar arguments should be real\")))))");
-
-  s7_eval_c_string(sc, "(define (call-with-values producer consumer) (apply consumer (list (producer))))");
-  /* (consumer (producer)) will work in any "normal" context.  If consumer is syntax and then subsequently not syntax, there is confusion */
-
-  s7_eval_c_string(sc, "(define-macro (multiple-value-bind vars expression . body)                        \n\
-                          (list (cons 'lambda (cons vars body)) expression))");
-
-  s7_eval_c_string(sc, "(define-macro (cond-expand . clauses)                                             \n\
-                          (if (null? clauses)                                                             \n\
-                              (error 'syntax-error \"cond-expand: no clauses?\"))                         \n\
-                          (letrec ((traverse (lambda (tree)                                               \n\
-		                               (if (pair? tree)                                           \n\
-			                           (cons (traverse (car tree))                            \n\
-				                         (case (cdr tree) ((())) (else => traverse)))     \n\
-			                           (if (memq tree '(and or not else)) tree                \n\
-			                               (and (symbol? tree) (provided? tree)))))))         \n\
-                            (cons 'cond (map (lambda (clause)                                             \n\
-		                               (if (pair? clause)                                         \n\
-                                                   (cons (traverse (car clause))                          \n\
-			                                 (case (cdr clause) ((()) '(#f)) (else)))         \n\
-                                                   (error 'syntax-error \"cond-expand: clause is not a pair, ~S\" clause))) \n\
-		                             clauses))))");
-  /* cond-expand should expand into an expansion (or inline macro?) so that if there's no else clause, we can add (else (values))
-   *   r7rs says: "If none of the <feature requirement>s evaluate to #t, then if there is an else clause, its <expression>s are included. Otherwise, the cond-expand has no effect."
-   *   The code above returns #<unspecified>, but I read that prose to say that (begin 23 (cond-expand (surreals 1) (foonly 2))) should evaluate to 23.
-   */
-#endif
-
-  s7_eval_c_string(sc, "(define-expansion (reader-cond . clauses)                                         \n\
-                          (if (null? clauses)                                                             \n\
-                              (error 'syntax-error \"reader-cond: no clauses?\"))                         \n\
-                          (call-with-exit                                                                 \n\
-                            (lambda (return)                                                              \n\
-                              (for-each                                                                   \n\
-                                (lambda (clause)                                                          \n\
-                                  (if (not (pair? clause))                                                \n\
-                                      (error 'syntax-error \"reader-cond: clause is not a pair, ~S\" clause)) \n\
-	                          (let ((val (eval (car clause))))                                        \n\
-                                    (when val                                                             \n\
-                                      (return                                                             \n\
-                                        (cond ((null? (cdr clause)) val)                                  \n\
-                                              ((eq? (cadr clause) '=>) ((eval (caddr clause)) val))       \n\
-                                              ((null? (cddr clause)) (cadr clause))                       \n\
-                                              (else (apply values (cdr clause))))))))                     \n\
-                                clauses)                                                                  \n\
-                              (values))))"); /* this is not redundant */  /* map above ignores trailing cdr if improper */
-  /*   was (return `(values ,@(cdr clause))) snd-14, begin snd-13, snd-23 (else (apply values (map quote (cdr clause)))) */
-  /* we need "values" (not "begin") to make sure all entries are plugged in at the source location? but that's not how "cond" works */
-  /*   maybe a better name: reader-cond-values? or reader-values or splicing-cond? */
-
   s7_eval_c_string(sc, "(define make-hook                                                                 \n\
                           (let ((+documentation+ \"(make-hook . pars) returns a new hook (a function) that passes the parameters to its function list.\")) \n\
                             (lambda hook-args                                                             \n\
@@ -96317,6 +96262,64 @@ s7_scheme *s7_init(void)
 					"*rootlet-redefinition-hook* functions are called when a top-level variable's value is changed, (hook 'name 'value).");
 
   sc->let_temp_hook = s7_eval_c_string(sc, "(make-hook 'type 'data)");
+
+  s7_eval_c_string(sc, "(define-expansion (reader-cond . clauses)                                         \n\
+                          (if (null? clauses)                                                             \n\
+                              (error 'syntax-error \"reader-cond: no clauses?\"))                         \n\
+                          (call-with-exit                                                                 \n\
+                            (lambda (return)                                                              \n\
+                              (for-each                                                                   \n\
+                                (lambda (clause)                                                          \n\
+                                  (if (not (pair? clause))                                                \n\
+                                      (error 'syntax-error \"reader-cond: clause is not a pair, ~S\" clause)) \n\
+	                          (let ((val (eval (car clause))))                                        \n\
+                                    (when val                                                             \n\
+                                      (return                                                             \n\
+                                        (cond ((null? (cdr clause)) val)                                  \n\
+                                              ((eq? (cadr clause) '=>) ((eval (caddr clause)) val))       \n\
+                                              ((null? (cddr clause)) (cadr clause))                       \n\
+                                              (else (apply values (cdr clause))))))))                     \n\
+                                clauses)                                                                  \n\
+                              (values))))"); /* this is not redundant */  /* map above ignores trailing cdr if improper */
+  /*   was (return `(values ,@(cdr clause))) snd-14, begin snd-13, snd-23 (else (apply values (map quote (cdr clause)))) */
+  /* we need "values" (not "begin") to make sure all entries are plugged in at the source location? but that's not how "cond" works */
+  /*   maybe a better name: reader-cond-values? or reader-values or splicing-cond? */
+
+#if (!WITH_PURE_S7)
+  s7_define_variable(sc, "make-rectangular", global_value(sc->complex_symbol));
+  s7_eval_c_string(sc, "(define make-polar                                                                \n\
+                          (let ((+signature+ '(number? real? real?)))                                     \n\
+                            (lambda (mag ang)                                                             \n\
+                              (if (and (real? mag) (real? ang))                                           \n\
+                                  (complex (* mag (cos ang)) (* mag (sin ang)))                           \n\
+                                  (error 'wrong-type-arg \"make-polar arguments should be real\")))))");
+
+  s7_eval_c_string(sc, "(define (call-with-values producer consumer) (apply consumer (list (producer))))");
+  /* (consumer (producer)) will work in any "normal" context.  If consumer is syntax and then subsequently not syntax, there is confusion */
+
+  s7_eval_c_string(sc, "(define-macro (multiple-value-bind vars expression . body)                        \n\
+                          (list (cons 'lambda (cons vars body)) expression))");
+
+  s7_eval_c_string(sc, "(define-macro (cond-expand . clauses)                                             \n\
+                          (if (null? clauses)                                                             \n\
+                              (error 'syntax-error \"cond-expand: no clauses?\"))                         \n\
+                          (letrec ((traverse (lambda (tree)                                               \n\
+		                               (if (pair? tree)                                           \n\
+			                           (cons (traverse (car tree))                            \n\
+				                         (case (cdr tree) ((())) (else => traverse)))     \n\
+			                           (if (memq tree '(and or not else)) tree                \n\
+			                               (and (symbol? tree) (provided? tree)))))))         \n\
+                            (cons 'cond (map (lambda (clause)                                             \n\
+		                               (if (pair? clause)                                         \n\
+                                                   (cons (traverse (car clause))                          \n\
+			                                 (case (cdr clause) ((()) '(#f)) (else)))         \n\
+                                                   (error 'syntax-error \"cond-expand: clause is not a pair, ~S\" clause))) \n\
+		                             clauses))))");
+  /* cond-expand should expand into an expansion (or inline macro?) so that if there's no else clause, we can add (else (values))
+   *   r7rs says: "If none of the <feature requirement>s evaluate to #t, then if there is an else clause, its <expression>s are included. Otherwise, the cond-expand has no effect."
+   *   The code above returns #<unspecified>, but I read that prose to say that (begin 23 (cond-expand (surreals 1) (foonly 2))) should evaluate to 23.
+   */
+#endif
 
 #if S7_DEBUGGING
   s7_define_function(sc, "report-missed-calls", g_report_missed_calls, 0, 0, false, NULL); /* tc/recur tests in s7test.scm */
@@ -96762,18 +96765,24 @@ int main(int argc, char **argv)
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * safety for exp->mac? check-define-macro in lint (given eval-string, we can't do this in s7.c I think)
  * lots of strings in gc-lists at end?
- * big allocs in t725 to probe s7_free?
  * catch in C outside scheme code? setting *error-hook* doesn't help -- it falls into the longjmp
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit
  * t653 gensym cases [tricky!]
  * more of: (let () (define-constant bigcmp 1+2i) (define (func) (let ((_x_ 1)) (do ((i 0 (+ i _x_))) ((= i _x_)) (set! bigcmp (bignum 0+i))))) (func))
- * t718 func set! troubles [what about apply-values as 3rd arg?]
+ * t718 func set! troubles [what about apply-values as 3rd arg? -- see t718]
  *   also the vals3 t718 set! problem
  * t725 add error message checks
- * rest of immutable rootlet slot checks t718/t653/t654, see s7test 110156 -- this is confusion about curlet -- why define different from define-macro?
- *   maybe env args for immutable? and immutable! ? (kinda dumb to have to use with-let)
+ * maybe env args for immutable? and immutable! ? (kinda dumb to have to use with-let)
  *   currently s7_* here ignores symbol case etc, also let arg for symbol complicates error checks
  *   set_immutable save the current file/line? Then the immutable error checks for define-constant and this setting 6464
  * apply <mumble>: try to give var that gave the function being applied [need to check all 9 paths to this]
  *   another bad error msg: (defined? ...) -> "unbound variable ... in (...)"
+     <1> (+ 1 asdf)
+     error: unbound variable asdf in (asdf) [op_stack to complete here and below]
+     <2> (defined? ...) [eval_last_arg]
+     error: unbound variable ... in (...)
+     <3> (let ((x asdf)) x) [fx_unsafe_s from op_let1] 75396
+     error: unbound variable asdf in ((x asdf))
+ * t718 bugs
+ * t101 case where cosh gets error not #<undefined>
  */

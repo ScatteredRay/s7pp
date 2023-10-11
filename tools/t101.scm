@@ -6,6 +6,7 @@
 (let ((aux-file (format #f "t101-aux-~D.scm" (set! aux-counter (+ aux-counter 1)))))
   (call-with-output-file aux-file
     (lambda (p)
+      (format p "(define aux-counter ~D)\n" aux-counter)
       (format p "(set! (*s7* 'safety) 1)~%")
       (format p "(load \"s7test.scm\")~%(exit)~%")))
   (format *stderr* "~%~NC~%test: safety=1~%" 80 #\-)
@@ -14,6 +15,7 @@
 (let ((aux-file (format #f "t101-aux-~D.scm" (set! aux-counter (+ aux-counter 1)))))
   (call-with-output-file aux-file
     (lambda (p)
+      (format p "(define aux-counter ~D)\n" aux-counter)
       (format p "(set! (*s7* 'initial-string-port-length) 32)~%(set! (*s7* 'undefined-identifier-warnings) #t)~%(set! (*s7* 'hash-table-float-epsilon) 1e-3)~%")
       (format p "(load \"s7test.scm\")~%(exit)~%")))
   (format *stderr* "~%~NC~%test: port-length=32 etc~%" 80 #\-)
@@ -22,6 +24,7 @@
 (let ((aux-file (format #f "t101-aux-~D.scm" (set! aux-counter (+ aux-counter 1)))))
   (call-with-output-file aux-file
     (lambda (p)
+      (format p "(define aux-counter ~D)\n" aux-counter)
       (format p "(with-input-from-file \"/home/bil/cl/all-lg-results\" (lambda () (display (with-output-to-string (lambda () (load \"s7test.scm\")))) (newline)))")
       (format p "(load \"s7test.scm\")~%(exit)~%")))
   (format *stderr* "~%~NC~%test: stdin from all-lg-results~%" 80 #\-)
@@ -32,6 +35,7 @@
    (let ((aux-file (format #f "t101-aux-~D.scm" (set! aux-counter (+ aux-counter 1)))))
      (call-with-output-file aux-file
        (lambda (p)
+	 (format p "(define aux-counter ~D)\n" aux-counter)
 	 (format p "(define-macro (test tst expected) ~A)~%" test-case)
 	 (format p "(define-macro (num-test tst expected) ~A)~%" (string-append "`(nok? " (substring test-case 5)))
 	 (format p "(load \"s7test.scm\")~%(exit)~%")))
@@ -87,6 +91,7 @@
 (let ((aux-file (format #f "t101-aux-~D.scm" (set! aux-counter (+ aux-counter 1)))))
   (call-with-output-file aux-file
     (lambda (p)
+      (format p "(define aux-counter ~D)\n" aux-counter)
       (format p "(set! (*s7* 'debug) 1)~%(set! ((funclet trace-in) '*debug-port*) #f)~%")
       (format p "(load \"s7test.scm\")~%(exit)~%")))
   (format *stderr* "~%~NC~%test: debug=1~%" 80 #\-)
@@ -95,6 +100,7 @@
 (let ((aux-file (format #f "t101-aux-~D.scm" (set! aux-counter (+ aux-counter 1)))))
   (call-with-output-file aux-file
     (lambda (p)
+      (format p "(define aux-counter ~D)\n" aux-counter)
       (format p "(set! (*s7* 'debug) 2)~%(set! ((funclet trace-in) '*debug-port*) #f)~%")
       (format p "(load \"s7test.scm\")~%(exit)~%")))
   (format *stderr* "~%~NC~%test: debug=2~%" 80 #\-)
@@ -103,6 +109,7 @@
 (let ((aux-file (format #f "t101-aux-~D.scm" (set! aux-counter (+ aux-counter 1)))))
   (call-with-output-file aux-file
     (lambda (p)
+      (format p "(define aux-counter ~D)\n" aux-counter)
       (format p "(set! (*s7* 'profile) 1)~%")
       (format p "(load \"s7test.scm\")~%(exit)~%")))
   (format *stderr* "~%~NC~%test: profile=1~%" 80 #\-)
