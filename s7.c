@@ -8580,11 +8580,13 @@ static s7_pointer g_gensym(s7_scheme *sc, s7_pointer args)
     {
       char *p = pos_int_to_str(sc, sc->gensym_counter++, &len, '\0');
       memcpy((void *)(name + plen + 3), (void *)p, len);
-      nlen = len + plen + 2;
+      nlen = len + plen + 3; /* was 2? */
+      name[nlen] = '\0';
       hash = raw_string_hash((const uint8_t *)name, nlen);
       location = hash % SYMBOL_TABLE_SIZE;
       if (is_null(symbol_table_find_by_name(sc, name, hash, location, nlen))) break;
-      if (sc->safety > NO_SAFETY) s7_warn(sc, nlen, "%s collides with gensym?\n", name);
+      if (sc->safety > NO_SAFETY) 
+	s7_warn(sc, nlen + 25, "%s collides with gensym?\n", name);
     }
 
   /* make-string for symbol name */
@@ -52024,8 +52026,17 @@ static bool catch_let_temporarily_function(s7_scheme *sc, s7_int catch_loc, s7_p
 
 static bool catch_let_temp_unwind_function(s7_scheme *sc, s7_int catch_loc, s7_pointer type, s7_pointer info, bool *reset_hook)
 {
-  if (SHOW_EVAL_OPS) fprintf(stderr, "catcher: %s\n", __func__);
-  slot_set_value(stack_code(sc->stack, catch_loc), stack_args(sc->stack, catch_loc));
+  s7_pointer slot = stack_code(sc->stack, catch_loc);
+  s7_pointer val = stack_args(sc->stack, catch_loc);
+  if (SHOW_EVAL_OPS) fprintf(stderr, "catcher: %s, unwind setting %s to %s\n", __func__, display(slot), display(val));
+#if 0
+  /* TODO: this leads to an infinite loop immutable_error -> error -> this_function -> immutable error etc */
+  /*   catch this problem earlier! also get a repeatable case... (let ((x 1)) (let-temporarily ((x 0)) (immutable! 'x))) basically, but this version is ok */
+  /*   or don't optimize anything with immutable!? */
+  if (is_immutable_slot(slot)) 
+    immutable_object_error_nr(sc, set_elist_3(sc, immutable_error_string, sc->let_temporarily_symbol, slot_symbol(slot)));
+#endif
+  slot_set_value(slot, val);
   return(false);
 }
 
@@ -76493,9 +76504,12 @@ static goto_t op_let_temp_init2(s7_scheme *sc)
 	  return(goto_set_unchecked);
 	}
       slot = s7_slot(sc, settee);
-      if (!is_slot(slot)) unbound_variable_error_nr(sc, settee);
-      if (is_immutable_slot(slot)) immutable_object_error_nr(sc, set_elist_3(sc, immutable_error_string, sc->let_temporarily_symbol, settee));
-      if (is_symbol(new_value))	new_value = lookup_checked(sc, new_value);
+      if (!is_slot(slot)) 
+	unbound_variable_error_nr(sc, settee);
+      if (is_immutable_slot(slot)) 
+	immutable_object_error_nr(sc, set_elist_3(sc, immutable_error_string, sc->let_temporarily_symbol, settee));
+      if (is_symbol(new_value))	
+	new_value = lookup_checked(sc, new_value);
       slot_set_value(slot, (slot_has_setter(slot)) ? call_setter(sc, slot, new_value) : new_value);
     }
   car(sc->args) = cadr(sc->args);
@@ -80308,9 +80322,8 @@ static bool do_is_safe(s7_scheme *sc, s7_pointer body, s7_pointer stepper, s7_po
 		return(false);
 
 	      /* is this still needed? fx_c_optcq bug -- tests seem ok without it -- 3.5 in tmat */
-	      if ((is_symbol(x)) && (is_slot(global_slot(x))) && (is_syntax(global_value(x))))
+	      if ((is_symbol(x)) && (is_slot(global_slot(x))) && (is_syntax(global_value(x)))) /* maybe (x == sc->immutable_symbol)? */
 		return(false); /* syntax hidden behind some other name */
-
 	      if ((is_symbol(x)) && (is_setter(x)))             /* "setter" includes stuff like cons and vector -- x is a symbol */
 		{
 		  /* (hash-table-set! ht i 0) -- caddr is being saved, so this is not safe
@@ -81079,7 +81092,8 @@ static goto_t op_dox_no_body_1(s7_scheme *sc, s7_pointer slots, s7_pointer end, 
       if ((!is_symbol(car(sc->code))) || (is_pair(cdr(sc->code)))) /* more than one result: (define (f) (do ((x 0 (+ x 1)) (i 0 (+ i 1))) ((= i 1) x 3 4))) (f) */
 	return(goto_do_end_clauses);
       step1 = s7_slot(sc, car(sc->code));
-      if (!is_slot(step1)) unbound_variable_error_nr(sc, car(sc->code));
+      if (step1 == sc->undefined)                                  /* (let () (define (f) (do ((x 0 (+ x 1)) (i 0 (+ i 1))) ((= i 1) y))) (f)) */
+	unbound_variable_error_nr(sc, car(sc->code));
       sc->value = slot_value(step1);
       if (is_t_real(sc->value))
 	clear_mutable_number(sc->value);
@@ -81327,14 +81341,15 @@ static goto_t op_dox(s7_scheme *sc)
 	  s7_pointer val = cddr(body), stepa;
 	  s7_function stepf, valf;
 	  s7_pointer slot = s7_slot(sc, cadr(body));
-	  if (is_immutable(slot)) /* (define-constant x 1) (do ((i 0 (+ i 1))) ((= i lim)) (set! x expr)) */
-	    immutable_object_error_nr(sc, set_elist_3(sc, wrap_string(sc, "~S is immutable in ~S", 21), cadr(body), body));
+	  if (slot == sc->undefined) /* (let ((lim 1)) (define (f) (let ((y 1)) (do ((i 0 (+ i y))) ((= i lim)) (set! xxx 3)))) (f)) */
+	    unbound_variable_error_nr(sc, cadr(body));
+	  if (is_immutable(slot))    /* (let ((lim 1)) (define-constant x 1) (define (f) (let ((y 1)) (do ((i 0 (+ i y))) ((= i lim)) (set! x 3)))) (f)) */
+	    immutable_object_error_nr(sc, set_elist_3(sc, wrap_string(sc, "~S is immutable in ~S", 21), cadr(body), body)); /* "x is immutable in (set! x 3)" */
+
 	  if (!has_fx(val))
 	    set_fx(val, fx_choose(sc, val, sc->curlet, let_symbol_is_safe));
 	  valf = fx_proc(val);
 	  val = car(val);
-	  if (slot == sc->undefined)
-	    unbound_variable_error_nr(sc, cadr(body));
 	  stepf = fx_proc(slot_expression(stepper));
 	  stepa = car(slot_expression(stepper));
 	  do {
@@ -82823,6 +82838,7 @@ static goto_t op_safe_do(s7_scheme *sc)
 	      s7_int endi = integer(let_dox2_value(sc->curlet));
 	      s7_pointer fx_p = cddr(body);
 	      s7_pointer val_slot = s7_slot(sc, cadr(body));
+	      /* TODO: var_slot undefined or immutable? */
 	      s7_int step = integer(slot_value(step_slot));
 	      s7_pointer step_val = make_mutable_integer(sc, step);
 	      slot_set_value(step_slot, step_val);
@@ -95207,7 +95223,7 @@ static void init_rootlet(s7_scheme *sc)
   sc->symbol_symbol =                defun("symbol",		symbol,			1, 0, true);
   sc->symbol_to_value_symbol =       defun("symbol->value",	symbol_to_value,	1, 1, false);
   sc->symbol_to_dynamic_value_symbol = defun("symbol->dynamic-value", symbol_to_dynamic_value, 1, 0, false);
-  sc->immutable_symbol =             defun("immutable!",	immutable,		1, 0, false);
+  sc->immutable_symbol =             unsafe_defun("immutable!",	immutable,		1, 0, false); /* unsafe 11-Oct-23 */
   sc->is_immutable_symbol =          defun("immutable?",	is_immutable,		1, 0, false);
   sc->is_constant_symbol =           defun("constant?",	        is_constant,		1, 0, false);
   sc->string_to_keyword_symbol =     defun("string->keyword",	string_to_keyword,      1, 0, false);
@@ -96769,11 +96785,12 @@ int main(int argc, char **argv)
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit
  * t653 gensym cases [tricky!]
  * more of: (let () (define-constant bigcmp 1+2i) (define (func) (let ((_x_ 1)) (do ((i 0 (+ i _x_))) ((= i _x_)) (set! bigcmp (bignum 0+i))))) (func))
+ *   t655 examples -> s7test, but how to make this less tedious?
  * t718 func set! troubles [what about apply-values as 3rd arg? -- see t718]
- *   also the vals3 t718 set! problem
+ *   also the vals3 t718 set! problem (and call/cc etc -- this checks has to be in splice-in-values or later)
  * t725 add error message checks
  * maybe env args for immutable? and immutable! ? (kinda dumb to have to use with-let)
- *   currently s7_* here ignores symbol case etc, also let arg for symbol complicates error checks
+ *   currently s7_* here ignores the symbol case etc, also let arg for symbol complicates error checks
  *   set_immutable save the current file/line? Then the immutable error checks for define-constant and this setting 6464
  * apply <mumble>: try to give var that gave the function being applied [need to check all 9 paths to this]
  *   another bad error msg: (defined? ...) -> "unbound variable ... in (...)"
@@ -96784,5 +96801,4 @@ int main(int argc, char **argv)
      <3> (let ((x asdf)) x) [fx_unsafe_s from op_let1] 75396
      error: unbound variable asdf in ((x asdf))
  * t718 bugs
- * t101 case where cosh gets error not #<undefined>
  */
