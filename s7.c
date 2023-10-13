@@ -52029,14 +52029,9 @@ static bool catch_let_temp_unwind_function(s7_scheme *sc, s7_int catch_loc, s7_p
   s7_pointer slot = stack_code(sc->stack, catch_loc);
   s7_pointer val = stack_args(sc->stack, catch_loc);
   if (SHOW_EVAL_OPS) fprintf(stderr, "catcher: %s, unwind setting %s to %s\n", __func__, display(slot), display(val));
-#if 0
-  /* TODO: this leads to an infinite loop immutable_error -> error -> this_function -> immutable error etc */
-  /*   catch this problem earlier! also get a repeatable case... (let ((x 1)) (let-temporarily ((x 0)) (immutable! 'x))) basically, but this version is ok */
-  /*   or don't optimize anything with immutable!? */
-  if (is_immutable_slot(slot)) 
-    immutable_object_error_nr(sc, set_elist_3(sc, immutable_error_string, sc->let_temporarily_symbol, slot_symbol(slot)));
-#endif
-  slot_set_value(slot, val);
+  if (is_immutable_slot(slot)) /* we're already in an error/throw situation, so raising an error here leads to an infinite loop */
+    s7_warn(sc, 512, "let-temporarily can't reset %s to %s: it is immutable!", symbol_name(slot_symbol(slot)), display(val));
+  else slot_set_value(slot, val);
   return(false);
 }
 
@@ -78805,7 +78800,7 @@ static void op_set_from_let_temp(s7_scheme *sc)
   if (!is_slot(slot))
     unbound_variable_error_nr(sc, settee);
   if (is_immutable_slot(slot))
-    immutable_object_error_nr(sc, set_elist_3(sc, immutable_error_string, sc->let_temporarily_symbol, settee));
+    immutable_object_error_nr(sc, set_elist_2(sc, wrap_string(sc, "let-temporarily can't reset ~S: it is immutable!", 48), settee));
   slot_set_value(slot, (slot_has_setter(slot)) ? call_setter(sc, slot, sc->value) : sc->value);
 }
 
@@ -80607,7 +80602,7 @@ static s7_pointer check_do(s7_scheme *sc)
   end = cadr(code);
 
   if ((!is_pair(end)) || (!is_fxable(sc, car(end))))
-    return(do_end_bad(sc, form));
+    return(do_end_bad(sc, form)); /* can return code (not sc->nil) */
 
   /* sc->curlet is the outer environment, local vars are in the symbol_list via check_do_for_obvious_error, and it's only needed for fx_unsafe_s */
   set_fx_direct(end, fx_choose(sc, end, sc->curlet, let_symbol_is_safe_or_listed));
@@ -80646,6 +80641,7 @@ static s7_pointer check_do(s7_scheme *sc)
 	    }}
       return(sc->nil);
     }
+
   if (do_tree_has_definers(sc, form))           /* we don't want definers in body, vars, or end test */
     return(fxify_step_exprs(sc, code));
 
@@ -80713,7 +80709,6 @@ static s7_pointer check_do(s7_scheme *sc)
 			    fx_annotate_arg(sc, body, collect_variables(sc, vars, sc->nil));
 			}
 		      fx_tree(sc, body, car(v), NULL, NULL, false);
-		      /* an experiment (this never works...) */
 		      if (stack_top_op(sc) == OP_SAFE_DO_STEP)
 			fx_tree_outer(sc, body, caaar(stack_top_code(sc)), NULL, NULL, true);
 		    }}
@@ -81472,7 +81467,7 @@ static goto_t op_dox(s7_scheme *sc)
   return(goto_begin);
 }
 
-static inline bool op_dox_step_1(s7_scheme *sc)
+static inline bool op_dox_step_1(s7_scheme *sc) /* inline for 50 in concordance, 30 in dup */
 {
   s7_pointer slot = let_slots(sc->curlet);
   do {                                      /* every dox case has vars (else op_do_no_vars) */
@@ -81763,7 +81758,6 @@ static bool op_do_no_body_na_vars_step_1(s7_scheme *sc)
 
 static bool do_step1(s7_scheme *sc)
 {
-  /* fprintf(stderr, "%s[%d]: sc->args: %s\n", __func__, __LINE__, display(sc->args)); */
   while (true)
     {
       s7_pointer code;
@@ -81771,8 +81765,13 @@ static bool do_step1(s7_scheme *sc)
 	{
 	  for (s7_pointer x = sc->code; is_pair(x); x = cdr(x))   /* sc->code here is the original sc->args list */
 	    {
-	      slot_set_value(car(x), slot_pending_value(car(x)));
-	      slot_clear_has_pending_value(car(x));
+	      s7_pointer slot = car(x);
+#if 0
+	      if (is_immutable_slot(slot))    /* (let () (define (func) (do ((x 0) (i 0 (+ i 1))) ((= i 1) x) (set! x (immutable! 'i)))) (func)) */
+		immutable_object_error_nr(sc, set_elist_3(sc, wrap_string(sc, "~S is immutable in ~S", 21), slot_symbol(slot), car(slot_expression(slot))));
+#endif
+	      slot_set_value(slot, slot_pending_value(slot));
+	      slot_clear_has_pending_value(slot);
 	    }
 	  pop_stack_no_op(sc);
 	  return(true);
@@ -95224,6 +95223,7 @@ static void init_rootlet(s7_scheme *sc)
   sc->symbol_to_value_symbol =       defun("symbol->value",	symbol_to_value,	1, 1, false);
   sc->symbol_to_dynamic_value_symbol = defun("symbol->dynamic-value", symbol_to_dynamic_value, 1, 0, false);
   sc->immutable_symbol =             unsafe_defun("immutable!",	immutable,		1, 0, false); /* unsafe 11-Oct-23 */
+  set_func_is_definer(sc->immutable_symbol);
   sc->is_immutable_symbol =          defun("immutable?",	is_immutable,		1, 0, false);
   sc->is_constant_symbol =           defun("constant?",	        is_constant,		1, 0, false);
   sc->string_to_keyword_symbol =     defun("string->keyword",	string_to_keyword,      1, 0, false);
@@ -96784,11 +96784,8 @@ int main(int argc, char **argv)
  * catch in C outside scheme code? setting *error-hook* doesn't help -- it falls into the longjmp
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit
  * t653 gensym cases [tricky!]
- * more of: (let () (define-constant bigcmp 1+2i) (define (func) (let ((_x_ 1)) (do ((i 0 (+ i _x_))) ((= i _x_)) (set! bigcmp (bignum 0+i))))) (func))
- *   t655 examples -> s7test, but how to make this less tedious?
- * t718 func set! troubles [what about apply-values as 3rd arg? -- see t718]
+ * t718 func set! troubles [what about apply-values as 3rd arg? -- see t718, or apply values]
  *   also the vals3 t718 set! problem (and call/cc etc -- this checks has to be in splice-in-values or later)
- * t725 add error message checks
  * maybe env args for immutable? and immutable! ? (kinda dumb to have to use with-let)
  *   currently s7_* here ignores the symbol case etc, also let arg for symbol complicates error checks
  *   set_immutable save the current file/line? Then the immutable error checks for define-constant and this setting 6464
@@ -96801,4 +96798,5 @@ int main(int argc, char **argv)
      <3> (let ((x asdf)) x) [fx_unsafe_s from op_let1] 75396
      error: unbound variable asdf in ((x asdf))
  * t718 bugs
+ * immutable setter cases [if setter=integer? does setting the setter immutable make integer? immutable?]
  */

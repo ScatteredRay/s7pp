@@ -512,7 +512,7 @@
 
 (load "s7test-block.so" (sublet (curlet) (cons 'init_func 'block_init)))
 
-(define-expansion (t725-comment str) (values)) ; this must be at the top-level, "comment" used as local var in lint.scm
+(define-expansion (t725-comment . strs) (values)) ; this must be at the top-level, "comment" used as local var in lint.scm
 
 #|
 ;; infinite loop if cyclic
@@ -781,7 +781,7 @@
   (let* ((f last-stable-f)
 	 (val (apply f args)))
     (f val)))
-    
+
 
 (define-constant ims (immutable! (string #\a #\b #\c)))
 (define-constant imbv (immutable! (byte-vector 0 1 2)))
@@ -853,7 +853,7 @@
 
 (define-constant bight (let* ((size 1000)
 			      (ht (make-hash-table size)))
-			 (do ((i 0 (+ i 1))) 
+			 (do ((i 0 (+ i 1)))
 			     ((= i size))
 			   (hash-table-set! ht (symbol (format #f "a~D" i)) i))
 			 ht))
@@ -899,7 +899,7 @@
 			  'char-whitespace? 'assoc 'procedure? 'char<?
 			  'inexact->exact 'vector->list 'boolean? 'undefined? 'unspecified?
 			  'caar (if with-bignums '* 'ash) 'list-tail 'symbol->string 'string->symbol 'exact->inexact
-			  'object->string 'char>? 'symbol->value 
+			  'object->string 'char>? 'symbol->value
 			  'cadar 'integer-decode-float 'string-copy 'cdddr 'logand 'cadddr
 			  'with-input-from-string 'substring 'string->list 'char-upper-case?
 			  'hash-table-set! 'cddddr 'string<? 'dynamic-wind 'call-with-input-file 'error
@@ -919,7 +919,7 @@
 			  'with-input-from-file 'type-of
 			  'vector-fill! 'vector-typer 'hash-table-key-typer 'hash-table-value-typer
 			  'peek-char
-			  'make-hash-table 'make-weak-hash-table 'weak-hash-table? 
+			  'make-hash-table 'make-weak-hash-table 'weak-hash-table?
 			  'hash-code
 			  'macro?
 			  'quasiquote
@@ -959,7 +959,7 @@
 			  'gensym
 			  'case*
 			  ;'do
-			  ;'cond 
+			  ;'cond
 			  'case
 			  'or 'and 'when 'unless 'if 'begin
 			  'with-baffle 'let-temporarily 'with-let
@@ -995,7 +995,7 @@
 			  ;'varlet ;-- error exits, chaos in rootlet (see local-varlet)
 			  ;'eval ; -- can't use if signature (circular program) or (make-list (max-list-len))
 			  'checked-eval
-			  ;'immutable! ;-- lots of complaints about 'a constant in inlet
+			  ;'immutable! ;-- lots of complaints that are hard to reproduce
 			  'checked-procedure-source
 			  ;'owlet ;too many uninteresting diffs
 			  ;'gc  ; slower? and can be trouble if called within an expression
@@ -1003,7 +1003,7 @@
 			  ;'funclet ; '*function* ; tons of output in both cases, not interesting
 			  ;'random
 			  ;;; 'quote
-			  '*error-hook* ;'*autoload-hook* 
+			  '*error-hook* ;'*autoload-hook*
 			  'cond-expand ; (cond-expand (reader-cond...)) too many times
 			  ;'random-state->list
                           ;'pair-line-number 'pair-filename ; -- too many uninteresting diffs
@@ -1021,7 +1021,7 @@
 			  '=>
 
 			  'constant?
-			  '*unbound-variable-hook* '*load-hook* '*rootlet-redefinition-hook* '*missing-close-paren-hook* ;'*read-error-hook* 
+			  '*unbound-variable-hook* '*load-hook* '*rootlet-redefinition-hook* '*missing-close-paren-hook* ;'*read-error-hook*
 			  '*after-gc-hook*
 			  '*autoload*
 			  'sequence? 'directory? 'hash-table-entries
@@ -1043,6 +1043,7 @@
 			  'c-pointer? 'int-vector-ref
 			  'float?
 			  'list-values 'byte-vector? 'openlet? 'iterator?
+			  (reader-cond ((not with-mock-data) 'openlet))
 			  'string->byte-vector 'byte-vector->string
 
 			  'checked-pp
@@ -1099,7 +1100,7 @@
 			  'a1 'a2 'a3 'a4 'a5 'a6
 			  'gb1 'gb2 'gb3
 
-			  'bignum 'symbol 'count-if 'pretty-print 'tree-member 'funclet? 'bignum? 'copy-tree 
+			  'bignum 'symbol 'count-if 'pretty-print 'tree-member 'funclet? 'bignum? 'copy-tree
 			  ;'dynamic-unwind ; many swaps that are probably confused
                           ;'function-open-output 'function-open-input 'function-get-output 'function-close-output ;see s7test, not set up for t725
 
@@ -1199,7 +1200,7 @@
 					    (lambda (p) (return 'oops))))))"))
 
 		    "#<eof>" "#<undefined>" "#<unspecified>" "#unknown" "___lst" "#<bignum: 3>"
-		    "#<>" "#<label:>" "#<...>" "..." 
+		    "#<>" "#<label:>" "#<...>" "..."
 		    "#_and" "'#_or" "#_abs" "#_+"
 		    "#o123" "#b101" "#\\newline" "#\\alarm" "#\\delete" "#_cons" "#x123.123" "#\\x65"
 		    "#i(60 0 0 0 0 1 0 0 0 1 1 0 0 1 0 1 0 0 1 1 1 0 1 1 0 1 0 0 0 0 0 0 0 0 0 0 1 1 0 1 0 1 0 0 0 1 0 1 1 0 0 0 1 1 1 1 1 0 0 1 1)"
@@ -1278,14 +1279,14 @@
 		    "(error 'oops \"an error!\")"
 		    "(define b2 32)"
 
-		    ;"quote" "'" "(quote)" 
+		    ;"quote" "'" "(quote)"
 		    ;"(quote . 1)" "(when)" "(when . 1)" ; -- inconsistent error checks if code unreachable
 		    ;"if" ; causes stack overflow when used as lambda arg name and (()... loop)
 		    "begin" "cond" "case" "when" "unless" "letrec" "letrec*" "or" "and" "let-temporarily"
 		    "catch" "call-with-exit" "map" "for-each"
 		    ;"lambda*" "lambda" ;-- cyclic body etc
-		    "let" "let*" ;"do" 
-		    ;"set!" "with-let" ;"define" "define*" "define-macro" "define-macro*" "define-bacro" "define-bacro*"
+		    "let" "let*" ;"do"
+		    "set!" "with-let" "values" "let-set!" ;"define" "define*" "define-macro" "define-macro*" "define-bacro" "define-bacro*"
 
 		    "(let ((L (list 1))) (set-cdr! L L) L)"
 		    "(let ((L (list 1 2))) (set-cdr! (cdr L) L) L)"
@@ -1330,6 +1331,8 @@
 		    "(make-vector 3 #f (let ((calls 0)) (lambda (x) (set! calls (+ calls 1)) (= calls 1))))" ; 2 calls = error I hope
 
 		    "(immutable! #(1 2))" "(immutable! #r(1 2))" "(immutable! \"asdf\")" "(immutable! '(1 2))" "(immutable! (hash-table 'a 1))"
+		    ;"(immutable! 'x)" 
+		    "(immutable! 'asdf)"
 		    "(lambda (x) (fill! (copy x) 0))"
 
 		    "(map (lambda (x) (catch #t (lambda () (vector->list x)) (lambda (t i) 'err))) (list #(1 2) 1))"
@@ -1518,7 +1521,7 @@
 		    (lambda (s) (string-append "(_stable2_ " s ")")))
 
 ;;; (+ (dynamic-wind (lambda () #f) (lambda () (values 1 2 3)) (lambda () #f))): 6
-	      
+
 
 	      ;; perhaps function port (see _rd3_ for open-input-string), gmp?
 	      ))
@@ -1531,7 +1534,7 @@
 	(codes-len (length codes))
 	(args-ran (+ 1 (random 5)))
 	(both-ran (+ 3 (random 8))))
-    
+
     (define (get-arg)
       (let ((str (args (random alen))))
 	(if (string? str) ; else #f -> cyclic struct
@@ -1665,7 +1668,7 @@
       (if (string-position "a4" str) (format *stderr* "a4: ~W~%" a4))
       (newline *stderr*)
 
-      (let ((tree (catch #t 
+      (let ((tree (catch #t
 		    (lambda () ; try to catch read errors
 		      (eval-string (string-append "'" str))) ;(with-input-from-string str read) -- causes missing close paren troubles with eval-time reader-cond (read error not caught)
 		    (lambda (t i)
@@ -1703,7 +1706,7 @@
 						      (apply #_format #f error-info))
 						    (lambda (type info)
 						      (write "same-type format-error\n" *stderr*)
-						      (write error-info *stderr*) 
+						      (write error-info *stderr*)
 						      (newline *stderr*)
 						      (write info)
 						      (newline *stderr*))))
@@ -1722,14 +1725,14 @@
 			   (tp val1) (tp val2) (tp val3) (tp val4))
 		   (if (string? errstr) (display errstr *stderr*))))))
 
-	    ((or (catch #t 
-		   (lambda () 
+	    ((or (catch #t
+		   (lambda ()
 		     (and (or (openlet? val1)
 			      (openlet? val3))
 			  (equivalent? v1 v2)
 			  (equivalent? v1 v3)
 			  (equivalent? v1 v4)))
-		   (lambda args 
+		   (lambda args
 		     #t)) ; (openlet? (openlet (inlet 'openlet? ()))) -> error: attempt to apply nil to (inlet 'openlet? ())
 		 (string-position "(set!" str1)
 		 (string-position "gensym" str1)))
@@ -1870,7 +1873,7 @@
 		      (string-position "eval-string" str))
 	    ;; "unexpected" close paren from: (eval-string (reverse (object->string ()))) -> (eval-string ")(")
 	    (if (and (pair? info) (string? (car info)))
-		(format *stderr* "read-error from ~S: ~S~%" str (catch #t 
+		(format *stderr* "read-error from ~S: ~S~%" str (catch #t
 								  (lambda ()
 								    (apply #_format #f info))
 								  (lambda args
@@ -1974,10 +1977,10 @@
 
 #|
 functions currently omitted (from functions vector):
-unlet owlet *read-error-hook* set-current-output-port immutable! set-cdr! system close-output-port exit symbol->dynamic-value 
-rootlet port-filename load string->keyword make-hook provide dynamic-unwind emergency-exit read set-current-error-port *autoload-hook* 
+unlet owlet *read-error-hook* set-current-output-port immutable! set-cdr! system close-output-port exit symbol->dynamic-value
+rootlet port-filename load string->keyword make-hook provide dynamic-unwind emergency-exit read set-current-error-port *autoload-hook*
 gc abort open-output-file set-current-input-port pair-line-number pair-filename coverlet delete-file curlet
 
-[read-line] [funclet] [port-line-number] [read-string] [varlet] [random-state] [random] [hash-code] [random-state->list] [current-input-port] 
+[read-line] [funclet] [port-line-number] [read-string] [varlet] [random-state] [random] [hash-code] [random-state->list] [current-input-port]
 [make-string] [symbol-table] [current-error-port] [eval] [read-byte] [stacktrace] [read-char] [reverse!] [procedure-source] [*function*]
 |#
