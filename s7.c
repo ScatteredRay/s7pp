@@ -6379,19 +6379,33 @@ static s7_pointer is_constant_p_p(s7_scheme *sc, s7_pointer p) {return(make_bool
 
 /* -------------------------------- immutable? -------------------------------- */
 
-bool s7_is_immutable(s7_pointer p) {return(is_immutable(p));} /* TODO: mimic g_is_immutable or merge both */
+bool s7_is_immutable(s7_pointer p) {return(is_immutable(p));}
 
 static s7_pointer g_is_immutable(s7_scheme *sc, s7_pointer args)
 {
-  #define H_is_immutable "(immutable? obj) returns #t if its argument is immutable"
-  #define Q_is_immutable sc->pl_bt
-  s7_pointer p = car(args);
-  if (is_normal_symbol(p))         /* parallel immutable! below */
+  #define H_is_immutable "(immutable? obj (env (curlet))) returns #t if obj (or obj in env) is immutable"
+  #define Q_is_immutable s7_make_signature(sc, 3, sc->is_boolean_symbol, sc->T, sc->is_let_symbol)
+  s7_pointer p = car(args), slot;
+  if (is_symbol(p))
     {
-      s7_pointer slot = s7_slot(sc, p);
-      if (is_slot(slot))
+      if (is_pair(cdr(args)))
+	{
+	  s7_pointer e = cadr(args);
+	  if (!is_let(e))
+	    wrong_type_error_nr(sc, sc->is_immutable_symbol, 2, e, a_let_string);
+	  slot = lookup_slot_from((is_keyword(p)) ? keyword_symbol(p) : p, e);
+	}
+      else 
+	{
+	  if (is_keyword(p)) return(sc->T);
+	  slot = s7_slot(sc, p);
+	}
+      if (is_slot(slot)) /* might be #<undefined> */
 	return(make_boolean(sc, is_immutable_slot(slot)));
     }
+  else
+    if ((is_pair(cdr(args))) && (!is_let(cadr(args)))) /* (immutable? 1 2) */
+      wrong_type_error_nr(sc, sc->is_immutable_symbol, 2, cadr(args), a_let_string);
   return(make_boolean(sc, (is_immutable(p)) || (t_immutable_p[type(p)]) || ((is_any_vector(p)) && (vector_length(p) == 0))));
 }
 
@@ -6405,17 +6419,29 @@ s7_pointer s7_immutable(s7_pointer p)  /* TODO: mimic g_immutable or merge both 
 
 static s7_pointer g_immutable(s7_scheme *sc, s7_pointer args)
 {
-  #define H_immutable "(immutable! obj) declares that the object obj can't be changed. obj is returned."
-  #define Q_immutable s7_make_signature(sc, 2, sc->T, sc->T)
-  s7_pointer p = car(args);
-  if (is_normal_symbol(p))
+  #define H_immutable "(immutable! obj (env (curlet))) declares that the object obj (or obj in env) can't be changed. obj is returned."
+  #define Q_immutable s7_make_signature(sc, 3, sc->T, sc->T, sc->is_let_symbol)
+  s7_pointer p = car(args), slot;
+  if (is_symbol(p))
     {
-      s7_pointer slot = s7_slot(sc, p);
-      if (is_slot(slot))
+      if (is_pair(cdr(args)))
 	{
-	  set_immutable_slot(slot);
-	  return(p);  /* symbol is not set immutable ? */
-	}}
+	  s7_pointer e = cadr(args);
+	  if (!is_let(e))
+	    wrong_type_error_nr(sc, sc->immutable_symbol, 2, e, a_let_string);
+	  slot = symbol_to_local_slot(sc, (is_keyword(p)) ? keyword_symbol(p) : p, e); /* different from immutable? */
+	}
+      else
+	{
+	  if (is_keyword(p)) return(p);
+	  slot = s7_slot(sc, p);
+	}
+      if (is_slot(slot))
+	set_immutable_slot(slot);
+      return(p);  /* symbol is not set immutable ? */
+    }
+  if ((is_pair(cdr(args))) && (!is_let(cadr(args)))) /* (immutable! 1 2) */
+    wrong_type_error_nr(sc, sc->immutable_symbol, 2, cadr(args), a_let_string);
   set_immutable(p);   /* could set_immutable save the current file/line? Then the immutable error checks for define-constant and this setting */
                       /*   T_LOCATION -> T_IMMUTABLE_LOCATION but can't do this for a pair */
   return(p);
@@ -8580,7 +8606,7 @@ static s7_pointer g_gensym(s7_scheme *sc, s7_pointer args)
     {
       char *p = pos_int_to_str(sc, sc->gensym_counter++, &len, '\0');
       memcpy((void *)(name + plen + 3), (void *)p, len);
-      nlen = len + plen + 3; /* was 2? */
+      nlen = len + plen + 2;
       name[nlen] = '\0';
       hash = raw_string_hash((const uint8_t *)name, nlen);
       location = hash % SYMBOL_TABLE_SIZE;
@@ -79208,16 +79234,17 @@ static bool op_set_opsaaq_p_1(s7_scheme *sc)
 
 static bool op_set1(s7_scheme *sc)
 {
-  s7_pointer lx = s7_slot(sc, sc->code);    /* if unbound variable hook here, we need the binding, not the current value */
+  s7_pointer sym = T_Sym(sc->code);    /* protect from sc->code possible change in call_c_function_setter below */
+  s7_pointer lx = s7_slot(sc, sym);    /* if unbound variable hook here, we need the binding, not the current value */
   if (is_slot(lx))
     {
       if (is_immutable_slot(lx))
-	immutable_object_error_nr(sc, set_elist_3(sc, immutable_error_string, sc->set_symbol, slot_symbol(lx)));
+	immutable_object_error_nr(sc, set_elist_3(sc, immutable_error_string, sc->set_symbol, sym));
       if (slot_has_setter(lx))
 	{
 	  s7_pointer func = slot_setter(lx);
 	  if (is_c_function(func))
-	    sc->value = call_c_function_setter(sc, func, sc->code, sc->value); /* perhaps better: apply_c_function -- has argnum error checks */
+	    sc->value = call_c_function_setter(sc, func, sym, sc->value); /* perhaps better: apply_c_function -- has argnum error checks */
 	  else
 	    if (is_any_procedure(func))
 	      {
@@ -79225,18 +79252,18 @@ static bool op_set1(s7_scheme *sc)
 		/* 41297 (set! (v) val) where v=vector gets the setter, but calls vector-set! with no args */
 		push_stack_no_args(sc, OP_SET_FROM_SETTER, lx);
 		if (has_let_arg(func))
-		  sc->args = list_3(sc, sc->code, sc->value, sc->curlet);
-		else sc->args = list_2(sc, sc->code, sc->value);   /* these lists are reused as the closure_let slots in apply_lambda via apply_closure */
+		  sc->args = list_3(sc, sym, sc->value, sc->curlet);
+		else sc->args = list_2(sc, sym, sc->value);   /* these lists are reused as the closure_let slots in apply_lambda via apply_closure */
 		sc->code = func;
 		return(false); /* goto APPLY */
 	      }}
       slot_set_value(lx, sc->value);
-      symbol_increment_ctr(sc->code);                   /* see define setfib example in s7test.scm -- I'm having second thoughts about this... */
+      symbol_increment_ctr(sym);        /* see define setfib example in s7test.scm -- I'm having second thoughts about this... */
       return(true); /* continue */
     }
   if (!has_let_set_fallback(sc->curlet))                /* (with-let (mock-hash-table 'b 2) (set! b 3)) */
-    error_nr(sc, sc->unbound_variable_symbol, set_elist_4(sc, wrap_string(sc, "~S is unbound in (set! ~S ~S)", 29), sc->code, sc->code, sc->value));
-  sc->value = call_let_set_fallback(sc, sc->curlet, sc->code, sc->value);
+    error_nr(sc, sc->unbound_variable_symbol, set_elist_4(sc, wrap_string(sc, "~S is unbound in (set! ~S ~S)", 29), sym, sym, sc->value));
+  sc->value = call_let_set_fallback(sc, sc->curlet, sym, sc->value);
   return(true);
 }
 
@@ -95222,9 +95249,9 @@ static void init_rootlet(s7_scheme *sc)
   sc->symbol_symbol =                defun("symbol",		symbol,			1, 0, true);
   sc->symbol_to_value_symbol =       defun("symbol->value",	symbol_to_value,	1, 1, false);
   sc->symbol_to_dynamic_value_symbol = defun("symbol->dynamic-value", symbol_to_dynamic_value, 1, 0, false);
-  sc->immutable_symbol =             unsafe_defun("immutable!",	immutable,		1, 0, false); /* unsafe 11-Oct-23 */
+  sc->immutable_symbol =             unsafe_defun("immutable!",	immutable,		1, 1, false); /* unsafe 11-Oct-23, added let arg 13-Oct-23 */
   set_func_is_definer(sc->immutable_symbol);
-  sc->is_immutable_symbol =          defun("immutable?",	is_immutable,		1, 0, false);
+  sc->is_immutable_symbol =          defun("immutable?",	is_immutable,		1, 1, false); /* added optional let arg 13-Oct-23 */
   sc->is_constant_symbol =           defun("constant?",	        is_constant,		1, 0, false);
   sc->string_to_keyword_symbol =     defun("string->keyword",	string_to_keyword,      1, 0, false);
   sc->symbol_to_keyword_symbol =     defun("symbol->keyword",	symbol_to_keyword,	1, 0, false);
@@ -96722,60 +96749,60 @@ int main(int argc, char **argv)
 #endif
 
 /* ---------------------------------------------------
- *            20.9   21.0   22.0   23.0   23.7   23.8
+ *            20.9   21.0   22.0   23.0   23.8   23.9
  * ---------------------------------------------------
- * tpeak      115    114    108    105    102    102
- * tref       691    687    463    459    459    464
- * index     1026   1016    973    967    970    966
- * tmock     1177   1165   1057   1019   1027   1027
- * tvect     2519   2464   1772   1669   1647   1647
- * timp      2637   2575   1930   1694   1709   1709
- * texit     ----   ----   1778   1741   1765   1765
- * s7test    1873   1831   1818   1829   1859   1846
- * thook     ----   ----   2590   2030   2044   2048
- * tauto     ----   ----   2562   2048   2046   2046
- * lt        2187   2172   2150   2185   2198   2198
- * dup       3805   3788   2492   2239   2214   2219
- * tcopy     8035   5546   2539   2375   2381   2381
- * tread     2440   2421   2419   2408   2399   2403
- * fbench    2688   2583   2460   2430   2458   2458
- * trclo     2735   2574   2454   2445   2461   2461
- * titer     2865   2842   2641   2509   2465   2465
- * tload     ----   ----   3046   2404   2502   2502
- * tmat      3065   3042   2524   2578   2582   2586
- * tb        2735   2681   2612   2604   2630   2633
- * tsort     3105   3104   2856   2804   2828   2828
- * tobj      4016   3970   3828   3577   3511   3511
- * teq       4068   4045   3536   3486   3568   3568
- * tio       3816   3752   3683   3620   3604   3607
- * tmac      3950   3873   3033   3677   3685   3685
- * tclo      4787   4735   4390   4384   4445   4445
- * tcase     4960   4793   4439   4430   4448   4436
- * tlet      7775   5640   4450   4427   4452   4452
- * tfft      7820   7729   4755   4476   4512   4512
- * tstar     6139   5923   5519   4449   4553   4560
- * tmap      8869   8774   4489   4541   4618   4618
- * tshoot    5525   5447   5183   5055   5044   5047
- * tform     5357   5348   5307   5316   5167   5161
- * tstr      6880   6342   5488   5162   5199   5206
- * tnum      6348   6013   5433   5396   5408   5403
- * tlamb     6423   6273   5720   5560   5620   5620
- * tmisc     8869   7612   6435   6076   6216   6220
- * tgsl      8485   7802   6373   6282   6230   6233
- * tlist     7896   7546   6558   6240   6280   6284
- * tset      ----   ----   ----   6260   6306   6308
- * tari      13.0   12.7   6827   6543   6490   6490
- * trec      6936   6922   6521   6588   6581   6581
- * tleft     10.4   10.2   7657   7479   7611   7610
- * tgc       11.9   11.1   8177   7857   7958   7965
- * thash     11.8   11.7   9734   9479   9535   9536
- * cb        11.2   11.0   9658   9564   9626   9611
- * tgen      11.2   11.4   12.0   12.1   12.1   12.1
- * tall      15.6   15.6   15.6   15.6   15.1   15.1
- * calls     36.7   37.5   37.0   37.5   37.3   37.2
- * sg        ----   ----   55.9   55.8   55.3   55.4
- * lg        ----   ----  105.2  106.4  107.1  107.2
- * tbig     177.4  175.8  156.5  148.1  145.9  146.0
+ * tpeak      115    114    108    105    102
+ * tref       691    687    463    459    464
+ * index     1026   1016    973    967    966
+ * tmock     1177   1165   1057   1019   1027
+ * tvect     2519   2464   1772   1669   1647
+ * timp      2637   2575   1930   1694   1709
+ * texit     ----   ----   1778   1741   1765
+ * s7test    1873   1831   1818   1829   1846
+ * thook     ----   ----   2590   2030   2048
+ * tauto     ----   ----   2562   2048   2046
+ * lt        2187   2172   2150   2185   2198
+ * dup       3805   3788   2492   2239   2219
+ * tcopy     8035   5546   2539   2375   2381
+ * tread     2440   2421   2419   2408   2403
+ * fbench    2688   2583   2460   2430   2458
+ * trclo     2735   2574   2454   2445   2461
+ * titer     2865   2842   2641   2509   2465
+ * tload     ----   ----   3046   2404   2502
+ * tmat      3065   3042   2524   2578   2586
+ * tb        2735   2681   2612   2604   2633
+ * tsort     3105   3104   2856   2804   2828
+ * tobj      4016   3970   3828   3577   3511
+ * teq       4068   4045   3536   3486   3568
+ * tio       3816   3752   3683   3620   3607
+ * tmac      3950   3873   3033   3677   3685
+ * tclo      4787   4735   4390   4384   4445
+ * tcase     4960   4793   4439   4430   4436
+ * tlet      7775   5640   4450   4427   4452
+ * tfft      7820   7729   4755   4476   4512
+ * tstar     6139   5923   5519   4449   4560
+ * tmap      8869   8774   4489   4541   4618
+ * tshoot    5525   5447   5183   5055   5047
+ * tform     5357   5348   5307   5316   5161
+ * tstr      6880   6342   5488   5162   5206
+ * tnum      6348   6013   5433   5396   5403
+ * tlamb     6423   6273   5720   5560   5620
+ * tmisc     8869   7612   6435   6076   6220
+ * tgsl      8485   7802   6373   6282   6233
+ * tlist     7896   7546   6558   6240   6284
+ * tset      ----   ----   ----   6260   6308
+ * tari      13.0   12.7   6827   6543   6490
+ * trec      6936   6922   6521   6588   6581
+ * tleft     10.4   10.2   7657   7479   7610
+ * tgc       11.9   11.1   8177   7857   7965
+ * thash     11.8   11.7   9734   9479   9536
+ * cb        11.2   11.0   9658   9564   9611
+ * tgen      11.2   11.4   12.0   12.1   12.1
+ * tall      15.6   15.6   15.6   15.6   15.1
+ * calls     36.7   37.5   37.0   37.5   37.2
+ * sg        ----   ----   55.9   55.8   55.4
+ * lg        ----   ----  105.2  106.4  107.2
+ * tbig     177.4  175.8  156.5  148.1  146.0
  * ---------------------------------------------------
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
@@ -96785,10 +96812,9 @@ int main(int argc, char **argv)
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit
  * t653 gensym cases [tricky!]
  * t718 func set! troubles [what about apply-values as 3rd arg? -- see t718, or apply values]
- *   also the vals3 t718 set! problem (and call/cc etc -- this checks has to be in splice-in-values or later)
- * maybe env args for immutable? and immutable! ? (kinda dumb to have to use with-let)
- *   currently s7_* here ignores the symbol case etc, also let arg for symbol complicates error checks
- *   set_immutable save the current file/line? Then the immutable error checks for define-constant and this setting 6464
+ *   also the vals3 t718 set! problem (and call/cc etc -- this check has to be in splice-in-values or later)
+ * set_immutable save the current file/line? Then the immutable error checks for define-constant and this setting 6464
+ *   immutable setter cases [if setter=integer? does setting the setter immutable make integer? immutable?][s7.c says this is impossible 6450]
  * apply <mumble>: try to give var that gave the function being applied [need to check all 9 paths to this]
  *   another bad error msg: (defined? ...) -> "unbound variable ... in (...)"
      <1> (+ 1 asdf)
@@ -96798,5 +96824,4 @@ int main(int argc, char **argv)
      <3> (let ((x asdf)) x) [fx_unsafe_s from op_let1] 75396
      error: unbound variable asdf in ((x asdf))
  * t718 bugs
- * immutable setter cases [if setter=integer? does setting the setter immutable make integer? immutable?]
  */
