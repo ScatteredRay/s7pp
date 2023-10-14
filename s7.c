@@ -4090,6 +4090,7 @@ static char *pos_int_to_str_direct_1(s7_scheme *sc, s7_int num)
   #define lookup_unexamined(Sc, Sym) s7_symbol_value(Sc, Sym)  /* changed 3-Nov-22 -- we're using lookup_unexamined below to avoid the unbound_variable check */
   #define lookup_checked(Sc, Sym) lookup(Sc, Sym)
 #endif
+static s7_pointer symbol_to_local_slot(s7_scheme *sc, s7_pointer symbol, s7_pointer e);
 
 
 /* ---------------- evaluator ops ---------------- */
@@ -5731,7 +5732,6 @@ static void print_debugging_state(s7_scheme *sc, s7_pointer obj, s7_pointer port
   liberate(sc, b);
 }
 
-static s7_pointer symbol_to_local_slot(s7_scheme *sc, s7_pointer symbol, s7_pointer e);
 static s7_pointer check_null_sym(s7_scheme *sc, s7_pointer p, s7_pointer sym, int32_t line, const char *func)
 {
   if (!p)
