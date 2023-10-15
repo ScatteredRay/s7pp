@@ -1963,7 +1963,8 @@ static void init_types(void)
   #define T_Ivc(P) check_ref(P, T_INT_VECTOR,        __func__, __LINE__, "sweep", NULL)
   #define T_Key(P) check_ref18(P,                    __func__, __LINE__)                /* keyword */
   #define T_Let(P) check_ref(P, T_LET,               __func__, __LINE__, NULL, NULL)
-  #define T_Lid(P) check_ref16(P,                    __func__, __LINE__)                /* let/nil */
+  #define T_Lid(P) check_ref16(P,                    __func__, __LINE__)                /* let/nil but not rootlet */
+  #define T_Lsd(P) check_ref16a(P,                   __func__, __LINE__)                /* let but not nil or rootlet */
   #define T_Lst(P) check_ref2(P, T_PAIR, T_NIL,      __func__, __LINE__, "gc", NULL)
   #define T_Mac(P) check_ref17(P,                    __func__, __LINE__)                /* a non-C macro */
   #define T_Met(P) check_ref9(P,                     __func__, __LINE__)                /* anything that might contain a method */
@@ -2024,6 +2025,7 @@ static void init_types(void)
   #define T_Key(P)  P
   #define T_Let(P)  P
   #define T_Lid(P)  P
+  #define T_Lsd(P)  P
   #define T_Lst(P)  P
   #define T_Mac(P)  P
   #define T_Met(P)  P
@@ -2423,12 +2425,12 @@ static void init_types(void)
 
 #define T_HAS_LET_SET_FALLBACK         T_SAFE_STEPPER
 #define T_HAS_LET_REF_FALLBACK         T_MUTABLE
-#define has_let_ref_fallback(p)        ((full_type(T_Lid(p)) & (T_HAS_LET_REF_FALLBACK | T_HAS_METHODS)) == (T_HAS_LET_REF_FALLBACK | T_HAS_METHODS))
-#define has_let_set_fallback(p)        ((full_type(T_Lid(p)) & (T_HAS_LET_SET_FALLBACK | T_HAS_METHODS)) == (T_HAS_LET_SET_FALLBACK | T_HAS_METHODS))
-#define set_has_let_ref_fallback(p)    set_type_bit(T_Let(p), T_HAS_LET_REF_FALLBACK)
-#define set_has_let_set_fallback(p)    set_type_bit(T_Let(p), T_HAS_LET_SET_FALLBACK)
-#define has_let_fallback(p)            has_type_bit(T_Lid(p), (T_HAS_LET_REF_FALLBACK | T_HAS_LET_SET_FALLBACK))
-#define set_all_methods(p, e)          full_type(T_Let(p)) |= (full_type(e) & (T_HAS_METHODS | T_HAS_LET_REF_FALLBACK | T_HAS_LET_SET_FALLBACK))
+#define has_let_ref_fallback(p)        ((full_type(T_Lsd(p)) & (T_HAS_LET_REF_FALLBACK | T_HAS_METHODS)) == (T_HAS_LET_REF_FALLBACK | T_HAS_METHODS))
+#define has_let_set_fallback(p)        ((full_type(T_Lsd(p)) & (T_HAS_LET_SET_FALLBACK | T_HAS_METHODS)) == (T_HAS_LET_SET_FALLBACK | T_HAS_METHODS))
+#define set_has_let_ref_fallback(p)    set_type_bit(T_Lsd(p), T_HAS_LET_REF_FALLBACK)
+#define set_has_let_set_fallback(p)    set_type_bit(T_Lsd(p), T_HAS_LET_SET_FALLBACK)
+#define has_let_fallback(p)            has_type_bit(T_Lsd(p), (T_HAS_LET_REF_FALLBACK | T_HAS_LET_SET_FALLBACK))
+#define set_all_methods(p, e)          full_type(T_Lsd(p)) |= (full_type(e) & (T_HAS_METHODS | T_HAS_LET_REF_FALLBACK | T_HAS_LET_SET_FALLBACK))
 
 #define T_WEAK_HASH                    T_SAFE_STEPPER
 #define set_weak_hash_table(p)         set_type_bit(T_Hsh(p), T_WEAK_HASH)
@@ -3174,13 +3176,21 @@ static s7_pointer slot_expression(s7_pointer p)    \
 #define is_syntax_or_qq(p)	       ((is_syntax(p)) || ((p) == initial_value(sc->quasiquote_symbol)))
 
 #define INITIAL_ROOTLET_SIZE           512
+#if S7_DEBUGGING                       /* let_id(rootlet) is not -1 */
+static s7_int let_id(s7_pointer p) {if (p == cur_sc->rootlet) {fprintf(stderr, "let_id(rootlet)?\n"); abort();} return((T_Lid(p))->object.envr.id);}
+#else
 #define let_id(p)                      (T_Lid(p))->object.envr.id
+#endif
 #define let_set_id(p, Id)              (T_Lid(p))->object.envr.id = Id
 #define is_let(p)                      (type(p) == T_LET)
 #define is_let_unchecked(p)            (unchecked_type(p) == T_LET)
 #define let_slots(p)                   T_Sln((T_Let(p))->object.envr.slots)
 #define let_outlet(p)                  T_Lid((T_Let(p))->object.envr.nxt)
+#if S7_DEBUGGING
+#define let_set_outlet(p, ol)          do {if ((ol) == sc->rootlet) fprintf(stderr, "%s[%d]: set_outlet to rootlet\n", __func__, __LINE__); (T_Let(p))->object.envr.nxt = T_Lid(ol);} while (0)
+#else
 #define let_set_outlet(p, ol)          (T_Let(p))->object.envr.nxt = T_Lid(ol)
+#endif
 #if S7_DEBUGGING
   #define let_set_slots(p, Slot)       do {if ((!in_heap(p)) && (Slot) && (in_heap(Slot))) fprintf(stderr, "%s[%d]: let+slot mismatch\n", __func__, __LINE__); \
                                            T_Let(p)->object.envr.slots = T_Sln(Slot);} while (0)
@@ -5334,11 +5344,29 @@ static s7_pointer check_ref15(s7_pointer p, const char *func, int32_t line) /* c
   return(p);
 }
 
-static s7_pointer check_ref16(s7_pointer p, const char *func, int32_t line)
+static s7_pointer check_ref16(s7_pointer p, const char *func, int32_t line) /* let or nil but not rootlet (mainly because let_id(rootlet) is not actually -1) */
 {
   uint8_t typ = unchecked_type(p);
   check_nref(p, func, line);
   if ((typ != T_LET) && (typ != T_NIL)) complain("%s%s[%d]: not a let or nil, but %s (%s)%s\n", p, func, line, typ);
+  if (p == cur_sc->rootlet)
+    {
+      fprintf(stderr, "%s%s[%d]: T_Lid(rootlet) %s?%s\n", bold_text, func, line, safe_object_to_string(p), unbold_text);
+      if (cur_sc->stop_at_error) abort();
+    }
+  return(p);
+}
+
+static s7_pointer check_ref16a(s7_pointer p, const char *func, int32_t line) /* let or nil but not rootlet (mainly because let_id(rootlet) is not actually -1) */
+{
+  uint8_t typ = unchecked_type(p);
+  check_nref(p, func, line);
+  if (typ != T_LET) complain("%s%s[%d]: not a let, but %s (%s)%s\n", p, func, line, typ);
+  if (p == cur_sc->rootlet)
+    {
+      fprintf(stderr, "%s%s[%d]: T_Lsd(rootlet) %s?%s\n", bold_text, func, line, safe_object_to_string(p), unbold_text);
+      if (cur_sc->stop_at_error) abort();
+    }
   return(p);
 }
 
@@ -6393,7 +6421,9 @@ static s7_pointer g_is_immutable(s7_scheme *sc, s7_pointer args)
 	  s7_pointer e = cadr(args);
 	  if (!is_let(e))
 	    wrong_type_error_nr(sc, sc->is_immutable_symbol, 2, e, a_let_string);
-	  slot = lookup_slot_from((is_keyword(p)) ? keyword_symbol(p) : p, e);
+	  if (e == sc->rootlet)
+	    slot = global_slot(p);
+	  else slot = lookup_slot_from((is_keyword(p)) ? keyword_symbol(p) : p, e);
 	}
       else 
 	{
@@ -9469,8 +9499,6 @@ static void check_let_fallback(s7_scheme *sc, const s7_pointer symbol, s7_pointe
 
 static void append_let(s7_scheme *sc, s7_pointer new_e, s7_pointer old_e)
 {
-  if ((old_e == sc->rootlet) || (new_e == sc->s7_starlet))
-    return;
   if (new_e == sc->rootlet)
     for (s7_pointer x = let_slots(old_e); tis_slot(x); x = next_slot(x))
       {
@@ -9585,7 +9613,8 @@ to the let target-let, and returns target-let.  (varlet (curlet) 'a 1) adds 'a t
 	  val = cdr(p);
 	  break;
 
-	case T_LET:
+	case T_LET: /* (varlet (inlet 'a 1) (rootlet)) is trouble */
+	  if ((p == sc->rootlet) || (e == sc->s7_starlet)) continue;
 	  append_let(sc, e, check_c_object_let(sc, p, sc->varlet_symbol));
 	  if (has_let_set_fallback(p)) set_has_let_set_fallback(e);
 	  if (has_let_ref_fallback(p)) set_has_let_ref_fallback(e);
@@ -9736,6 +9765,7 @@ static s7_pointer sublet_1(s7_scheme *sc, s7_pointer e, s7_pointer bindings, s7_
 	      break;
 
 	    case T_LET:
+	      if ((p == sc->rootlet) || (new_e == sc->s7_starlet)) continue;
 	      append_let(sc, new_e, check_c_object_let(sc, p, caller));
 	      if (tis_slot(let_slots(new_e))) /* make sure the end slot (sp) is correct */
 		for (sp = let_slots(new_e); tis_slot(next_slot(sp)); sp = next_slot(sp));
@@ -10054,7 +10084,7 @@ static /* inline */ s7_pointer let_ref(s7_scheme *sc, s7_pointer let, s7_pointer
     }
   if (!is_symbol(symbol))
     {
-      if (has_let_ref_fallback(let)) /* let-ref|set-fallback refer to (explicit) let-ref in various forms, not the method lookup process */
+      if ((let != sc->rootlet) && (has_let_ref_fallback(let))) /* let-ref|set-fallback refer to (explicit) let-ref in various forms, not the method lookup process */
 	return(call_let_ref_fallback(sc, let, symbol));
       wrong_type_error_nr(sc, sc->let_ref_symbol, 2, symbol, a_symbol_string);
     }
@@ -10071,7 +10101,7 @@ static /* inline */ s7_pointer let_ref(s7_scheme *sc, s7_pointer let, s7_pointer
   if (is_keyword(symbol))
     symbol = keyword_symbol(symbol);
 
-  if (let == sc->rootlet)
+  if (let == sc->rootlet) /* almost never happens -- only if explicit (let-ref (rootlet) 'abs) */
     return((is_slot(global_slot(symbol))) ? global_value(symbol) : sc->undefined);
 
   if (let_id(let) == symbol_id(symbol))
@@ -10117,7 +10147,7 @@ static s7_pointer lint_let_ref_p_pp(s7_scheme *sc, s7_pointer lt, s7_pointer sym
       if (slot_symbol(y) == sym)
 	return(slot_value(y));
 
-  if (has_let_ref_fallback(lt))
+  if ((lt != sc->nil) && (has_let_ref_fallback(lt)))
     return(call_let_ref_fallback(sc, lt, sym));
 
   return((is_slot(global_slot(sym))) ? global_value(sym) : sc->undefined);
@@ -10226,7 +10256,7 @@ static s7_pointer let_set(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7_p
     wrong_type_error_nr(sc, sc->let_set_symbol, 1, let, a_let_string);
   if (!is_symbol(symbol))
     {
-      if (has_let_set_fallback(let))
+      if ((let != sc->rootlet) && (has_let_set_fallback(let)))
 	return(call_let_set_fallback(sc, let, symbol, value));
       wrong_type_error_nr(sc, sc->let_set_symbol, 2, symbol, a_symbol_string);
     }
@@ -10271,7 +10301,7 @@ static s7_pointer g_lint_let_set(s7_scheme *sc, s7_pointer args)
 	      slot_set_value(y, (slot_has_setter(y)) ? call_setter(sc, y, val) : val);
 	      return(slot_value(y));
 	    }
-      if (has_let_set_fallback(lt))
+      if ((lt != sc->rootlet) && (has_let_set_fallback(lt)))
 	return(call_let_set_fallback(sc, lt, sym, val));
     }
   y = global_slot(sym);
@@ -69607,7 +69637,7 @@ static noreturn void unbound_variable_error_nr(s7_scheme *sc, s7_pointer sym)
 static s7_pointer unbound_variable(s7_scheme *sc, s7_pointer sym)
 {
   /* this always occurs in a context where we're trying to find anything, so I'll move a couple of those checks here */
-  if (has_let_ref_fallback(sc->curlet)) /* an experiment -- see s7test (with-let *db* (+ int32_t (length str))) */
+  if ((sc->curlet != sc->nil) && (has_let_ref_fallback(sc->curlet))) /* an experiment -- see s7test (with-let *db* (+ int32_t (length str))) */
     return(call_let_ref_fallback(sc, sc->curlet, sym));
   /* but if the thing we want to hit this fallback happens to exist at a higher level, oops... */
 
@@ -96814,7 +96844,7 @@ int main(int argc, char **argv)
  * t718 func set! troubles [what about apply-values as 3rd arg? -- see t718, or apply values]
  *   also the vals3 t718 set! problem (and call/cc etc -- this check has to be in splice-in-values or later)
  * set_immutable save the current file/line? Then the immutable error checks for define-constant and this setting 6464
- *   immutable setter cases [if setter=integer? does setting the setter immutable make integer? immutable?][s7.c says this is impossible 6450]
+ *   immutable setter cases, (setter f) is the function so it is always immutable?
  * apply <mumble>: try to give var that gave the function being applied [need to check all 9 paths to this]
  *   another bad error msg: (defined? ...) -> "unbound variable ... in (...)"
      <1> (+ 1 asdf)
@@ -96824,4 +96854,5 @@ int main(int argc, char **argv)
      <3> (let ((x asdf)) x) [fx_unsafe_s from op_let1] 75396
      error: unbound variable asdf in ((x asdf))
  * t718 bugs
+ * more T_Lsd?
  */
