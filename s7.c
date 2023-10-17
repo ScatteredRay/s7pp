@@ -1922,6 +1922,7 @@ static void init_types(void)
   static s7_pointer check_ref7(s7_pointer p, const char *func, int32_t line);
   static s7_pointer check_ref11(s7_pointer p, const char *func, int32_t line);
   static s7_pointer check_ref16(s7_pointer p, const char *func, int32_t line);
+  static s7_pointer check_ref16a(s7_pointer p, const char *func, int32_t line);
   static s7_pointer check_ref19(s7_pointer p, const char *func, int32_t line);
   static s7_pointer check_nref(s7_pointer p, const char *func, int32_t line);
   static s7_pointer check_opcode(s7_pointer p, const char *func, int32_t line);
@@ -1962,7 +1963,7 @@ static void init_types(void)
   #define T_Itr(P) check_ref(P, T_ITERATOR,          __func__, __LINE__, "sweep", "process_iterator")
   #define T_Ivc(P) check_ref(P, T_INT_VECTOR,        __func__, __LINE__, "sweep", NULL)
   #define T_Key(P) check_ref18(P,                    __func__, __LINE__)                /* keyword */
-  #define T_Let(P) check_ref(P, T_LET,               __func__, __LINE__, NULL, NULL)
+  #define T_Let(P) check_ref(P, T_LET,               __func__, __LINE__, NULL, NULL)    /* let+rootlet but not nil */
   #define T_Lid(P) check_ref16(P,                    __func__, __LINE__)                /* let/nil but not rootlet */
   #define T_Lsd(P) check_ref16a(P,                   __func__, __LINE__)                /* let but not nil or rootlet */
   #define T_Lst(P) check_ref2(P, T_PAIR, T_NIL,      __func__, __LINE__, "gc", NULL)
@@ -2225,8 +2226,8 @@ static void init_types(void)
 /* marks do-loops that resist optimization */
 
 #define T_DOX_SLOT1                    T_GLOBAL
-#define has_dox_slot1(p)               has_type_bit(T_Let(p), T_DOX_SLOT1)
-#define set_has_dox_slot1(p)           set_type_bit(T_Let(p), T_DOX_SLOT1)
+#define has_dox_slot1(p)               has_type_bit(T_Lsd(p), T_DOX_SLOT1)
+#define set_has_dox_slot1(p)           set_type_bit(T_Lsd(p), T_DOX_SLOT1)
 /* marks a let that includes the dox_slot1 */
 
 #define T_COLLECTED                    (1 << (TYPE_BITS + 9))
@@ -2257,9 +2258,9 @@ static void init_types(void)
 /* marks a slot that has a setter or symbol that might have a setter */
 
 #define T_WITH_LET_LET                 T_LOCATION
-#define is_with_let_let(p)             has_type_bit(T_Let(p), T_WITH_LET_LET)
-#define set_with_let_let(p)            set_type_bit(T_Let(p), T_WITH_LET_LET)
-/* marks a let that is the argument to with-let */
+#define is_with_let_let(p)             has_type_bit(T_Lsd(p), T_WITH_LET_LET)
+#define set_with_let_let(p)            set_type_bit(T_Lsd(p), T_WITH_LET_LET)
+/* marks a let that is the argument to with-let (but not rootlet in its uses) */
 
 #define T_SIMPLE_DEFAULTS              T_LOCATION
 #define c_func_has_simple_defaults(p)  has_type_bit(T_Fst(p), T_SIMPLE_DEFAULTS)
@@ -2315,14 +2316,14 @@ static void init_types(void)
 #define set_has_stepper(p)             set_type_bit(T_Slt(p), T_HAS_STEPPER)
 
 #define T_DOX_SLOT2                    T_UNSAFE
-#define has_dox_slot2(p)               has_type_bit(T_Let(p), T_DOX_SLOT2)
-#define set_has_dox_slot2(p)           set_type_bit(T_Let(p), T_DOX_SLOT2)
+#define has_dox_slot2(p)               has_type_bit(T_Lsd(p), T_DOX_SLOT2)
+#define set_has_dox_slot2(p)           set_type_bit(T_Lsd(p), T_DOX_SLOT2)
 /* marks a let that includes the dox_slot2 */
 
 #define T_IMMUTABLE                    (1 << (TYPE_BITS + 16))
 #define is_immutable(p)                has_type_bit(T_Pos(p), T_IMMUTABLE)
 #define set_immutable(p)               set_type_bit(T_Pos(p), T_IMMUTABLE) /* can be a slot, so not T_Ext */
-#define set_immutable_let(p)           set_type_bit(T_Lid(p), T_IMMUTABLE)
+#define set_immutable_let(p)           set_type_bit(T_Lsd(p), T_IMMUTABLE)
 #define set_immutable_slot(p)          set_type_bit(T_Slt(p), T_IMMUTABLE)
 #define is_immutable_port(p)           has_type_bit(T_Prt(p), T_IMMUTABLE)
 #define is_immutable_symbol(p)         has_type_bit(T_Sym(p), T_IMMUTABLE)
@@ -2349,8 +2350,8 @@ static void init_types(void)
  */
 
 #define T_LET_REMOVED                  T_SETTER
-#define let_set_removed(p)             set_type_bit(T_Let(p), T_LET_REMOVED)
-#define let_removed(p)                 has_type_bit(T_Let(p), T_LET_REMOVED)
+#define let_set_removed(p)             set_type_bit(T_Lsd(p), T_LET_REMOVED)
+#define let_removed(p)                 has_type_bit(T_Lsd(p), T_LET_REMOVED)
 /* mark lets that have been removed from the heap or checked for that possibility */
 
 #define T_HAS_EXPRESSION               T_SETTER
@@ -2452,8 +2453,8 @@ static void init_types(void)
 /* symbol is from gensym (GC-able etc) */
 
 #define T_FUNCLET                      T_GENSYM
-#define is_funclet(p)                  has_type_bit(T_Let(p), T_FUNCLET)
-#define set_funclet(p)                 set_type_bit(T_Let(p), T_FUNCLET)
+#define is_funclet(p)                  has_type_bit(T_Lsd(p), T_FUNCLET)
+#define set_funclet(p)                 set_type_bit(T_Lsd(p), T_FUNCLET)
 /* this marks a funclet */
 
 #define T_HASH_CHOSEN                  T_GENSYM
@@ -2530,15 +2531,14 @@ static void init_types(void)
 #define set_is_int_optable(p)          set_type1_bit(T_Pair(p), T_INT_OPTABLE)
 
 #define T_UNLET                        T_SYMCONS
-#define is_unlet(p)                    has_type1_bit(T_Let(p), T_UNLET)
-#define set_is_unlet(p)                set_type1_bit(T_Let(p), T_UNLET)
+#define is_unlet(p)                    has_type1_bit(T_Lsd(p), T_UNLET)
+#define set_is_unlet(p)                set_type1_bit(T_Lsd(p), T_UNLET)
 
-/* symbol free here */
 #define T_FULL_HAS_LET_FILE            (1LL << (TYPE_BITS + BIT_ROOM + 25))
 #define T_HAS_LET_FILE                 (1 << 1)
-#define has_let_file(p)                has_type1_bit(T_Let(p), T_HAS_LET_FILE)
-#define set_has_let_file(p)            set_type1_bit(T_Let(p), T_HAS_LET_FILE)
-#define clear_has_let_file(p)          clear_type1_bit(T_Let(p), T_HAS_LET_FILE)
+#define has_let_file(p)                has_type1_bit(T_Lsd(p), T_HAS_LET_FILE)
+#define set_has_let_file(p)            set_type1_bit(T_Lsd(p), T_HAS_LET_FILE)
+#define clear_has_let_file(p)          clear_type1_bit(T_Lsd(p), T_HAS_LET_FILE)
 
 #define T_TYPED_VECTOR                 T_HAS_LET_FILE
 #define is_typed_vector(p)             has_type1_bit(T_Vec(p), T_TYPED_VECTOR)
@@ -2548,6 +2548,7 @@ static void init_types(void)
 #define T_TYPED_HASH_TABLE             T_HAS_LET_FILE
 #define is_typed_hash_table(p)         has_type1_bit(T_Hsh(p), T_TYPED_HASH_TABLE)
 #define set_is_typed_hash_table(p)     set_type1_bit(T_Hsh(p), T_TYPED_HASH_TABLE)
+#define clear_is_typed_hash_table(p)   clear_type1_bit(T_Hsh(p), T_TYPED_HASH_TABLE)
 
 #define T_BOOL_SETTER                  T_HAS_LET_FILE
 #define c_function_has_bool_setter(p)  has_type1_bit(T_Fnc(p), T_BOOL_SETTER)
@@ -2574,8 +2575,8 @@ static void init_types(void)
 /* this marks "definers" like define and define-macro */
 
 #define T_MACLET                       T_DEFINER
-#define is_maclet(p)                   has_type1_bit(T_Let(p), T_MACLET)
-#define set_maclet(p)                  set_type1_bit(T_Let(p), T_MACLET)
+#define is_maclet(p)                   has_type1_bit(T_Lsd(p), T_MACLET)
+#define set_maclet(p)                  set_type1_bit(T_Lsd(p), T_MACLET)
 /* this marks a maclet */
 
 #define T_HAS_FX                       T_DEFINER
@@ -2626,8 +2627,8 @@ static void init_types(void)
 #define set_very_safe_closure_body(p)  set_type1_bit(T_Pair(p), T_SHORT_VERY_SAFE_CLOSURE)
 
 #define T_BAFFLE_LET                   T_SHORT_VERY_SAFE_CLOSURE
-#define is_baffle_let(p)               has_type1_bit(T_Let(p), T_BAFFLE_LET)
-#define set_baffle_let(p)              set_type1_bit(T_Let(p), T_BAFFLE_LET)
+#define is_baffle_let(p)               has_type1_bit(T_Lsd(p), T_BAFFLE_LET)
+#define set_baffle_let(p)              set_type1_bit(T_Lsd(p), T_BAFFLE_LET)
 
 #define T_CYCLIC                       (1LL << (TYPE_BITS + BIT_ROOM + 29))
 #define T_SHORT_CYCLIC                 (1 << 5)
@@ -2654,6 +2655,7 @@ static void init_types(void)
 #define T_SIMPLE_ELEMENTS              (1 << 8)
 #define has_simple_elements(p)         has_type1_bit(T_Nvc(p), T_SIMPLE_ELEMENTS)
 #define set_has_simple_elements(p)     set_type1_bit(T_Nvc(p), T_SIMPLE_ELEMENTS)
+#define clear_has_simple_elements(p)   clear_type1_bit(T_Nvc(p), T_SIMPLE_ELEMENTS)
 #define c_function_has_simple_elements(p)     has_type1_bit(T_Fnc(p), T_SIMPLE_ELEMENTS)
 #define c_function_set_has_simple_elements(p) set_type1_bit(T_Fnc(p), T_SIMPLE_ELEMENTS)
 /* c_func case here refers to boolean? et al -- structure element type declaration that ensures a simple object */
@@ -3184,20 +3186,20 @@ static s7_int let_id(s7_pointer p) {if (p == cur_sc->rootlet) {fprintf(stderr, "
 #define let_set_id(p, Id)              (T_Lid(p))->object.envr.id = Id
 #define is_let(p)                      (type(p) == T_LET)
 #define is_let_unchecked(p)            (unchecked_type(p) == T_LET)
-#define let_slots(p)                   T_Sln((T_Let(p))->object.envr.slots)
-#define let_outlet(p)                  T_Lid((T_Let(p))->object.envr.nxt)
+#define let_slots(p)                   T_Sln((T_Lsd(p))->object.envr.slots)
+#define let_outlet(p)                  T_Lid((T_Lsd(p))->object.envr.nxt)
 #if S7_DEBUGGING
-#define let_set_outlet(p, ol)          do {if ((ol) == sc->rootlet) fprintf(stderr, "%s[%d]: set_outlet to rootlet\n", __func__, __LINE__); (T_Let(p))->object.envr.nxt = T_Lid(ol);} while (0)
+#define let_set_outlet(p, ol)          do {if ((ol) == sc->rootlet) fprintf(stderr, "%s[%d]: set_outlet to rootlet\n", __func__, __LINE__); (T_Lsd(p))->object.envr.nxt = T_Lid(ol);} while (0)
 #else
-#define let_set_outlet(p, ol)          (T_Let(p))->object.envr.nxt = T_Lid(ol)
+#define let_set_outlet(p, ol)          (T_Lsd(p))->object.envr.nxt = T_Lid(ol)
 #endif
 #if S7_DEBUGGING
   #define let_set_slots(p, Slot)       do {if ((!in_heap(p)) && (Slot) && (in_heap(Slot))) fprintf(stderr, "%s[%d]: let+slot mismatch\n", __func__, __LINE__); \
-                                           T_Let(p)->object.envr.slots = T_Sln(Slot);} while (0)
+                                           T_Lsd(p)->object.envr.slots = T_Sln(Slot);} while (0)
   #define C_Let(p, role)               check_let_ref(p, role, __func__, __LINE__)
   #define S_Let(p, role)               check_let_set(p, role, __func__, __LINE__)
 #else
-  #define let_set_slots(p, Slot)       (T_Let(p))->object.envr.slots = T_Sln(Slot)
+  #define let_set_slots(p, Slot)       (T_Lsd(p))->object.envr.slots = T_Sln(Slot)
   #define C_Let(p, role)               p
   #define S_Let(p, role)               p
 #endif
@@ -3205,8 +3207,8 @@ static s7_int let_id(s7_pointer p) {if (p == cur_sc->rootlet) {fprintf(stderr, "
 #define funclet_set_function(p, F)     (S_Let(p, L_FUNC))->object.envr.edat.efnc.function = T_Sym(F)
 #define set_curlet(Sc, P)              Sc->curlet = T_Lid(P)
 
-#define let_baffle_key(p)              (T_Let(p))->object.envr.edat.key
-#define set_let_baffle_key(p, K)       (T_Let(p))->object.envr.edat.key = K
+#define let_baffle_key(p)              (T_Lsd(p))->object.envr.edat.key
+#define set_let_baffle_key(p, K)       (T_Lsd(p))->object.envr.edat.key = K
 
 #define let_line(p)                    (C_Let(p, L_FUNC))->object.envr.edat.efnc.line
 #define let_set_line(p, L)             (S_Let(p, L_FUNC))->object.envr.edat.efnc.line = L
@@ -5020,11 +5022,14 @@ void s7_show_let(s7_scheme *sc) /* debugging convenience */
       if (olet == sc->owlet)
 	fprintf(stderr, "(owlet): ");
       else
-	if (is_funclet(olet))
-	  fprintf(stderr, "(%s funclet): ", display(funclet_function(olet)));
+	if (olet == sc->rootlet)
+	  fprintf(stderr, "(rootlet): ");
 	else
-	  if (olet == sc->shadow_rootlet)
-	    fprintf(stderr, "(shadow rootlet): ");
+	  if (is_funclet(olet))
+	    fprintf(stderr, "(%s funclet): ", display(funclet_function(olet)));
+	  else
+	    if (olet == sc->shadow_rootlet)
+	      fprintf(stderr, "(shadow rootlet): ");
       fprintf(stderr, "%s\n", display(olet));
     }
 }
@@ -5213,7 +5218,7 @@ static s7_pointer check_ref5(s7_pointer p, const char *func, int32_t line)
 static s7_pointer check_ref6(s7_pointer p, const char *func, int32_t line)
 {
   uint8_t typ = unchecked_type(p);
-  if (typ < T_C_MACRO) complain("%s%s[%d]: not a c function or macro, but %s (%s)%s\n", p, func, line, typ);
+  if (typ < T_C_MACRO) complain("%s%s[%d]: not a c function or macro (type < T_C_MACRO, from T_Fnc), but %s (%s)%s\n", p, func, line, typ);
   return(p);
 }
 
@@ -9346,6 +9351,7 @@ static s7_pointer g_is_funclet(s7_scheme *sc, s7_pointer args)
   #define Q_is_funclet sc->pl_bt
 
   s7_pointer lt = car(args);
+  if (lt == sc->rootlet) return(sc->F);
   if ((is_let(lt)) && ((is_funclet(lt)) || (is_maclet(lt))))
     return(sc->T);
   if (!has_active_methods(sc, lt))
@@ -41550,8 +41556,12 @@ static s7_pointer g_vector_typer(s7_scheme *sc, s7_pointer args)
 static s7_pointer g_set_vector_typer(s7_scheme *sc, s7_pointer args)
 {
   s7_pointer v = car(args), typer = cadr(args);
+
   if (!is_any_vector(v))
-    wrong_type_error_nr(sc, wrap_string(sc, "set! vector-typer", 17), 1, v, sc->type_names[T_VECTOR]);
+    wrong_type_error_nr(sc, wrap_string(sc, "set! vector-typer", 17), 1, v, sc->type_names[T_VECTOR]); 
+  if (is_immutable_vector(v))
+    immutable_object_error_nr(sc, set_elist_2(sc, wrap_string(sc, "~S is immutable so its vector-typer can't be set!", 49), v));
+
   if (!is_normal_vector(v))
     {
       if (((is_int_vector(v)) && (typer != global_value(sc->is_integer_symbol))) ||
@@ -41566,11 +41576,12 @@ static s7_pointer g_set_vector_typer(s7_scheme *sc, s7_pointer args)
 	{
 	  typed_vector_set_typer(v, sc->F);
 	  clear_typed_vector(v);
+	  clear_has_simple_elements(v); /* 15-Oct-23 */
 	}}
   else
     {
       if (is_c_function(typer))
-	check_vector_typer_c_function(sc, sc->vector_typer_symbol, typer);
+	check_vector_typer_c_function(sc, sc->vector_typer_symbol, typer); /* this is just error checking */
       else
 	{
 	  if (!is_any_closure(typer))
@@ -41584,6 +41595,7 @@ static s7_pointer g_set_vector_typer(s7_scheme *sc, s7_pointer args)
       if ((is_c_function(typer)) &&
 	  (c_function_has_simple_elements(typer)))
 	set_has_simple_elements(v);
+      else clear_has_simple_elements(v); /* 15-Oct-23 */
       }
   return(typer);
 }
@@ -43433,16 +43445,19 @@ static void check_hash_table_typer(s7_scheme *sc, s7_pointer caller, s7_pointer 
 static s7_pointer g_set_hash_table_key_typer(s7_scheme *sc, s7_pointer args)
 {
   s7_pointer h = car(args), typer = cadr(args);
+
   if (!is_hash_table(h))
     wrong_type_error_nr(sc, wrap_string(sc, "set! hash_table-key-typer", 25), 1, h, sc->type_names[T_HASH_TABLE]);
+  if (is_immutable_hash_table(h))
+    immutable_object_error_nr(sc, set_elist_2(sc, wrap_string(sc, "~S is immutable so its key-typer can't be set!", 46), h));
 
   if (is_boolean(typer)) /* remove current typer, if any */
     {
       if (is_typed_hash_table(h))
 	{
 	  hash_table_set_key_typer(h, sc->T);
-	  if (hash_table_value_typer(h) == sc->T)
-	    clear_has_simple_keys(h); 	      /* not clear_is_typed_hash_table(h); and clear_has_hash_key_type?? looks redundant */
+	  clear_has_simple_keys(h);
+	  if (hash_table_value_typer(h) == sc->T) clear_is_typed_hash_table(h);
 	}}
   else
     {
@@ -43455,16 +43470,19 @@ static s7_pointer g_set_hash_table_key_typer(s7_scheme *sc, s7_pointer args)
 static s7_pointer g_set_hash_table_value_typer(s7_scheme *sc, s7_pointer args)
 {
   s7_pointer h = car(args), typer = cadr(args);
+
   if (!is_hash_table(h))
     wrong_type_error_nr(sc, wrap_string(sc, "set! hash_table-value-typer", 27), 1, h, sc->type_names[T_HASH_TABLE]);
+  if (is_immutable_hash_table(h))
+    immutable_object_error_nr(sc, set_elist_2(sc, wrap_string(sc, "~S is immutable so its value-typer can't be set!", 48), h));
 
   if (is_boolean(typer)) /* remove current typer, if any */
     {
       if (is_typed_hash_table(h))
 	{
 	  hash_table_set_value_typer(h, sc->T);
-	  if (hash_table_key_typer(h) == sc->T)
-	    clear_has_simple_values(h); /* not clear_is_typed_hash_table(h); */
+	  clear_has_simple_values(h);
+	  if (hash_table_key_typer(h) == sc->T) clear_is_typed_hash_table(h);
 	}}
   else
     {
@@ -44898,7 +44916,8 @@ static void check_hash_types(s7_scheme *sc, s7_pointer table, s7_pointer key, s7
 {
   if (has_hash_key_type(table)) /* symbol_type and c_function_symbol exist and symbol_type is not T_FREE */
     {
-      if ((uint8_t)symbol_type(c_function_symbol(hash_table_key_typer(table))) != type(key))
+      s7_pointer typer = hash_table_key_typer(table);
+      if ((is_c_function(typer)) && ((uint8_t)symbol_type(c_function_symbol(typer)) != type(key)))
 	{
 	  const char *tstr = make_type_name(sc, hash_table_typer_name(sc, hash_table_key_typer(table)), INDEFINITE_ARTICLE);
 	  wrong_type_error_nr(sc, wrap_string(sc, "hash-table-set! key", 19), 2, key, wrap_string(sc, tstr, safe_strlen(tstr)));
@@ -44921,7 +44940,8 @@ static void check_hash_types(s7_scheme *sc, s7_pointer table, s7_pointer key, s7
 	    }}}
   if (has_hash_value_type(table))
     {
-      if ((uint8_t)symbol_type(c_function_symbol(hash_table_value_typer(table))) != type(value))
+      s7_pointer typer = hash_table_value_typer(table);
+      if ((is_c_function(typer)) && ((uint8_t)symbol_type(c_function_symbol(typer)) != type(value)))
 	{
 	  const char *tstr = make_type_name(sc, hash_table_typer_name(sc, hash_table_value_typer(table)), INDEFINITE_ARTICLE);
 	  wrong_type_error_nr(sc, sc->hash_table_set_symbol, 3, value, wrap_string(sc, tstr, safe_strlen(tstr)));
@@ -96843,8 +96863,6 @@ int main(int argc, char **argv)
  * t653 gensym cases [tricky!]
  * t718 func set! troubles [what about apply-values as 3rd arg? -- see t718, or apply values]
  *   also the vals3 t718 set! problem (and call/cc etc -- this check has to be in splice-in-values or later)
- * set_immutable save the current file/line? Then the immutable error checks for define-constant and this setting 6464
- *   immutable setter cases, (setter f) is the function so it is always immutable?
  * apply <mumble>: try to give var that gave the function being applied [need to check all 9 paths to this]
  *   another bad error msg: (defined? ...) -> "unbound variable ... in (...)"
      <1> (+ 1 asdf)
@@ -96854,5 +96872,4 @@ int main(int argc, char **argv)
      <3> (let ((x asdf)) x) [fx_unsafe_s from op_let1] 75396
      error: unbound variable asdf in ((x asdf))
  * t718 bugs
- * more T_Lsd?
  */

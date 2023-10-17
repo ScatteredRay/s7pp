@@ -410,6 +410,9 @@
 	     ,@body)))
 	(loop)))))
 
+(define-macro (anaphoric-when test . body) ; use "test-result" as the variable holding the test result
+  `(let ((test-result ,test))
+     (when test-result ,@body)))
 
 (define-macro (do* spec end . body)
   `(let* ,(map (lambda (var)
