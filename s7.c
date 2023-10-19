@@ -6421,6 +6421,7 @@ static s7_pointer g_is_immutable(s7_scheme *sc, s7_pointer args)
   s7_pointer p = car(args), slot;
   if (is_symbol(p))
     {
+      if (is_keyword(p)) return(sc->T);
       if (is_pair(cdr(args)))
 	{
 	  s7_pointer e = cadr(args);
@@ -6430,11 +6431,7 @@ static s7_pointer g_is_immutable(s7_scheme *sc, s7_pointer args)
 	    slot = global_slot(p);
 	  else slot = lookup_slot_from((is_keyword(p)) ? keyword_symbol(p) : p, e);
 	}
-      else 
-	{
-	  if (is_keyword(p)) return(sc->T);
-	  slot = s7_slot(sc, p);
-	}
+      else slot = s7_slot(sc, p);
       if (is_slot(slot)) /* might be #<undefined> */
 	return(make_boolean(sc, is_immutable_slot(slot)));
     }
@@ -46303,19 +46300,23 @@ static noreturn void apply_error_nr(s7_scheme *sc, s7_pointer obj, s7_pointer ar
 {
   /* the operator type is needed here else the error message is confusing: (apply '+ (list 1 2))) -> ;attempt to apply + to (1 2)? 
    * but using current_code(sc) to get the context sometimes gets local code not the original full form (or even the reverse: args is the form!)
+   * see eval_last_args for a similar unbound var problem
    *
    * apply_c_function, func:apply, args=args to apply
-   *   this error handles both (:asdf 1) and (apply :asdf 1)? so apply-based calls need to edit obj/args? 9 calls:
+   *   (:asdf 1) -> "attempt to apply a keyword :asdf in (:asdf 1)?" [ok]
    *   (apply '+ '(1 2)) from g_apply 52803: "attempt to apply a symbol '+ to '((1 2)) in '(1 2)"!?!
-   *   ('+ 1 2): "attempt to apply a symbol '+ to '(1 2) in ('+ 1 2)" from eval 91534
-   *   (#2d((0 0)(0 0)) 0 0 0) from implicit_index 52985 "attempt to apply an integer 0 to '(0) in (#2d((0 0) (0 0)) 0 0 0)"
-   *   ('and #f) from eval_car_pair 88665 "attempt to apply a symbol 'and to '(#f) in ('and #f)"
+   *   ('+ 1 2): "attempt to apply a symbol '+ in ('+ 1 2)?" [ok]
+   *   (#2d((0 0)(0 0)) 0 0 0) from implicit_index 52985 "attempt to apply an integer 0 to '(0) in (#2d((0 0) (0 0)) 0 0 0)" [ok]
+   *   ('and #f) from eval_car_pair 88665 "attempt to apply a symbol 'and to '(#f) in ('and #f)" [ok]
    *   fallback_ref 46271
    *   op_s: (define (f) (pi)) (f) "attempt to apply a real 3.141592653589793 to () in (f)"
+   *         (define (f) (:asdf 1)) (f) -> "attempt to apply a keyword :asdf to '(1) in (f)"
    * op_s_g op_x_a op_x_aa
    * need to pass calling form I think
    */
-  /* (apply '+ '(1 2)), args=(+ (1 2))! called from apply_c_function, current_code='(1 2)! */
+
+  /* are these syntax errors?? */
+
   error_nr(sc, sc->syntax_error_symbol,
 	   set_elist_6(sc, wrap_string(sc, "attempt to apply ~A ~$ to ~A~S in ~S?", 36),
 		       (is_null(obj)) ? wrap_string(sc, "nil", 3) : ((is_symbol_and_keyword(obj)) ? wrap_string(sc, "a keyword", 9) : type_name_string(sc, obj)), 
@@ -47136,6 +47137,9 @@ static s7_pointer symbol_set_setter(s7_scheme *sc, s7_pointer sym, s7_pointer ar
 	immutable_object_error_nr(sc, set_elist_3(sc, wrap_string(sc, "can't set (setter '~S) to ~S", 28), sym, func));
       if (!is_any_procedure(func))   /* disallow continuation/goto here */
 	wrong_type_error_nr(sc, wrap_string(sc, "set! setter", 11), 3, func, wrap_string(sc, "a function or #f", 16));
+      if (func == global_value(sc->values_symbol))
+	error_nr(sc, make_symbol(sc, "invalid-setter", 14),
+		 set_elist_2(sc, wrap_string(sc, "~S's setter can't be values", 27), sym));
       if ((!is_c_function(func)) || (!c_function_has_bool_setter(func)))
 	{
 	  if (s7_is_aritable(sc, func, 3))
@@ -47156,7 +47160,7 @@ static s7_pointer symbol_set_setter(s7_scheme *sc, s7_pointer sym, s7_pointer ar
 static s7_pointer g_set_setter(s7_scheme *sc, s7_pointer args)
 {
   s7_pointer p = car(args), setter;
-  if (is_symbol(p))
+  if (is_symbol(p)) /* has to precede cadr(args) checks, (set! (setter 'x let) ...) where setter is caddr(args) */
     return(symbol_set_setter(sc, p, args));
   if (p == sc->s7_starlet)
     wrong_type_error_nr(sc, wrap_string(sc, "set! setter", 11), 1, p, wrap_string(sc, "something other than *s7*", 25));
@@ -47169,6 +47173,9 @@ static s7_pointer g_set_setter(s7_scheme *sc, s7_pointer args)
       if (arity_to_int(sc, setter) < 1)          /* we need at least an arg for the set! value */
 	error_nr(sc, sc->wrong_type_arg_symbol,
 		 set_elist_2(sc, wrap_string(sc, "setter function, ~A, should take at least one argument", 54), setter));
+      if (setter == global_value(sc->values_symbol))
+	error_nr(sc, make_symbol(sc, "invalid-setter", 14),
+		 set_elist_2(sc, wrap_string(sc, "~S's setter can't be values", 27), p));
     }
   switch (type(p))
     {
@@ -47243,7 +47250,7 @@ s7_pointer s7_set_setter(s7_scheme *sc, s7_pointer p, s7_pointer setter)
 
 static s7_pointer call_c_function_setter(s7_scheme *sc, s7_pointer func, s7_pointer symbol, s7_pointer new_value)
 {
-  if (has_let_arg(func))
+  if (has_let_arg(func)) /* setter has optional third arg, the let */
     return(c_function_call(func)(sc, with_list_t3(symbol, new_value, sc->curlet)));
   return(c_function_call(func)(sc, with_list_t2(symbol, new_value)));
 }
@@ -68782,8 +68789,10 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
     case OP_SET_SAFE:                         /* symbol is sc->code after pop */
     case OP_SET1:
     case OP_SET_FROM_LET_TEMP:                /* (set! var (values 1 2 3)) */
-    case OP_SET_FROM_SETTER:
-      syntax_error_with_caller_nr(sc, "set!: can't set ~A to ~S", 24, stack_top_code(sc), set_ulist_1(sc, sc->values_symbol, args));
+    case OP_SET_FROM_SETTER:                  /* stack_top_code(sc) is slot if (set! x (set! (setter 'x) g)) s7test.scm */
+      syntax_error_with_caller_nr(sc, "set!: can't set ~A to ~S", 24, 
+				  (is_slot(stack_top_code(sc))) ? slot_symbol(stack_top_code(sc)) : stack_top_code(sc), 
+				  set_ulist_1(sc, sc->values_symbol, args));
 
     case OP_SET_opSAq_P_1: case OP_SET_opSAAq_P_1:
       /* if the target has a setter, this might not be too many arguments since the setter can do what it wants with the arguments, P might be (values ...) */
@@ -69644,23 +69653,19 @@ static noreturn void unbound_variable_error_nr(s7_scheme *sc, s7_pointer sym)
       if ((is_pair(car(p))) && (s7_tree_memq(sc, sym, car(p)))) err_code = car(p);
     }
 #endif
-  if (err_code)
-    error_nr(sc, sc->unbound_variable_symbol,
-	     set_elist_3(sc, wrap_string(sc, "unbound variable ~S in ~S", 25), sym, err_code));
-
+  if (err_code) /* these cases look ok */
+    error_nr(sc, sc->unbound_variable_symbol, set_elist_3(sc, wrap_string(sc, "unbound variable ~S in ~S", 25), sym, err_code));
   if ((symbol_name(sym)[symbol_name_length(sym) - 1] == ',') &&
       (lookup_unexamined(sc, make_symbol(sc, symbol_name(sym), symbol_name_length(sym) - 1))))
-    error_nr(sc, sc->unbound_variable_symbol,
-	     set_elist_2(sc, wrap_string(sc, "unbound variable ~S (perhaps a stray comma?)", 44), sym));
-
-  error_nr(sc, sc->unbound_variable_symbol,
-	   set_elist_2(sc, wrap_string(sc, "unbound variable ~S", 19), sym));
+    error_nr(sc, sc->unbound_variable_symbol, set_elist_2(sc, wrap_string(sc, "unbound variable ~S (perhaps a stray comma?)", 44), sym));
+  error_nr(sc, sc->unbound_variable_symbol, set_elist_2(sc, wrap_string(sc, "unbound variable ~S", 19), sym));
 }
 
-static s7_pointer unbound_variable(s7_scheme *sc, s7_pointer sym)
+static s7_pointer check_autoload_and_error_hook(s7_scheme *sc, s7_pointer sym)
 {
   /* this always occurs in a context where we're trying to find anything, so I'll move a couple of those checks here */
-  if ((sc->curlet != sc->nil) && (has_let_ref_fallback(sc->curlet))) /* an experiment -- see s7test (with-let *db* (+ int32_t (length str))) */
+  if ((sc->curlet != sc->nil) && 
+      (has_let_ref_fallback(sc->curlet))) /* an experiment -- see s7test (with-let *db* (+ int32_t (length str))) */
     return(call_let_ref_fallback(sc, sc->curlet, sym));
   /* but if the thing we want to hit this fallback happens to exist at a higher level, oops... */
 
@@ -69670,6 +69675,7 @@ static s7_pointer unbound_variable(s7_scheme *sc, s7_pointer sym)
   if (safe_strcmp(symbol_name(sym), "|#"))
     read_error_nr(sc, "unmatched |#");
 
+  /* fprintf(stderr, "%s[%d]\n", __func__, __LINE__); */
   /* check *autoload*, autoload_names, then *unbound-variable-hook* */
   if ((sc->autoload_names) ||
       (is_hash_table(sc->autoload_table)) ||
@@ -69700,7 +69706,6 @@ static s7_pointer unbound_variable(s7_scheme *sc, s7_pointer sym)
 	  cur_code = list_1(sc, sym);     /* the error will say "(sym)" which is not too misleading */
 	  pair_set_current_input_location(sc, cur_code);
 	}
-
 #if (!DISABLE_AUTOLOAD)
       if ((sc->is_autoloading) &&
 	  (sc->autoload_names)) /* created by s7_autoload_set_names which requires alphabetization by the caller (e.g. snd-xref.c) */
@@ -69722,6 +69727,7 @@ static s7_pointer unbound_variable(s7_scheme *sc, s7_pointer sym)
 		  e = s7_load(sc, file);         /* s7_load can return NULL */
 		}
 	      result = s7_symbol_value(sc, sym); /* calls lookup, does not trigger unbound_variable search */
+	      /* fprintf(stderr, "[%d]: %s\n", __LINE__, display(result)); */
 	      if ((result == sc->undefined) && (e) && (is_let(e)))
 		{
 		  /* the current_let refs here are trying to handle local autoloads, but that is problematic -- we'd need to
@@ -69731,6 +69737,7 @@ static s7_pointer unbound_variable(s7_scheme *sc, s7_pointer sym)
 		   *   libgsl case, we're trying to export a name from *libgsl* -- should that be done with define rather than autoload?
 		   */
 		  result = let_ref(sc, e, sym);  /* add '(sym . result) to current_let (was sc->nil, s7_load can set sc->curlet to sc->nil) */
+		  /* fprintf(stderr, "[%d]: %s\n", __LINE__, display(result)); */
 		  if (result != sc->undefined)
 		    s7_define(sc, sc->nil /* current_let */, sym, result);
 		}}}
@@ -69761,9 +69768,11 @@ static s7_pointer unbound_variable(s7_scheme *sc, s7_pointer sym)
 		    e = s7_call(sc, val, set_ulist_1(sc, sc->curlet, sc->nil));
 		  }
 	      result = s7_symbol_value(sc, sym);                   /* calls lookup, does not trigger unbound_variable search */
+	      /* fprintf(stderr, "[%d]: %s\n", __LINE__, display(result)); */
 	      if ((result == sc->undefined) && (e) && (is_let(e))) /* added 31-Mar-23 to match sc->autoload_names case above */
 		{
 		  result = let_ref(sc, e, sym);
+		  /* fprintf(stderr, "[%d]: %s\n", __LINE__, display(result)); */
 		  if (result != sc->undefined)
 		    s7_define(sc, sc->nil /* current_let */, sym, result); /* as above, was sc->nil -- s7_load above can set sc->curlet to sc->nil */
 		}}
@@ -69779,6 +69788,8 @@ static s7_pointer unbound_variable(s7_scheme *sc, s7_pointer sym)
 	      gc_protect_via_stack(sc, old_hook);
 	      sc->unbound_variable_hook = sc->nil;
 	      result = s7_call(sc, old_hook, set_plist_1(sc, sym)); /* not s7_apply_function */
+	      /* fprintf(stderr, "[%d]: %s\n", __LINE__, display(result)); */
+	      if (result == sc->unspecified) result = sc->undefined;
 	      sc->unbound_variable_hook = old_hook;
 	      s7_set_history_enabled(sc, old_history_enabled);
 	      unstack_gc_protect(sc);
@@ -69790,10 +69801,17 @@ static s7_pointer unbound_variable(s7_scheme *sc, s7_pointer sym)
       sc->x = x;
       sc->z = z;
       sc->temp7 = sc->unused;
-      if ((result != sc->undefined) &&
-	  (result != sc->unspecified))
-	return(result);
+      /* fprintf(stderr, "[%d]: %s\n", __LINE__, display(result)); */
+      return(result);
     }
+  return(sc->undefined);
+}
+
+static s7_pointer unbound_variable(s7_scheme *sc, s7_pointer sym)
+{
+  s7_pointer result = check_autoload_and_error_hook(sc, sym);
+  /* fprintf(stderr, "result: %s\n", display(result)); */
+  if (result != sc->undefined) return(result);
   unbound_variable_error_nr(sc, sym);
   return(sc->unbound_variable_symbol);
 }
@@ -88644,38 +88662,89 @@ static bool eval_args_no_eval_args(s7_scheme *sc)
   return(false);
 }
 
+static s7_pointer unbound_last_arg(s7_scheme *sc, s7_pointer car_code)
+{
+  /* save call-state before autoload/error-hook invocations */
+  s7_int loc = port_location(current_input_port(sc));
+  bool probably_in_repl = ((location_to_line(loc) == 0) || (safe_strcmp("*stdin*", string_value(sc->file_names[location_to_file(loc)]))));
+  s7_pointer ops = op_stack_entry(sc);
+  s7_pointer args = sc->args; /* maybe GC protect? */
+  s7_pointer val = check_autoload_and_error_hook(sc, car_code);
+  if (val == sc->undefined) 
+    error_nr(sc, sc->unbound_variable_symbol,
+	     (probably_in_repl) ? 
+	     set_elist_3(sc, wrap_string(sc, "'~S is unbound in ~S", 20), 
+			 car_code,
+			 cons(sc, ops, (is_null(sc->args)) ? list_1(sc, car_code) : proper_list_reverse_in_place(sc, cons(sc, car_code, args)))) :
+	     set_elist_5(sc, wrap_string(sc, "'~S is unbound in ~S (~A[~D])", 29), 
+			 car_code, 
+			 cons(sc, ops, (is_null(sc->args)) ? list_1(sc, car_code) : proper_list_reverse_in_place(sc, cons(sc, car_code, args))),
+			 sc->file_names[location_to_file(loc)], 
+			 wrap_integer(sc, location_to_line(loc))));
+  return(val);
+}
+
 static inline void eval_last_arg(s7_scheme *sc, s7_pointer car_code) /* one call, eval 91557 */
 {
   /* here we've reached the last arg (sc->code == nil), it is not a pair */
   if (!is_null(cdr(sc->code)))
     improper_arglist_error_nr(sc);
-#if 0
-  /* trying to improve the unbound variable error message */
   if (is_symbol(car_code))
     {
       s7_pointer val = lookup_unexamined(sc, car_code);
-      if (!val)
-	{
-	  s7_int loc = port_location(current_input_port(sc));
-	  
-	  /* need to connect to unbound_variable so that unbound_variable_error will get the error info below
-	   *  can't use current_code -- various hooks and autoload functions may run first -- perhaps use one of the elists?
-	   */
-
-	  fprintf(stderr, "sym: %s unbound, code: %s, args: %s, op_stack: %s\n", display(car_code), display(sc->code), display(sc->args), display(op_stack_entry(sc)));
-	  fprintf(stderr, "'%s is unbound in %s\n", display(car_code), 
-		  display(cons(sc, op_stack_entry(sc), 
-			       (is_null(sc->args)) ? list_1(sc, car_code) : proper_list_reverse_in_place(sc, cons(sc, car_code, sc->args)))));
-	  fprintf(stderr, "%s[%" ld64 "]\n", display(sc->file_names[location_to_file(loc)]), location_to_line(loc));
-	}
-      else sc->code = val;
+      sc->code = (val) ? val : unbound_last_arg(sc, car_code);
     }
   else sc->code = car_code;
-#else
-  sc->code = (is_symbol(car_code)) ? lookup_checked(sc, car_code) : car_code; /* this has to precede the set_type below */
-#endif
   sc->args = (is_null(sc->args)) ? list_1(sc, sc->code) : proper_list_reverse_in_place(sc, cons(sc, sc->code, sc->args));
   sc->code = pop_op_stack(sc);
+}
+
+static s7_pointer unbound_args_last_arg(s7_scheme *sc, s7_pointer car_code)
+{
+  /* save call-state before autoload/error-hook invocations */
+  s7_int loc = port_location(current_input_port(sc));
+  bool probably_in_repl = ((location_to_line(loc) == 0) || (safe_strcmp("*stdin*", string_value(sc->file_names[location_to_file(loc)]))));
+  s7_pointer ops = op_stack_entry(sc);
+  s7_pointer args = sc->args; /* maybe GC protect? */
+  s7_pointer value = sc->value;
+  s7_pointer val = check_autoload_and_error_hook(sc, car_code);
+  if (val == sc->undefined) 
+    error_nr(sc, sc->unbound_variable_symbol,
+	     (probably_in_repl) ? 
+	     set_elist_3(sc, wrap_string(sc, "'~S is unbound in ~S", 20), 
+			 car_code,
+			 cons(sc, ops, proper_list_reverse_in_place(sc, cons_unchecked(sc, car_code, cons(sc, value, args))))) :
+	     set_elist_5(sc, wrap_string(sc, "'~S is unbound in ~S (~A[~D])", 29), 
+			 car_code, 
+			 cons(sc, ops, proper_list_reverse_in_place(sc, cons_unchecked(sc, car_code, cons(sc, value, args)))),
+			 sc->file_names[location_to_file(loc)], 
+			 wrap_integer(sc, location_to_line(loc))));
+  return(val);
+}
+
+
+static /* inline */ bool eval_args_last_arg(s7_scheme *sc) /* inline: no diff tmisc, small diff tmac (3) */
+{
+  s7_pointer car_code = car(sc->code);  /* we're at the last arg, sc->value is the previous one, not yet saved in the args list */
+  if (is_pair(car_code))
+    {
+      if (sc->stack_end >= sc->stack_resize_trigger)
+	check_for_cyclic_code(sc, sc->code);
+      push_stack(sc, OP_EVAL_ARGS5, sc->args, sc->value);
+      sc->code = car_code;
+      return(true);
+    }
+  /* get the last arg */
+  if (is_symbol(car_code))
+    {
+      s7_pointer val = lookup_unexamined(sc, car_code);
+      sc->code = (val) ? val : unbound_args_last_arg(sc, car_code);
+    }
+  else sc->code = car_code;
+  /* get the current arg, which is not a list */
+  sc->args = proper_list_reverse_in_place(sc, cons_unchecked(sc, sc->code, cons(sc, sc->value, sc->args)));
+  sc->code = pop_op_stack(sc);
+  return(false);
 }
 
 static inline void eval_args_pair_car(s7_scheme *sc)
@@ -88799,42 +88868,6 @@ static bool eval_car_pair(s7_scheme *sc)
   else set_optimize_op(code, OP_PAIR_PAIR);
   push_stack_no_args(sc, OP_EVAL_ARGS, carc);
   sc->code = car(carc);
-  return(false);
-}
-
-static /* inline */ bool eval_args_last_arg(s7_scheme *sc) /* inline: no diff tmisc, small diff tmac (3) */
-{
-  s7_pointer car_code = car(sc->code);  /* we're at the last arg, sc->value is the previous one, not yet saved in the args list */
-  if (is_pair(car_code))
-    {
-      if (sc->stack_end >= sc->stack_resize_trigger)
-	check_for_cyclic_code(sc, sc->code);
-      push_stack(sc, OP_EVAL_ARGS5, sc->args, sc->value);
-      sc->code = car_code;
-      return(true);
-    }
-  /* get the last arg */
-
-#if 1
-  /* trying to improve the unbound variable error message */
-  if (is_symbol(car_code))
-    {
-      s7_pointer val = lookup_unexamined(sc, car_code);
-      if (!val)
-	{
-	  s7_int loc = port_location(current_input_port(sc));
-	  fprintf(stderr, "sym: %s unbound, code: %s, args: %s, op_stack: %s\n", display(car_code), display(sc->code), display(sc->args), display(op_stack_entry(sc)));
-	  fprintf(stderr, "'%s is unbound in %s\n", display(car_code), 
-		  display(cons(sc, op_stack_entry(sc), 
-			       proper_list_reverse_in_place(sc, cons_unchecked(sc, car_code, cons(sc, sc->value, sc->args))))));
-	  fprintf(stderr, "%s[%" ld64 "]\n", display(sc->file_names[location_to_file(loc)]), location_to_line(loc));
-	}}
-#endif
-
-  sc->code = (is_symbol(car_code)) ? lookup_checked(sc, car_code) : car_code;
-  /* get the current arg, which is not a list */
-  sc->args = proper_list_reverse_in_place(sc, cons_unchecked(sc, sc->code, cons(sc, sc->value, sc->args)));
-  sc->code = pop_op_stack(sc);
   return(false);
 }
 
@@ -90728,6 +90761,15 @@ static bool closure_star_is_fine_1(s7_scheme *sc, s7_pointer code, uint16_t type
 #define OK_SAFE_CLOSURE_A        (T_CLOSURE      | T_SAFE_CLOSURE | T_ONE_FORM_FX_ARG)
 /* since T_HAS_METHODS is on if there might be methods, this can protect us from that case */
 
+static noreturn void eval_apply_error_nr(s7_scheme *sc)
+{
+  error_nr(sc, sc->syntax_error_symbol, /* apply_error_nr expanded */
+	   set_elist_4(sc, wrap_string(sc, "attempt to apply ~A ~$ in ~$?", 29),
+		       ((is_symbol_and_keyword(sc->code)) ? wrap_string(sc, "a keyword", 9) : type_name_string(sc, sc->code)), 
+		       sc->code,
+		       cons(sc, sc->code, sc->args)));
+}
+
 
 /* ---------------- eval ---------------- */
 static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
@@ -91637,7 +91679,7 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	    case T_BACRO:               apply_bacro(sc);                goto APPLY_LAMBDA;
 	    case T_MACRO_STAR:          apply_macro_star(sc);           goto BEGIN;
 	    case T_BACRO_STAR:          apply_bacro_star(sc);           goto BEGIN;
-	    default:	                apply_error_nr(sc, sc->code, sc->args);
+	    default:                    eval_apply_error_nr(sc);
 	    }
 
 	case OP_MACRO_STAR_D: if (op_macro_star_d(sc))     goto EVAL_ARGS_TOP; goto BEGIN;
@@ -96845,58 +96887,58 @@ int main(int argc, char **argv)
 /* ---------------------------------------------------
  *            20.9   21.0   22.0   23.0   23.8   23.9
  * ---------------------------------------------------
- * tpeak      115    114    108    105    102
- * tref       691    687    463    459    464
- * index     1026   1016    973    967    966
- * tmock     1177   1165   1057   1019   1027
- * tvect     2519   2464   1772   1669   1647
- * timp      2637   2575   1930   1694   1709
- * texit     ----   ----   1778   1741   1765
- * s7test    1873   1831   1818   1829   1846
- * thook     ----   ----   2590   2030   2048
- * tauto     ----   ----   2562   2048   2046
- * lt        2187   2172   2150   2185   2198
- * dup       3805   3788   2492   2239   2219
- * tcopy     8035   5546   2539   2375   2381
- * tread     2440   2421   2419   2408   2403
- * fbench    2688   2583   2460   2430   2458
- * trclo     2735   2574   2454   2445   2461
- * titer     2865   2842   2641   2509   2465
- * tload     ----   ----   3046   2404   2502
- * tmat      3065   3042   2524   2578   2586
- * tb        2735   2681   2612   2604   2633
- * tsort     3105   3104   2856   2804   2828
- * tobj      4016   3970   3828   3577   3511
- * teq       4068   4045   3536   3486   3568
- * tio       3816   3752   3683   3620   3607
- * tmac      3950   3873   3033   3677   3685
- * tclo      4787   4735   4390   4384   4445
- * tcase     4960   4793   4439   4430   4436
- * tlet      7775   5640   4450   4427   4452
- * tfft      7820   7729   4755   4476   4512
- * tstar     6139   5923   5519   4449   4560
- * tmap      8869   8774   4489   4541   4618
- * tshoot    5525   5447   5183   5055   5047
- * tform     5357   5348   5307   5316   5161
- * tstr      6880   6342   5488   5162   5206
- * tnum      6348   6013   5433   5396   5403
- * tlamb     6423   6273   5720   5560   5620
- * tmisc     8869   7612   6435   6076   6220
- * tgsl      8485   7802   6373   6282   6233
- * tlist     7896   7546   6558   6240   6284
- * tset      ----   ----   ----   6260   6308
- * tari      13.0   12.7   6827   6543   6490
- * trec      6936   6922   6521   6588   6581
- * tleft     10.4   10.2   7657   7479   7610
- * tgc       11.9   11.1   8177   7857   7965
- * thash     11.8   11.7   9734   9479   9536
- * cb        11.2   11.0   9658   9564   9611
- * tgen      11.2   11.4   12.0   12.1   12.1
- * tall      15.6   15.6   15.6   15.6   15.1
- * calls     36.7   37.5   37.0   37.5   37.2
- * sg        ----   ----   55.9   55.8   55.4
- * lg        ----   ----  105.2  106.4  107.2
- * tbig     177.4  175.8  156.5  148.1  146.0
+ * tpeak      115    114    108    105    102    102
+ * tref       691    687    463    459    464    464
+ * index     1026   1016    973    967    966    966
+ * tmock     1177   1165   1057   1019   1027   1027
+ * tvect     2519   2464   1772   1669   1647   1647
+ * timp      2637   2575   1930   1694   1709   1709
+ * texit     ----   ----   1778   1741   1765   1765
+ * s7test    1873   1831   1818   1829   1846   1846
+ * thook     ----   ----   2590   2030   2048   2048
+ * tauto     ----   ----   2562   2048   2046   2046
+ * lt        2187   2172   2150   2185   2198   2198
+ * dup       3805   3788   2492   2239   2219   2219
+ * tcopy     8035   5546   2539   2375   2381   2381
+ * tread     2440   2421   2419   2408   2403   2403
+ * fbench    2688   2583   2460   2430   2458   2458
+ * trclo     2735   2574   2454   2445   2461   2461
+ * titer     2865   2842   2641   2509   2465   2465
+ * tload     ----   ----   3046   2404   2502   2502
+ * tmat      3065   3042   2524   2578   2586   2586
+ * tb        2735   2681   2612   2604   2633   2633
+ * tsort     3105   3104   2856   2804   2828   2828
+ * tobj      4016   3970   3828   3577   3511   3511
+ * teq       4068   4045   3536   3486   3568   3568
+ * tio       3816   3752   3683   3620   3607   3607
+ * tmac      3950   3873   3033   3677   3685   3685
+ * tclo      4787   4735   4390   4384   4445   4445
+ * tcase     4960   4793   4439   4430   4436   4436
+ * tlet      7775   5640   4450   4427   4452   4452
+ * tfft      7820   7729   4755   4476   4512   4512
+ * tstar     6139   5923   5519   4449   4560   4560
+ * tmap      8869   8774   4489   4541   4618   4618
+ * tshoot    5525   5447   5183   5055   5047   5047
+ * tform     5357   5348   5307   5316   5161   5161
+ * tstr      6880   6342   5488   5162   5206   5206
+ * tnum      6348   6013   5433   5396   5403   5403
+ * tlamb     6423   6273   5720   5560   5620   5620
+ * tmisc     8869   7612   6435   6076   6220   6220
+ * tgsl      8485   7802   6373   6282   6233   6233
+ * tlist     7896   7546   6558   6240   6284   6284
+ * tset      ----   ----   ----   6260   6308   6308
+ * tari      13.0   12.7   6827   6543   6490   6490
+ * trec      6936   6922   6521   6588   6581   6581
+ * tleft     10.4   10.2   7657   7479   7610   7610
+ * tgc       11.9   11.1   8177   7857   7965   7965
+ * thash     11.8   11.7   9734   9479   9536   9536
+ * cb        11.2   11.0   9658   9564   9611   9611
+ * tgen      11.2   11.4   12.0   12.1   12.1   12.1
+ * tall      15.6   15.6   15.6   15.6   15.1   15.1
+ * calls     36.7   37.5   37.0   37.5   37.2   37.2
+ * sg        ----   ----   55.9   55.8   55.4   55.4
+ * lg        ----   ----  105.2  106.4  107.2  107.2
+ * tbig     177.4  175.8  156.5  148.1  146.0  146.0
  * ---------------------------------------------------
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
@@ -96907,7 +96949,6 @@ int main(int argc, char **argv)
  * t718 func set! troubles [what about apply-values as 3rd arg? -- see t718, or apply values]
  *   also the vals3 t718 set! problem (and call/cc etc -- this check has to be in splice-in-values or later)
  * apply <mumble>: try to give var that gave the function being applied [need to check all 9 paths to this]
- * get any other bad unbound variable error messages, and tie in eval_last_arg etc
- *   perhaps split unbound_variable into check(top)+error, then call check in these two + call our special error case
- *   check part -- cur_code is useless given hooks etc
+ * check out 64-bit rands
+ * valcall again
  */
