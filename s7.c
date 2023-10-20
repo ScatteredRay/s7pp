@@ -982,6 +982,7 @@ typedef struct s7_cell {
       gmp_randstate_t state;
 #else
       uint64_t seed, carry;
+      /* for 64-bit floats we probably need 4 state fields */
 #endif
     } rng;
 
@@ -1072,8 +1073,8 @@ typedef struct {
 
 typedef enum {NO_JUMP, CALL_WITH_EXIT_JUMP, THROW_JUMP, CATCH_JUMP, ERROR_JUMP, ERROR_QUIT_JUMP} jump_loc_t;
 typedef enum {NO_SET_JUMP, READ_SET_JUMP, LOAD_SET_JUMP, DYNAMIC_WIND_SET_JUMP, S7_CALL_SET_JUMP, EVAL_SET_JUMP} setjmp_loc_t;
-
 static const char *jump_string[6] = {"no_jump", "call_with_exit_jump", "throw_jump", "catch_jump", "error_jump", "error_quit_jump"};
+
 
 /* -------------------------------- s7_scheme struct -------------------------------- */
 struct s7_scheme {
@@ -1435,7 +1436,6 @@ static s7_pointer wrap_string(s7_scheme *sc, const char *str, s7_int len);
   static void gdb_break(void) {};
 #endif
 
-/* an experiment */
 #ifndef DISABLE_FILE_OUTPUT
   #define DISABLE_FILE_OUTPUT 0
 #endif
@@ -3763,7 +3763,7 @@ static void init_small_ints(void)
   complex_NaN = &cells[10]; init_complex(complex_NaN, NAN, NAN, "+nan.0+nan.0i", 13);
   real_infinity = &cells[3]; init_real(real_infinity, INFINITY, "+inf.0", 6);
   real_minus_infinity = &cells[4]; init_real(real_minus_infinity, -INFINITY, "-inf.0", 6);
-  real_pi = &cells[5]; init_real_no_name(real_pi, 3.1415926535897932384626433832795029L);
+  real_pi = &cells[5]; init_real(real_pi, 3.1415926535897932384626433832795029L, "pi", 2);
 
   arity_not_set = &cells[6]; init_integer_no_name(arity_not_set, CLOSURE_ARITY_NOT_SET);
   max_arity = &cells[7]; init_integer_no_name(max_arity, MAX_ARITY);
@@ -25483,10 +25483,6 @@ static s7_pointer random_state_copy(s7_scheme *sc, s7_pointer args)
   return(new_r);
 #endif
 }
-#if S7_DEBUGGING && (!WITH_GMP)
-  static s7_int last_carry = 0;
-  /* 2083801278 */
-#endif
 
 s7_pointer s7_random_state(s7_scheme *sc, s7_pointer args)
 {
@@ -25529,9 +25525,6 @@ Pass this as the second argument to 'random' to get a repeatable random number s
       new_cell(sc, p, T_RANDOM_STATE);
       random_seed(p) = (uint64_t)i1;
       random_carry(p) = 1675393560;                          /* should this be dependent on the seed? */
-#if S7_DEBUGGING
-      last_carry = 1675393560;
-#endif
       return(p);
     }
 
@@ -25545,9 +25538,6 @@ Pass this as the second argument to 'random' to get a repeatable random number s
   new_cell(sc, p, T_RANDOM_STATE);
   random_seed(p) = (uint64_t)i1;
   random_carry(p) = (uint64_t)i2;
-#if S7_DEBUGGING
-  last_carry = i2;
-#endif
   return(p);
 #endif
 }
@@ -46298,32 +46288,11 @@ static s7_pointer g_is_c_object(s7_scheme *sc, s7_pointer args)
 /* -------------------------------- c-object-type -------------------------------- */
 static noreturn void apply_error_nr(s7_scheme *sc, s7_pointer obj, s7_pointer args)
 {
-  /* the operator type is needed here else the error message is confusing: (apply '+ (list 1 2))) -> ;attempt to apply + to (1 2)? 
-   * but using current_code(sc) to get the context sometimes gets local code not the original full form (or even the reverse: args is the form!)
-   * see eval_last_args for a similar unbound var problem
-   *
-   * apply_c_function, func:apply, args=args to apply
-   *   (:asdf 1) -> "attempt to apply a keyword :asdf in (:asdf 1)?" [ok]
-   *   (apply '+ '(1 2)) from g_apply 52803: "attempt to apply a symbol '+ to '((1 2)) in '(1 2)"!?!
-   *   ('+ 1 2): "attempt to apply a symbol '+ in ('+ 1 2)?" [ok]
-   *   (#2d((0 0)(0 0)) 0 0 0) from implicit_index 52985 "attempt to apply an integer 0 to '(0) in (#2d((0 0) (0 0)) 0 0 0)" [ok]
-   *   ('and #f) from eval_car_pair 88665 "attempt to apply a symbol 'and to '(#f) in ('and #f)" [ok]
-   *   fallback_ref 46271
-   *   op_s: (define (f) (pi)) (f) "attempt to apply a real 3.141592653589793 to () in (f)"
-   *         (define (f) (:asdf 1)) (f) -> "attempt to apply a keyword :asdf to '(1) in (f)"
-   * op_s_g op_x_a op_x_aa
-   * need to pass calling form I think
-   */
-
-  /* are these syntax errors?? */
-
   error_nr(sc, sc->syntax_error_symbol,
-	   set_elist_6(sc, wrap_string(sc, "attempt to apply ~A ~$ to ~A~S in ~S?", 36),
+	   set_elist_4(sc, wrap_string(sc, "attempt to apply ~A ~$ in ~S?", 29),
 		       (is_null(obj)) ? wrap_string(sc, "nil", 3) : ((is_symbol_and_keyword(obj)) ? wrap_string(sc, "a keyword", 9) : type_name_string(sc, obj)), 
 		       obj,
-		       (is_null(args)) ? nil_string : chars[(uint8_t)'\''],
-		       args,
-		       current_code(sc)));
+		       cons(sc, obj, args))); /* was current_code(sc) which is unreliable */
 }
 
 static void fallback_free(void *value) {}
@@ -64876,9 +64845,8 @@ static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_sy
 	case T_PAIR:
 	  if (is_pair(cddr(target))) return_false(sc, car_x);
 	  opc->v[3].p_pip_f = list_set_p_pip_unchecked;
-
-	  /* an experiment -- is this ever hit in normal code? */
-	  {
+	  
+	  { /* an experiment -- is this ever hit in normal code? (for tref.scm) */
 	    s7_pointer val = caddr(car_x);
 	    if ((is_pair(val)) && (car(val) == sc->add_symbol) && (is_t_integer(caddr(val))) && (is_null(cdddr(val))) && (is_symbol(cadr(target))) &&
 		(car(target) == (caadr(val))) && (is_pair(cdadr(val))) && (is_null(cddadr(val))) && (cadr(target) == cadadr(val)))
@@ -67240,8 +67208,7 @@ static s7_pfunc s7_bool_optimize(s7_scheme *sc, s7_pointer expr)
   return_null(sc, expr);
 }
 
-/* snd-sig.c experiment */
-static s7_double opt_float_any(s7_scheme *sc) {return(sc->opts[0]->v[0].fd(sc->opts[0]));}
+static s7_double opt_float_any(s7_scheme *sc) {return(sc->opts[0]->v[0].fd(sc->opts[0]));} /* for snd-sig.c */
 
 s7_float_function s7_float_optimize(s7_scheme *sc, s7_pointer expr)
 {
@@ -76710,7 +76677,7 @@ static void let_temp_done(s7_scheme *sc, s7_pointer args, s7_pointer let)
   push_stack_direct(sc, OP_GC_PROTECT);
   sc->args = T_Ext(args);
   set_curlet(sc, let);
-  op_let_temp_done1(sc);  /* an experiment 6-Nov-21, was eval(sc, OP_LET_TEMP_DONE) */
+  op_let_temp_done1(sc);
 }
 
 static void let_temp_unwind(s7_scheme *sc, s7_pointer slot, s7_pointer new_value)
@@ -78748,6 +78715,7 @@ static void check_set(s7_scheme *sc)
       s7_pointer slot = s7_slot(sc, settee);
       if ((is_slot(slot)) &&
 	  (!slot_has_setter(slot)) &&
+	  (!is_immutable(slot)) &&
 	  (!is_syntactic_symbol(settee)))
 	{
 	  if (is_normal_symbol(value))
@@ -81253,7 +81221,6 @@ static goto_t op_dox(s7_scheme *sc)
   endp = car(end);
   endf = fx_proc(end);
 
-  /* an experiment */
   if ((loop_end_possible(end)) && (steppers == 1) &&
       (is_t_integer(slot_value(stepper))))
     {
@@ -81303,7 +81270,6 @@ static goto_t op_dox(s7_scheme *sc)
 		  if (bodyf == opt_cell_any_nv)
 		    {
 		      s7_pointer (*fp)(opt_info *o) = o->v[0].fp;
-		      /* a laborious experiment... */
 		      if (!((fp == opt_p_pip_sso) && (o->v[2].p == o->v[4].p) &&
 			    (((o->v[5].p_pip_f == string_set_p_pip_unchecked) && (o->v[6].p_pi_f == string_ref_p_pi_unchecked)) ||
 			     ((o->v[5].p_pip_f == string_set_p_pip_direct) && (o->v[6].p_pi_f == string_ref_p_pi_direct)) ||
@@ -86401,7 +86367,7 @@ static bool op_tc_let_cond(s7_scheme *sc, s7_pointer code)
   set_curlet(sc, inner_let);
   s7_gc_protect_via_stack(sc, inner_let);
   let_var = cadr(let_var);
-  if ((letf == fx_c_s_direct) &&                       /* an experiment */
+  if ((letf == fx_c_s_direct) &&
       (symbol_id(cadr(let_var)) != let_id(outer_let))) /* i.e. not an argument to the recursive function, and not set! (safe closure body) */
     {
       letf = (s7_p_p_t)opt2_direct(cdr(let_var));
@@ -95249,7 +95215,7 @@ then returns each var to its original value."
 
   sc->else_symbol =                 make_symbol(sc, "else", 4);
   s7_make_slot(sc, sc->nil, sc->else_symbol, sc->else_symbol);
-  slot_set_value(initial_slot(sc->else_symbol), s7_make_keyword(sc, "else")); /* an experiment 3-Oct-23 was #t */
+  slot_set_value(initial_slot(sc->else_symbol), s7_make_keyword(sc, "else")); /* 3-Oct-23 was #t */
   /* if we set #_else to 'else, it can pick up a local else value: (let ((else #f)) (cond (#_else 2)...)) -- #_* is read-time */
 
   sc->allow_other_keys_keyword =    s7_make_keyword(sc, "allow-other-keys");
@@ -96502,7 +96468,6 @@ s7_scheme *s7_init(void)
 
 #if S7_DEBUGGING
   s7_define_function(sc, "report-missed-calls", g_report_missed_calls, 0, 0, false, NULL); /* tc/recur tests in s7test.scm */
-  /* if (!s7_type_names[0]) {fprintf(stderr, "no type_names\n"); gdb_break();} */ /* no longer necessary? (used to disable a dumb gcc warning) */
   if (strcmp(op_names[HOP_SAFE_C_PP], "h_safe_c_pp") != 0) fprintf(stderr, "c op_name: %s\n", op_names[HOP_SAFE_C_PP]);
   if (strcmp(op_names[OP_SET_WITH_LET_2], "set_with_let_2") != 0) fprintf(stderr, "set op_name: %s\n", op_names[OP_SET_WITH_LET_2]);
   if (NUM_OPS != 926) fprintf(stderr, "size: cell: %d, block: %d, max op: %d, opt: %d\n", (int)sizeof(s7_cell), (int)sizeof(block_t), NUM_OPS, (int)sizeof(opt_info));
@@ -96892,51 +96857,51 @@ int main(int argc, char **argv)
  * index     1026   1016    973    967    966    966
  * tmock     1177   1165   1057   1019   1027   1027
  * tvect     2519   2464   1772   1669   1647   1647
- * timp      2637   2575   1930   1694   1709   1709
+ * timp      2637   2575   1930   1694   1709   1715
  * texit     ----   ----   1778   1741   1765   1765
  * s7test    1873   1831   1818   1829   1846   1846
- * thook     ----   ----   2590   2030   2048   2048
- * tauto     ----   ----   2562   2048   2046   2046
+ * thook     ----   ----   2590   2030   2048   2054
+ * tauto     ----   ----   2562   2048   2046   2058
  * lt        2187   2172   2150   2185   2198   2198
  * dup       3805   3788   2492   2239   2219   2219
- * tcopy     8035   5546   2539   2375   2381   2381
+ * tcopy     8035   5546   2539   2375   2381   2386
  * tread     2440   2421   2419   2408   2403   2403
- * fbench    2688   2583   2460   2430   2458   2458
- * trclo     2735   2574   2454   2445   2461   2461
+ * fbench    2688   2583   2460   2430   2458   2462
+ * trclo     2735   2574   2454   2445   2461   2462
  * titer     2865   2842   2641   2509   2465   2465
  * tload     ----   ----   3046   2404   2502   2502
  * tmat      3065   3042   2524   2578   2586   2586
  * tb        2735   2681   2612   2604   2633   2633
- * tsort     3105   3104   2856   2804   2828   2828
- * tobj      4016   3970   3828   3577   3511   3511
- * teq       4068   4045   3536   3486   3568   3568
+ * tsort     3105   3104   2856   2804   2828   2832
+ * tobj      4016   3970   3828   3577   3511   3514
+ * teq       4068   4045   3536   3486   3568   3570
  * tio       3816   3752   3683   3620   3607   3607
  * tmac      3950   3873   3033   3677   3685   3685
- * tclo      4787   4735   4390   4384   4445   4445
- * tcase     4960   4793   4439   4430   4436   4436
- * tlet      7775   5640   4450   4427   4452   4452
+ * tclo      4787   4735   4390   4384   4445   4454
+ * tcase     4960   4793   4439   4430   4436   4437
+ * tlet      7775   5640   4450   4427   4452   4457
  * tfft      7820   7729   4755   4476   4512   4512
- * tstar     6139   5923   5519   4449   4560   4560
+ * tstar     6139   5923   5519   4449   4560   4567
  * tmap      8869   8774   4489   4541   4618   4618
- * tshoot    5525   5447   5183   5055   5047   5047
+ * tshoot    5525   5447   5183   5055   5047   5045
  * tform     5357   5348   5307   5316   5161   5161
- * tstr      6880   6342   5488   5162   5206   5206
+ * tstr      6880   6342   5488   5162   5206   5210
  * tnum      6348   6013   5433   5396   5403   5403
  * tlamb     6423   6273   5720   5560   5620   5620
- * tmisc     8869   7612   6435   6076   6220   6220
+ * tmisc     8869   7612   6435   6076   6220   6239
  * tgsl      8485   7802   6373   6282   6233   6233
  * tlist     7896   7546   6558   6240   6284   6284
- * tset      ----   ----   ----   6260   6308   6308
+ * tset      ----   ----   ----   6260   6308   6380
  * tari      13.0   12.7   6827   6543   6490   6490
  * trec      6936   6922   6521   6588   6581   6581
  * tleft     10.4   10.2   7657   7479   7610   7610
  * tgc       11.9   11.1   8177   7857   7965   7965
  * thash     11.8   11.7   9734   9479   9536   9536
- * cb        11.2   11.0   9658   9564   9611   9611
- * tgen      11.2   11.4   12.0   12.1   12.1   12.1
+ * cb        11.2   11.0   9658   9564   9611   9604
+ * tgen      11.2   11.4   12.0   12.1   12.1   12.2
  * tall      15.6   15.6   15.6   15.6   15.1   15.1
  * calls     36.7   37.5   37.0   37.5   37.2   37.2
- * sg        ----   ----   55.9   55.8   55.4   55.4
+ * sg        ----   ----   55.9   55.8   55.4   55.5
  * lg        ----   ----  105.2  106.4  107.2  107.2
  * tbig     177.4  175.8  156.5  148.1  146.0  146.0
  * ---------------------------------------------------
@@ -96946,9 +96911,5 @@ int main(int argc, char **argv)
  * lots of strings in gc-lists at end?
  * catch in C outside scheme code? setting *error-hook* doesn't help -- it falls into the longjmp
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit
- * t718 func set! troubles [what about apply-values as 3rd arg? -- see t718, or apply values]
- *   also the vals3 t718 set! problem (and call/cc etc -- this check has to be in splice-in-values or later)
- * apply <mumble>: try to give var that gave the function being applied [need to check all 9 paths to this]
- * check out 64-bit rands
- * valcall again
+ * check out 64-bit rands [rn.c]
  */
