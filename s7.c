@@ -32676,8 +32676,13 @@ static void input_port_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, u
 	  if (is_file_port(obj))
 	    port_write_string(port)(sc, "#<input-file-port", 17, port);
 	  else port_write_string(port)(sc, "#<input-function-port", 21, port);
+	if (port_filename(obj))
+	  {
+	    port_write_character(port)(sc, ' ', port);
+	    port_write_string(port)(sc, port_filename(obj), port_filename_length(obj), port);
+	  }
 	if (port_is_closed(obj))
-	  port_write_string(port)(sc, ":closed>", 8, port);
+	  port_write_string(port)(sc, " :closed>", 9, port);
 	else port_write_character(port)(sc, '>', port);
       }
 }
@@ -34880,6 +34885,7 @@ static void big_number_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, u
 
 static void syntax_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, use_write_t unused_use_write, shared_info_t *unused_ci)
 {
+  port_write_string(port)(sc, "#_", 2, port);
   port_display(port)(sc, symbol_name(syntax_symbol(obj)), port);
 }
 
@@ -34950,7 +34956,10 @@ static void c_function_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, u
 static void c_macro_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, use_write_t unused_use_write, shared_info_t *unused_ci)
 {
   if (c_macro_name_length(obj) > 0)
-    port_write_string(port)(sc, c_macro_name(obj), c_macro_name_length(obj), port);
+    {
+      port_write_string(port)(sc, "#_", 2, port);
+      port_write_string(port)(sc, c_macro_name(obj), c_macro_name_length(obj), port);
+    }
   else port_write_string(port)(sc, "#<c-macro>", 10, port);
 }
 
@@ -69141,7 +69150,7 @@ and splices the resultant list into the outer list. `(1 ,(+ 1 1) ,@(list 3 4)) -
   if (!is_pair(form))
     {
       if (is_normal_symbol(form))
-        return(list_2(sc, (is_global(sc->quote_symbol)) ? sc->quote_symbol : initial_value(sc->quote_symbol), form));
+        return(list_2(sc, initial_value(sc->quote_symbol), form));
       /* things that evaluate to themselves don't need to be quoted */
       return(form);
     }
@@ -69164,8 +69173,7 @@ and splices the resultant list into the outer list. `(1 ,(+ 1 1) ,@(list 3 4)) -
    */
   if (((check_cycles) && (tree_is_cyclic(sc, form))) ||
       (is_simple_code(sc, form)))
-    /* we can't lookup sc->quote_symbol because this gets called in op_read_quasiquote (at read-time), and sc->curlet can be junk in that context */
-    return(list_2(sc, (is_global(sc->quote_symbol)) ? sc->quote_symbol : initial_value(sc->quote_symbol), form));
+    return(list_2(sc, initial_value(sc->quote_symbol), form));
 
   {
     s7_int i;
@@ -69642,7 +69650,6 @@ static s7_pointer check_autoload_and_error_hook(s7_scheme *sc, s7_pointer sym)
   if (safe_strcmp(symbol_name(sym), "|#"))
     read_error_nr(sc, "unmatched |#");
 
-  /* fprintf(stderr, "%s[%d]\n", __func__, __LINE__); */
   /* check *autoload*, autoload_names, then *unbound-variable-hook* */
   if ((sc->autoload_names) ||
       (is_hash_table(sc->autoload_table)) ||
@@ -69694,7 +69701,6 @@ static s7_pointer check_autoload_and_error_hook(s7_scheme *sc, s7_pointer sym)
 		  e = s7_load(sc, file);         /* s7_load can return NULL */
 		}
 	      result = s7_symbol_value(sc, sym); /* calls lookup, does not trigger unbound_variable search */
-	      /* fprintf(stderr, "[%d]: %s\n", __LINE__, display(result)); */
 	      if ((result == sc->undefined) && (e) && (is_let(e)))
 		{
 		  /* the current_let refs here are trying to handle local autoloads, but that is problematic -- we'd need to
@@ -69704,7 +69710,6 @@ static s7_pointer check_autoload_and_error_hook(s7_scheme *sc, s7_pointer sym)
 		   *   libgsl case, we're trying to export a name from *libgsl* -- should that be done with define rather than autoload?
 		   */
 		  result = let_ref(sc, e, sym);  /* add '(sym . result) to current_let (was sc->nil, s7_load can set sc->curlet to sc->nil) */
-		  /* fprintf(stderr, "[%d]: %s\n", __LINE__, display(result)); */
 		  if (result != sc->undefined)
 		    s7_define(sc, sc->nil /* current_let */, sym, result);
 		}}}
@@ -69735,11 +69740,9 @@ static s7_pointer check_autoload_and_error_hook(s7_scheme *sc, s7_pointer sym)
 		    e = s7_call(sc, val, set_ulist_1(sc, sc->curlet, sc->nil));
 		  }
 	      result = s7_symbol_value(sc, sym);                   /* calls lookup, does not trigger unbound_variable search */
-	      /* fprintf(stderr, "[%d]: %s\n", __LINE__, display(result)); */
 	      if ((result == sc->undefined) && (e) && (is_let(e))) /* added 31-Mar-23 to match sc->autoload_names case above */
 		{
 		  result = let_ref(sc, e, sym);
-		  /* fprintf(stderr, "[%d]: %s\n", __LINE__, display(result)); */
 		  if (result != sc->undefined)
 		    s7_define(sc, sc->nil /* current_let */, sym, result); /* as above, was sc->nil -- s7_load above can set sc->curlet to sc->nil */
 		}}
@@ -69755,7 +69758,6 @@ static s7_pointer check_autoload_and_error_hook(s7_scheme *sc, s7_pointer sym)
 	      gc_protect_via_stack(sc, old_hook);
 	      sc->unbound_variable_hook = sc->nil;
 	      result = s7_call(sc, old_hook, set_plist_1(sc, sym)); /* not s7_apply_function */
-	      /* fprintf(stderr, "[%d]: %s\n", __LINE__, display(result)); */
 	      if (result == sc->unspecified) result = sc->undefined;
 	      sc->unbound_variable_hook = old_hook;
 	      s7_set_history_enabled(sc, old_history_enabled);
@@ -69768,7 +69770,6 @@ static s7_pointer check_autoload_and_error_hook(s7_scheme *sc, s7_pointer sym)
       sc->x = x;
       sc->z = z;
       sc->temp7 = sc->unused;
-      /* fprintf(stderr, "[%d]: %s\n", __LINE__, display(result)); */
       return(result);
     }
   return(sc->undefined);
@@ -69777,7 +69778,6 @@ static s7_pointer check_autoload_and_error_hook(s7_scheme *sc, s7_pointer sym)
 static s7_pointer unbound_variable(s7_scheme *sc, s7_pointer sym)
 {
   s7_pointer result = check_autoload_and_error_hook(sc, sym);
-  /* fprintf(stderr, "result: %s\n", display(result)); */
   if (result != sc->undefined) return(result);
   unbound_variable_error_nr(sc, sym);
   return(sc->unbound_variable_symbol);
@@ -73265,8 +73265,8 @@ static body_t form_is_safe(s7_scheme *sc, s7_pointer func, s7_pointer x, bool at
 	      return((is_null(p)) ? result : UNSAFE_BODY);
 	    }
 	  if ((expr == sc->quote_symbol) &&
-	      (is_proper_list_1(sc, cdr(x))) &&
-	      (is_global(sc->quote_symbol)))
+	      (is_global(sc->quote_symbol)) &&
+	      (is_proper_list_1(sc, cdr(x))))
 	    return(result);
 
 	  if (expr == sc->values_symbol)      /* (values) is safe, as is (values x) if x is: (values (define...)) */
@@ -77848,7 +77848,6 @@ static s7_pointer check_macro(s7_scheme *sc, opcode_t op, s7_pointer form)
       check_lambda_args(sc, car(sc->code), NULL, form);
     }
   else set_car(sc->code, check_lambda_star_args(sc, args, NULL, form));
-
   if (s7_list_length(sc, cdr(sc->code)) < 0)                   /* (macro () 1 . 2) */
     error_nr(sc, sc->syntax_error_symbol,
 	     set_elist_3(sc, wrap_string(sc, "~A: macro body messed up, ~A", 28), caller, form));
@@ -78004,7 +78003,7 @@ static goto_t macroexpand(s7_scheme *sc)
       macroexpand_c_macro(sc);
       return(goto_start);
     default:
-      syntax_error_nr(sc, "macroexpand argument is not a macro call: ~A", 44, sc->args);
+      syntax_error_nr(sc, "macroexpand argument is not a macro call: ~A", 44, sc->args); /* maybe car(sc->args)? */
     }
   return(fall_through); /* for the compiler */
 }
@@ -81872,7 +81871,6 @@ static bool op_do_step(s7_scheme *sc)     /* called only in eval OP_DO_STEP via 
    *   any unstepped vars in the do var section are not in this list, so
    *  (do ((i 0 (+ i 1)) (j 2)) ...) arrives here with sc->args: '(slot<((+ i 1)=expr, 0=pending_value>)) -- is this comment correct?
    */
-  /* fprintf(stderr, "%s[%d]: sc->args: %s\n", __func__, __LINE__, display(sc->args)); */
   push_stack_direct(sc, OP_DO_END);
   sc->args = car(sc->args);                /* the var data lists */
   sc->code = T_Lst(sc->args);              /* save the top of the list */
@@ -83090,7 +83088,6 @@ static goto_t op_do_end_false(s7_scheme *sc)
 {
   if (!is_pair(sc->code))
     return((is_null(car(sc->args))) ? /* no steppers */ goto_do_end : fall_through);
-  /* fprintf(stderr, "%s[%d]: vars: %s\n", __func__, __LINE__, display(sc->args)); */
   if (is_null(car(sc->args)))
     push_stack_direct(sc, OP_DO_END);
   else push_stack_direct(sc, OP_DO_STEP);
@@ -88579,7 +88576,6 @@ static void op_eval_args2(s7_scheme *sc)
 {
   sc->code = pop_op_stack(sc);
   sc->args = (is_null(sc->args)) ? list_1(sc, sc->value) : proper_list_reverse_in_place(sc, cons(sc, sc->value, sc->args));
-  /* fprintf(stderr, "%s[%d]: code: %s, args: %s\n", __func__, __LINE__, display(sc->code), display(sc->args)); */
 }
 
 static void op_eval_args3(s7_scheme *sc)
@@ -96911,5 +96907,8 @@ int main(int argc, char **argv)
  * lots of strings in gc-lists at end?
  * catch in C outside scheme code? setting *error-hook* doesn't help -- it falls into the longjmp
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit
- * check out 64-bit rands [rn.c]
+ *   get rid of these if possible (and quote->#_quote wherever it is checked)
+ *   s7test lint-test: lint needs to recognize (#_quote ...) as does s7.c, add t718 test to s7test
+ *   check all qq cases -> #_quote, maybe ,->#_unquote?, '->#_quote? and qq_apply_values?
+ *   also that #_ *->port actually refers to initial_slot
  */

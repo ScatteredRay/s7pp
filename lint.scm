@@ -586,7 +586,7 @@
 
     (denote (unquoted-pair? x)
       (and (pair? x)
-	   (not (eq? (car x) 'quote))))
+	   (not (memq (car x) '(quote #_quote)))))
 
     (define (remove-one item sequence)
       (cond ((not (pair? sequence)) sequence)
@@ -631,7 +631,7 @@
     (denote (code-constant? x)
       (and (constant? x)
 	   (or (not (pair? x))
-	       (eq? (car x) 'quote))))
+	       (memq (car x) '(quote #_quote)))))
 
     (denote lint-every?
       (let ((+documentation+ "(lint-every? func sequence) returns #t if func approves of every member of the list sequence")
@@ -790,7 +790,7 @@
 	(let walk ((p tree))
 	  (if (pair? p)
 	      (if (symbol? (car p))
-		  (if (not (eq? (car p) 'quote))
+		  (if (not (memq (car p) '(quote #_quote)))
 		      (for-each (lambda (a)
 				  (if (symbol? a)
 				      (if (not (memq a syms))
@@ -865,7 +865,7 @@
 	(else
 	 (let ts ((tree tree1))
 	   (if (pair? tree)
-	       (and (not (eq? (car tree) 'quote))
+	       (and (not (memq (car tree) '(quote #_quote)))
 		    (or (ts (car tree))
 			(ts (cdr tree))))
 	       (memq tree set))))))
@@ -908,7 +908,7 @@
 	    ((list-values)
 	     (if (and (pair? (cdr tree))
 		      (pair? (cadr tree))
-		      (eq? (caadr tree) 'quote)
+		      (memq (caadr tree) '(quote #_quote))
 		      (symbol? (cadadr tree))
 		      (not (memq (cadadr tree) (cadr syms))))
 		 (tree-symbol-walk (cddr tree) (begin (list-set! syms 1 (cons (cadadr tree) (cadr syms))) syms))))
@@ -928,7 +928,7 @@
 
     (denote (quoted-pair? x)
       (and (pair? x)
-	   (eq? (car x) 'quote)
+	   (memq (car x) '(quote #_quote))
 	   (pair? (cdr x))
 	   (pair? (cadr x))))
 
@@ -938,7 +938,7 @@
 
     (denote (quoted-null? x)
       (and (len=2? x)
-	   (eq? (car x) 'quote)
+	   (memq (car x) '(quote #_quote))
 	   (null? (cadr x))))
 
     (denote (any-null? x)
@@ -955,12 +955,12 @@
 
     (denote (quoted-not? x)
       (and (len=2? x)
-	   (eq? (car x) 'quote)
+	   (memq (car x) '(quote #_quote))
 	   (not (cadr x))))
 
     (denote (quoted-symbol? x)
       (and (pair? x)
-	   (eq? (car x) 'quote)
+	   (memq (car x) '(quote #_quote))
 	   (pair? (cdr x))
 	   (symbol? (cadr x))))
 
@@ -1298,7 +1298,7 @@
 	    ((not (pair? tree))
 	     tree)
 
-	    ((eq? (car tree) 'quote)
+	    ((memq (car tree) '(quote #_quote))
 	     (copy tree))
 
 	    (else (cons (tree-subst new old (car tree))
@@ -1343,7 +1343,7 @@
 
 	    (let ((fill (cadr step2)))
 	      (cond ((or (not (pair? fill))
-			 (eq? (car fill) 'quote)
+			 (memq (car fill) '(quote #_quote))
 			 (not (tree-memq name1 fill))) ; perhaps if (pair? fill) check somehow for changing fill values
 		     (unless (eq? name1 fill) ; "iota" in this case
 		       (let ((len (cond
@@ -1374,7 +1374,7 @@
 
 			 (lint-format "perhaps ~A~A" caller
 				      (if (and (pair? fill)
-					       (not (eq? (car fill) 'quote)))
+					       (not (memq (car fill) '(quote #_quote))))
 					  (format #f ", (assuming ~S is not problematic), " fill)
 					  "")
 				      (lists->string original-form
@@ -2024,7 +2024,7 @@
       (cond ((not (pair? c))	        (->simple-type c))
 	    ((procedure? (car c))       (return-type (car c) ()))     ; (#_abs ...)
 	    ((not (symbol? (car c)))    (or (sequence? (car c)) 'pair?))
-	    ((not (eq? (car c) 'quote)) (or (return-type (car c) ()) (define->type c)))
+	    ((not (memq (car c) '(quote #_quote))) (or (return-type (car c) ()) (define->type c)))
 	    ((not (pair? (cdr c)))      (->simple-type c)) ; ??
 	    ((symbol? (cadr c))         'symbol?)
 	    (else                       (->simple-type (cadr c)))))   ; don't look for return type!
@@ -2486,7 +2486,7 @@
 	    ((not (pair? selector))
 	     (->eqf (->lint-type selector)))
 
-	    ((and (eq? (car selector) 'quote)
+	    ((and (memq (car selector) '(quote #_quote))
 		  (pair? (cdr selector)))
 	     (cond ((or (symbol? (cadr selector))
 			(memq (cadr selector) '(#f #t #<unspecified> #<undefined> #<eof> ())))
@@ -2510,7 +2510,7 @@
 
     (define (unquoted x)
       (if (and (len=2? x)
-	       (eq? (car x) 'quote))
+	       (memq (car x) '(quote #_quote)))
 	  (cadr x)
 	  x))
 
@@ -4684,7 +4684,7 @@
 			       (pair? (cadr x))
 			       (symbol? (caadr x))))
 		     x
-		     (let ((rt (if (and (eq? (caadr x) 'quote)
+		     (let ((rt (if (and (memq (caadr x) '(quote #_quote))
 					(pair? (cdadr x)))
 				   (->simple-type (cadadr x))
 				   (return-type (caadr x) env)))
@@ -4826,7 +4826,7 @@
 	(lambda (tree)
 	  (cond ((assq tree dumb-ops) => cdr)
 		((or (not (pair? tree))
-		     (eq? (car tree) 'quote))
+		     (memq (car tree) '(quote #_quote)))
 		 tree)
 		(else (cons (undumb (car tree))
 			    (undumb (cdr tree))))))))
@@ -6675,7 +6675,7 @@
 
 	(when (and (pair? (cadr form))
 		   (symbol? (caadr form)))
-	  (let ((rt (if (and (eq? (caadr form) 'quote)
+	  (let ((rt (if (and (memq (caadr form) '(quote #_quote))
 			     (pair? (cdadr form)))
 			(->simple-type (cadadr form))
 			(return-type (caadr form) env)))
@@ -6779,7 +6779,7 @@
     (define (unlist-values tree)
       (if (not (and (pair? tree)
 		    (list? (cdr tree))
-		    (not (eq? (car tree) 'quote))))
+		    (not (memq (car tree) '(quote #_quote)))))
 	  tree
 	  (case (car tree)
 	    ((list-values)
@@ -6945,7 +6945,7 @@
 			     (when (pair? items)
 			       (when (or (eq? (car items) 'list)
 					 (quoted-pair? items))
-				 (let ((elements ((if (eq? (car items) 'quote) cadr cdr) items)))
+				 (let ((elements ((if (memq (car items) '(quote #_quote)) cadr cdr) items)))
 				   (let ((baddy #f))
 				     (catch #t
 				       (lambda ()
@@ -6957,7 +6957,7 @@
 
 				   (when (proper-list? elements)
 				     (let ((maxf #f)
-					   (keys (if (eq? (car items) 'quote)
+					   (keys (if (memq (car items) '(quote #_quote))
 						     (if (memq head '(memq memv member))
 							 elements
 							 (and (just-pairs? elements)
@@ -6967,12 +6967,12 @@
 							      elements)
 							 (and (lint-every? (lambda (e)
 									     (and (len=2? e)
-										  (eq? (car e) 'quote)
+										  (memq (car e) '(quote #_quote))
 										  (pair? (cadr e))))
 									   elements)
 							      (map caadr elements))))))
 				       (when (proper-list? keys)
-					 (if (eq? (car items) 'quote)
+					 (if (memq (car items) '(quote #_quote))
 					     (do ((p keys (cdr p)))
 						 ((or (null? p)
 						      (memq maxf '(equal? #t))))
@@ -6982,7 +6982,7 @@
 							 (set! maxf 'eq?))
 						     (if (pair? element)
 							 (begin
-							   (if (and (eq? (car element) 'quote)
+							   (if (and (memq (car element) '(quote #_quote))
 								    (pair? (cdr element)))
 							       (lint-format "stray quote? ~A" caller form)) ; (memq x '(a 'b c))
 							   (set! maxf #t))
@@ -7054,7 +7054,7 @@
 						    (eq? (car selector) 'string->symbol) ; this could be extended, but it doesn't happen
 						    (eq? mapf 'string->symbol)
 						    (not (and (pair? map-items)
-							      (eq? (car map-items) 'quote))))
+							      (memq (car map-items) '(quote #_quote)))))
 					       (lint-format "perhaps ~A" caller
 							    ;; (memq (string->symbol x) (map string->symbol y)) -> (member x y string=?)
 							    (lists->string form `(member ,(cadr selector) ,map-items string=?))))
@@ -7761,7 +7761,7 @@
 		     (lint-format "perhaps ~A -> ~A" caller
 				  (truncated-list->string form)
 				  (length ((if (and (pair? (cadr form))
-						    (eq? (caadr form) 'quote))
+						    (memq (caadr form) '(quote #_quote)))
 					       cadadr cadr)
 					   form)))))))
 	 (hash-special 'length sp-length))
@@ -8082,7 +8082,7 @@
 		    ((symbol->string)                 ;  (string-ref (symbol->string 'abs) 1) -> #\b
 		     (if (and (integer? (caddr form))
 			      (pair? (cadr target))
-			      (eq? (caadr target) 'quote)
+			      (memq (caadr target) '(quote #_quote))
 			      (symbol? (cadadr target)))
 			 (lint-format "perhaps ~A" caller (lists->string form (string-ref (symbol->string (cadadr target)) (caddr form))))))
 
@@ -8156,7 +8156,7 @@
 							      inlet))
 				(lint-format "this doesn't make much sense: ~A" caller form)))
 			(when (eq? head 'list-ref)
-			  (if (eq? (car seq) 'quote)
+			  (if (memq (car seq) '(quote #_quote))
 			      (if (proper-pair? (cadr seq))  ; ignore dumb (list-ref () 0), (list-ref '(#t #f) (random 2)) -> (vector-ref #(#t #f) (random 2))
 				  (lint-format "perhaps use a vector: ~A" caller
 					       (lists->string form (list 'vector-ref (apply vector (cadr seq)) (caddr form)))))
@@ -9805,7 +9805,7 @@
 										     (cdr form))
 						`(map ,f ',(map (lambda (p) ; p = arg which might be quoted (not = f)
 								  ((if (and (pair? (cadr p))
-									    (eq? (caadr p) 'quote))
+									    (memq (caadr p) '(quote #_quote)))
 								       cadadr cadr)
 								   p))
 								 (cdr form)))
@@ -10134,7 +10134,7 @@
 				   (hash-table-ref no-side-effect-functions func)
 				   (= len 3)
 				   (pair? (caddr form))
-				   (or (eq? (caaddr form) 'quote)
+				   (or (memq (caaddr form) '(quote #_quote))
 				       (and (eq? (caaddr form) 'list)
 					    (just-code-constants? (cdaddr form)))))
 			      (catch #t
@@ -10626,7 +10626,7 @@
 					 (lists->string form
 							(map (lambda (p)
 							       (if (and (len>1? p)
-									(eq? (car p) 'quote))
+									(memq (car p) '(quote #_quote)))
 								   (cadr p)
 								   (if (code-constant? p)
 								       p
@@ -10637,7 +10637,7 @@
 		     (e (caddr form)))
 		 (if (and (not (code-constant? e)) ; error reported elsewhere
 			  (pair? arg)
-			  (eq? (car arg) 'quote))
+			  (memq (car arg) '(quote #_quote)))
 		     (lint-format "perhaps ~A" caller   ;  (eval 'x env) -> (env 'x)
 				  (lists->string form
 						 (if (symbol? (cadr arg))
@@ -10847,7 +10847,7 @@
 	     (if (len=2? form)
 		 (let ((arg (cadr form)))
 		   (if (and (len>1? arg)
-			    (eq? (car arg) 'quote)
+			    (memq (car arg) '(quote #_quote))
 			    (symbol? (cadr arg))            ;  (*s7* 'vector-print-length)
 			    (not (hash-table-ref s7-fields (cadr arg))))
 		       (lint-format "unknown *s7* field: ~A" caller arg)))))))
@@ -12217,7 +12217,7 @@
 		(when (and (pair? init)
 			   ;; list->vector
 			   (or (memq (car init) '(list make-list string->list vector->list))
-			       (and (eq? (car init) 'quote)
+			       (and (memq (car init) '(quote #_quote))
 				    (pair? (cdr init))
 				    (pair? (cadr init))))
 			   (lint-every? (lambda (p)
@@ -14230,7 +14230,7 @@
       (return-walker last
 		     (lambda (in-seq)
 		       (when (or (not (pair? in-seq))
-				 (eq? (car in-seq) 'quote))
+				 (memq (car in-seq) '(quote #_quote)))
 			 (let ((seq (if (len>1? in-seq)              ; (quote . 1)??
 					(cadr in-seq)
 					in-seq)))
@@ -14292,7 +14292,7 @@
 				 (memq (car vvalue) '(list vector float-vector int-vector byte-vector))
 				 (not (lint-any? (lambda (x)
 						   (or (and (pair? x)
-							    (not (eq? (car x) 'quote)))
+							    (not (memq (car x) '(quote #_quote))))
 						       (and (symbol? x) ; (list 1 x 2)
 							    (not (constant? x)))))
 						 (cdr vvalue)))))
@@ -14708,7 +14708,7 @@
       (or (number? x)
 	  (char? x)
 	  (and (len>1? x)
-	       (eq? (car x) 'quote)
+	       (memq (car x) '(quote #_quote))
 	       (or (symbol? (cadr x))
 		   (and (not (pair? (cadr x)))
 			(eqv-code-constant? (cadr x)))))
@@ -14731,7 +14731,7 @@
 	     (and (pair? (cddr clause))
 		  (equal? eqv-select (cadr clause))
 		  (pair? (caddr clause))
-		  (eq? (caaddr clause) 'quote)
+		  (memq (caaddr clause) '(quote #_quote))
 		  (or (not (eq? (car clause) 'member))
 		      (lint-every? (lambda (x)
 				     (or (number? x)
@@ -14886,7 +14886,7 @@
 			     *load-hook* *error-hook* *rootlet-redefinition-hook*))
 		 (lint-format "~A is a constant: ~A" caller sym form)))
 
-	    ((eq? sym 'quote)
+	    ((memq sym '(quote #_quote))
 	     (lint-format "either a stray quote, or a really bad idea: ~A" caller (truncated-list->string form)))
 
 	    ((pair? sym)
@@ -15077,7 +15077,7 @@
 			   (or (not (symbol? body))
 			       (keyword? body))
 			   (or (not (pair? body))
-			       (and (eq? (car body) 'quote)
+			       (and (memq (car body) '(quote #_quote))
 				    (pair? (cdr body))
 				    (not (symbol? (cadr body)))
 				    (not (unquoted-pair? (cadr body))))
@@ -15333,7 +15333,7 @@
 				     (when (or (and (code-constant? last)
 						    (not (boolean? last))
 						    (not (and (len=2? last)
-							      (eq? (car last) 'quote)
+							      (memq (car last) '(quote #_quote))
 							      (boolean? (cadr last)))))
 					       (and (pair? last)
 						    (let ((sig (arg-signature (car last) env)))
@@ -15925,7 +15925,7 @@
 			 (cons new (cdr tree)))
 			((not (pair? tree))
 			 tree)
-			((eq? (car tree) 'quote)
+			((memq (car tree) '(quote #_quote))
 			 (copy tree))
 			(else (cons (tree-subst-eq new old (car tree))
 				    (tree-subst-eq new old (cdr tree))))))
@@ -17414,7 +17414,7 @@
 					 (not (symbol? (car result)))
 					 (or (not (pair? (car result))) ; quoted lists look bad in this context
 					     (and (len=2? (car result))
-						  (eq? (caar result) 'quote)
+						  (memq (caar result) '(quote #_quote))
 						  (not (pair? (cadar result)))))))))
 		    (if (not start)
 			(if (and looks-ok
@@ -19185,7 +19185,7 @@
 #|
 			     ;; this messes up all the time
 			     (when (and (not (memq (car code) local-vars)) ; also need (not (dilambda (symbol->value (car code)))) here I think
-					(not (eq? (car code) 'quote))
+					(not (memq (car code) '(quote #_quote)))
 					(lint-every? (lambda (v)
 						       (or (code-constant? v)
 							   (and (symbol? v)
@@ -22054,7 +22054,7 @@
 		  (if (or (and (not (pair? tag))
 			       (or (number? tag) (char? tag) (length tag)))
 			  (and (pair? tag)
-			       (eq? (car tag) 'quote)
+			       (memq (car tag) '(quote #_quote))
 			       (or (not (pair? (cdr tag)))
 				   (length (cadr tag)))))
 		      ;; (catch #(0) (lambda () #f) (lambda a a))
@@ -23138,7 +23138,7 @@
 				 (arg2 (caddr form)))
 
 			     (if (and (len=2? arg1)           ; `(begin (abs ,x)) -> `(abs ,x), this is a separate issue from the rewrites below
-				      (eq? (car arg1) 'quote)
+				      (memq (car arg1) '(quote #_quote))
 				      (eq? (cadr arg1) 'begin)
 				      (not (and (pair? arg2)
 						(eq? (car arg2) 'apply-values)))) ; no other way to splice here, I hope
