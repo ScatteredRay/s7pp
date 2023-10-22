@@ -64755,7 +64755,7 @@ static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_sy
       (is_pair(cdr(target))) &&
       ((is_null(cddr(target))) || (is_null(cdddr(target))) || (is_null(cddddr(target)))))
     {
-      s7_pointer obj, index, s_slot = s7_slot(sc, car(target));
+      s7_pointer obj, index, index_type, s_slot = s7_slot(sc, car(target));
       if (!is_slot(s_slot))
 	return_false(sc, car_x);
 
@@ -64765,12 +64765,13 @@ static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_sy
 	return_false(sc, car_x);
 
       index = cadr(target);
+      index_type = opt_arg_type(sc, cdr(target));
       switch (type(obj))
 	{
 	case T_STRING:
 	  {
 	    s7_pointer val_type;
-	    if (is_pair(cddr(target))) return_false(sc, car_x);
+	    if ((index_type != sc->is_integer_symbol) || (is_pair(cddr(target)))) return_false(sc, car_x);
 	    val_type = opt_arg_type(sc, cddr(car_x));
 	    if (val_type != sc->is_char_symbol)
 	      return_false(sc, car_x);
@@ -64779,7 +64780,7 @@ static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_sy
 	  break;
 
 	case T_VECTOR:
-	  /* is_t_integer below to handle the index */
+	  if (index_type != sc->is_integer_symbol) return_false(sc, car_x);
 	  if (is_null(cddr(target)))
 	    {
 	      if (vector_rank(obj) != 1) return_false(sc, car_x);
@@ -64852,7 +64853,8 @@ static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_sy
 	  return_false(sc, car_x);
 
 	case T_PAIR:
-	  if (is_pair(cddr(target))) return_false(sc, car_x);
+	  if (index_type != sc->is_integer_symbol) return_false(sc, car_x); /* (let ((tf13 '(()))) (define (f) (do ((i 0 (+ i 1))) ((= i 1)) (set! (tf13 letrec*) 0))) (f)) */
+	  if (is_pair(cddr(target))) return_false(sc, car_x); 
 	  opc->v[3].p_pip_f = list_set_p_pip_unchecked;
 	  
 	  { /* an experiment -- is this ever hit in normal code? (for tref.scm) */
@@ -69207,7 +69209,7 @@ and splices the resultant list into the outer list. `(1 ,(+ 1 1) ,@(list 3 4)) -
 		}
 	      set_car(bq, g_quasiquote_1(sc, car(orig), false));
 	      set_cdr(bq, sc->nil);
-	      sc->w = list_3(sc, sc->qq_append_symbol, sc->w, caddr(orig)); /* `(f . ,(string-append "h" "i")) */
+	      sc->w = list_3(sc, initial_value(sc->qq_append_symbol), sc->w, caddr(orig)); /* `(f . ,(string-append "h" "i")) */
 	      break;
 	    }
 	  else set_car(bq, g_quasiquote_1(sc, car(orig), false));
@@ -69218,7 +69220,7 @@ and splices the resultant list into the outer list. `(1 ,(+ 1 1) ,@(list 3 4)) -
 	for (orig = form, bq = cdr(sc->w), i = 0; i < len; i++, orig = cdr(orig), bq = cdr(bq))
 	  set_car(bq, g_quasiquote_1(sc, car(orig), false));
 	set_car(bq, g_quasiquote_1(sc, car(orig), false));
-	sc->w = list_3(sc, sc->qq_append_symbol, sc->w, g_quasiquote_1(sc, cdr(orig), false));
+	sc->w = list_3(sc, initial_value(sc->qq_append_symbol), sc->w, g_quasiquote_1(sc, cdr(orig), false));
 	/* quasiquote might quote a symbol in cdr(orig), so it's not completely pointless */
       }
     bq = sc->w;
@@ -89686,6 +89688,7 @@ static bool op_load_close_and_pop_if_eof(s7_scheme *sc)
 static bool op_read_apply_values(s7_scheme *sc)
 {
   sc->value = list_2_unchecked(sc, sc->unquote_symbol, list_2(sc, sc->apply_values_symbol, sc->value));
+  /* initial_value(sc->apply_values_symbol) works here but lint and s7test need checks for that value rather than the symbol */
   return(stack_top_op(sc) != OP_READ_LIST);
 }
 
@@ -96872,7 +96875,7 @@ int main(int argc, char **argv)
  * tobj      4016   3970   3828   3577   3511   3514
  * teq       4068   4045   3536   3486   3568   3570
  * tio       3816   3752   3683   3620   3607   3607
- * tmac      3950   3873   3033   3677   3685   3685
+ * tmac      3950   3873   3033   3677   3685   3685  4143 #_quote
  * tclo      4787   4735   4390   4384   4445   4454
  * tcase     4960   4793   4439   4430   4436   4437
  * tlet      7775   5640   4450   4427   4452   4457
@@ -96908,7 +96911,7 @@ int main(int argc, char **argv)
  * catch in C outside scheme code? setting *error-hook* doesn't help -- it falls into the longjmp
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit
  *   get rid of these if possible (and quote->#_quote wherever it is checked)
- *   s7test lint-test: lint needs to recognize (#_quote ...) as does s7.c, add t718 test to s7test
- *   check all qq cases -> #_quote, maybe ,->#_unquote?, '->#_quote? and qq_apply_values?
  *   also that #_ *->port actually refers to initial_slot
+ *   apply-values as initial-value (need lint/s7test fixups), also #_[list*] and #_[apply_values] in code -- if special c_func=init use #_ or is it safe to name it that? 
+ *   lots of is_global(sc->quote_symbol) here (tmac is much slower now), 60 sc->quote_symbol, 8 is_global(')
  */
