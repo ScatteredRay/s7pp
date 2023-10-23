@@ -54,7 +54,7 @@
       ((< n 2)
        (if (= n 0) a b))))
 
-(define (dofib n)            ; another do-loop (twice as fast as tfib)
+(define (dofib n)            ; another do-loop (maybe slightly slower than tfib)
   (if (< n 2)
       1
       (do ((a 1)

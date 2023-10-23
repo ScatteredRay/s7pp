@@ -93128,7 +93128,7 @@ static s7_pointer memory_usage(s7_scheme *sc)
 	  /* can't use bare type name here ("let" is a syntactic symbol) */
 	  const char *tname = (i == 0) ? "free" : type_name_from_type(i, NO_ARTICLE);
 	  s7_int len = safe_strlen(tname);
-	  uint8_t name[16];
+	  uint8_t name[32]; /* not 16 -- gmp overflows this buffer with "big-complex-number", len=18 */
 	  memcpy((void *)name, (const void *)tname, len);
 	  name[len] = (uint8_t)'\0';
 	  name[0] = (uint8_t)toupper((int)name[0]);
@@ -96913,5 +96913,8 @@ int main(int argc, char **argv)
  *   get rid of these if possible (and quote->#_quote wherever it is checked)
  *   also that #_ *->port actually refers to initial_slot
  *   apply-values as initial-value (need lint/s7test fixups), also #_[list*] and #_[apply_values] in code -- if special c_func=init use #_ or is it safe to name it that? 
- *   lots of is_global(sc->quote_symbol) here (tmac is much slower now), 60 sc->quote_symbol, 8 is_global(')
+ *   lots of is_global(sc->quote_symbol) here (tmac is much slower now), 60 sc->quote_symbol, 8 is_global(') [also #_[list*]]
+ * s7test needs while/anaphoric-when tests (stuff.scm) -- any others?
+ * gmp fuzz test, more ongoing free_cell, quote as local test (would #_with-let remove the restriction on it?)
+ * set! constant msg squelched if values eq? (or symbols eq? if it's faster) (see t718)
  */

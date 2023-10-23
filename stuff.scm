@@ -399,16 +399,17 @@
 	       (set! result (cons `(set! (setter (quote ,(caar var))) (list-ref ,gsetters ,i)) result))))
        ,@body)))
 
-(define-macro (while test . body)      ; while loop with predefined break and continue.  This really wants to be define-expansion.
-  `(call-with-exit
-    (lambda (break)
-      (let loop ()
-	(call-with-exit
-	 (lambda (continue)
-	   (do ()
-	       ((not ,test) (break))
-	     ,@body)))
-	(loop)))))
+(define-macro (while test . body)      ; while loop with predefined break and continue
+  (let ((loop (gensym)))
+    `(call-with-exit
+      (lambda (break)
+	(let ,loop ()
+	  (call-with-exit
+	   (lambda (continue)
+	     (do ()
+		 ((not ,test) (break))
+	       ,@body)))
+	  (,loop))))))
 
 (define-macro (anaphoric-when test . body) ; use "test-result" as the variable holding the test result
   `(let ((test-result ,test))
