@@ -2733,9 +2733,12 @@ static void init_types(void)
 #define is_null(p)                     ((T_Pos(p)) == sc->nil)  /* can be a slot */
 #define is_not_null(p)                 ((T_Pos(p)) != sc->nil)
 #define is_list(p)                     ((is_pair(p)) || (type(p) == T_NIL))
-#define is_quoted_pair(p)              ((is_pair(p)) && (car(p) == sc->quote_symbol))
-#define is_unquoted_pair(p)            ((is_pair(p)) && (car(p) != sc->quote_symbol))
-#define is_quoted_symbol(p)            ((is_pair(p)) && (car(p) == sc->quote_symbol) && (is_symbol(cadr(p))))
+#define is_quote(p)                    ((p == sc->quote_symbol) || ((p) == initial_value(sc->quote_symbol)))
+#define is_safe_quote(p)               ((((p) == sc->quote_symbol) && (is_global(sc->quote_symbol))) || ((p) == initial_value(sc->quote_symbol)))
+#define is_quoted_pair(p)              ((is_pair(p)) && (is_quote(car(p))))
+#define is_safe_quoted_pair(p)         ((is_pair(p)) && (is_safe_quote(car(p))))
+#define is_unquoted_pair(p)            ((is_pair(p)) && (!is_quote(car(p))))
+#define is_quoted_symbol(p)            ((is_quoted_pair(p)) && (is_symbol(cadr(p))))
 
 
 /* pair line/file/position */
@@ -9837,7 +9840,7 @@ static s7_pointer sublet_chooser(s7_scheme *sc, s7_pointer f, int32_t num_args, 
     {
       s7_pointer args = cdr(expr);
       if ((is_pair(car(args))) && (caar(args) == sc->curlet_symbol) && (is_null(cdar(args))) &&
-	  (is_pair(cadr(args))) && (caadr(args) == sc->quote_symbol) && (is_symbol(cadadr(args))))
+	  (is_quoted_symbol(cadr(args)))) /* (is_pair(cadr(args))) && (caadr(args) == sc->quote_symbol) && (is_symbol(cadadr(args)))) */
 	return(sc->sublet_curlet);
     }
   return(f);
@@ -9933,10 +9936,9 @@ static s7_pointer internal_inlet(s7_scheme *sc, s7_int num_args, ...)
 
 static bool is_proper_quote(s7_scheme *sc, s7_pointer p)
 {
-  return((is_quoted_pair(p)) &&
+  return((is_safe_quoted_pair(p)) &&
 	 (is_pair(cdr(p))) &&
-	 (is_null(cddr(p))) &&
-	 (is_global(sc->quote_symbol)));
+	 (is_null(cddr(p))));
 }
 
 static s7_pointer inlet_chooser(s7_scheme *sc, s7_pointer f, int32_t args, s7_pointer expr, bool ops)
@@ -10323,8 +10325,7 @@ static s7_pointer let_set_chooser(s7_scheme *sc, s7_pointer f, int32_t unused_ar
     {
       s7_pointer arg1 = cadr(expr), arg2 = caddr(expr), arg3 = cadddr(expr);
       if ((car(arg1) == sc->cdr_symbol) &&
-	  (car(arg2) == sc->quote_symbol) &&
-	  (is_symbol(cadr(arg2))) &&
+	  (is_quoted_pair(arg2)) &&  /* (car(arg2) == sc->quote_symbol) && (is_symbol(cadr(arg2))) && */
 	  (!is_possibly_constant(cadr(arg2))) &&
 	  (!is_possibly_constant(arg3)))
 	return(sc->lint_let_set);
@@ -19739,7 +19740,7 @@ static s7_pointer argument_type(s7_scheme *sc, s7_pointer arg1)
 {
   if (is_pair(arg1))
     {
-      if (car(arg1) == sc->quote_symbol)
+      if (is_quote(car(arg1))) /* (car(arg1) == sc->quote_symbol) */
 	return((is_pair(cdr(arg1))) ? s7_type_of(sc, cadr(arg1)) : NULL);    /* arg1 = (quote) */
 
       if ((is_h_optimized(arg1)) &&
@@ -33457,8 +33458,9 @@ static void pair_to_port(s7_scheme *sc, s7_pointer lst, s7_pointer port, use_wri
 	      return;
 	    }}}
 
+  /* TODO: pair_to_port writes quote -> ' and #_quote -> ' ?? */
   if ((use_write != P_READABLE) &&
-      (car(lst) == sc->quote_symbol) &&
+      /* (is_quote(car(lst))) */ (car(lst) == initial_value(sc->quote_symbol)) &&
       (true_len == 2))
     {
       /* len == 1 is important, otherwise (list 'quote 1 2) -> '1 2 which looks weird
@@ -37096,21 +37098,21 @@ static inline s7_int tree_len_1(s7_scheme *sc, s7_pointer p)
     {
       s7_pointer cp = car(p);
       if ((!is_pair(cp)) ||
-	  (car(cp) == sc->quote_symbol))
+	  (is_quote(car(p)))) /* (car(cp) == sc->quote_symbol)) */
 	sum++;
       else
 	{
 	  do {
 	    s7_pointer ccp = car(cp);
 	    if ((!is_pair(ccp)) ||
-		(car(ccp) == sc->quote_symbol))
+		(is_quote(car(ccp)))) /* (car(ccp) == sc->quote_symbol)) */
 	      sum++;
 	    else
 	      {
 		do {
 		  s7_pointer cccp = car(ccp);
 		  if ((!is_pair(cccp)) ||
-		      (car(cccp) == sc->quote_symbol))
+		      (is_quote(car(cccp)))) /* (car(cccp) == sc->quote_symbol)) */
 		    sum++;
 		  else sum += tree_len_1(sc, cccp);
 		  ccp = cdr(ccp);
@@ -37129,7 +37131,7 @@ static inline s7_int tree_len(s7_scheme *sc, s7_pointer p)
   if (is_null(p))
     return(0);
   if ((!is_pair(p)) ||
-      (car(p) == sc->quote_symbol))
+      (is_quote(car(p)))) /* (car(p) == sc->quote_symbol)) */
     return(1);
   return(tree_len_1(sc, p));
 }
@@ -37161,7 +37163,7 @@ static s7_pointer g_tree_leaves(s7_scheme *sc, s7_pointer args)
 /* ---------------- tree-memq ---------------- */
 static inline bool tree_memq_1(s7_scheme *sc, s7_pointer sym, s7_pointer tree)    /* sym need not be a symbol */
 {
-  if (car(tree) == sc->quote_symbol)
+  if (is_quote(car(tree))) /* (car(tree) == sc->quote_symbol) */
     return((!is_symbol(sym)) && (!is_pair(sym)) && (is_pair(cdr(tree))) && (sym == cadr(tree)));
   do {
     if (sym == car(tree))
@@ -37170,7 +37172,7 @@ static inline bool tree_memq_1(s7_scheme *sc, s7_pointer sym, s7_pointer tree)  
     if (is_pair(car(tree)))
       {
 	s7_pointer cp = car(tree);
-	if (car(cp) == sc->quote_symbol)
+	if (is_quote(car(cp))) /* (car(cp) == sc->quote_symbol) */
 	  {
 	    if ((!is_symbol(sym)) && (!is_pair(sym)) && (is_pair(cdr(cp))) && (sym == cadr(cp)))
 	      return(true);
@@ -37237,7 +37239,7 @@ static bool tree_set_memq(s7_scheme *sc, s7_pointer tree)
   if (is_symbol(tree))
     return(symbol_is_in_list(sc, tree));
   if ((!is_pair(tree)) ||
-      (car(tree) == sc->quote_symbol))
+      (is_quote(car(tree)))) /* (car(tree) == sc->quote_symbol)) */
     return(false);
   return(pair_set_memq(sc, tree));
 }
@@ -37305,14 +37307,14 @@ static s7_pointer tree_set_memq_chooser(s7_scheme *sc, s7_pointer f, int32_t unu
 static s7_int tree_count(s7_scheme *sc, s7_pointer x, s7_pointer p, s7_int count)
 {
   if (p == x) return(count + 1);
-  if ((!is_pair(p)) || (car(p) == sc->quote_symbol)) return(count);
+  if ((!is_pair(p)) || (is_quote(car(p)))) /* (car(p) == sc->quote_symbol)) */ return(count);
   return(tree_count(sc, x, cdr(p), tree_count(sc, x, car(p), count)));
 }
 
 static inline s7_int tree_count_at_least(s7_scheme *sc, s7_pointer x, s7_pointer p, s7_int count, s7_int top)
 {
   if (p == x) return(count + 1);
-  if ((!is_pair(p)) || (car(p) == sc->quote_symbol)) return(count);
+  if ((!is_pair(p)) || (is_quote(car(p)))) /* (car(p) == sc->quote_symbol)) */ return(count);
   do {
     count = tree_count_at_least(sc, x, car(p), count, top);
     if (count >= top) return(count);
@@ -46030,7 +46032,7 @@ static s7_pointer closure_or_f(s7_scheme *sc, s7_pointer p)
   body = closure_body(p);
   if (is_pair(cdr(body))) return(p);
   if (!is_pair(car(body))) return(sc->F);
-  return((caar(body) == sc->quote_symbol) ? sc->F : p);
+  return((is_quote(caar(body))) /* (caar(body) == sc->quote_symbol) */ ? sc->F : p);
 }
 
 static s7_pointer make_baffled_closure(s7_scheme *sc, s7_pointer inp)
@@ -47423,6 +47425,7 @@ static bool string_equal(s7_scheme *sc, s7_pointer x, s7_pointer y, shared_info_
 
 static bool syntax_equal(s7_scheme *sc, s7_pointer x, s7_pointer y, shared_info_t *ci)
 {
+  /* fprintf(stderr, "%s %s %d %s %s\n", display(x), display(y), is_syntax(y), display(syntax_symbol(x)), (is_syntax(y)) ? display(syntax_symbol(y)) : ""); */
   return((is_syntax(y)) && (syntax_symbol(x) == syntax_symbol(y)));
 }
 
@@ -51877,7 +51880,7 @@ static bool catch_1_function(s7_scheme *sc, s7_int catch_loc, s7_pointer type, s
 	  error_body = car(error_body);
 	  if (is_pair(error_body))
 	    {
-	      if (car(error_body) == sc->quote_symbol)
+	      if (is_quote(car(error_body))) /* (car(error_body) == sc->quote_symbol) */
 		y = cadr(error_body);
 	      else
 		if ((car(error_body) == sc->car_symbol) &&
@@ -56741,7 +56744,7 @@ static int32_t fx_count(s7_scheme *sc, s7_pointer x)
   return(count);
 }
 
-static bool is_code_constant(s7_scheme *sc, s7_pointer p) {return((is_pair(p)) ? (car(p) == sc->quote_symbol) : is_constant(sc, p));}
+static bool is_code_constant(s7_scheme *sc, s7_pointer p) {return((is_pair(p)) ? (is_quote(car(p))) /* (car(p) == sc->quote_symbol) */ : is_constant(sc, p));}
 
 static inline s7_pointer check_quote(s7_scheme *sc, s7_pointer code);
 
@@ -57476,8 +57479,7 @@ static s7_function fx_choose(s7_scheme *sc, s7_pointer holder, s7_pointer cur_en
 	  return(fx_function[optimize_op(arg)]);
 	}} /* is_optimized */
 
-  if ((car(arg) == sc->quote_symbol) &&
-      (is_global(sc->quote_symbol)))
+  if (is_safe_quote(car(arg))) /* ((car(arg) == sc->quote_symbol) && (is_global(sc->quote_symbol))) || (car(arg) == initial_value(sc->quote_symbol))) */
     {
       check_quote(sc, arg);
       return(fx_q);
@@ -62058,7 +62060,7 @@ static s7_pointer opt_arg_type(s7_scheme *sc, s7_pointer argp)
 		    }
 		  return(sc->T);
 		}
-	      if ((car(arg) == sc->quote_symbol) &&
+	      if ((is_quote(car(arg))) /* (car(arg) == sc->quote_symbol) */ &&
 		  (is_pair(cdr(arg))))
 		return(s7_type_of(sc, cadr(arg)));
 	    }
@@ -69073,7 +69075,7 @@ static s7_pointer g_simple_list_values(s7_scheme *sc, s7_pointer args)
 static s7_pointer list_values_chooser(s7_scheme *sc, s7_pointer f, int32_t unused_args, s7_pointer expr, bool unused_ops)
 {
   for (s7_pointer p = cdr(expr); is_pair(p); p = cdr(p))
-    if ((is_pair(car(p))) && (caar(p) != sc->quote_symbol))
+    if (is_quoted_pair(car(p))) /* (is_pair(car(p))) && (caar(p) != sc->quote_symbol) */
       return(f);
   return(sc->simple_list_values);
 }
@@ -69819,6 +69821,7 @@ static void fx_annotate_arg(s7_scheme *sc, s7_pointer arg, s7_pointer e)
   if (has_fx(arg)) return;
   fx = fx_choose(sc, arg, e, (is_list(e)) ? pair_symbol_is_safe : let_symbol_is_safe);
   if (fx) set_fx_direct(arg, fx);
+  /* else fprintf(stderr, "%s[%d]: no fx for %s in %s\n", __func__, __LINE__, display(arg), display(e)); */
 #else
   if (has_fx(arg)) return;
   set_fx(arg, fx_choose(sc, arg, e, (is_list(e)) ? pair_symbol_is_safe : let_symbol_is_safe));
@@ -70577,7 +70580,7 @@ static opt_t optimize_func_one_arg(s7_scheme *sc, s7_pointer expr, s7_pointer fu
 
   if (is_let(func))
     {
-      if ((is_pair(arg1)) && (car(arg1) == sc->quote_symbol))
+      if (is_quoted_pair(arg1)) /* (is_pair(arg1)) && (car(arg1) == sc->quote_symbol)) */
 	{
 	  set_opt3_con(expr, cadr(arg1));
 	  set_unsafe_optimize_op(expr, OP_IMPLICIT_LET_REF_C);
@@ -71002,8 +71005,7 @@ static opt_t optimize_func_two_args(s7_scheme *sc, s7_pointer expr, s7_pointer f
 	      /* unsafe func here won't work unless we check that later and make the new arg list (for list-values etc)
 	       *   (and it has to be the last pair else the unknown_g stuff can mess up)
 	       */
-	      if ((car(arg2) == sc->quote_symbol) &&
-		  (is_global(sc->quote_symbol)))
+	      if (is_safe_quote(car(arg2))) /* (car(arg2) == sc->quote_symbol) && (is_global(sc->quote_symbol))) */
 		{
 		  if (!is_proper_list_1(sc, cdr(arg2)))
 		    return(OPT_OOPS);
@@ -71043,8 +71045,7 @@ static opt_t optimize_func_two_args(s7_scheme *sc, s7_pointer expr, s7_pointer f
 	    }
 	  if (quotes == 1)
 	    {
-	      if ((car(arg1) == sc->quote_symbol) &&
-		  (is_global(sc->quote_symbol)))
+	      if (is_safe_quote(car(arg1))) /* (car(arg1) == sc->quote_symbol) && (is_global(sc->quote_symbol))) */
 		{
 		  if (!is_proper_list_1(sc, cdr(arg1)))
 		    return(OPT_OOPS);
@@ -71584,7 +71585,7 @@ static opt_t optimize_func_three_args(s7_scheme *sc, s7_pointer expr, s7_pointer
       if (c_function_call(func) == g_catch)
 	{
 	  if (((bad_pairs == 2) && (!is_pair(arg1))) ||
-	      ((bad_pairs == 3) && (car(arg1) == sc->quote_symbol)))
+	      ((bad_pairs == 3) && (is_quote(car(arg1))))) /* (car(arg1) == sc->quote_symbol))) */
 	    {
 	      s7_pointer body_lambda = arg2, error_lambda = arg3;
 	      if ((is_ok_lambda(sc, body_lambda)) &&
@@ -71606,7 +71607,7 @@ static opt_t optimize_func_three_args(s7_scheme *sc, s7_pointer expr, s7_pointer
 		       ((is_pair(cadr(error_lambda))) &&
 			(error_result == caadr(error_lambda)))) &&    /* (lambda (type info) type) */
 		      ((!is_pair(error_result)) ||
-		       (car(error_result) == sc->quote_symbol) ||     /* (lambda args 'a) */
+		       (is_quote(car(error_result))) /* (car(error_result) == sc->quote_symbol) */ ||     /* (lambda args 'a) */
 		       ((car(error_result) == sc->car_symbol) &&
 			(is_pair(cdr(error_result))) &&               /* (lambda (type info) (car)) */
 			(cadr(error_result) == cadr(error_lambda))))) /* (lambda args (car args) -> error-type */
@@ -71615,7 +71616,7 @@ static opt_t optimize_func_three_args(s7_scheme *sc, s7_pointer expr, s7_pointer
 		      set_c_function(expr, func);
 
 		      if (is_pair(error_result))
-			error_result = (car(error_result) == sc->quote_symbol) ? cadr(error_result) : sc->unused;
+			error_result = (is_quote(car(error_result))) /* (car(error_result) == sc->quote_symbol) */ ? cadr(error_result) : sc->unused;
 		      else
 			if (is_symbol(error_result))
 			  error_result = sc->unused;
@@ -71848,7 +71849,7 @@ static opt_t optimize_func_many_args(s7_scheme *sc, s7_pointer expr, s7_pointer 
 		  if (is_normal_symbol(car(p)))
 		    break;
 		  if ((is_pair(car(p))) &&
-		      ((!is_pair(cdar(p))) || (caar(p) != sc->quote_symbol)))
+		      ((!is_pair(cdar(p))) || (!is_quote(caar(p))))) /* (caar(p) != sc->quote_symbol))) */
 		    break;
 		}
 	      if (is_null(p))
@@ -72621,7 +72622,7 @@ static opt_t optimize_expression(s7_scheme *sc, s7_pointer expr, int32_t hop, s7
 		  }
 		if (len == 1)
 		  {
-		    if (car_expr != sc->quote_symbol) /* !! quote can be redefined locally, unsetting the T_SYNTACTIC flag -- can this happen elsewhere? */
+		    if (!is_quote(car_expr)) /* (car_expr != sc->quote_symbol) */ /* !! quote can be redefined locally, unsetting the T_SYNTACTIC flag -- can this happen elsewhere? */
 		      set_unsafe_optimize_op(expr, (is_normal_symbol(cadr(expr))) ? OP_UNKNOWN_S : OP_UNKNOWN_A);
 		    fx_annotate_arg(sc, cdr(expr), e); /* g->a later if closure */
 		    return(OPT_F);
@@ -72651,7 +72652,7 @@ static opt_t optimize_expression(s7_scheme *sc, s7_pointer expr, int32_t hop, s7
 		s7_pointer arg1 = cadr(expr);
 		if ((pairs == 1) && (len == 1))
 		  {
-		    if ((car_expr == sc->quote_symbol) &&
+		    if ((is_quote(car_expr)) /* (car_expr == sc->quote_symbol) */ &&
 			(direct_memq(sc->quote_symbol, e)))
 		      return(OPT_OOPS);
 
@@ -73266,8 +73267,7 @@ static body_t form_is_safe(s7_scheme *sc, s7_pointer func, s7_pointer x, bool at
 		}
 	      return((is_null(p)) ? result : UNSAFE_BODY);
 	    }
-	  if ((expr == sc->quote_symbol) &&
-	      (is_global(sc->quote_symbol)) &&
+	  if ((is_safe_quote(expr)) /* (expr == sc->quote_symbol) && (is_global(sc->quote_symbol)) */ &&
 	      (is_proper_list_1(sc, cdr(x))))
 	    return(result);
 
@@ -76597,7 +76597,8 @@ static bool op_let_temp_done1(s7_scheme *sc)
 
       if ((is_pair(settee)) && (car(settee) == sc->s7_starlet_symbol) &&  /* (let-temporarily (((*s7* (symbol "print-length")) 43))...) */
 	  ((is_symbol_and_keyword(cadr(settee))) ||
-	   ((is_pair(cadr(settee))) && (caadr(settee) == sc->quote_symbol) && (is_symbol(cadadr(settee))))))
+	   (is_quoted_symbol(cadr(settee)))))
+	  /* ((is_pair(cadr(settee))) && (caadr(settee) == sc->quote_symbol) && (is_symbol(cadadr(settee)))))) */
 	{
 	  s7_pointer sym = cadr(settee);
 	  if (is_pair(sym)) sym = cadr(sym);
@@ -76610,7 +76611,7 @@ static bool op_let_temp_done1(s7_scheme *sc)
 	    {
 	      push_stack_direct(sc, OP_LET_TEMP_DONE1); /* save args and (pending) body value==sc->code */
 	      if ((is_pair(sc->value)) || (is_symbol(sc->value)))
-		sc->code = set_plist_3(sc, sc->set_symbol, settee, set_plist_2(sc, sc->quote_symbol, sc->value));
+		sc->code = set_plist_3(sc, sc->set_symbol, settee, set_plist_2(sc, initial_value(sc->quote_symbol), sc->value));
 	      else sc->code = set_plist_3(sc, sc->set_symbol, settee, sc->value);
 	      return(false); /* goto set_unchecked */
 	    }
@@ -77938,7 +77939,7 @@ static goto_t op_expansion(s7_scheme *sc)
   if ((sc->stack_end > sc->stack_start) &&          /* there is a stack... */
       (stack_top_op(sc) != OP_READ_QUOTE) &&        /* '(expansion ...) */
       (stack_top_op(sc) != OP_READ_VECTOR) &&       /* #(expansion ...) */
-      (caller != sc->quote_symbol) &&               /* (quote (expansion ...)) */
+      (!is_quote(caller)) && /* (caller != sc->quote_symbol) */               /* (quote (expansion ...)) */
       (caller != sc->macroexpand_symbol) &&         /* (macroexpand (expansion ...)) */
       (caller != sc->define_expansion_symbol) &&    /* (define-expansion ...) being reloaded/redefined */
       (caller != sc->define_expansion_star_symbol)) /* (define-expansion* ...) being reloaded/redefined */
@@ -78603,75 +78604,76 @@ static bool feed_to(s7_scheme *sc)
 /* -------------------------------- set! -------------------------------- */
 static void check_set(s7_scheme *sc)
 {
-  s7_pointer form = sc->code, code = cdr(sc->code);
+  s7_pointer form = sc->code, code = cdr(sc->code), settee, value;
   if (!is_pair(code))
     {
       if (is_null(code))                                             /* (set!) */
 	syntax_error_nr(sc, "set!: not enough arguments: ~A", 30, form);
       syntax_error_nr(sc, "set!: stray dot? ~A", 19, form);          /* (set! . 1) */
     }
+  settee = car(code);
+
   if (!is_pair(cdr(code)))
     {
       if (is_null(cdr(code)))                                        /* (set! var) */
 	syntax_error_nr(sc, "set!: not enough arguments: ~A", 30, form);
       syntax_error_nr(sc, "set!: stray dot? ~A", 19, form);          /* (set! var . 1) */
     }
+  value = cadr(code);                                                /* the value has not yet been evaluated */
+
   if ((is_not_null(cddr(code))) ||                                   /* (set! var 1 2) */
-      ((is_pair(cadr(code))) && 
-       (caadr(code) == sc->values_symbol) &&                         /* (set! var (values...) but 0 or 1 arg is ok */
-       (is_pair(cdadr(code))) &&                                     /*    this can be fooled if we rename values, etc */
-       (is_pair(cddadr(code)))))
+      ((is_pair(value)) && 
+       (car(value) == sc->values_symbol) &&                          /* (set! var (values...) but 0 or 1 arg is ok */
+       (is_pair(cdr(value))) &&                                      /*    this can be fooled if we rename values, etc */
+       (is_pair(cddr(value)))))
     syntax_error_nr(sc, "~A: too many arguments to set!", 30, form);
 
-  /* cadr (the value) has not yet been evaluated */
-  if (is_pair(car(code)))
+  if (is_pair(settee))
     {
-      if ((is_pair(caar(code))) &&
-	  (!is_list(cdar(code))))                                   /* (set! ('(1 2) . 0) 1) */
+      if ((is_pair(car(settee))) &&
+	  (!is_list(cdr(settee))))                                   /* (set! ('(1 2) . 0) 1) */
 	syntax_error_nr(sc, "improper list of arguments to set!: ~A", 38, form);
-      if (!s7_is_proper_list(sc, car(code)))                        /* (set! ("hi" . 1) #\a) or (set! (#(1 2) . 1) 0) */
-	syntax_error_nr(sc, "set! target is an improper list: (set! ~A ...)", 46, car(code));
+      if (!s7_is_proper_list(sc, settee))                            /* (set! ("hi" . 1) #\a) or (set! (#(1 2) . 1) 0) */
+	syntax_error_nr(sc, "set! target is an improper list: (set! ~A ...)", 46, settee);
     }
   else
-    if (!is_symbol(car(code)))                                      /* (set! 12345 1) */
-      error_nr(sc, sc->syntax_error_symbol,                         /* (set! #_abs 32) -> "error: set! can't change abs (a c-function), (set! abs 32)" */
-	       set_elist_4(sc, wrap_string(sc, "set! can't change ~S (~A), ~S", 29), car(code), sc->type_names[type(car(code))], form));
+    if (!is_symbol(settee))                                          /* (set! 12345 1) */
+      error_nr(sc, sc->syntax_error_symbol,                          /* (set! #_abs 32) -> "error: set! can't change abs (a c-function), (set! abs 32)" */
+	       set_elist_4(sc, wrap_string(sc, "set! can't change ~S (~A), ~S", 29), settee, sc->type_names[type(settee)], form));
     else
-      if (is_constant_symbol(sc, car(code)))                        /* (set! pi 3) */
+      if (is_constant_symbol(sc, settee))                            /* (set! pi 3) */
 	error_nr(sc, sc->syntax_error_symbol,
-		 set_elist_3(sc, wrap_string(sc, (is_keyword(car(code))) ? "set!: can't change keyword's value: ~S in ~S" :
+		 set_elist_3(sc, wrap_string(sc, (is_keyword(settee)) ? "set!: can't change keyword's value: ~S in ~S" :
 					     "set!: can't alter constant's value: ~S in ~S", 44),
-			     car(code), form));
-  if (is_pair(car(code)))
+			     settee, form));
+  if (is_pair(settee))                                               /* here we have (set! (...) ...) */
     {
-      /* here we have (set! (...) ...) */
-      s7_pointer inner = car(code), value = cadr(code);
       pair_set_syntax_op(form, OP_SET_UNCHECKED); /* if not pair car, op_set_normal below */
-      if (is_symbol(car(inner)))
+      if (is_symbol(car(settee)))
 	{
-	  if (is_null(cdr(inner)))                                  /* (set! (symbol) ...) */
+	  if (is_null(cdr(settee)))                                  /* (set! (symbol) ...) */
 	    {
 	      if (is_fxable(sc, value))
 		{
-		  pair_set_syntax_op(form, OP_SET_opSq_A);          /* (set! (symbol) fxable) */
-		  fx_annotate_arg(sc, cdr(code), sc->curlet);       /* cdr(code) = value */
+		  pair_set_syntax_op(form, OP_SET_opSq_A);           /* (set! (symbol) fxable) */
+		  fx_annotate_arg(sc, cdr(code), sc->curlet);        /* cdr(code) = value */
 		}}
 	  else
-	    if (is_null(cddr(inner))) /* we check cddr(code) above */  /* this leaves (set! (vect i j) 1) unhandled so we go to OP_SET_UNCHECKED */
+	    if (is_null(cddr(settee))) /* we check cddr(code) above */  /* this leaves (set! (vect i j) 1) unhandled so we go to OP_SET_UNCHECKED */
 	      {
-		s7_pointer index = cadr(inner);
+		s7_pointer index = cadr(settee);
 		if (is_fxable(sc, index))
 		  {
-		    if ((car(inner) == sc->let_ref_symbol) && (!is_pair(cddr(inner)))) /* perhaps also check for hash-table-ref */
+		    if ((car(settee) == sc->let_ref_symbol) && (!is_pair(cddr(settee)))) /* perhaps also check for hash-table-ref */
 		      /* (let () (define (func) (catch #t (lambda () (set! (let-ref (list 1)) 1)) (lambda args 'error))) (func) (func)) */
 		      error_nr(sc, sc->wrong_number_of_args_symbol,
 			       set_elist_2(sc, wrap_string(sc, "set!: not enough arguments for let-ref: ~S", 42), sc->code));
-		    fx_annotate_arg(sc, cdar(code), sc->curlet);    /* cdr(inner) -> index */
+		    fx_annotate_arg(sc, cdar(code), sc->curlet);    /* cdr(settee) -> index */
 		    if (is_fxable(sc, value))
 		      {
 			pair_set_syntax_op(form, OP_SET_opSAq_A);   /* (set! (symbol fxable) fxable) */
 			/* perhaps: if "S" is a known function (etc), split this -- the runtime check for a macro here is very expensive
-			 *   fprintf(stderr, "(set! %s %s)\n", display(car(code)), display(cadr(code)));
+			 *   fprintf(stderr, "(set! %s %s)\n", display(settee), display(value));
 			 *   S=vector[tnum]/hash-table/c_func/s7/setter[tset]/var-*[lt]/c-obj[tobj]/dilambda[tstar]
 			 * so, if not any_macro OP_SET_opFAq_A else OP_SET_opMAq_A? or just the latter
 			 * also (set! (car a) b) -> (set-car! a b), (set! (cfunc a) b) -> ((setter cfunc) a b)
@@ -78679,7 +78681,7 @@ static void check_set(s7_scheme *sc)
                          */
 			fx_annotate_arg(sc, cdr(code), sc->curlet); /* cdr(code) -> value */
 
-			if (car(inner) == sc->s7_starlet_symbol)    /* (set! (*s7* 'field) value) */
+			if (car(settee) == sc->s7_starlet_symbol)    /* (set! (*s7* 'field) value) */
 			  {
 			    s7_pointer sym = (is_symbol(index)) ?
 			                       ((is_keyword(index)) ? keyword_symbol(index) : index) :
@@ -78693,13 +78695,13 @@ static void check_set(s7_scheme *sc)
 		    else pair_set_syntax_op(form, OP_SET_opSAq_P);  /* (set! (symbol fxable) any) */
 		  }}
 	    else
-	      if ((is_null(cdddr(inner))) &&
-		  (car(inner) != sc->with_let_symbol))              /* (set! (with-let lt a) 32) needs to be handled by op_set_with_let_1 */
+	      if ((is_null(cdddr(settee))) &&
+		  (car(settee) != sc->with_let_symbol))              /* (set! (with-let lt a) 32) needs to be handled by op_set_with_let_1 */
 		{
-		  s7_pointer index1 = cadr(inner), index2 = caddr(inner);
+		  s7_pointer index1 = cadr(settee), index2 = caddr(settee);
 		  if ((is_fxable(sc, index1)) && (is_fxable(sc, index2)))
 		    {
-		      fx_annotate_args(sc, cdar(code), sc->curlet);    /* cdr(inner) -> index1 and 2 */
+		      fx_annotate_args(sc, cdar(code), sc->curlet);    /* cdr(settee) -> index1 and 2 */
 		      if (is_fxable(sc, value))
 			{
 			  pair_set_syntax_op(form, OP_SET_opSAAq_A);   /* (set! (symbol fxable fxable) fxable) */
@@ -78710,9 +78712,8 @@ static void check_set(s7_scheme *sc)
       return;
     }
   pair_set_syntax_op(form, OP_SET_NORMAL);
-  if (is_symbol(car(code)))
+  if (is_symbol(settee))
     {
-      s7_pointer settee = car(code), value = cadr(code);
       s7_pointer slot = s7_slot(sc, settee);
       if ((is_slot(slot)) &&
 	  (!slot_has_setter(slot)) &&
@@ -78729,7 +78730,7 @@ static void check_set(s7_scheme *sc)
 		}}
 	  else
 	    if ((!is_pair(value)) ||
-		((car(value) == sc->quote_symbol) && (is_pair(cdr(value))))) /* (quote . 1) ? */
+		((is_quote(car(value))) /* (car(value) == sc->quote_symbol) */ && (is_pair(cdr(value))))) /* (quote . 1) ? */
 	      {
 		pair_set_syntax_op(form, OP_SET_S_C);
 		set_opt2_con(code, (is_pair(value)) ? cadr(value) : value);
@@ -78754,7 +78755,7 @@ static void check_set(s7_scheme *sc)
 			  }}
 		    else
 		      {
-			if (is_fxable(sc, value)) /* value = cadr(code) */
+			if (is_fxable(sc, value))
 			  {
 			    pair_set_syntax_op(form, OP_SET_S_A);
 			    fx_annotate_arg(sc, cdr(code), sc->curlet);
@@ -79338,7 +79339,7 @@ static bool op_set_with_let_1(s7_scheme *sc)
 	  return(true);
 	}
       sc->value = lookup_checked(sc, e);
-      sc->code = set_plist_3(sc, sc->set_symbol, b, ((is_symbol(x)) || (is_pair(x))) ? set_plist_2(sc, sc->quote_symbol, x) : x);
+      sc->code = set_plist_3(sc, sc->set_symbol, b, ((is_symbol(x)) || (is_pair(x))) ? set_plist_2(sc, initial_value(sc->quote_symbol), x) : x);
       /* (let* ((x (vector 1 2)) (lt (curlet))) (set! (with-let lt (x 0)) 32) x) here: (set! (x 0) 32) */
       return(false); /* goto SET_WITH_LET */
     }
@@ -79367,7 +79368,7 @@ static bool op_set_with_let_2(s7_scheme *sc)
     }
   if ((is_symbol(x)) || (is_pair(x)))                        /* (set! (with-let (inlet :v (vector 1 2)) (v 0)) 'a) */
     sc->code = list_3(sc, sc->set_symbol, b,
-		      ((is_symbol(x)) || (is_pair(x))) ? list_2(sc, sc->quote_symbol, x) : x);
+		      ((is_symbol(x)) || (is_pair(x))) ? list_2(sc, initial_value(sc->quote_symbol), x) : x);
   else sc->code = cons(sc, sc->set_symbol, sc->args);        /* (set! (with-let (curlet) (*s7* 'print-length)) 16), x=16 b=(*s7* 'print-length) */
   return(false); /* fall into SET_WITH_LET */
 }
@@ -79866,7 +79867,7 @@ static goto_t set_implicit_hash_table(s7_scheme *sc, s7_pointer table, s7_pointe
   key = car(inds);
   if (is_pair(key))
     {
-      if (car(key) == sc->quote_symbol)
+      if (is_quote(car(key))) /* (car(key) == sc->quote_symbol) */
 	keyval = cadr(key);
     }
   else keyval = (is_normal_symbol(key)) ? lookup_checked(sc, key) : key;
@@ -79898,7 +79899,7 @@ static goto_t set_implicit_hash_table(s7_scheme *sc, s7_pointer table, s7_pointe
       s7_pointer value = car(val);
       if (is_pair(value))
 	{
-	  if (car(value) == sc->quote_symbol)
+	  if (is_quote(car(value))) /* (car(value) == sc->quote_symbol) */
 	    {
 	      sc->value = s7_hash_table_set(sc, table, keyval, cadr(value));
 	      return(goto_start);
@@ -79930,7 +79931,7 @@ static goto_t set_implicit_let(s7_scheme *sc, s7_pointer let, s7_pointer inds, s
   sym = car(inds);
   if (is_pair(sym))
     {
-      if (car(sym) == sc->quote_symbol)
+      if (is_quote(car(sym))) /* (car(sym) == sc->quote_symbol) */
 	symval = cadr(sym);
     }
   else symval = (is_normal_symbol(sym)) ? lookup_checked(sc, sym) : sym;
@@ -80854,7 +80855,7 @@ static s7_pointer check_do(s7_scheme *sc)
 	      {
 		s7_pointer endp = car(end);
 		s7_pointer var1 = car(var);
-		if ((car(step_expr) != sc->quote_symbol) &&     /* opt1_cfunc(==opt1) might not be set in this case (sigh) */
+		if ((!is_quote(car(step_expr))) /* (car(step_expr) != sc->quote_symbol) */ &&     /* opt1_cfunc(==opt1) might not be set in this case (sigh) */
 		    (is_safe_c_op(optimize_op(step_expr))) &&
 		    ((preserves_type(sc, c_function_class(opt1_cfunc(step_expr)))) || /* add etc */
 		     (car(step_expr) == sc->cdr_symbol) ||
@@ -83636,7 +83637,7 @@ static inline bool lambda_star_default(s7_scheme *sc)
 	    if (!is_pair(val))
 	      slot_set_value(z, val);
 	    else
-	      if (car(val) == sc->quote_symbol)
+	      if (is_quote(car(val))) /* (car(val) == sc->quote_symbol) */
 		{
 		  if ((!is_pair(cdr(val))) ||      /* (lambda* ((a (quote))) a) or (lambda* ((a (quote 1 1))) a) etc */
 		      (is_pair(cddr(val))))
@@ -88777,7 +88778,7 @@ static bool eval_car_pair(s7_scheme *sc)
 	  set_no_int_opt(code);
 	}
       /* ((if op1 op2) args...) is another somewhat common case */
-      if ((car(carc) == sc->quote_symbol) &&        /* ('and #f) */
+      if ((is_quote(car(carc))) /* (car(carc) == sc->quote_symbol) */ &&        /* ('and #f) */
 	  ((!is_pair(cdr(carc))) ||                 /* ((quote . #\h) (2 . #\i)) ! */
 	   (is_symbol_and_syntactic(cadr(carc)))))  /* ('or #f) but not ('#_or #f) */
 	apply_error_nr(sc, (is_pair(cdr(carc))) ? cadr(carc) : carc, cdr(code));
@@ -89715,13 +89716,13 @@ static goto_t op_read_dot(s7_scheme *sc)
   return((stack_top_op(sc) == OP_READ_LIST) ? goto_pop_read_list : goto_start);
 }
 
-static bool op_read_quote(s7_scheme *sc)
+static bool op_read_quote(s7_scheme *sc) /* '<datum> -> (#_quote <datum) in s7, not (quote <datum>) because quote is not immutable */
 {
   /* can't check for sc->value = sc->nil here because we want ''() to be different from '() */
   if ((sc->safety > IMMUTABLE_VECTOR_SAFETY) &&
       ((is_pair(sc->value)) || (is_any_vector(sc->value)) || (is_string(sc->value))))
     set_immutable(sc->value);
-  sc->value = list_2(sc, sc->quote_symbol, sc->value);
+  sc->value = list_2(sc, initial_value(sc->quote_symbol), sc->value);
   return(stack_top_op(sc) != OP_READ_LIST);
 }
 
@@ -90086,7 +90087,7 @@ static bool op_unknown_a(s7_scheme *sc)
     case T_LET:
       {
 	s7_pointer arg1 = cadr(code);
-	if ((is_pair(arg1)) && (car(arg1) == sc->quote_symbol))
+	if (is_quoted_pair(arg1)) /* (is_pair(arg1)) && (car(arg1) == sc->quote_symbol)) */
 	  {
 	    set_opt3_con(code, cadadr(code));
 	    return(fixup_unknown_op(sc, code, f, OP_IMPLICIT_LET_REF_C));
@@ -96875,7 +96876,7 @@ int main(int argc, char **argv)
  * tobj      4016   3970   3828   3577   3511   3514
  * teq       4068   4045   3536   3486   3568   3570
  * tio       3816   3752   3683   3620   3607   3607
- * tmac      3950   3873   3033   3677   3685   3685  4143 #_quote
+ * tmac      3950   3873   3033   3677   3685   3685  4143 #_quote, now 3731 [maybe switch order in quoted_pair et al?]
  * tclo      4787   4735   4390   4384   4445   4454
  * tcase     4960   4793   4439   4430   4436   4437
  * tlet      7775   5640   4450   4427   4452   4457
@@ -96909,12 +96910,46 @@ int main(int argc, char **argv)
  * safety for exp->mac? check-define-macro in lint (given eval-string, we can't do this in s7.c I think)
  * lots of strings in gc-lists at end?
  * catch in C outside scheme code? setting *error-hook* doesn't help -- it falls into the longjmp
- * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit
- *   get rid of these if possible (and quote->#_quote wherever it is checked)
- *   also that #_ *->port actually refers to initial_slot
- *   apply-values as initial-value (need lint/s7test fixups), also #_[list*] and #_[apply_values] in code -- if special c_func=init use #_ or is it safe to name it that? 
- *   lots of is_global(sc->quote_symbol) here (tmac is much slower now), 60 sc->quote_symbol, 8 is_global(') [also #_[list*]]
  * s7test needs while/anaphoric-when tests (stuff.scm) -- any others?
  * gmp fuzz test, more ongoing free_cell, quote as local test (would #_with-let remove the restriction on it?)
  * set! constant msg squelched if values eq? (or symbols eq? if it's faster) (see t718)
- */
+ * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit
+ *   get rid of these if possible
+ *   apply-values as initial-value (need lint/s7test fixups), also #_[list*] and #_[apply_values] in code -- if special c_func=init use #_ or is it safe to name it that? 
+ *   lots of is_global(sc->quote_symbol)
+ *   s7.html: ' -> #_quote not quote
+ *   for s7test: (need to fixup the lint stuff still)
+<1> (syntax? #_quote)
+#t
+<3> (syntax? 'quote) ; the symbol quote
+#f
+<7> (equal? 'quote quote) ; quote is not self-evaluating
+#f
+<5> (syntax? quote)
+#t
+<1> (equal? 'quote #_quote)
+#f
+<6> (equal? quote #_quote)
+#t
+<18> (equal? '#f (quote #f))
+#t
+<7> (equal? '(quote #f) '(#_quote #f)) ; symbol quote != #_quote
+#f
+<19> (equal? (quote '#f) (quote (quote #f))) ; (quote (quote #f)) -> (list 'quote #f) [the symbol quote], but s7 uses #_quote for '#f
+#f
+<1> (equal? (quote '#f) (quote (#_quote #f))) ; ' -> #_quote
+#t
+<1> (let ((quote 32)) '1) -> (#_quote 1) -> 1
+1
+<2> (let ((quote 32)) (quote 1))
+error: attempt to apply an integer 32 in (32 1)?
+
+scheme@(guile-user)> (let ((quote 32)) '1)
+ice-9/boot-9.scm:1685:16: In procedure raise-exception:
+Wrong type to apply: 32
+so in Guile to read the code '<datum> you need to know the current value of the symbol quote but in s7 '<datum> -> <datum> in any context
+
+r7rs.pdf says '(quote a) -> (quote a)
+              ''a        -> (quote a)
+*/
+
