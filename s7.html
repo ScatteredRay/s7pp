@@ -6014,6 +6014,7 @@ int main(int argc, char **argv)
 <li>the "d", "f", "s", and "l" exponent markers are not supported by default (use "e", "E", or "@").
 <li>quasiquoted vector constants are not supported (use the normal list expansions wrapped in list-&gt;vector).
 <li><em class=def id="typeof">type-of</em> returns a type indicator for its argument.
+<li>'&lt;datum&gt; is (#_quote &lt;datum&gt;), see <a href="#quotediff">below</a>.
 </ul>
 
 <p>In s7 if a built-in function like gcd is referred to in a function
@@ -6309,7 +6310,7 @@ to keep it from being evaluated, but
 #(1 2 3) is as unproblematic as "123" or 123. 
 </p>
 
-<!-- there's another sense in which '() is a constant: you can't apply it to anything. ('() 0) -> error
+<!-- there's another sense in which () is a constant: you can't apply it to anything. (() 0) -> error
 -->
 
 <p>These examples bring up another odd corner of scheme: else.  In <code>(cond (else 1))</code>
@@ -6322,6 +6323,34 @@ I think the best path is to use unlet:
 <code>(let ((else #f)) (cond (#_else 1)))</code>.  This is 1 (not ()) because the initial value of 'else
 can't be changed.
 </p>
+</div>
+
+
+<div class="indented">
+<p id="quotediff">s7 treats <code>'&lt;datum&gt;</code> as <code>(#_quote &lt;datum&gt;)</code> which is not the same as the r7rs standard <code>(quote &lt;datum&gt;)</code>.
+The name 'quote' can be captured by the local context, whereas the function #_quote can't.  Apostrophe should be
+something that does not require you to worry about name capture; the form <code>'a</code> does not contain
+the name 'quote', so it is annoying that its result can be altered by redefining 'quote'.  Here are a few examples
+of the difference (I'm using guile because it is available on this machine):
+</p>
+<pre class="indented">
+(let ((quote 32)) (length '(1 2))) ; guile error Wrong type to apply: 1, s7 2
+(let ((quote cos)) '0)             ; guile 1, s7 0
+(let ((quote -) (x 1)) 'x)         ; guile -1, s7 x
+(let ('(lambda (x) (+ x 1))) '1)   ; guile 2, s7 error (#_quote is not a symbol)
+((lambda 'x (+ 'x 1)) cos 0)       ; guile 2, s7 error (lambda parameter #_quote is a constant)
+</pre>
+<p>
+Perhaps these simple examples will clarify s7's way of handling the apostrophe.
+</p>
+<pre class="indented">
+(syntax? #_quote) -> #t
+(syntax? 'quote) -> #f      ; the symbol quote 
+(equal? quote #_quote) -> #t
+(equal? 'quote quote) -> #f ; quote is not self-evaluating
+(equal? 'quote #_quote) -> #f
+(equal? '#f (quote #f)) -> #t
+</pre>
 </div>
 
 
@@ -6824,6 +6853,7 @@ bench s7 all
 The benchmark compiler.scm assumes that small
 integers can be compared with eq? (via assq), which is incorrect.
 pi.scm and chudnovsky.scm need the gmp version of s7.
+As of 24-Oct-23, s7 treats '<> as (#_quote <>) so dynamic.scm doesn't run, and peval.scm gets the wrong result.
 I ran the bench script on an AMD 3950X machine, and got these results (in seconds):
 ack: 6.6, array1: 6.4, browse: 11.2, bv2string: 4.1, cat: 0.4,
 compiler: 16.9, conform: 30.0, cpstak: 42.8, ctak: 16.6, deriv: 9.7,

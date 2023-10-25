@@ -320,7 +320,7 @@
 		    (for-each
 		     (lambda (op)
 		       (set! (h op) #t))
-		     '(quote if begin let let* letrec letrec* cond case or and do set! unless when
+		     '(quote #_quote if begin let let* letrec letrec* cond case or and do set! unless when
 		       with-let with-baffle
 		       lambda lambda* define define*
 		       define-macro define-macro* define-bacro define-bacro*
@@ -789,7 +789,7 @@
       (let ((syms ()))
 	(let walk ((p tree))
 	  (if (pair? p)
-	      (if (symbol? (car p))
+	      (if (or (symbol? (car p)) (eq? (car p) #_quote))
 		  (if (not (memq (car p) '(quote #_quote)))
 		      (for-each (lambda (a)
 				  (if (symbol? a)
@@ -900,7 +900,7 @@
     (define (tree-symbol-walk tree syms)
       (if (pair? tree)
 	  (case (car tree)
-	    ((quote)
+	    ((quote #_quote)
 	     (if (and (pair? (cdr tree))
 		      (symbol? (cadr tree))
 		      (not (memq (cadr tree) (car syms))))
@@ -945,7 +945,7 @@
       (or (null? x)
 	  (and (pair? x)
 	       (case (car x)
-		 ((quote)
+		 ((quote #_quote)
 		  (and (pair? (cdr x))
 		       (null? (cadr x))))
 		 ((list)
@@ -996,7 +996,7 @@
 				     object->string odd? openlet? or output-port?
 				     pair? port-closed? positive?
 				     setter signature procedure? proper-list? provided?
-				     quote quotient
+				     quote #_quote quotient
 				     random-state? rational? rationalize real-part real? remainder reverse round
 				     sequence? sin sinh square sqrt string->number string->symbol
 				     string-ci<=? string-ci<? string-ci=? string-ci>=? string-ci>? string-downcase string-length
@@ -1234,7 +1234,7 @@
 					 (var-walk (cdr c) e)))
 				     (cddr tree)))
 
-			  ((quote) #f)
+			  ((quote #_quote) #f)
 
 			  ((do)
 			   (let ((vars ()))
@@ -2021,9 +2021,10 @@
 	     (else #t))))
 
     (define (->lint-type c)
+      ;(format *stderr* "lint-type ~S~%" c)
       (cond ((not (pair? c))	        (->simple-type c))
 	    ((procedure? (car c))       (return-type (car c) ()))     ; (#_abs ...)
-	    ((not (symbol? (car c)))    (or (sequence? (car c)) 'pair?))
+	    ((and (not (symbol? (car c))) (not (eq? (car c) #_quote))) (or (sequence? (car c)) 'pair?))
 	    ((not (memq (car c) '(quote #_quote))) (or (return-type (car c) ()) (define->type c)))
 	    ((not (pair? (cdr c)))      (->simple-type c)) ; ??
 	    ((symbol? (cadr c))         'symbol?)
@@ -2518,7 +2519,7 @@
       (map (lambda (item)
 	     (if (or (symbol? item)
 		     (pair? item))
-		 (list 'quote item)
+		 (list #_quote item)
 		 item))
 	   x))
 
@@ -3009,10 +3010,10 @@
 			   (args (cdar b)))
 		       (if (and (memq func '(eq? eqv? equal?))
 				(len>1? args))
-			   (if (and (symbol? (car args))
+			   (if (and (or (symbol? (car args)) (eq? (car args) #_quote))
 				    (code-constant? (cadr args)))
 			       (set! func (->lint-type (cadr args)))
-			       (if (and (symbol? (cadr args))
+			       (if (and (or (symbol? (cadr args)) (eq? (cadr args) #_quote))
 					(code-constant? (car args)))
 				   (set! func (->lint-type (car args))))))
 
@@ -3950,7 +3951,7 @@
 					     (if (and (pair? vals)
 						      (not (memq #<unspecified> vals)))
 						 (lint-format "perhaps ~S -> ~S" 'and form
-							      (list 'memv (cadr ande) (list 'quote vals))))))))
+							      (list 'memv (cadr ande) (list #_quote vals))))))))
 				   ;; there are also cases with zero? etc
 
 				   ((eq? andf 'exact?)
@@ -3987,7 +3988,7 @@
 				      (if (and (pair? vals)
 					       (not (memq #<unspecified> vals)))
 					  (lint-format "perhaps ~S -> ~S" 'and form
-						       (list 'memv (cadadr ande) (list 'quote vals)))))))))
+						       (list 'memv (cadadr ande) (list #_quote vals)))))))))
 
 			 (unless (or (and (len>2? e)                   ; (and ... (or ... 123) ...) -> splice out or
 					  (pair? (cdr exprs))
@@ -6674,7 +6675,7 @@
 		  (lint-format "perhaps ~A" caller (lists->string form val)))))
 
 	(when (and (pair? (cadr form))
-		   (symbol? (caadr form)))
+		   (or (symbol? (caadr form)) (eq? (caadr form) #_quote)))
 	  (let ((rt (if (and (memq (caadr form) '(quote #_quote))
 			     (pair? (cdadr form)))
 			(->simple-type (cadadr form))
@@ -6895,11 +6896,11 @@
 			       (and (len=2? p)
 				    (case (car p)
 				      ((list) cadr)
-				      ((quote)
+				      ((quote #_quote)
 				       (and (len=1? (cadr p))
 					    (if (symbol? (caadr p))
 						(lambda (x)
-						  (list 'quote (caadr x)))
+						  (list #_quote (caadr x)))
 						caadr)))
 				      (else #f))))))
 	      (lambda (caller head form env)
@@ -6918,7 +6919,7 @@
 				  (iter-eqf (eqf target env)))
 			     (if (or (symbol? target)
 				     (unquoted-pair? target))
-				 (set! target (list 'quote target))) ; ; (member x (list "asdf")) -> (string=? x "asdf") -- maybe equal? here?
+				 (set! target (list #_quote target))) ; ; (member x (list "asdf")) -> (string=? x "asdf") -- maybe equal? here?
 			     (lint-format "perhaps ~A" caller (lists->string form (list (cadr iter-eqf) selector target))))
 
 			   ;; not one-item
@@ -7228,7 +7229,7 @@
 			(let ((else-val (catch #t
 					  (lambda ()
 					    (case (car arg2)
-					      ((quote) ((symbol->value head) (cadr arg2)))
+					      ((quote #_quote) ((symbol->value head) (cadr arg2)))
 					      ((cons) (caddr arg2))
 					      ((error throw) arg2)
 					      (else (cons 'list (cddr arg2)))))
@@ -7752,7 +7753,7 @@
 			      (if (= (length arg) 3)
 				  (lint-format "perhaps ~A" caller (lists->string form `(+ (length ,(car arg-args)) (length ,(cadr arg-args)))))))
 
-			     ((quote)                         ; (length '(1 2 3)) -> 3
+			     ((quote #_quote)                 ; (length '(1 2 3)) -> 3
 			      (if (list? (car arg-args))
 				  (lint-format "perhaps ~A" caller (lists->string form (length (car arg-args)))))))))))
 
@@ -9275,7 +9276,7 @@
 						     ((list)             ; (apply f (list a b)) -> (f a b)
 						      (lint-format "perhaps ~A" caller (lists->string form (cons f cdr-args))))
 
-						     ((quote)            ; (apply eq? '(a b)) -> (eq? 'a 'b)
+						     ((quote #_quote)    ; (apply eq? '(a b)) -> (eq? 'a 'b)
 						      (and (pair? cdr-args)
 							   (pair? (car cdr-args))
 							   (lint-format "perhaps ~A" caller
@@ -9793,7 +9794,7 @@
 			     (len=2? (cadr form)))  ; (list (f a) (f b) (f c)) -> (map f (list a b c))
 			(let ((f (caadr form)))     ;    map orders this process whereas list is unordered?
 			  ;; not any-macro? f?? or no side-effect? in the args?
-			  (if (and (not (memq f '(quote values)))
+			  (if (and (not (memq f '(quote #_quote values)))
 				   (lint-every? (lambda (p)
 						  (and (len=2? p)
 						       (eq? f (car p))))
@@ -10080,7 +10081,7 @@
 						  (case (car p)
 						    ((vector string)
 						     (null? (cdr p)))
-						    ((quote)
+						    ((quote #_quote)
 						     (and (pair? (cdr p))
 							  (eqv? (length (cadr p)) 0)))
 						    (else #f)))))
@@ -10094,7 +10095,7 @@
 						       (eqv? (length p) 1))
 						  (and (len>1? p)
 						       (case (car p)
-							 ((quote)
+							 ((quote #_quote)
 							  (len=1? (cadr p)))
 							 ((list vector string)
 							  (null? (cddr p)))
@@ -10109,8 +10110,8 @@
 									   (if (len>1? a)
 									       (case (car a)
 										 ((list cons vector string)
-										  (cadr a))      ; slightly inaccurate
-										 ((quote)        ; might be '#(0) or '(0) etc
+										  (cadr a))       ; slightly inaccurate
+										 ((quote #_quote) ; might be '#(0) or '(0) etc
 										  (if (sequence? (cadr a))
 										      ((cadr a) 0)
 										      (list a 0)))
@@ -10140,7 +10141,7 @@
 			      (catch #t
 				(lambda ()          ; (map symbol->string '(a b c d)) -> '("a" "b" "c" "d")
 				  (let ((val (eval form)))
-				    (lint-format "perhaps ~A" caller (lists->string form (list 'quote val)))))
+				    (lint-format "perhaps ~A" caller (lists->string form (list #_quote val)))))
 				(lambda args #f))))
 
 			(when (and (pair? func)
@@ -10594,7 +10595,7 @@
 		     (if (not (symbol? arg))           ;  (eval 32)
 			 (lint-format "this eval is pointless; perhaps ~A" caller (lists->string form arg)))
 		     (case (car arg)
-		       ((quote)                        ;  (eval 'x)
+		       ((quote #_quote)                ;  (eval 'x)
 			(if (pair? (cdr arg))
 			    (lint-format "perhaps ~A" caller (lists->string form (cadr arg)))))
 
@@ -11371,7 +11372,7 @@
 					       (not (lint-any? (lambda (a) (eq? sym a)) (args->proper-list (cdadr tree)))))
 					  (fwalk sym (cddr tree))))
 
-				     ((quote) #f)
+				     ((quote #_quote) #f)
 
 				     ((case)
 				      (if (len>1? (cdr tree))
@@ -11474,7 +11475,7 @@
 				      (report-arg-trouble caller form head arg-number checker arg op env)))))
 
 			    (case (car arg)
-			      ((quote)   ; '1 -> 1
+			      ((quote #_quote)   ; '1 -> 1
 			       (when (pair? (cdr arg))
 				 (let ((op (if (pair? (cadr arg)) 'list?
 					       (if (symbol? (cadr arg))
@@ -11837,6 +11838,7 @@
 				     (if (tree-member local (cdr form)) ; not tree-memq!
 					 (set! bad-quoted-locals (cons local bad-quoted-locals))))
 				   (let-ref fdata 'macro-locals)))
+				;(format *stderr* "~S ~S~%" bad-locals bad-quoted-locals)
 				(let ((bad-ops ()))
 				  (for-each
 				   (lambda (op)
@@ -11848,7 +11850,7 @@
 					   (set! bad-ops (cons op bad-ops)))))
 				   (let-ref fdata 'macro-ops))
 
-				  (if (equal? bad-quoted-locals '(quote)) (set! bad-quoted-locals ()))
+				  (if (equal? bad-quoted-locals '(quote #_quote)) (set! bad-quoted-locals ()))
 				  (when (or (pair? bad-locals)
 					    (pair? bad-quoted-locals)
 					    ;; (define-macro (mac8 b) `(let ((a 12)) (+ (symbol->value ,b) a)))
@@ -15081,7 +15083,7 @@
 				    (pair? (cdr body))
 				    (not (symbol? (cadr body)))
 				    (not (unquoted-pair? (cadr body))))
-			       (not (or (memq (car body) '(quote quasiquote list cons append))
+			       (not (or (memq (car body) '(quote #_quote quasiquote list cons append))
 					(tree-set-memq '(list-values apply-values append) body)))))
 		      (lint-format "perhaps ~A or ~A" caller
 				   (lists->string form (list 'define outer-name (unquoted body)))
@@ -15133,7 +15135,7 @@
 					   (lint-format "missing comma? ~A" caller form)))
 				     args)))
 
-			((quote)
+			((quote #_quote)
 			 ;; extra comma (unquote) is already caught elsewhere
 			 (if (and (pair? args)
 				  (pair? (car args))
@@ -15195,7 +15197,7 @@
 						 (if (eq? (car tree) par)
 						     (return tree)
 						     (case (car tree)
-						       ((quote) #f)
+						       ((quote #_quote) #f)
 						       ((let let*)
 							(if (len>1? (cdr tree))
 							    (if (symbol? (cadr tree))
@@ -15850,7 +15852,8 @@
 					 (truncated-list->string form)
 					 (if (= quote-warnings 20) "; will ignore this error henceforth." ""))))))))
 	   env)
-	 (hash-walker 'quote quote-walker))
+	 (hash-walker 'quote quote-walker)
+	 (hash-walker #_quote quote-walker))
 
 
 	;; ---------------- if ----------------
@@ -15911,7 +15914,7 @@
 	      (when (and (pair? true)
 			 (pair? false)
 			 (pair? true-rest)
-			 (not (memq true-op '(quote list-values not)))
+			 (not (memq true-op '(quote #_quote list-values not)))
 			 (not (any-macro? true-op env))
 			 (or (not (hash-table-ref syntaces true-op))
 			     (memq true-op '(let let* set! and or begin))))
@@ -18431,8 +18434,8 @@
 						  (cond ((and (boolean? (cadar clauses))
 							      (boolean? (cadadr clauses)))
 							 (if (cadadr clauses)
-							     (list 'not (list op selector (if quoted (list 'quote keylist) keylist)))
-							     (list op selector (if quoted (list 'quote keylist) keylist))))
+							     (list 'not (list op selector (if quoted (list #_quote keylist) keylist)))
+							     (list op selector (if quoted (list #_quote keylist) keylist))))
 
 							((not (cadadr clauses)) ; (else #f) happens a few times
 							 (simplify-boolean
@@ -18719,7 +18722,7 @@
 		      ((and (null? (cdar c))                 ; ((a) (f a))
 			    (len=2? (cadr c))
 			    (eqv? (caar c) (cadadr c))
-			    (not (memq (caadr c) '(quote values))))
+			    (not (memq (caadr c) '(quote #_quote values))))
 		       (cond ((assq (caadr c) svs)
 			      => (lambda (func-data)
 				   (set-cdr! func-data (cons (caar c) (cdr func-data)))))
@@ -19145,7 +19148,7 @@
 		     (unless (or (not (pair? code))
 				 (and (null? (cdr code)) (symbol? (car code))) ; symbol in arg list etc, (do vars end (func eqv?))
 				 (memq (car code) binders)
-				 (memq (car code) '(quote case))
+				 (memq (car code) '(quote #_quote case))
 				 (hash-table-ref makers (car code)))
 		       (when (hash-table-ref no-side-effect-functions (car code))
 			 (if (memq (car code) '(* + - /))
@@ -20683,12 +20686,12 @@
 			   (lint-format "perhaps ~A" caller
 					(lists->string form
 						       (let ((fe (let ((a1 (if (just-code-constants? arg1)
-									       (list 'quote (map unquoted (reverse arg1)))
+									       (list #_quote (map unquoted (reverse arg1)))
 									       (cons 'list (reverse arg1))))
 								       (a2 (if (not (pair? arg2))
 									       ()
 									       (if (just-code-constants? arg2)
-										   (list 'quote (map unquoted (reverse arg2)))
+										   (list #_quote (map unquoted (reverse arg2)))
 										   (cons 'list (reverse arg2))))))
 								   (if (pair? arg2)
 								       `(for-each ,value ,a1 ,a2)
@@ -22364,7 +22367,7 @@
 	(denote (reduce-walker tree vars)
 	  (cond ((pair? tree)
 		 (case (car tree)
-		   ((quote)
+		   ((quote #_quote)
 		    tree)
 
 		   ((let let*)
@@ -22788,7 +22791,7 @@
 							 (if (or (and (symbol? res)
 								      (not (eq? res :checked-eval-error)))
 								 (pair? res))
-							     (list 'quote res)
+							     (list #_quote res)
 							     res)))))))
 			    (unless (eq? else-clause :checked-eval-error)
 			      (set! last-rewritten-internal-define form)
@@ -22812,7 +22815,7 @@
 				 (null? (cdr p))
 				 (and (pair? (car p))
 				      (symbol? (caar p))
-				      (not (memq (caar p) '(lambda quote call/cc list vector match-lambda values)))
+				      (not (memq (caar p) '(lambda quote #_quote call/cc list vector match-lambda values)))
 				      (> (tree-leaves (car p)) (- leaves (* branches 2)))
 				      (or (not (memq head '(or and)))
 					  (= i 1))
