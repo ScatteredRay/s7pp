@@ -2733,7 +2733,7 @@ static void init_types(void)
 #define is_null(p)                     ((T_Pos(p)) == sc->nil)  /* can be a slot */
 #define is_not_null(p)                 ((T_Pos(p)) != sc->nil)
 #define is_list(p)                     ((is_pair(p)) || (type(p) == T_NIL))
-#define is_quote(p)                    ((p == sc->quote_symbol) || ((p) == initial_value(sc->quote_symbol)))
+#define is_quote(p)                    (((p) == sc->quote_symbol) || ((p) == initial_value(sc->quote_symbol)))
 #define is_safe_quote(p)               ((((p) == sc->quote_symbol) && (is_global(sc->quote_symbol))) || ((p) == initial_value(sc->quote_symbol)))
 #define is_quoted_pair(p)              ((is_pair(p)) && (is_quote(car(p))))
 #define is_safe_quoted_pair(p)         ((is_pair(p)) && (is_safe_quote(car(p))))
@@ -37097,7 +37097,7 @@ static inline s7_int tree_len_1(s7_scheme *sc, s7_pointer p)
     {
       s7_pointer cp = car(p);
       if ((!is_pair(cp)) ||
-	  (is_quote(car(p))))
+	  (is_quote(car(cp))))
 	sum++;
       else
 	{
@@ -96919,6 +96919,7 @@ int main(int argc, char **argv)
  *   apply-values as initial-value, also #_[list*] and #_[apply_values] in code -- if special c_func=init use #_ or is it safe to name it that? 
  *   lots of is_global(sc->quote_symbol)
  *   timings are bad [v86-diffs] and t725 is either slow or hung -- tree_len_1
- *   s7test qq helper funcs? (and better names)
+ *   s7test qq helper funcs? (and better, or no, names)
+ *   macro example of ' capture
  */
 
