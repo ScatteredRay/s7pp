@@ -199,8 +199,7 @@
 #endif
 
 #ifndef WITH_IMMUTABLE_UNQUOTE
-  #define WITH_IMMUTABLE_UNQUOTE 0
-  /* this removes the name "unquote" */
+  #define WITH_IMMUTABLE_UNQUOTE 0  /* this removes the name "unquote" */
 #endif
 
 #ifndef WITH_C_LOADER
@@ -59715,7 +59714,7 @@ static bool opt_float_not_pair(s7_scheme *sc, s7_pointer car_x)
 /* -------- d -------- */
 static s7_double opt_d_f(opt_info *o) {return(o->v[1].d_f());}
 
-static bool d_ok(s7_scheme *unused_sc, opt_info *opc, s7_pointer s_func)  /* (f): (mus-srate) */
+static bool d_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func)  /* (f): (mus-srate), ignored damned ccpcheck! */
 {
   s7_d_t func = s7_d_function(s_func);
   if (!func)
@@ -62070,6 +62069,9 @@ static s7_pointer opt_arg_type(s7_scheme *sc, s7_pointer argp)
 	      if (is_pair(sig))
 		return(car(sig));
 	    }}
+      else
+	if ((car(arg) == initial_value(sc->quote_symbol)) && (is_pair(cdr(arg))))
+	  return(s7_type_of(sc, cadr(arg)));
       return(sc->T);
     }
   if (is_symbol(arg))
@@ -64660,6 +64662,14 @@ static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_sy
 	  opc->v[1].p = settee;
 	  if (slot_has_setter(settee))
 	    {
+#if 0
+	      fprintf(stderr, "%d: %s, %d %d %d %s %s\n", __LINE__, display(car_x),
+		      is_c_function(slot_setter(settee)),
+		      is_bool_function(slot_setter(settee)),
+		      stype == opt_arg_type(sc, cddr(car_x)),
+		      display(stype), display(opt_arg_type(sc, cddr(car_x))));
+	      /* TODO: tset integer? vs float? -- assumes (/ i) is rational? from opt_arg_type but no rational-optimize */
+#endif
 	      if ((is_c_function(slot_setter(settee))) &&
 		  (is_bool_function(slot_setter(settee))) &&
 		  (stype == opt_arg_type(sc, cddr(car_x))) &&
@@ -67063,8 +67073,13 @@ static bool cell_optimize_1(s7_scheme *sc, s7_pointer expr)
   else
     if (is_c_function(head))
       s_func = head;
-    else return_false(sc, car_x);
-
+    else
+      {
+	if ((head == initial_value(sc->quote_symbol)) &&
+	    ((is_pair(cdr(car_x))) && (is_null(cddr(car_x)))))
+	  return(opt_cell_quote(sc, car_x));
+	return_false(sc, car_x);
+      }
   if (is_c_function(s_func))
     {
       opt_info *opc = alloc_opt_info(sc);
@@ -68118,6 +68133,7 @@ static s7_pointer g_map_closure(s7_scheme *sc, s7_pointer f, s7_pointer seq) /* 
 		set_ulist_1(sc, sc->begin_symbol, body);
 		func = s7_cell_optimize(sc, set_clist_1(sc, sc->u1_1), false); /* list_1 8-Apr-21 */
 	      }}
+      /* fprintf(stderr, "%d: func %p\n", __LINE__, func); */
       if (func)
 	{
 	  s7_pointer z, res = NULL;
@@ -69073,7 +69089,7 @@ static s7_pointer g_simple_list_values(s7_scheme *sc, s7_pointer args)
 static s7_pointer list_values_chooser(s7_scheme *sc, s7_pointer f, int32_t unused_args, s7_pointer expr, bool unused_ops)
 {
   for (s7_pointer p = cdr(expr); is_pair(p); p = cdr(p))
-    if (is_quoted_pair(car(p)))
+    if (is_unquoted_pair(car(p)))
       return(f);
   return(sc->simple_list_values);
 }
@@ -70688,6 +70704,7 @@ static opt_t optimize_func_two_args(s7_scheme *sc, s7_pointer expr, s7_pointer f
 				    int32_t pairs, int32_t symbols, int32_t quotes, int32_t bad_pairs, s7_pointer e)
 {
   s7_pointer arg1 = cadr(expr), arg2 = caddr(expr);
+  /* fprintf(stderr, "%d: %s quotes: %d pairs: %d symbols: %d bad_pairs: %d\n", __LINE__, display(expr), quotes, pairs, symbols, bad_pairs); */
   if (quotes > 0)
     {
       if (direct_memq(sc->quote_symbol, e))
@@ -70713,6 +70730,7 @@ static opt_t optimize_func_two_args(s7_scheme *sc, s7_pointer expr, s7_pointer f
       return(OPT_F);
     }
   /* end of bad symbol wrappers */
+  /* fprintf(stderr, "%d: hop: %d\n", __LINE__, hop); */
 
   if (is_c_function(func) && (c_function_is_aritable(func, 2)))
     {
@@ -71134,6 +71152,7 @@ static opt_t optimize_func_two_args(s7_scheme *sc, s7_pointer expr, s7_pointer f
 	      (is_pair(arg1)) &&
 	      (car(arg1) == sc->lambda_symbol))
 	    {
+	      /* fprintf(stderr, "%d: %s arg2: %s\n", __LINE__, display(expr), display(arg2)); */
 	      fx_annotate_arg(sc, cddr(expr), e);
 	      set_unsafe_optimize_op(expr, hop + OP_CL_FA);
 	      check_lambda(sc, arg1, true);        /* this changes symbol_list */
@@ -71145,6 +71164,7 @@ static opt_t optimize_func_two_args(s7_scheme *sc, s7_pointer expr, s7_pointer f
 
 	      /* two seq args can't happen here (func_2_args = map + lambda + seq, arg1 is the lambda form, arg2 is fxable (see above) */
 	      choose_c_function(sc, expr, func, 2);
+	      /* fprintf(stderr, "%d: arg1: %s\n", __LINE__, display(arg1)); */
 	      if (((fn_proc(expr) == g_for_each) || (fn_proc(expr) == g_map)) &&
 		  ((is_proper_list_1(sc, cadr(arg1))) &&    /* one parameter */
 		   (!is_possibly_constant(caadr(arg1)))))    /* parameter name not trouble */
@@ -71152,6 +71172,7 @@ static opt_t optimize_func_two_args(s7_scheme *sc, s7_pointer expr, s7_pointer f
 		  /* built-in permanent closure here was not much faster */
 		  set_fn(expr, (fn_proc(expr) == g_for_each) ? g_for_each_closure : NULL);
 		  set_opt3_pair(expr, cdr(arg1));
+		  /* fprintf(stderr, "%d: -> op_map_for_each_fa\n", __LINE__); */
 		  set_unsafe_optimize_op(expr, OP_MAP_FOR_EACH_FA);
 		}
 	      return(OPT_F);
@@ -71474,6 +71495,7 @@ static opt_t optimize_safe_c_func_three_args(s7_scheme *sc, s7_pointer expr, s7_
 	if ((is_normal_symbol(arg1)) && (pairs == 2))
 	  set_optimize_op(expr, hop + OP_SAFE_C_SAA);
 
+      /* fprintf(stderr, "%d: %s\n", __LINE__, display(expr)); */
       choose_c_function(sc, expr, func, 3);
       return(OPT_T);
     }
@@ -73148,7 +73170,8 @@ static body_t form_is_safe(s7_scheme *sc, s7_pointer func, s7_pointer x, bool at
 	   * (let () (define (hi1 a) (define (ho1 b) b) (define (hi1 b) (+ b 1)) (hi1 a)) (hi1 1))
 	   */
 	  return(UNSAFE_BODY);
-	}}
+	}
+    }
   else /* car(x) is not syntactic */
     {
       if (expr == func) /* try to catch tail call, expr is car(x) */
@@ -73179,6 +73202,7 @@ static body_t form_is_safe(s7_scheme *sc, s7_pointer func, s7_pointer x, bool at
 	    }
 	  if ((at_end) && (!sc->not_tc) && (is_null(p))) /* tail call, so safe */
 	    {
+	      /* fprintf(stderr, "%d: %s got tc\n", __LINE__, display(x)); */
 	      sc->got_tc = true;
 	      set_rec_tc_args(sc, proper_list_length(cdr(x)));
 	      return(result);
@@ -73274,7 +73298,12 @@ static body_t form_is_safe(s7_scheme *sc, s7_pointer func, s7_pointer x, bool at
 	      if (is_null(cdr(x))) return(result);
 	      if ((is_pair(cdr(x))) && (is_null(cddr(x))))
 		return((is_pair(cadr(x))) ? min_body(result, form_is_safe(sc, func, cadr(x), false)) : result);
-	    }}
+	    }
+	}
+      else
+	if (expr == initial_value(sc->quote_symbol))
+	  return(((!is_pair(cdr(x))) || (!is_null(cddr(x)))) ? UNSAFE_BODY : VERY_SAFE_BODY);  /* (#_quote . 1) or (#_quote 1 2) etc */
+
       return(UNSAFE_BODY); /* not recur_body here if at_end -- possible defines in body etc */
     }
   return(result);
@@ -73981,6 +74010,7 @@ static bool check_tc_cond(s7_scheme *sc, s7_pointer name, int32_t vars, s7_point
 static bool check_tc_let(s7_scheme *sc, const s7_pointer name, int32_t vars, s7_pointer args, s7_pointer body)
 {
   s7_pointer let_body = caddr(body); /* body: (let ((x (- y 1))) (if (<= x 0) 0 (f1 (- x 1)))) etc */
+  /* fprintf(stderr, "%d: %s\n", __LINE__, display(body)); */
   if (((vars == 2) && ((car(let_body) == sc->if_symbol) || (car(let_body) == sc->when_symbol) || (car(let_body) == sc->unless_symbol))) ||
       ((vars == 1) && (car(let_body) == sc->if_symbol)))
     {
@@ -74051,8 +74081,10 @@ static bool check_tc_let(s7_scheme *sc, const s7_pointer name, int32_t vars, s7_
 
 		  if ((!is_pair(cdr(p))) &&
 		      (car(clause) != sc->else_symbol) && (car(clause) != sc->T))
+		    {
+		      /* fprintf(stderr, "%d: false\n", __LINE__); */
 		    return(false);
-
+		    }
 		  result = cadr(clause);
 		  if ((is_pair(result)) &&
 		      (car(result) == name))    /* result is recursive call */
@@ -74062,11 +74094,19 @@ static bool check_tc_let(s7_scheme *sc, const s7_pointer name, int32_t vars, s7_
 			if (!is_fxable(sc, car(arg)))
 			  return(false);
 		      if (i != vars)
+			{
+			  /* fprintf(stderr, "%d: false\n", __LINE__); */
 			return(false);
+			}
 		    }}
-	      else return(false);
+	      else 
+		{
+		  /* fprintf(stderr, "%d: false\n", __LINE__); */
+		  return(false);
+		}
 	    }
 	  /* cond form looks ok */
+	  /* fprintf(stderr, "%d: ok: %s\n", __LINE__, display(body)); */
 	  set_optimize_op(body, OP_TC_LET_COND);
 	  set_opt3_arglen(cdr(body), vars);
 	  fx_annotate_arg(sc, cdaadr(body), args);   /* let var */
@@ -74429,6 +74469,17 @@ static bool check_tc(s7_scheme *sc, s7_pointer name, int32_t vars, s7_pointer ar
 		    }}}}}
 
   /* let */
+  /* fprintf(stderr, "%s %d", display(body), is_proper_list_3(sc, body)); */
+#if 0
+  if (is_proper_list_3(sc, body))
+    {
+      fprintf(stderr, " %d %d", (car(body) == sc->let_symbol), (is_proper_list_1(sc, cadr(body))));
+      if ((car(body) == sc->let_symbol) &&
+	  (is_proper_list_1(sc, cadr(body))))
+	{
+	  fprintf(stderr, " %d %d\n", (is_fxable(sc, cadr(caadr(body)))), (is_pair(caddr(body))));
+	  }}
+#endif
   if ((is_proper_list_3(sc, body)) &&
       (car(body) == sc->let_symbol) &&
       (is_proper_list_1(sc, cadr(body))) &&
@@ -74531,7 +74582,10 @@ static void optimize_lambda(s7_scheme *sc, bool unstarred_lambda, s7_pointer fun
       else lst = sc->nil;
 
       if (optimize(sc, body, 1, cleared_args = collect_parameters(sc, args, lst)) == OPT_OOPS)
+	{
+	  /* fprintf(stderr, "%d: %s no opt\n", __LINE__, display(body)); */
 	clear_all_optimizations(sc, body);
+	}
       else
 	if (result >= RECUR_BODY)
 	  {
@@ -74556,6 +74610,7 @@ static void optimize_lambda(s7_scheme *sc, bool unstarred_lambda, s7_pointer fun
 		  {
 		    if (check_tc(sc, func, nvars, args, car(body)))
 		      set_safe_closure_body(body);	      /* (very_)safe_closure set above if > RECUR_BODY */
+		    /* else fprintf(stderr, "%d: check_tc for %s bad\n", __LINE__, display(body)); */
 		    /* if not check_tc, car(body) is either not a tc op or it is not optimized so that is_fxable will return false */
 		  }
 		if ((sc->got_rec) &&
@@ -80380,6 +80435,13 @@ static bool do_is_safe(s7_scheme *sc, s7_pointer body, s7_pointer stepper, s7_po
 		}} /* is_syntax(x=car(expr)) */
 	  else
 	    {
+	      if (x == initial_value(sc->quote_symbol))
+		{
+		  if ((!is_pair(cdr(expr))) || (!is_null(cddr(expr))))  /* (#_quote . 1) or (#_quote 1 2) etc */
+		    return(false);
+		}
+	      else
+		{
 	      /* if a macro, we'll eventually expand it (if *_optimize), but that requires a symbol lookup here and macroexpand */
 	      if ((!is_optimized(expr)) ||
 		  (optimize_op(expr) == OP_UNKNOWN_NP) ||
@@ -80416,7 +80478,7 @@ static bool do_is_safe(s7_scheme *sc, s7_pointer body, s7_pointer stepper, s7_po
 			return(false);
 		      if (!safe_stepper_expr(expr, stepper))
 			return(false);
-		    }}}}}
+		    }}}}}}
   return(true);
 }
 
@@ -88095,6 +88157,7 @@ static inline void op_map_for_each_fa(s7_scheme *sc)
     sc->value = (fn_proc_unchecked(code)) ? sc->unspecified : sc->nil;
   else
     {
+      /* fprintf(stderr, "%d -> %s\n", __LINE__, (fn_proc_unchecked(code)) ? "for-each" : "map"); */
       sc->code = opt3_pair(code); /* cdadr(code); */
       f = make_closure_gc_checked(sc, car(sc->code), cdr(sc->code), T_CLOSURE, 1); /* arity=1 checked in optimizer */
       sc->value = (fn_proc_unchecked(code)) ? g_for_each_closure(sc, f, sc->value) : g_map_closure(sc, f, sc->value);
@@ -96856,11 +96919,11 @@ int main(int argc, char **argv)
  * ---------------------------------------------------
  * tpeak      115    114    108    105    102    102
  * tref       691    687    463    459    464    464   512 [#_q: i_to_p, opt_do_very_simple]
- * index     1026   1016    973    967    966    966  1003 [envs]
+ * index     1026   1016    973    967    966    966   974?
  * tmock     1177   1165   1057   1019   1027   1027
- * tvect     2519   2464   1772   1669   1647   1647  1720 [opts]
+ * tvect     2519   2464   1772   1669   1647   1647
  * timp      2637   2575   1930   1694   1709   1715
- * texit     ----   ----   1778   1741   1765   1765  1794 [g_simple_list_values]
+ * texit     ----   ----   1778   1741   1765   1765  1778?
  * s7test    1873   1831   1818   1829   1846   1846
  * thook     ----   ----   2590   2030   2048   2054
  * tauto     ----   ----   2562   2048   2046   2058
@@ -96869,37 +96932,37 @@ int main(int argc, char **argv)
  * tcopy     8035   5546   2539   2375   2381   2386
  * tread     2440   2421   2419   2408   2403   2403
  * fbench    2688   2583   2460   2430   2458   2462
- * trclo     2735   2574   2454   2445   2461   2462  2623 [op_tc_let_cond]
+ * trclo     2735   2574   2454   2445   2461   2462
  * titer     2865   2842   2641   2509   2465   2465
  * tload     ----   ----   3046   2404   2502   2502
  * tmat      3065   3042   2524   2578   2586   2586
- * tb        2735   2681   2612   2604   2633   2633 [dynamic -> unknown datum #_quote, peval gets wrong results]
+ * tb        2735   2681   2612   2604   2633   2633
  * tsort     3105   3104   2856   2804   2828   2832
  * tobj      4016   3970   3828   3577   3511   3514  3556
  * teq       4068   4045   3536   3486   3568   3570
  * tio       3816   3752   3683   3620   3607   3607
- * tmac      3950   3873   3033   3677   3685   3685  4143 #_quote, now 3731 [maybe switch order in quoted_pair et al?][g_simple_list_values]
+ * tmac      3950   3873   3033   3677   3685   3685  3702 [maybe switch order in quoted_pair et al?]
  * tclo      4787   4735   4390   4384   4445   4454
  * tcase     4960   4793   4439   4430   4436   4437
  * tlet      7775   5640   4450   4427   4452   4457
  * tfft      7820   7729   4755   4476   4512   4512
  * tstar     6139   5923   5519   4449   4560   4567
- * tmap      8869   8774   4489   4541   4618   4618  7876 [map_closure]
+ * tmap      8869   8774   4489   4541   4618   4618
  * tshoot    5525   5447   5183   5055   5047   5045
- * tform     5357   5348   5307   5316   5161   5161  5188
+ * tform     5357   5348   5307   5316   5161   5161  5171
  * tstr      6880   6342   5488   5162   5206   5210
  * tnum      6348   6013   5433   5396   5403   5403
- * tlamb     6423   6273   5720   5560   5620   5620  5635 [g_simple_list_values]
+ * tlamb     6423   6273   5720   5560   5620   5620  
  * tmisc     8869   7612   6435   6076   6220   6239  6358 [opt_p_ppp_sff op_set_opsaq_a]
  * tgsl      8485   7802   6373   6282   6233   6233
- * tlist     7896   7546   6558   6240   6284   6284  6411 [tree_count
- * tset      ----   ----   ----   6260   6308   6380  6656
+ * tlist     7896   7546   6558   6240   6284   6284  6411 [tree_count]
+ * tset      ----   ----   ----   6260   6308   6380
  * tari      13.0   12.7   6827   6543   6490   6490
  * trec      6936   6922   6521   6588   6581   6581
- * tleft     10.4   10.2   7657   7479   7610   7610  7961
+ * tleft     10.4   10.2   7657   7479   7610   7610
  * tgc       11.9   11.1   8177   7857   7965   7965
  * thash     11.8   11.7   9734   9479   9536   9536
- * cb        11.2   11.0   9658   9564   9611   9604  9699 [fx_cond_na_na]
+ * cb        11.2   11.0   9658   9564   9611   9604
  * tgen      11.2   11.4   12.0   12.1   12.1   12.2  12.3 [copy_tree]
  * tall      15.6   15.6   15.6   15.6   15.1   15.1
  * calls     36.7   37.5   37.0   37.5   37.2   37.2  37.3 [tree_count]
@@ -96917,9 +96980,15 @@ int main(int argc, char **argv)
  * set! constant msg squelched if values eq? (or symbols eq? if it's faster) (see t718) -- see op_set1 for first case
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   apply-values as initial-value, also #_[list*] and #_[apply_values] in code -- if special c_func=init use #_ or is it safe to name it that? 
+ *      (eq? [list*] #_[list*]) -> #t so maybe use the #_ form
+ *      (let (([list*] 3)) [list*]) -> 3, but (let ((#_[list*] 3)) [list*]) -> error: variable name #_[list*] in let is a function, not a symbol
+ *      hash-walker for [list*]?
  *   lots of is_global(sc->quote_symbol)
- *   timings are bad [v86-diffs] and t725 is either slow or hung -- tree_len_1
- *   s7test qq helper funcs? (and better, or no, names)
+ *   timings are bad [v86-diffs]
+ *   s7test qq helper func? (and better, or no, names) --  qq_append [list*] g_list_values
  *   macro example of ' capture
+ * add t658 to s7test
+ * save initial_value(sc->quote_symbol)
+ * is_symbol_and_syntactic leaves out #_quote, do_is_safe indent, op_quote->#_ checked
+ * unquote in s7test on immutable-unquote feature
  */
-
