@@ -1185,15 +1185,7 @@ either.  In Scheme the reader turns ,x into (unquote x), so:
 <em class="gray">7</em>
 </pre>
 <p>comma becomes a sort of symbol macro! I think I'll remove unquote; ,x and ,@x will still work
-as expected, but there will not be any "unquote" or "unquote-splicing" in the resultant source code.  Just to make life difficult:
-</p>
-<pre>
-&gt; (let (' 1) quote)
-<em class="gray">1</em>
-</pre>
-<p>but that translation is so ingrained in lisp
-that I'm reluctant to change it.  The two unquote names, on the
-other hand, seem unnecessary.
+as expected, but there will not be any "unquote" or "unquote-splicing" in the resultant source code.
 </p>
 </div>
 </blockquote>
@@ -6334,11 +6326,13 @@ the name 'quote', so it is annoying that its result can be altered by redefining
 of the difference (I'm using guile because it is available on this machine):
 </p>
 <pre class="indented">
+(let (' 1) quote)                  ; guile 1, s7 error (#_quote is not a symbol)
 (let ((quote 32)) (length '(1 2))) ; guile error Wrong type to apply: 1, s7 2
 (let ((quote cos)) '0)             ; guile 1, s7 0
 (let ((quote -) (x 1)) 'x)         ; guile -1, s7 x
 (let ('(lambda (x) (+ x 1))) '1)   ; guile 2, s7 error (#_quote is not a symbol)
 ((lambda 'x (+ 'x 1)) cos 0)       ; guile 2, s7 error (lambda parameter #_quote is a constant)
+(define-macro (m x) `(length ',x)) (let ((quote 32)) (m (1 2 3))) ; guile "wrong type to apply: 1", s7 3
 </pre>
 <p>
 Perhaps these simple examples will clarify s7's way of handling the apostrophe.
@@ -6738,6 +6732,7 @@ is also unlikely to work.
 </div>
 
 
+<div class="indented">
 <p>Speaking of speed... It is widely believed
 that a Scheme with first class everything can't hope to compete with any
 "real" Scheme.  Humph I say.  Take this little example (which is not 
@@ -6868,7 +6863,7 @@ string: 0.8, sum1: 0.2, sum: 4.1, sumfp: 2.2, tail: 0.1, tak: 7.1,
 takl: 8.1, triangl: 16.4, wc: 4.9.  In the gmp case, chudnovsky: 0.017, pi: .01.
 </p>
 </div>
-
+</div>
 
 
 <div class="indented">
