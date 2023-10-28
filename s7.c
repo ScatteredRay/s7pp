@@ -2733,7 +2733,7 @@ static void init_types(void)
 #define is_null(p)                     ((T_Pos(p)) == sc->nil)  /* can be a slot */
 #define is_not_null(p)                 ((T_Pos(p)) != sc->nil)
 #define is_list(p)                     ((is_pair(p)) || (type(p) == T_NIL))
-#define is_quote(p)                    (((p) == sc->quote_symbol) || ((p) == sc->quote_function))
+#define is_quote(p)                    (((p) == sc->quote_symbol) || ((p) == sc->quote_function)) /* order here apparently does not matter */
 #define is_safe_quote(p)               ((((p) == sc->quote_symbol) && (is_global(sc->quote_symbol))) || ((p) == sc->quote_function))
 #define is_quoted_pair(p)              ((is_pair(p)) && (is_quote(car(p))))
 #define is_safe_quoted_pair(p)         ((is_pair(p)) && (is_safe_quote(car(p))))
@@ -3178,7 +3178,7 @@ static s7_pointer slot_expression(s7_pointer p)    \
 #define pair_set_syntax_op(p, X)       do {set_optimize_op(p, X); set_syntactic_pair(p);} while (0)
 #define symbol_syntax_op_checked(p)    ((is_syntactic_pair(p)) ? optimize_op(p) : symbol_syntax_op(car(p)))
 #define symbol_syntax_op(p)            syntax_opcode(global_value(p))
-#define is_syntax_or_qq(p)	       ((is_syntax(p)) || ((p) == initial_value(sc->quasiquote_symbol)))
+#define is_syntax_or_qq(p)	       ((is_syntax(p)) || ((p) == initial_value(sc->quasiquote_symbol))) /* qq is from s7_define_macro -> T_C_MACRO */
 
 #define INITIAL_ROOTLET_SIZE           512
 #if S7_DEBUGGING                       /* let_id(rootlet) is not -1 */
@@ -69246,13 +69246,8 @@ and splices the resultant list into the outer list. `(1 ,(+ 1 1) ,@(list 3 4)) -
   }
 }
 
-static s7_pointer g_quasiquote(s7_scheme *sc, s7_pointer args)
+static s7_pointer g_quasiquote(s7_scheme *sc, s7_pointer args) /* this is for explicit quasiquote support, not the backquote stuff in macros */
 {
-  /* this is for explicit quasiquote support, not the backquote stuff in macros
-   *   but it is problematic.  g_quasiquote_1 above expands (for example) `(+ ,x) into (list (quote +) x),
-   *   so (multiple-value-bind (quote) quasiquote `(+ ,x)) expands to ((lambda (quote) (list '+ x)) quasiquote)
-   *   which is an infinite loop.  Guile says syntax error (because it thinks "quote" can't be a parameter name, I think).
-   */
   return(g_quasiquote_1(sc, car(args), true));
 }
 
@@ -75358,8 +75353,9 @@ static s7_pointer check_let(s7_scheme *sc) /* called only from op_let */
 			 set_elist_2(sc, wrap_string(sc, "variable name #_~S in let is a function, not a symbol", 53), y));
 	    }
 	  error_nr(sc, sc->syntax_error_symbol,
-		   set_elist_3(sc, wrap_string(sc, "bad variable name ~S in let (it is not a symbol) in ~A", 54),
-			       carx, object_to_truncated_string(sc, form, 80)));
+		   set_elist_4(sc, wrap_string(sc, "bad variable name ~W in let (it is ~A, not a symbol) in ~A", 58),
+			       y, object_type_name(sc, y),
+			       object_to_truncated_string(sc, form, 80)));
 	}
       if (is_constant_symbol(sc, y))
 	error_nr(sc, sc->wrong_type_arg_symbol, set_elist_3(sc, cant_bind_immutable_string, sc->let_symbol, x));
@@ -75712,6 +75708,7 @@ static void op_let_one_new(s7_scheme *sc)
 static void op_let_one_p_new(s7_scheme *sc)
 {
   sc->code = cdr(sc->code);
+  check_stack_size(sc); /* hit in (lint "s7test.scm") */
   push_stack_no_args(sc, OP_LET_ONE_P_NEW_1, cdr(sc->code));
   sc->code = T_Pair(opt2_pair(sc->code));
 }
@@ -75977,8 +75974,9 @@ static bool check_let_star(s7_scheme *sc)
       var = car(var_and_val);
       if (!(is_symbol(var)))                        /* (let* ((3 1)) 1) */
 	error_nr(sc, sc->syntax_error_symbol,
-		 set_elist_3(sc, wrap_string(sc, "bad variable, ~S, in let* (it is not a symbol): ~A", 50),
-			     var, object_to_truncated_string(sc, form, 80)));
+		 set_elist_4(sc, wrap_string(sc, "bad variable name ~W in let* (it is ~A, not a symbol) in ~A", 59),
+			     var, object_type_name(sc, var),
+			     object_to_truncated_string(sc, form, 80)));
 
       if (is_constant_symbol(sc, var))              /* (let* ((pi 3)) ...) */
 	error_nr(sc, sc->wrong_type_arg_symbol, set_elist_3(sc, cant_bind_immutable_string, sc->let_star_symbol, var_and_val));
@@ -76254,12 +76252,15 @@ static void check_letrec(s7_scheme *sc, bool letrec)
       carx = car(x);
       if (!is_pair(carx))                     /* (letrec (1 2) #t) */
 	syntax_error_with_caller_nr(sc, "~A: bad variable ~S (should be a pair (name value))", 51, caller, carx);
-      if (!(is_symbol(car(carx))))
-	syntax_error_with_caller_nr(sc, "~A: bad variable ~S (it is not a symbol)", 40, caller, car(carx));
 
       y = car(carx);
+      if (!(is_symbol(y)))
+	error_nr(sc, sc->syntax_error_symbol,
+		 set_elist_5(sc, wrap_string(sc, "bad variable name ~W in ~A (it is ~A, not a symbol) in ~A", 57),
+			     y, caller, object_type_name(sc, y),
+			     object_to_truncated_string(sc, sc->code, 80)));
       if (is_constant_symbol(sc, y))
-	error_nr(sc, sc->wrong_type_arg_symbol, set_elist_3(sc, cant_bind_immutable_string, sc->letrec_symbol, x));
+	error_nr(sc, sc->wrong_type_arg_symbol, set_elist_3(sc, cant_bind_immutable_string, caller, x));
 
       if (!is_pair(cdr(carx)))                /* (letrec ((x . 1))...) */
 	{
@@ -88823,11 +88824,16 @@ static bool eval_car_pair(s7_scheme *sc)
 	  set_no_int_opt(code);
 	}
       /* ((if op1 op2) args...) is another somewhat common case */
-      if ((is_quote(car(carc))) &&                  /* ('and #f) */
+#if 0
+      /* this is too unlikely given #_quote -- handle it elsewhere */
+      if ((car(carc) == sc->quote_symbol) &&        /* ((quote and) #f) -- not is_quote because we checked for symbol above -- we're missing the #_quote case here */
 	  ((!is_pair(cdr(carc))) ||                 /* ((quote . #\h) (2 . #\i)) ! */
-	   (is_symbol_and_syntactic(cadr(carc)))))  /* ('or #f) but not ('#_or #f) */
-	apply_error_nr(sc, (is_pair(cdr(carc))) ? cadr(carc) : carc, cdr(code));
-
+	   (is_symbol_and_syntactic(cadr(carc)))))  /* ((quote or) #f) but not ('#_or #f) */
+	{
+	  /* fprintf(stderr, "hit: %s\n", display(carc)); */
+	  apply_error_nr(sc, (is_pair(cdr(carc))) ? cadr(carc) : carc, cdr(code));
+	}
+#endif
       push_stack_no_args(sc, OP_EVAL_ARGS, code);
       sc->code = carc;
       if (!no_cell_opt(carc))
@@ -95221,16 +95227,6 @@ then returns each var to its original value."
   set_immutable_slot(global_slot(sc->with_let_symbol));
   sc->setter_symbol = make_symbol(sc, "setter", 6);
 
-#if WITH_IMMUTABLE_UNQUOTE
-  /* this code solves the various unquote redefinition troubles
-   * if "," -> "(unquote...)" in the reader, (let (, (lambda (x) (+ x 1))) ,,,,'1) -> 5
-   */
-  sc->unquote_symbol =              make_symbol(sc, ",", 1);
-  set_immutable(sc->unquote_symbol);
-#else
-  sc->unquote_symbol =              make_symbol(sc, "unquote", 7);
-#endif
-
   sc->feed_to_symbol =              make_symbol(sc, "=>", 2);
   sc->body_symbol =                 make_symbol(sc, "body", 4);
   sc->read_error_symbol =           make_symbol(sc, "read-error", 10);
@@ -95717,7 +95713,6 @@ static void init_rootlet(s7_scheme *sc)
   sc->reverseb_symbol =              defun("reverse!",		reverse_in_place,	1, 0, false);
   sc->sort_symbol =                  unsafe_defun("sort!",      sort, 	                2, 0, false); /* not semisafe! */
   sc->append_symbol =                defun("append",		append,			0, 0, true);
-  sc->qq_append_symbol =             defun("[list*]",           qq_append,		2, 0, false);
 
 #if (!WITH_PURE_S7)
   sc->vector_append_symbol =         defun("vector-append",	vector_append,		0, 0, true);
@@ -95803,10 +95798,17 @@ static void init_rootlet(s7_scheme *sc)
   /* sc->values_symbol = */          unsafe_defun("values",	values,			0, 0, true); /* values_symbol set above for signatures, not semisafe! */
   /* set_immutable(c_function_setter(global_value(sc->values_symbol))); */ /* not needed, I think */
 
+  /* quasiquote helper funcs */
+#if WITH_IMMUTABLE_UNQUOTE
+  sc->unquote_symbol =               make_symbol(sc, ",", 1);
+  set_immutable(sc->unquote_symbol);
+#else
+  sc->unquote_symbol =               make_symbol(sc, "unquote", 7);
+#endif
+  sc->qq_append_symbol =             defun("#_[list*]",         qq_append,		2, 0, false); /* occurs via quasiquote only as #_[list*] */
   sc->apply_values_symbol =          unsafe_defun("apply-values", apply_values,         0, 1, false);
-  set_immutable(sc->apply_values_symbol); /* is this to protect quasiquote? */
+  set_immutable(sc->apply_values_symbol);
   set_immutable_slot(global_slot(sc->apply_values_symbol));
-
   sc->list_values_symbol =           defun("list-values",       list_values,            0, 0, true);
   set_immutable(sc->list_values_symbol);
   set_immutable_slot(global_slot(sc->list_values_symbol));
@@ -96956,15 +96958,11 @@ int main(int argc, char **argv)
  * lots of strings in gc-lists at end?
  * catch in C outside scheme code? setting *error-hook* doesn't help -- it falls into the longjmp
  * s7test needs while/anaphoric-when tests (stuff.scm, t656) -- any others?
- * more ongoing free_cell (mark/check ref), perhaps #_with-let to remove the restriction on it
+ * more ongoing free_cell (mark/check ref)
  * set! constant msg squelched if values eq? (or symbols eq? if it's faster) (see t718) -- see op_set1 for first case
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
- *   apply-values as initial-value, also #_[list*] and #_[apply_values] in code -- if special c_func=init use #_ or is it safe to name it that?
- *      (eq? [list*] #_[list*]) -> #t so maybe use the #_ form
- *      (let (([list*] 3)) [list*]) -> 3, but (let ((#_[list*] 3)) [list*]) -> error: variable name #_[list*] in let is a function, not a symbol
- *      hash-walker for [list*]?
  *   lots of is_global(sc->quote_symbol)
- *   s7test qq helper func? (and better, or no, names) --  qq_append [list*] g_list_values
- * is_symbol_and_syntactic leaves out #_quote [eval_car_pair]
- * apply-values print as ,@?
+ *   s7test qq helper func? (and better, or no, names) --  g_list_values, qq should probably also use #_apply-values, apply-values print as ,@?
+ * many of the num* constant-expr cases can hit an error, 5380 if (- -9223372036854775808), etc
+ *  but returning form isn't correct: "this has no effect: (abs -9223372036854775808)", nan+int->orig expr? and report error via lint-format
  */

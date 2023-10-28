@@ -1190,11 +1190,11 @@ as expected, but there will not be any "unquote" or "unquote-splicing" in the re
 </div>
 </blockquote>
 
-<div class="smallseparator" id="hygmac"><h4>hygienic macros</h4></div>
+<div class="smallseparator"><h4>hygienic macros</h4></div>
 
 <div class="indented">
 tldr: To make a macro hygienic, in the expanded code replace the names of things with the things themselves.  For built-in values, use "#_",
-"#_abs" rather than "abs".  For macro-definition-time variables, use ",abs" rather than "abs".  If possible, replace other names with gensyms.
+e.g. "#_abs" rather than "abs".  For macro-definition-time variables, use ",abs" rather than "abs".  If possible, replace other names with gensyms.
 As a last resort, use the explicit environment functions like let-ref and with-let.
 </div>
 
@@ -6848,7 +6848,7 @@ bench s7 all
 The benchmark compiler.scm assumes that small
 integers can be compared with eq? (via assq), which is incorrect.
 pi.scm and chudnovsky.scm need the gmp version of s7.
-As of 24-Oct-23, s7 treats '<> as (#_quote <>) so dynamic.scm doesn't run, and peval.scm gets the wrong result.
+As of 24-Oct-23, s7 treats '&lt;&gt; as (#_quote &lt;&gt;) so dynamic.scm doesn't run, and peval.scm gets the wrong result.
 I ran the bench script on an AMD 3950X machine, and got these results (in seconds):
 ack: 6.6, array1: 6.4, browse: 11.2, bv2string: 4.1, cat: 0.4,
 compiler: 16.9, conform: 30.0, cpstak: 42.8, ctak: 16.6, deriv: 9.7,
