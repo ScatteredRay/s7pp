@@ -157,7 +157,7 @@
 	    (let ((bottom (car argn))
 		  (top (min (cdr argn) max-args))
 		  (strname (symbol->string sym)))
-	      (unless (memv (strname 0) '(#\{ #\[ #\())
+	      ;(unless (memv (strname 0) '(#\{ #\[ #\()) ; no longer relevant, setters start with #<, none with {
 		(if (< top bottom)
 		    (format *stderr* ";~A (bottom: ~A, top: ~A)...~%" sym bottom top))
 		(set! low bottom)
@@ -167,7 +167,7 @@
 					(set-cdr! lst lst)))
 				     (else (copy (signature f))))))
 		      (map-values sig)
-		      (autotest f () 0 top (if (pair? sig) (cdr sig) ()))))))))))
+		      (autotest f () 0 top (if (pair? sig) (cdr sig) ())))))))));)
   
   (define (all)
     (let ((st (symbol-table)))

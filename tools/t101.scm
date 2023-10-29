@@ -161,21 +161,7 @@
     
 
 (format *stderr* "~%~NC lint ~NC~%" 20 #\- 20 #\-)
-(catch #t (lambda () (lint "s7test.scm" #f)) (lambda args #f))
-
-;; lint clobbers reader-cond
-(define-expansion (reader-cond . clauses)
-  (call-with-exit
-   (lambda (return)
-     (for-each
-      (lambda (clause)
-	(let ((val (eval (car clause))))
-	  (if val
-	      (if (null? (cdr clause)) (return val)
-		  (if (null? (cddr clause)) (return (cadr clause))
-		      (return (apply values (map quote (cdr clause)))))))))
-      clauses)
-     (values))))
+(catch #t (lambda () (lint "snd-test.scm" #f)) (lambda (type info) (apply format #t info)))
 
 ;(format *stderr* "~%~NC local s7test ~NC~%" 20 #\- 20 #\-)
 ;(system "./snd -e '(let () (catch #t (lambda () (load \"s7test.scm\" (curlet))) (lambda args #f)) (exit))'")

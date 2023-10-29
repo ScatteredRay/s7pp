@@ -69254,7 +69254,7 @@ static s7_pointer g_quasiquote(s7_scheme *sc, s7_pointer args) /* this is for ex
 static s7_pointer g_qq_append(s7_scheme *sc, s7_pointer args)
 {
   #define H_qq_append "[list*]: CL list* (I think) for quasiquote's internal use"
-  #define Q_qq_append s7_make_circular_signature(sc, 0, 1, sc->T)
+  #define Q_qq_append s7_make_signature(sc, 3, sc->is_list_symbol, sc->is_list_symbol, sc->T)
   s7_pointer a = car(args), b = cadr(args);
   s7_pointer p, tp, np;
   if (is_null(a)) return(b);
@@ -88681,15 +88681,13 @@ static s7_pointer unbound_last_arg(s7_scheme *sc, s7_pointer car_code)
   s7_pointer ops = op_stack_entry(sc);
   s7_pointer args = sc->args; /* maybe GC protect? */
   s7_pointer val = check_autoload_and_error_hook(sc, car_code);
+  sc->w = (is_null(sc->args)) ? list_1(sc, car_code) : proper_list_reverse_in_place(sc, cons(sc, car_code, args));
+  sc->w = cons_unchecked(sc, ops, sc->w);
   if (val == sc->undefined)
     error_nr(sc, sc->unbound_variable_symbol,
 	     (probably_in_repl) ?
-	     set_elist_3(sc, wrap_string(sc, "'~S is unbound in ~S", 20),
-			 car_code,
-			 cons(sc, ops, (is_null(sc->args)) ? list_1(sc, car_code) : proper_list_reverse_in_place(sc, cons(sc, car_code, args)))) :
-	     set_elist_5(sc, wrap_string(sc, "'~S is unbound in ~S (~A[~D])", 29),
-			 car_code,
-			 cons(sc, ops, (is_null(sc->args)) ? list_1(sc, car_code) : proper_list_reverse_in_place(sc, cons(sc, car_code, args))),
+	     set_elist_3(sc, wrap_string(sc, "'~S is unbound in ~S", 20), car_code, sc->w) :
+	     set_elist_5(sc, wrap_string(sc, "'~S is unbound in ~S (~A[~D])", 29), car_code, sc->w,
 			 sc->file_names[location_to_file(loc)],
 			 wrap_integer(sc, location_to_line(loc))));
   return(val);
@@ -88719,17 +88717,15 @@ static s7_pointer unbound_args_last_arg(s7_scheme *sc, s7_pointer car_code)
   s7_pointer args = sc->args; /* maybe GC protect? */
   s7_pointer value = sc->value;
   s7_pointer val = check_autoload_and_error_hook(sc, car_code);
+  sc->w = cons(sc, value, args);
+  sc->w = cons_unchecked(sc, car_code, sc->w);
+  sc->w = cons_unchecked(sc, ops, proper_list_reverse_in_place(sc, sc->w));
   if (val == sc->undefined)
     error_nr(sc, sc->unbound_variable_symbol,
 	     (probably_in_repl) ?
-	     set_elist_3(sc, wrap_string(sc, "'~S is unbound in ~S", 20),
-			 car_code,
-			 cons(sc, ops, proper_list_reverse_in_place(sc, cons_unchecked(sc, car_code, cons(sc, value, args))))) :
-	     set_elist_5(sc, wrap_string(sc, "'~S is unbound in ~S (~A[~D])", 29),
-			 car_code,
-			 cons(sc, ops, proper_list_reverse_in_place(sc, cons_unchecked(sc, car_code, cons(sc, value, args)))),
-			 sc->file_names[location_to_file(loc)],
-			 wrap_integer(sc, location_to_line(loc))));
+	     set_elist_3(sc, wrap_string(sc, "'~S is unbound in ~S", 20), car_code, sc->w) :
+	     set_elist_5(sc, wrap_string(sc, "'~S is unbound in ~S (~A[~D])", 29), car_code, sc->w,
+			 sc->file_names[location_to_file(loc)], wrap_integer(sc, location_to_line(loc))));
   return(val);
 }
 
@@ -88824,16 +88820,6 @@ static bool eval_car_pair(s7_scheme *sc)
 	  set_no_int_opt(code);
 	}
       /* ((if op1 op2) args...) is another somewhat common case */
-#if 0
-      /* this is too unlikely given #_quote -- handle it elsewhere */
-      if ((car(carc) == sc->quote_symbol) &&        /* ((quote and) #f) -- not is_quote because we checked for symbol above -- we're missing the #_quote case here */
-	  ((!is_pair(cdr(carc))) ||                 /* ((quote . #\h) (2 . #\i)) ! */
-	   (is_symbol_and_syntactic(cadr(carc)))))  /* ((quote or) #f) but not ('#_or #f) */
-	{
-	  /* fprintf(stderr, "hit: %s\n", display(carc)); */
-	  apply_error_nr(sc, (is_pair(cdr(carc))) ? cadr(carc) : carc, cdr(code));
-	}
-#endif
       push_stack_no_args(sc, OP_EVAL_ARGS, code);
       sc->code = carc;
       if (!no_cell_opt(carc))
@@ -95800,12 +95786,12 @@ static void init_rootlet(s7_scheme *sc)
 
   /* quasiquote helper funcs */
 #if WITH_IMMUTABLE_UNQUOTE
-  sc->unquote_symbol =               make_symbol(sc, ",", 1);
+  sc->unquote_symbol =               make_symbol(sc, "#<unquote>", 10);
   set_immutable(sc->unquote_symbol);
 #else
   sc->unquote_symbol =               make_symbol(sc, "unquote", 7);
 #endif
-  sc->qq_append_symbol =             defun("#_[list*]",         qq_append,		2, 0, false); /* occurs via quasiquote only as #_[list*] */
+  sc->qq_append_symbol =             defun("#<list*>",          qq_append,		2, 0, false); /* occurs via quasiquote only as #_[list*] */
   sc->apply_values_symbol =          unsafe_defun("apply-values", apply_values,         0, 1, false);
   set_immutable(sc->apply_values_symbol);
   set_immutable_slot(global_slot(sc->apply_values_symbol));
@@ -96955,14 +96941,15 @@ int main(int argc, char **argv)
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * safety for exp->mac? check-define-macro in lint (given eval-string, we can't do this in s7.c I think)
- * lots of strings in gc-lists at end?
  * catch in C outside scheme code? setting *error-hook* doesn't help -- it falls into the longjmp
  * s7test needs while/anaphoric-when tests (stuff.scm, t656) -- any others?
  * more ongoing free_cell (mark/check ref)
  * set! constant msg squelched if values eq? (or symbols eq? if it's faster) (see t718) -- see op_set1 for first case
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
- *   s7test qq helper func? (and better, or no, names) --  g_list_values, qq should probably also use #_apply-values, apply-values print as ,@?
- * many of the num* constant-expr cases can hit an error, 5380 if (- -9223372036854775808), etc
- *  but returning form isn't correct: "this has no effect: (abs -9223372036854775808)", nan+int->orig expr? and report error via lint-format
+ *   s7test qq helper func?  g_list_values, qq should probably also use #_apply-values, apply-values print as ,@?
+ * lint arith error checks?
+ *   lint: sublet and better inlet, maybe catch loss of accuracy int->float etc?
+ *   check lg
+ * too many args to set! (values) t718
  */

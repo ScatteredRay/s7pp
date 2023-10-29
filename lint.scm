@@ -4939,7 +4939,7 @@
 		     (if (lint-every? (lambda (x) (or (not (number? x)) (rational? x))) val)
 			 (let ((rats (collect-if-rational val)))
 			   (if (len>1? rats)
-			       (let ((y (apply + rats)))
+			       (let ((y (catch #t (lambda () (apply + rats)) (lambda (type info) (apply format outport info) +nan.0))))
 				 (set! val (if (zero? y)
 					       (collect-if-not-number val)
 					       (cons y (collect-if-not-number val))))))))
@@ -5113,7 +5113,7 @@
 		     (if (lint-every? (lambda (x) (or (not (number? x)) (rational? x))) val)
 			 (let ((rats (collect-if-rational val)))
 			   (if (len>1? rats)
-			       (let ((y (apply * rats)))
+			       (let ((y (catch #t (lambda () (apply * rats)) (lambda (type info) (apply format outport info) +nan.0))))
 				 (set! val (if (= y 1)
 					       (collect-if-not-number val)
 					       (cons y (collect-if-not-number val))))))))
@@ -5195,7 +5195,8 @@
 			    (let ((arg1 (car val))
 				  (arg2 (cadr val)))
 			      (cond ((just-rationals? val)
-				     (let ((new-val (apply * val))) ; huge numbers here are less readable
+				     (let ((new-val (catch #t (lambda () (apply * val)) (lambda (type info) (apply format outport info) +nan.0))))
+				       ;; huge numbers here are less readable
 				       (if (< (abs new-val) 1000000)
 					   new-val
 					   (cons '* val))))
@@ -5305,7 +5306,8 @@
 				    (else (cons '* val)))))
 			   (else
 			    (cond ((just-rationals? val)
-				   (let ((new-val (apply * val))) ; huge numbers here are less readable
+				   (let ((new-val (catch #t (lambda () (apply * val)) (lambda (type info) (apply format outport info) +nan.0))))
+				     ;; huge numbers here are less readable
 				     (if (< (abs new-val) 1000000)
 					 new-val
 					 (cons '* val))))
@@ -5397,12 +5399,12 @@
 			       (else (cons '- args))))))
 		    (else
 		     (if (just-rationals? args)
-			 (apply - args)
+			 (catch #t (lambda () (apply - args)) (lambda (type info) (apply format outport info) +nan.0))
 			 (let ((val (remove-all 0 (splice-if '+ (cdr args)))))
 			   (if (lint-every? (lambda (x) (or (not (number? x)) (rational? x))) val)
 			       (let ((rats (collect-if-rational val)))
 				 (if (len>1? rats)
-				     (let ((y (apply + rats)))
+				     (let ((y (catch #t (lambda () (apply + rats)) (lambda (type info) (apply format outport info) +nan.0))))
 				       (set! val (if (zero? y)
 						     (collect-if-not-number val)
 						     (cons y (collect-if-not-number val))))))))
@@ -5604,7 +5606,7 @@
 		    ((2)
 		     (if (and (just-rationals? args)
 			      (not (zero? (cadr args))))
-			 (apply / args)                         ; including (/ 0 12) -> 0
+			 (catch #t (lambda () (apply / args)) (lambda (type info) (apply format outport info) +nan.0)) ; including (/ 0 12) -> 0
 			 (let ((arg2 (cadr args)))
 			   (let ((op1 (and (pair? arg1) (car arg1)))
 				 (op2 (and (pair? arg2) (car arg2))))
@@ -5765,10 +5767,8 @@
 			 (if (and (just-rationals? args)
 				  (not (memv 0 (cdr args)))
 				  (not (memv 0.0 (cdr args))))
-			     (catch #t
-			       (lambda ()
-				 (apply / args)) ; if no overflow catch we can hit divide by zero here
-			       (lambda a form))
+			     (catch #t (lambda () (apply / args)) (lambda (type info) (apply format outport info) +nan.0))
+			     ;; if no overflow catch we can hit divide by zero here
 			     (let ((nargs                            ; (/ x a (* b 1 c) d) -> (/ x a b c d)
 				    (remove-all 1 (splice-if '* (cdr args)))))
 			       (if (null? nargs) ; (/ x 1 1) -> x
@@ -5983,11 +5983,7 @@
 		       (car args))
 
 		      ((rational? (car args))
-		       (catch #t 
-			 (lambda () 
-			   (abs (car args))) 
-			 (lambda (type info)          ; (abs -9223372036854775808)
-			   (cons (car form) args))))
+		       (catch #t (lambda () (abs (car args))) (lambda (type info) (apply format outport info) +nan.0))) ; (abs -9223372036854775808)
 
 		      ((not (pair? (car args)))
 		       (cons (car form) args))
@@ -9218,7 +9214,7 @@
 			     (not (equal? (cdr form) new-args)))
 			(lint-format "perhaps ~A" caller (lists->string form (cons 'append new-args)))))))))
 	  (hash-special 'append sp-append)
-	  (hash-special '#_[list*] sp-append)
+	  (hash-special '#<list*> sp-append)
 	  )
 
 	;; ---------------- apply ----------------
