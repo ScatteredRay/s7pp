@@ -4203,6 +4203,7 @@ enum {OP_UNOPT, OP_GC_PROTECT, /* must be an even number of ops here, op_gc_prot
       OP_SYMBOL, OP_CONSTANT, OP_PAIR_SYM, OP_PAIR_PAIR, OP_PAIR_ANY, HOP_HASH_TABLE_INCREMENT, OP_CLEAR_OPTS,
 
       OP_READ_INTERNAL, OP_EVAL, OP_EVAL_ARGS, OP_EVAL_ARGS1, OP_EVAL_ARGS2, OP_EVAL_ARGS3, OP_EVAL_ARGS4, OP_EVAL_ARGS5,
+      OP_EVAL_ARGS1_NO_MV,
       OP_APPLY, OP_EVAL_MACRO, OP_LAMBDA, OP_QUOTE, OP_QUOTE_UNCHECKED, OP_MACROEXPAND, OP_CALL_CC, OP_CALL_WITH_EXIT, OP_CALL_WITH_EXIT_O,
       OP_C_CATCH, OP_C_CATCH_ALL, OP_C_CATCH_ALL_O, OP_C_CATCH_ALL_A,
 
@@ -4421,6 +4422,7 @@ static const char* op_names[NUM_OPS] =
       "symbol", "constant", "pair_sym", "pair_pair", "pair_any", "h_hash_table_increment", "clear_opts",
 
       "read_internal", "eval", "eval_args", "eval_args1", "eval_args2", "eval_args3", "eval_args4", "eval_args5",
+      "eval_args1_no_mv",
       "apply", "eval_macro", "lambda", "quote", "quote_unchecked", "macroexpand", "call/cc", "call_with_exit", "call_with_exit_o",
       "c_catch", "c_catch_all", "c_catch_all_o", "c_catch_all_a",
 
@@ -9636,13 +9638,10 @@ to the let target-let, and returns target-let.  (varlet (curlet) 'a 1) adds 'a t
 	  s7_pointer gslot = global_slot(sym);
 	  if (is_slot(gslot))
 	    {
+#if 0
 	      if (is_syntax(slot_value(gslot)))
 		wrong_type_error_nr(sc, sc->varlet_symbol, position_of(x, args), p, wrap_string(sc, "a non-syntactic symbol", 22));
-	      /*  without this check we can end up turning our code into gibberish:
-	       *    (set! quote 1) -> ;can't set! quote
-	       *    (varlet (rootlet) '(quote . 1)), :quote -> 1
-	       * or worse set quote to a function of one arg that tries to quote something -- infinite loop
-	       */
+#endif
 	      if (is_immutable(gslot)) /* (immutable! 'abs) (varlet (rootlet) 'abs 1) */
 		immutable_object_error_nr(sc, set_elist_5(sc, wrap_string(sc, "~S is immutable in (varlet ~S '~S ~S)", 37), sym, car(args), p, val));
 	      slot_set_value_with_hook(global_slot(sym), val);
@@ -68679,6 +68678,8 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
   switch (unchecked_stack_top_op(sc)) /* unchecked for C s7_values call at top-level -- see ffitest.c */
     {
       /* the normal case -- splice values into caller's args */
+    case OP_EVAL_ARGS1_NO_MV:
+      syntax_error_nr(sc, "too many arguments to set!: ~S", 30, set_ulist_1(sc, sc->values_symbol, args));
     case OP_EVAL_ARGS1: case OP_EVAL_ARGS2: case OP_EVAL_ARGS3: case OP_EVAL_ARGS4:
       /* code = args yet to eval in order, args = evalled args reversed.
        * it is not safe to simply reverse args and tack the current stacked args onto its (new) end,
@@ -68789,8 +68790,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 				  set_ulist_1(sc, sc->values_symbol, args));
 
     case OP_SET_opSAq_P_1: case OP_SET_opSAAq_P_1:
-      /* if the target has a setter, this might not be too many arguments since the setter can do what it wants with the arguments, P might be (values ...) */
-      /* this is a problem with setters -- I think we should insist that set! takes 3 arguments in all cases.
+      /* we can assume here that we're dealing with the section after the target, (set! (target...) arg) where arg can't be (values...)
        *   (define (a3 x) x)
        *   (set! (setter a3) (lambda (x y z) (list x y z)))
        *   <11> (set! (a3 1) 2)
@@ -68799,6 +68799,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
        *   error: (set! (a3 1) 2 3): too many arguments to set!
        *   <13> (set! (a3 1) (values 2 3))
        *   (set! (a3 1) (values 2 3)): too many arguments to set!
+       * but (set! (a3 1 2) 3) is ok, also (set! (a3 (values 1 2)) 3)
        */
       syntax_error_nr(sc, "too many arguments to set! ~S", 29, set_ulist_1(sc, sc->values_symbol, args)); /* perhaps wrong_number_of_args error? */
 
@@ -80010,7 +80011,7 @@ static goto_t set_implicit_let(s7_scheme *sc, s7_pointer let, s7_pointer inds, s
   return(goto_top_no_pop);
 }
 
-static goto_t set_implicit_function(s7_scheme *sc, s7_pointer fnc)  /* (let ((lst (list 1 2))) (set! (list-ref lst 0) 2) lst) */
+static goto_t set_implicit_c_function(s7_scheme *sc, s7_pointer fnc)  /* (let ((lst (list 1 2))) (set! (list-ref lst 0) 2) lst) */
 {
   if (!is_t_procedure(c_function_setter(fnc)))
     {
@@ -80041,6 +80042,7 @@ static goto_t set_implicit_function(s7_scheme *sc, s7_pointer fnc)  /* (let ((ls
 static goto_t set_implicit_closure(s7_scheme *sc, s7_pointer fnc)
 {
   s7_pointer setter = closure_setter(fnc);
+  /* fprintf(stderr, "%s[%d]: %s %s\n", __func__, __LINE__, display(fnc), display(sc->code)); */
   if ((setter == sc->F) && (!closure_no_setter(fnc))) /* maybe closure_setter hasn't been set yet: see fset3 in s7test.scm */
     setter = setter_p_pp(sc, fnc, sc->curlet);
   if (is_t_procedure(setter))
@@ -80049,19 +80051,30 @@ static goto_t set_implicit_closure(s7_scheme *sc, s7_pointer fnc)
       push_op_stack(sc, setter);
       if (is_null(cdar(sc->code)))
 	{
-	  push_stack(sc, OP_EVAL_ARGS1, sc->nil, cddr(sc->code));
-	  sc->code = cadr(sc->code);
+	  push_stack(sc, OP_EVAL_ARGS1_NO_MV, sc->nil, sc->nil);
+	  /* since the arg is sc->nil, we know setter is a procedure, we can get cadr's value, skip the bad args check etc:
+             if optimize_op(sc->code) is unopt?? unopt calls trailers
+	     OP_EVAL_ARGS0_NO_MV:
+	     	      sc->code = pop_op_stack(sc)
+                      sc->args = list_1(sc, sc->value)
+		      goto APPLY
+	  */
+	  if ((S7_DEBUGGING) && (cddr(sc->code) != sc->nil))
+	    fprintf(stderr, "%s[%d]: fnc: %s, code: %s, setter: %s, stacked: %s, evaling; %s\n", __func__, __LINE__,
+		    display(fnc), display(sc->code), display(setter), display(cddr(sc->code)), display(cadr(sc->code)));
+	  sc->code = cadr(sc->code); /* the value */
 	}
       else
 	{
 	  if (is_null(cddar(sc->code)))
-	    push_stack(sc, OP_EVAL_ARGS1, sc->nil, cdr(sc->code));
+	    push_stack(sc, OP_EVAL_ARGS1, sc->nil, cdr(sc->code)); /* need to delay the no mv op somehow */
 	  else
 	    {
 	      sc->value = pair_append(sc, cddar(sc->code), cdr(sc->code));
 	      push_stack(sc, OP_EVAL_ARGS4, sc->nil, sc->value);
 	    }
 	  sc->code = cadar(sc->code);
+	  /* fprintf(stderr, "%d: setter: %s, code: %s, args?: %s, op: %s\n", __LINE__, display(setter), display(sc->code), display(sc->value), op_names[optimize_op(sc->code)]); */
 	}}
   else
     {
@@ -80134,7 +80147,7 @@ static goto_t call_set_implicit(s7_scheme *sc, s7_pointer obj, s7_pointer inds, 
 
     case T_C_MACRO: case T_C_FUNCTION_STAR:
     case T_C_RST_NO_REQ_FUNCTION: case T_C_FUNCTION:
-      return(set_implicit_function(sc, obj)); /* (set! (setter...) ...) also comes here */
+      return(set_implicit_c_function(sc, obj)); /* (set! (setter...) ...) also comes here */
 
     case T_MACRO: case T_MACRO_STAR: case T_BACRO: case T_BACRO_STAR:
     case T_CLOSURE: case T_CLOSURE_STAR:
@@ -88677,19 +88690,21 @@ static s7_pointer unbound_last_arg(s7_scheme *sc, s7_pointer car_code)
 {
   /* save call-state before autoload/error-hook invocations */
   s7_int loc = port_location(current_input_port(sc));
-  bool probably_in_repl = ((location_to_line(loc) == 0) || (safe_strcmp("*stdin*", string_value(sc->file_names[location_to_file(loc)]))));
   s7_pointer ops = op_stack_entry(sc);
   s7_pointer args = sc->args; /* maybe GC protect? */
   s7_pointer val = check_autoload_and_error_hook(sc, car_code);
-  sc->w = (is_null(sc->args)) ? list_1(sc, car_code) : proper_list_reverse_in_place(sc, cons(sc, car_code, args));
-  sc->w = cons_unchecked(sc, ops, sc->w);
   if (val == sc->undefined)
-    error_nr(sc, sc->unbound_variable_symbol,
-	     (probably_in_repl) ?
-	     set_elist_3(sc, wrap_string(sc, "'~S is unbound in ~S", 20), car_code, sc->w) :
-	     set_elist_5(sc, wrap_string(sc, "'~S is unbound in ~S (~A[~D])", 29), car_code, sc->w,
-			 sc->file_names[location_to_file(loc)],
-			 wrap_integer(sc, location_to_line(loc))));
+    {
+      bool probably_in_repl = ((location_to_line(loc) == 0) || (safe_strcmp("*stdin*", string_value(sc->file_names[location_to_file(loc)]))));
+      sc->w = (is_null(sc->args)) ? list_1(sc, car_code) : proper_list_reverse_in_place(sc, cons(sc, car_code, args));
+      sc->w = cons_unchecked(sc, ops, sc->w);
+      error_nr(sc, sc->unbound_variable_symbol,
+	       (probably_in_repl) ?
+	       set_elist_3(sc, wrap_string(sc, "'~S is unbound in ~S", 20), car_code, sc->w) :
+	       set_elist_5(sc, wrap_string(sc, "'~S is unbound in ~S (~A[~D])", 29), car_code, sc->w,
+			   sc->file_names[location_to_file(loc)],
+			   wrap_integer(sc, location_to_line(loc))));
+    }
   return(val);
 }
 
@@ -88712,20 +88727,22 @@ static s7_pointer unbound_args_last_arg(s7_scheme *sc, s7_pointer car_code)
 {
   /* save call-state before autoload/error-hook invocations */
   s7_int loc = port_location(current_input_port(sc));
-  bool probably_in_repl = ((location_to_line(loc) == 0) || (safe_strcmp("*stdin*", string_value(sc->file_names[location_to_file(loc)]))));
   s7_pointer ops = op_stack_entry(sc);
   s7_pointer args = sc->args; /* maybe GC protect? */
   s7_pointer value = sc->value;
   s7_pointer val = check_autoload_and_error_hook(sc, car_code);
-  sc->w = cons(sc, value, args);
-  sc->w = cons_unchecked(sc, car_code, sc->w);
-  sc->w = cons_unchecked(sc, ops, proper_list_reverse_in_place(sc, sc->w));
   if (val == sc->undefined)
-    error_nr(sc, sc->unbound_variable_symbol,
-	     (probably_in_repl) ?
-	     set_elist_3(sc, wrap_string(sc, "'~S is unbound in ~S", 20), car_code, sc->w) :
-	     set_elist_5(sc, wrap_string(sc, "'~S is unbound in ~S (~A[~D])", 29), car_code, sc->w,
-			 sc->file_names[location_to_file(loc)], wrap_integer(sc, location_to_line(loc))));
+    {
+      bool probably_in_repl = ((location_to_line(loc) == 0) || (safe_strcmp("*stdin*", string_value(sc->file_names[location_to_file(loc)]))));
+      sc->w = cons(sc, value, args); /* GC protect this info */
+      sc->w = cons_unchecked(sc, car_code, sc->w);
+      sc->w = cons_unchecked(sc, ops, proper_list_reverse_in_place(sc, sc->w));
+      error_nr(sc, sc->unbound_variable_symbol,
+	       (probably_in_repl) ?
+	       set_elist_3(sc, wrap_string(sc, "'~S is unbound in ~S", 20), car_code, sc->w) :
+	       set_elist_5(sc, wrap_string(sc, "'~S is unbound in ~S (~A[~D])", 29), car_code, sc->w,
+			   sc->file_names[location_to_file(loc)], wrap_integer(sc, location_to_line(loc))));
+    }
   return(val);
 }
 
@@ -91581,6 +91598,7 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	case OP_PAIR_ANY:    sc->value = car(sc->code);                    goto EVAL_ARGS_TOP;
 	case OP_PAIR_SYM:    if (op_pair_sym(sc)) goto EVAL_ARGS_TOP;      continue;
 
+	case OP_EVAL_ARGS1_NO_MV: /* no mv hit, so drop into normal case */
 	case OP_EVAL_ARGS1: sc->args = cons(sc, sc->value, sc->args); goto EVAL_ARGS;
 	case OP_EVAL_ARGS2: op_eval_args2(sc); goto APPLY; /* sc->value is the last arg, [so if is_null(cdr(sc->code) and current is pair, push args2] */
 	case OP_EVAL_ARGS3: op_eval_args3(sc); goto APPLY; /* sc->value is the next-to-last arg, and the last arg is not a list (so values can't mess us up!) */
@@ -96504,7 +96522,7 @@ s7_scheme *s7_init(void)
   s7_define_function(sc, "report-missed-calls", g_report_missed_calls, 0, 0, false, NULL); /* tc/recur tests in s7test.scm */
   if (strcmp(op_names[HOP_SAFE_C_PP], "h_safe_c_pp") != 0) fprintf(stderr, "c op_name: %s\n", op_names[HOP_SAFE_C_PP]);
   if (strcmp(op_names[OP_SET_WITH_LET_2], "set_with_let_2") != 0) fprintf(stderr, "set op_name: %s\n", op_names[OP_SET_WITH_LET_2]);
-  if (NUM_OPS != 926) fprintf(stderr, "size: cell: %d, block: %d, max op: %d, opt: %d\n", (int)sizeof(s7_cell), (int)sizeof(block_t), NUM_OPS, (int)sizeof(opt_info));
+  if (NUM_OPS != 927) fprintf(stderr, "size: cell: %d, block: %d, max op: %d, opt: %d\n", (int)sizeof(s7_cell), (int)sizeof(block_t), NUM_OPS, (int)sizeof(opt_info));
   /* cell size: 48, 120 if debugging, block size: 40, opt: 128 or 280 */
 #endif
 
@@ -96951,5 +96969,7 @@ int main(int argc, char **argv)
  * lint arith error checks?
  *   lint: sublet and better inlet, maybe catch loss of accuracy int->float etc?
  *   check lg
- * too many args to set! (values) t718
+ * too many args to set! (values) t718 t662
+ * t660 -- print very deeply nested list?, maybe no fragments if linting s7test?
+ * in (set! (...) <2 or more args>) the setter should be assuming that the trailing args are in the (...) section
  */
