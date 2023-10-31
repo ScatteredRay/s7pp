@@ -4203,7 +4203,7 @@ enum {OP_UNOPT, OP_GC_PROTECT, /* must be an even number of ops here, op_gc_prot
       OP_SYMBOL, OP_CONSTANT, OP_PAIR_SYM, OP_PAIR_PAIR, OP_PAIR_ANY, HOP_HASH_TABLE_INCREMENT, OP_CLEAR_OPTS,
 
       OP_READ_INTERNAL, OP_EVAL, OP_EVAL_ARGS, OP_EVAL_ARGS1, OP_EVAL_ARGS2, OP_EVAL_ARGS3, OP_EVAL_ARGS4, OP_EVAL_ARGS5,
-      OP_EVAL_ARGS1_NO_MV,
+      OP_EVAL_SET1_NO_MV, OP_EVAL_SET2, OP_EVAL_SET2_MV, OP_EVAL_SET2_NO_MV,
       OP_APPLY, OP_EVAL_MACRO, OP_LAMBDA, OP_QUOTE, OP_QUOTE_UNCHECKED, OP_MACROEXPAND, OP_CALL_CC, OP_CALL_WITH_EXIT, OP_CALL_WITH_EXIT_O,
       OP_C_CATCH, OP_C_CATCH_ALL, OP_C_CATCH_ALL_O, OP_C_CATCH_ALL_A,
 
@@ -4422,7 +4422,7 @@ static const char* op_names[NUM_OPS] =
       "symbol", "constant", "pair_sym", "pair_pair", "pair_any", "h_hash_table_increment", "clear_opts",
 
       "read_internal", "eval", "eval_args", "eval_args1", "eval_args2", "eval_args3", "eval_args4", "eval_args5",
-      "eval_args1_no_mv",
+      "eval_set1_no_mv", "eval_set2", "eval_set2_mv", "eval_set2_no_mv",
       "apply", "eval_macro", "lambda", "quote", "quote_unchecked", "macroexpand", "call/cc", "call_with_exit", "call_with_exit_o",
       "c_catch", "c_catch_all", "c_catch_all_o", "c_catch_all_a",
 
@@ -6873,7 +6873,12 @@ static /* inline */ void add_to_gc_list(gc_list_t *gp, s7_pointer p)
 {
 #if S7_DEBUGGING
   if ((!in_heap(p)) && (gp != cur_sc->opt1_funcs))
-    {char *s; fprintf(stderr, "%s[%d]: %s not in heap, %s\n", __func__, __LINE__, display(p), s = describe_type_bits(cur_sc, p)); free(s);}
+    {
+      char *s = describe_type_bits(cur_sc, p); 
+      fprintf(stderr, "%s[%d]: %s not in heap, %s\n", __func__, __LINE__, display(p), s);
+      free(s);
+      if (cur_sc->stop_at_error) abort();
+    }
 #endif
   if (gp->loc == gp->size)
     {
@@ -7575,6 +7580,7 @@ static int64_t gc(s7_scheme *sc)
       {								        \
         p->debugger_bits = 0; p->gc_func = func; p->gc_line = line;	\
         if (has_odd_bits(p)) {char *s; fprintf(stderr, "odd bits: %s\n", s = describe_type_bits(sc, p)); free(s);} \
+	if (!in_heap(p)) {char *s; fprintf(stderr, "not in heap: %s\n", s = describe_type_bits(sc, p)); free(s);} \
         signed_type(p) = 0;						\
         (*fp++) = p;							\
       }									\
@@ -40538,7 +40544,7 @@ static s7_pointer subvector(s7_scheme *sc, s7_pointer vect, s7_int skip_dims, s7
 {
   s7_int dims = vector_ndims(vect) - skip_dims;
   s7_pointer x;
-  new_cell(sc, x, (full_type(vect) & (~T_COLLECTED)) | T_SUBVECTOR | T_SAFE_PROCEDURE);
+  new_cell(sc, x, ((full_type(vect) & (~T_UNHEAP)) & (~T_COLLECTED)) | T_SUBVECTOR | T_SAFE_PROCEDURE); /* no T_UNHEAP because we're new but vect might be unheaped */
   vector_length(x) = 0;
   vector_block(x) = mallocate_empty_block(sc);
   any_vector_elements(x) = NULL;
@@ -40681,7 +40687,7 @@ a vector that points to the same elements as the original-vector but with differ
     mark_function[T_VECTOR] = mark_vector_possibly_shared;
   else mark_function[type(orig)] = mark_int_or_float_vector_possibly_shared; /* I think this works for byte-vectors also */
 
-  new_cell(sc, x, (full_type(orig) & (~T_COLLECTED)) | T_SUBVECTOR | T_SAFE_PROCEDURE);
+  new_cell(sc, x, ((full_type(orig) & (~T_UNHEAP)) & (~T_COLLECTED)) | T_SUBVECTOR | T_SAFE_PROCEDURE);
   vector_block(x) = mallocate_empty_block(sc);
   vector_set_dimension_info(x, v);
   if (!v) subvector_set_vector(x, orig);
@@ -45727,7 +45733,7 @@ s7_pointer s7_make_function_star(s7_scheme *sc, const char *name, s7_function fn
 	      {
 		names[i] = symbol_to_keyword(sc, car(arg));
 		defaults[i] = cadr(arg);
-		remove_from_heap(sc, cadr(arg));
+		remove_from_heap(sc, cadr(arg)); /* ?? */
 		if ((is_pair(defaults[i])) ||
 		    (is_normal_symbol(defaults[i])))
 		  {
@@ -68678,8 +68684,6 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
   switch (unchecked_stack_top_op(sc)) /* unchecked for C s7_values call at top-level -- see ffitest.c */
     {
       /* the normal case -- splice values into caller's args */
-    case OP_EVAL_ARGS1_NO_MV:
-      syntax_error_nr(sc, "too many arguments to set!: ~S", 30, set_ulist_1(sc, sc->values_symbol, args));
     case OP_EVAL_ARGS1: case OP_EVAL_ARGS2: case OP_EVAL_ARGS3: case OP_EVAL_ARGS4:
       /* code = args yet to eval in order, args = evalled args reversed.
        * it is not safe to simply reverse args and tack the current stacked args onto its (new) end,
@@ -68692,6 +68696,14 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 	stack_top_args(sc) = cons(sc, car(x), stack_top_args(sc));
       sc->w = sc->unused;
       return(car(x));
+
+      /* handle implicit set! */
+    case OP_EVAL_SET1_NO_MV: /* (set! (fnc) <val>) where evaluation of <val> returned multiple values */
+    case OP_EVAL_SET2_NO_MV: /* (set! (fnc <ind...>) <val>), <val> = mv */
+      syntax_error_nr(sc, "too many arguments to set!: ~S", 30, set_ulist_1(sc, sc->values_symbol, args));
+    case OP_EVAL_SET2:       /* here <ind> = args is mv */
+      set_stack_top_op(sc, OP_EVAL_SET2_MV); 
+      return(args); /* ?? */
 
       /* in the next set, the main evaluator branches blithely assume no multiple-values, and if it happens anyway, we go to a different branch here */
     case OP_ANY_CLOSURE_NP_2:
@@ -80023,17 +80035,17 @@ static goto_t set_implicit_c_function(s7_scheme *sc, s7_pointer fnc)  /* (let ((
       return(goto_apply);
     }
   /* here the setter can be anything, so we need to check the needs_copied_args bit. (set! ((dilambda / (let ((x 3)) (lambda (y) (+ x y))))) 3)! */
-  push_op_stack(sc, c_function_setter(fnc));
-  if (is_pair(cdar(sc->code)))
+  if (is_null(cdar(sc->code)))
     {
-      sc->value = (is_null(cddar(sc->code))) ? cdr(sc->code) : pair_append(sc, cddar(sc->code), cdr(sc->code));
-      push_stack(sc, OP_EVAL_ARGS1, sc->nil, sc->value);
-      sc->code = cadar(sc->code);
+      push_stack(sc, OP_EVAL_SET1_NO_MV, sc->nil, c_function_setter(fnc));
+      sc->code = cadr(sc->code); /* new value */
     }
   else
     {
-      push_stack(sc, OP_EVAL_ARGS1, sc->nil, sc->nil);
-      sc->code = cadr(sc->code); /* new value */
+      push_op_stack(sc, c_function_setter(fnc));
+      sc->value = (is_null(cddar(sc->code))) ? cdr(sc->code) : pair_append(sc, cddar(sc->code), cdr(sc->code));
+      push_stack(sc, OP_EVAL_ARGS1, sc->nil, sc->value);
+      sc->code = cadar(sc->code);
     }
   sc->cur_op = optimize_op(sc->code);
   return(goto_top_no_pop);
@@ -80041,41 +80053,32 @@ static goto_t set_implicit_c_function(s7_scheme *sc, s7_pointer fnc)  /* (let ((
 
 static goto_t set_implicit_closure(s7_scheme *sc, s7_pointer fnc)
 {
-  s7_pointer setter = closure_setter(fnc);
+  s7_pointer setter = closure_setter(fnc);  /* (set! (fnc ind...) val), sc->code = ((fnc ind...) val) */
   /* fprintf(stderr, "%s[%d]: %s %s\n", __func__, __LINE__, display(fnc), display(sc->code)); */
   if ((setter == sc->F) && (!closure_no_setter(fnc))) /* maybe closure_setter hasn't been set yet: see fset3 in s7test.scm */
     setter = setter_p_pp(sc, fnc, sc->curlet);
   if (is_t_procedure(setter))
     {
-      /* (set! (o g) ...), here fnc = o, sc->code = ((o g) ...) */
-      push_op_stack(sc, setter);
-      if (is_null(cdar(sc->code)))
+      if (is_null(cdar(sc->code)))                             /* (set! (fnc) val) */
 	{
-	  push_stack(sc, OP_EVAL_ARGS1_NO_MV, sc->nil, sc->nil);
-	  /* since the arg is sc->nil, we know setter is a procedure, we can get cadr's value, skip the bad args check etc:
-             if optimize_op(sc->code) is unopt?? unopt calls trailers
-	     OP_EVAL_ARGS0_NO_MV:
-	     	      sc->code = pop_op_stack(sc)
-                      sc->args = list_1(sc, sc->value)
-		      goto APPLY
-	  */
-	  if ((S7_DEBUGGING) && (cddr(sc->code) != sc->nil))
-	    fprintf(stderr, "%s[%d]: fnc: %s, code: %s, setter: %s, stacked: %s, evaling; %s\n", __func__, __LINE__,
-		    display(fnc), display(sc->code), display(setter), display(cddr(sc->code)), display(cadr(sc->code)));
-	  sc->code = cadr(sc->code); /* the value */
+	  push_stack(sc, OP_EVAL_SET1_NO_MV, sc->nil, setter); /* args=(), code=setter */
+	  sc->code = cadr(sc->code);                           /* the value */
 	}
       else
 	{
-	  if (is_null(cddar(sc->code)))
-	    push_stack(sc, OP_EVAL_ARGS1, sc->nil, cdr(sc->code)); /* need to delay the no mv op somehow */
-	  else
+	  if (is_null(cddar(sc->code)))                          /* (set! (fnc ind) val) */
+	    push_stack(sc, OP_EVAL_SET2, cadr(sc->code), setter);
+	  else                                                   /* (set! (fnc inds ...) val) */
 	    {
+	      /* op_eval_set3 -- collect inds (including values, but track number?), at end op_eval_set3_no_mv for val, then call setter as above
+	       */
+	      push_op_stack(sc, setter);
 	      sc->value = pair_append(sc, cddar(sc->code), cdr(sc->code));
 	      push_stack(sc, OP_EVAL_ARGS4, sc->nil, sc->value);
 	    }
-	  sc->code = cadar(sc->code);
-	  /* fprintf(stderr, "%d: setter: %s, code: %s, args?: %s, op: %s\n", __LINE__, display(setter), display(sc->code), display(sc->value), op_names[optimize_op(sc->code)]); */
+	  sc->code = cadar(sc->code); /* "ind" above */
 	}}
+      /* fprintf(stderr, "%d: setter: %s, code: %s, args?: %s, op: %s\n", __LINE__, display(setter), display(sc->code), display(sc->value), op_names[optimize_op(sc->code)]); */
   else
     {
       if (!is_any_macro(setter))
@@ -91598,7 +91601,29 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	case OP_PAIR_ANY:    sc->value = car(sc->code);                    goto EVAL_ARGS_TOP;
 	case OP_PAIR_SYM:    if (op_pair_sym(sc)) goto EVAL_ARGS_TOP;      continue;
 
-	case OP_EVAL_ARGS1_NO_MV: /* no mv hit, so drop into normal case */
+	case OP_EVAL_SET1_NO_MV: 
+	  sc->args = list_1(sc, sc->value); 
+	  goto APPLY; /* args = (val), code = setter */
+
+	case OP_EVAL_SET2_NO_MV: /* <val> is a normal value */
+	  {
+	    s7_pointer p = sc->args;
+	    while (is_pair(cdr(p))) {p = cdr(p);}
+	    cdr(p) = list_1(sc, sc->value); 
+	    goto APPLY;       /* args = (ind... val), code = setter */
+	  }
+
+	case OP_EVAL_SET2_MV: /* <inds> = sc->value is a mv */
+	  push_stack(sc, OP_EVAL_SET2_NO_MV, sc->value, sc->code); /* sc->value = inds */
+	  goto EVAL_SET2;
+	  
+	case OP_EVAL_SET2: /* <ind> = sc->value is a normal value */
+	  push_stack(sc, OP_EVAL_SET2_NO_MV, list_1(sc, sc->value), sc->code); /* sc->value = ind */
+	EVAL_SET2:
+	  sc->code = sc->args; /* value */
+	  sc->cur_op = optimize_op(sc->code);
+	  goto TOP_NO_POP;
+
 	case OP_EVAL_ARGS1: sc->args = cons(sc, sc->value, sc->args); goto EVAL_ARGS;
 	case OP_EVAL_ARGS2: op_eval_args2(sc); goto APPLY; /* sc->value is the last arg, [so if is_null(cdr(sc->code) and current is pair, push args2] */
 	case OP_EVAL_ARGS3: op_eval_args3(sc); goto APPLY; /* sc->value is the next-to-last arg, and the last arg is not a list (so values can't mess us up!) */
@@ -96522,7 +96547,7 @@ s7_scheme *s7_init(void)
   s7_define_function(sc, "report-missed-calls", g_report_missed_calls, 0, 0, false, NULL); /* tc/recur tests in s7test.scm */
   if (strcmp(op_names[HOP_SAFE_C_PP], "h_safe_c_pp") != 0) fprintf(stderr, "c op_name: %s\n", op_names[HOP_SAFE_C_PP]);
   if (strcmp(op_names[OP_SET_WITH_LET_2], "set_with_let_2") != 0) fprintf(stderr, "set op_name: %s\n", op_names[OP_SET_WITH_LET_2]);
-  if (NUM_OPS != 927) fprintf(stderr, "size: cell: %d, block: %d, max op: %d, opt: %d\n", (int)sizeof(s7_cell), (int)sizeof(block_t), NUM_OPS, (int)sizeof(opt_info));
+  if (NUM_OPS != 930) fprintf(stderr, "size: cell: %d, block: %d, max op: %d, opt: %d\n", (int)sizeof(s7_cell), (int)sizeof(block_t), NUM_OPS, (int)sizeof(opt_info));
   /* cell size: 48, 120 if debugging, block size: 40, opt: 128 or 280 */
 #endif
 
@@ -96912,7 +96937,7 @@ int main(int argc, char **argv)
  * timp      2637   2575   1930   1694   1709   1715
  * texit     ----   ----   1778   1741   1765   1765
  * s7test    1873   1831   1818   1829   1846   1824
- * thook     ----   ----   2590   2030   2048   2054
+ * thook     ----   ----   2590   2030   2048   2045
  * tauto     ----   ----   2562   2048   2046   2058
  * lt        2187   2172   2150   2185   2198   2193
  * dup       3805   3788   2492   2239   2219   2219
@@ -96922,15 +96947,15 @@ int main(int argc, char **argv)
  * trclo     2735   2574   2454   2445   2461   2462
  * titer     2865   2842   2641   2509   2465   2465
  * tload     ----   ----   3046   2404   2502   2502
- * tmat      3065   3042   2524   2578   2586   2586
+ * tmat      3065   3042   2524   2578   2586   2583
  * tsort     3105   3104   2856   2804   2828   2832
  * tobj      4016   3970   3828   3577   3511   3514
  * teq       4068   4045   3536   3486   3568   3570
  * tio       3816   3752   3683   3620   3607   3607
- * tmac      3950   3873   3033   3677   3685   3685
+ * tmac      3950   3873   3033   3677   3685   3682
  * tcase     4960   4793   4439   4430   4436   4435
  * tclo      4787   4735   4390   4384   4445   4449
- * tlet      7775   5640   4450   4427   4452   4457
+ * tlet      7775   5640   4450   4427   4452   4455
  * tfft      7820   7729   4755   4476   4512   4512
  * tstar     6139   5923   5519   4449   4560   4567
  * tmap      8869   8774   4489   4541   4618   4618
@@ -96951,9 +96976,9 @@ int main(int argc, char **argv)
  * cb        11.2   11.0   9658   9564   9611   9604
  * tgen      11.2   11.4   12.0   12.1   12.1   12.2
  * tall      15.6   15.6   15.6   15.6   15.1   15.1
- * calls     36.7   37.5   37.0   37.5   37.2   37.2
+ * calls     36.7   37.5   37.0   37.5   37.2   37.1
  * sg        ----   ----   55.9   55.8   55.4   55.3
- * lg        ----   ----  105.2  106.4  107.2  107.2
+ * lg        ----   ----  105.2  106.4  107.2  106.1
  * tbig     177.4  175.8  156.5  148.1  146.0  146.0
  * ---------------------------------------------------
  *
@@ -96968,8 +96993,11 @@ int main(int argc, char **argv)
  *   s7test qq helper func?  g_list_values, qq should probably also use #_apply-values, apply-values print as ,@?
  * lint arith error checks?
  *   lint: sublet and better inlet, maybe catch loss of accuracy int->float etc?
- *   check lg
  * too many args to set! (values) t718 t662
  * t660 -- print very deeply nested list?, maybe no fragments if linting s7test?
  * in (set! (...) <2 or more args>) the setter should be assuming that the trailing args are in the (...) section
+ * separate gensym table? why 5500?
+ * t662 -> s7test
+ * lint: do->make-list (line 1342): pointless list member: #_quote in (memq (car fill) '(quote #_quote))?
+ *       lint (line 22367): case key #_quote in ((quote #_quote) tree) is unlikely to work (case uses eqv? but #_quote is a syntax?)
  */
