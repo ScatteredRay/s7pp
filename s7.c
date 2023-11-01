@@ -4692,6 +4692,8 @@ void s7_show_history(s7_scheme *sc)
 #define stack_top_let(Sc)            (Sc->stack_end[-3])
 #define stack_top_code(Sc)           (Sc->stack_end[-4])
 #define set_stack_top_op(Sc, Op)     Sc->stack_end[-1] = (s7_pointer)(Op)
+#define set_stack_top_args(Sc, Args) Sc->stack_end[-2] = Args
+#define set_stack_top_code(Sc, Code) Sc->stack_end[-4] = Code
 
 /* stack_top_code changes.  If a function has a tail-call, the stack_top_code that form sees
  *   if stack_top_op==op-begin1 can change from call to call -- the begin actually refers
@@ -5412,7 +5414,7 @@ static s7_pointer check_ref19(s7_pointer p, const char *func, int32_t line)
   if (t_ext_p[typ])
     {
       fprintf(stderr, "%s%s[%d]: attempt to use (internal) %s cell%s\n", bold_text, func, line, s7_type_names[typ], unbold_text);
-      /* if (cur_sc->stop_at_error) abort(); */
+      if (cur_sc->stop_at_error) abort();
     }
   return(p);
 }
@@ -46265,6 +46267,7 @@ static void op_unwind_input(s7_scheme *sc)
 
 static bool op_dynamic_wind(s7_scheme *sc)
 {
+  if (SHOW_EVAL_OPS) fprintf(stderr, "  %s[%d]: %s\n", __func__, __LINE__, display(sc->code));
   if (dynamic_wind_state(sc->code) == DWIND_INIT)
     {
       dynamic_wind_state(sc->code) = DWIND_BODY;
@@ -52270,7 +52273,7 @@ static noreturn void error_nr(s7_scheme *sc, s7_pointer type, s7_pointer info)
   if (unchecked_type(sc->curlet) != T_LET)
     set_curlet(sc, sc->nil);      /* in the reader, the sc->curlet stack entry is mostly ignored, so it can be (and usually is) garbage */
   let_set_outlet(sc->owlet, sc->curlet);
-  slot_set_value(sc->error_code, cur_code);
+  slot_set_value(sc->error_code, cur_code); /* if mv here, evalable code has the mv bit set, maybe from c-macro that uses s7_values */
 
 #if WITH_HISTORY
   slot_set_value(sc->error_history, sc->cur_code);
@@ -68693,7 +68696,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
        */
       sc->w = args;
       for (x = args; is_not_null(cdr(x)); x = cdr(x))
-	stack_top_args(sc) = cons(sc, car(x), stack_top_args(sc));
+	set_stack_top_args(sc, cons(sc, car(x), stack_top_args(sc)));
       sc->w = sc->unused;
       return(car(x));
 
@@ -68754,7 +68757,6 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 
     case OP_C_AP_1:
       set_stack_top_op(sc, OP_C_AP_MV);
-      /* sc->value = args; */ /* removed 29-Mar-22 -- seems redundant */
       return(args);
 
     case OP_SAFE_CLOSURE_P_1:  case OP_CLOSURE_P_1: case OP_SAFE_CLOSURE_P_A_1:
@@ -68775,7 +68777,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
       return(args);
 
     case OP_SAFE_C_3P_1: case OP_SAFE_C_3P_2: case OP_SAFE_C_3P_3:
-      set_stack_top_op(sc, stack_top_op(sc) +  3);
+      set_stack_top_op(sc, stack_top_op(sc) +  3); /* change op to parallel mv case */
     case OP_SAFE_C_3P_1_MV: case OP_SAFE_C_3P_2_MV: case OP_SAFE_C_3P_3_MV:
       return(cons(sc, sc->unused, copy_proper_list(sc, args)));
 
@@ -68786,10 +68788,10 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
       if (is_null(cdr(args)))
 	return(car(args));
 
-      stack_top_args(sc) = cons(sc, stack_top_code(sc), stack_top_args(sc));
+      set_stack_top_args(sc, cons(sc, stack_top_code(sc), stack_top_args(sc)));
       for (x = args; is_not_null(cddr(x)); x = cdr(x))
-	stack_top_args(sc) = cons(sc, car(x), stack_top_args(sc));
-      stack_top_code(sc) = car(x);
+	set_stack_top_args(sc, cons(sc, car(x), stack_top_args(sc)));
+      set_stack_top_code(sc, car(x));
       return(cadr(x));
 
       /* look for errors here rather than glomming up the set! and let code */
@@ -68966,12 +68968,12 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
  	error_nr(sc, sc->error_symbol,
 		 set_elist_1(sc, wrap_string(sc, "function-port should not return multiple-values", 47)));
       set_stack_top_op(sc, OP_SPLICE_VALUES); /* tricky -- continue from eval_done with the current splice */
-      stack_top_args(sc) = args;
+      set_stack_top_args(sc, args);
       push_stack_op(sc, OP_EVAL_DONE);
       return(args);
 
     default:
-      /* if (SHOW_EVAL_OPS) fprintf(stderr, "  %s[%d]: splice punts: %s\n", __func__, __LINE__, op_names[stack_top_op(sc)]); */
+      if (SHOW_EVAL_OPS) fprintf(stderr, "  %s[%d]: splice punts: %s\n", __func__, __LINE__, op_names[stack_top_op(sc)]);
       break;
     }
 
@@ -88268,6 +88270,7 @@ static void op_safe_c_3p_1(s7_scheme *sc)
   sc->args = sc->value;                      /* possibly fx/gx? and below */
   push_stack_direct(sc, OP_SAFE_C_3P_2);
   sc->code = caddr(sc->code);
+  /* fprintf(stderr, "%s[%d]: code: %s, cur_op: %d %s\n", __func__, __LINE__, display(sc->code), (int)(optimize_op(sc->code)), op_names[optimize_op(sc->code)]); */
 }
 
 static void op_safe_c_3p_1_mv(s7_scheme *sc) /* here only if sc->value is mv */
@@ -88895,11 +88898,12 @@ static bool eval_car_pair(s7_scheme *sc)
 
 static goto_t trailers(s7_scheme *sc)
 {
-  s7_pointer code = sc->code;
+  s7_pointer code = T_Ext(sc->code);
+  if (SHOW_EVAL_OPS) fprintf(stderr, "  trailers %s\n", display(code));
   set_current_code(sc, code);
   if (is_pair(code))
     {
-      s7_pointer carc = car(code);
+      s7_pointer carc = T_Ext(car(code));
       if (is_symbol(carc))
 	{
 	  /* car is a symbol, sc->code a list */
@@ -88925,7 +88929,7 @@ static goto_t trailers(s7_scheme *sc)
 	}
       /* car must be the function to be applied, or (for example) a syntax variable like quote that has been used locally */
       set_optimize_op(code, OP_PAIR_ANY);        /* usually an error: (#\a) etc, might be (#(0) 0) */
-      sc->value = T_Ext(carc);
+      sc->value = carc;
       return(goto_eval_args_top);
     }
   if (is_symbol(code))
@@ -88935,7 +88939,7 @@ static goto_t trailers(s7_scheme *sc)
     }
   else
     {
-      sc->value = T_Ext(code);
+      sc->value = code;
       set_optimize_op(code, OP_CONSTANT);
     }
   return(goto_start);
@@ -89708,7 +89712,7 @@ static bool pop_read_list(s7_scheme *sc)
 
 static bool op_load_return_if_eof(s7_scheme *sc)
 {
-  if (SHOW_EVAL_OPS) fprintf(stderr, "op_load_return_if_eof: value: %s\n", display(sc->value));
+  if (SHOW_EVAL_OPS) fprintf(stderr, "  op_load_return_if_eof: value: %s\n", display(sc->value));
   if (sc->tok != TOKEN_EOF)
     {
       push_stack_op_let(sc, OP_LOAD_RETURN_IF_EOF);
@@ -91622,6 +91626,7 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	EVAL_SET2:
 	  sc->code = sc->args; /* value */
 	  sc->cur_op = optimize_op(sc->code);
+	  /* fprintf(stderr, "%s[%d]: code: %s, cur_op: %d %s\n", __func__, __LINE__, display(sc->code), (int)(sc->cur_op), op_names[sc->cur_op]); */
 	  goto TOP_NO_POP;
 
 	case OP_EVAL_ARGS1: sc->args = cons(sc, sc->value, sc->args); goto EVAL_ARGS;
@@ -96987,17 +96992,22 @@ int main(int argc, char **argv)
  * catch in C outside scheme code? setting *error-hook* doesn't help -- it falls into the longjmp
  * s7test needs while/anaphoric-when tests (stuff.scm, t656) -- any others?
  * more ongoing free_cell (mark/check ref)
+ *   safe do let+slots?
  * set! constant msg squelched if values eq? (or symbols eq? if it's faster) (see t718) -- see op_set1 for first case
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  *   s7test qq helper func?  g_list_values, qq should probably also use #_apply-values, apply-values print as ,@?
+ * t660 -- print very deeply nested list?, maybe no fragments if linting s7test?
+ * too many args to set! (values) t718 t662
+ *   in (set! (...) <2 or more args>) the setter should be assuming that the trailing args are in the (...) section
+ *   need n-arg closure/c_func cases
+ *   t662 -> s7test, check opts (no reverse, push*, etc), func'd cases in t662
+ *   s7test-block: c-macro-with-values, c-function-with-values, safe-c-function-with-2-values, also in s7test [got 0=arg cases in t622]
+ *   can (set! (with-baffle...) val) work (or any syntax case?)
+ * separate gensym table? why 5500?
  * lint arith error checks?
  *   lint: sublet and better inlet, maybe catch loss of accuracy int->float etc?
- * too many args to set! (values) t718 t662
- * t660 -- print very deeply nested list?, maybe no fragments if linting s7test?
- * in (set! (...) <2 or more args>) the setter should be assuming that the trailing args are in the (...) section
- * separate gensym table? why 5500?
- * t662 -> s7test
- * lint: do->make-list (line 1342): pointless list member: #_quote in (memq (car fill) '(quote #_quote))?
- *       lint (line 22367): case key #_quote in ((quote #_quote) tree) is unlikely to work (case uses eqv? but #_quote is a syntax?)
+ *   lint do->make-list (line 1342): pointless list member: #_quote in (memq (car fill) '(quote #_quote))?
+ *   lint (line 22367): case key #_quote in ((quote #_quote) tree) is unlikely to work (case uses eqv? but #_quote is a syntax?)
+ * s7.html: add warning about s7_values
  */
