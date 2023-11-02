@@ -381,6 +381,7 @@
 (define-macro* (msym5 a :rest b) `(cons ,a (list (list ,@b))))
 ;(define-macro* (msym6 a b :rest c) `(list ,a ,b (copy ,c)))
 ;(define-macro* (msym7 a :rest b :rest c) `(list ,a ,@b ,@c))
+(define-macro (msym8 a) (let ((g (gensym))) `(let ((,g ,a)) (values a a))))
 
 (define (s7-print-length) (*s7* 'print-length))
 (define (s7-max-string-length) (*s7* 'max-string-length))
@@ -421,8 +422,8 @@
 (define (_fnc5_ x) (not (pair? x)))
 ;(define (_fnc6_ x) (unless (let? x) (let-temporarily (((*s7* 'safety) 1)) (fill! x #\a))))
 ;;; (define (_fnc7_ x) (let-temporarily (((*s7* 'safety) 1)) (reverse! x)))
-
-(define (_fnc8_ arg) (map values arg))
+(define (_fnc8_ x) (let-temporarily ((x (+ x 1))) (values x x)))
+(define (_fnc9_ arg) (map values arg))
 
 (define (fib n)
   (if (< n 2)
@@ -1017,7 +1018,7 @@
 			  'tree-cyclic?
                           'require
 			  'else '_mac_ '_mac*_ '_bac_ '_bac*_ '_mac1*_ '_fnc1*_
-			  '_fnc_ '_fnc*_ '_fnc1_ '_fnc2_ '_fnc3_ '_fnc4_ '_fnc5_ '_fnc8_ ;'_fnc6_
+			  '_fnc_ '_fnc*_ '_fnc1_ '_fnc2_ '_fnc3_ '_fnc4_ '_fnc5_ '_fnc8_ '_fnc9_   ;'_fnc6_
 			  '=>
 
 			  'constant?
@@ -1084,7 +1085,7 @@
 			  'kar '_dilambda_ '_vals_ '_vals1_ '_vals2_
                           '_vals3_ '_vals4_ '_vals5_ '_vals6_ '_vals3s_ '_vals4s_ '_vals5s_ '_vals6s_
                           '_svals3_ '_svals4_ '_svals5_ '_svals6_ '_svals3s_ '_svals4s_ '_svals5s_ '_svals6s_
-			  'sym1 'sym2 'sym3 'sym4 'sym5 'sym6 'msym1 'msym2 'msym3  'msym5 ;'msym6 ;'msym4 'msym5 'msym6
+			  'sym1 'sym2 'sym3 'sym4 'sym5 'sym6 'msym1 'msym2 'msym3  'msym5 ;'msym6 ;'msym4 'msym5 'msym6 'msym8
 			  'fop1 'fop2 'fop3 'tff 'fop4 'fop5 'fop6 'tf7 'tf8 'tf9 'tf10 'tf13 'tf14
 			  'tf15 'tf16 'tf17 'tf18 'tf19 'tf20 'tf21 'tf22 'tf23 'tf24 'tf25 'tf26 'tf27 'fop29
 			  'tf30 'tf31 'tf32 'tf33 'tf34 'f40 'f41
@@ -1099,6 +1100,7 @@
 			  'vvv 'vvvi 'vvvf 'typed-hash 'typed-vector 'typed-let 'constant-let 'bight
 			  'a1 'a2 'a3 'a4 'a5 'a6
 			  'gb1 'gb2 'gb3
+			  'cf00 'c-function-with-values 'c-macro-with-values 'safe-c-function-with-2-values
 
 			  'bignum 'symbol 'count-if 'pretty-print 'tree-member 'funclet? 'bignum? 'copy-tree
 			  ;'dynamic-unwind ; many swaps that are probably confused
@@ -1132,7 +1134,8 @@
 		    "(dilambda (lambda args args) (lambda args args))" "(dilambda (lambda* (a b) a) (lambda* (a b c) c))"
 		    "((lambda (a) (+ a 1)) 2)" "((lambda* ((a 1)) (+ a 1)) 1)" "(lambda (a) (values a (+ a 1)))" "((lambda (a) (values a (+ a 1))) 2)"
 		    "(lambda a (copy a))" "(lambda (a . b) (cons a b))" "(lambda* (a . b) (cons a b))" "(lambda (a b . c) (list a b c))"
-		    "(define-macro (_m1_ a) `(+ ,a 1))" "(define-bacro (_b1_ a) `(* ,a 2))"
+		    "(define-macro (_m1_ a) `(+ ,a 1))" "(define-bacro (_b1_ a) `(* ,a 2))" 
+		    "(macro (x) (let ((g (gensym))) (let ((,g ,x)) `(values g g))))"
 		    "((dilambda (lambda () 3) (lambda (x) x)))"
 		    "(macro (a) `(+ ,a 1))" "(bacro (a) `(* ,a 2))" "(macro* (a (b 1)) `(+ ,a ,b))" "(bacro* (a (b 2)) `(* ,a ,b))"
 		    "(macro a `(copy ,a))" "(macro (a . b) `(cons ,a ,b))" "(macro* (a . b) `(cons ,a ,b))" "(macro (a b . c) `(list a b ,c))"
@@ -1219,7 +1222,7 @@
 
 		    "(let-temporarily ((x 1)) x)" "(let-temporarily ((x #(1)) (i 0)) i)"
 
-		    "1+1e10i" "1e15-1e15i" "0+1e18i" "-1e18"
+		    "1+1e10i" "1e15-1e15i" ;"0+1e18i" "-1e18"
 		    ;"(random 1.0)" ; number->string so lengths differ
 		    "(random 1)" "(random 0)" "(random -1)"
 		    ;"(else ())" "(else (f x) B)"
