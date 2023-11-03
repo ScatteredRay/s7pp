@@ -4686,14 +4686,14 @@ void s7_show_history(s7_scheme *sc)
 #define stack_args(Stack, Loc)       stack_element(Stack, Loc - 1)
 #define stack_let(Stack, Loc)        stack_element(Stack, Loc - 2)
 #define stack_code(Stack, Loc)       stack_element(Stack, Loc - 3)
-#define set_stack_op(Stack, Loc, Op) stack_element(Stack, Loc) = (s7_pointer)(Op)
+#define set_stack_op(Stack, Loc, Op) stack_element(Stack, Loc) = (s7_pointer)(opcode_t)(Op)
 
 #define stack_top_op(Sc)             ((opcode_t)T_Op(Sc->stack_end[-1]))
 #define unchecked_stack_top_op(Sc)   ((opcode_t)(Sc->stack_end[-1]))
 #define stack_top_args(Sc)           (Sc->stack_end[-2])
 #define stack_top_let(Sc)            (Sc->stack_end[-3])
 #define stack_top_code(Sc)           (Sc->stack_end[-4])
-#define set_stack_top_op(Sc, Op)     Sc->stack_end[-1] = (s7_pointer)(Op)
+#define set_stack_top_op(Sc, Op)     Sc->stack_end[-1] = (s7_pointer)(opcode_t)(Op)
 #define set_stack_top_args(Sc, Args) Sc->stack_end[-2] = Args
 #define set_stack_top_code(Sc, Code) Sc->stack_end[-4] = Code
 
@@ -8175,7 +8175,7 @@ static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer
       stack_end_code(sc) = Code; \
       stack_end_let(sc) = Sc->curlet; \
       stack_end_args(sc) = Args; \
-      stack_end_op(sc) = (s7_pointer)(Op); \
+      stack_end_op(sc) = (s7_pointer)(opcode_t)(Op); \
       Sc->stack_end += 4; \
   } while (0)
 
@@ -8183,7 +8183,7 @@ static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer
   do { \
       Sc->cur_op = Op; \
       memcpy((void *)(Sc->stack_end), (void *)Sc, 4 * sizeof(s7_pointer)); \
-      /* stack_end_op(sc) = (s7_pointer)(Op); */ \
+      /* stack_end_op(sc) = (s7_pointer)(opcode_t)(Op); */ \
       Sc->stack_end += 4; \
   } while (0)
 /* is this faster with cur_op because of the cast to s7_pointer, or is callgrind messing up memcpy stats?
@@ -8194,14 +8194,14 @@ static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer
   do { \
       stack_end_let(sc) = Sc->curlet; \
       stack_end_args(sc) = Args; \
-      stack_end_op(sc) = (s7_pointer)(Op); \
+      stack_end_op(sc) = (s7_pointer)(opcode_t)(Op); \
       Sc->stack_end += 4; \
   } while (0)
 
 #define push_stack_no_let_no_code(Sc, Op, Args) \
   do { \
       stack_end_args(sc) = Args; \
-      stack_end_op(sc) = (s7_pointer)(Op); \
+      stack_end_op(sc) = (s7_pointer)(opcode_t)(Op); \
       Sc->stack_end += 4; \
   } while (0)
 
@@ -8209,14 +8209,14 @@ static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer
   do { \
       stack_end_code(sc) = Code; \
       stack_end_let(sc) = Sc->curlet; \
-      stack_end_op(sc) = (s7_pointer)(Op); \
+      stack_end_op(sc) = (s7_pointer)(opcode_t)(Op); \
       Sc->stack_end += 4; \
   } while (0)
 
 #define push_stack_no_args_direct(Sc, Op) \
   do { \
       memcpy((void *)(Sc->stack_end), (void *)Sc, 2 * sizeof(s7_pointer));	\
-      stack_end_op(sc) = (s7_pointer)(Op); \
+      stack_end_op(sc) = (s7_pointer)(opcode_t)(Op); \
       Sc->stack_end += 4; \
   } while (0)
 
@@ -8224,20 +8224,20 @@ static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer
   do { \
       stack_end_code(sc) = Code; \
       stack_end_args(sc) = Args; \
-      stack_end_op(sc) = (s7_pointer)(Op); \
+      stack_end_op(sc) = (s7_pointer)(opcode_t)(Op); \
       Sc->stack_end += 4; \
   } while (0)
 
 #define push_stack_op(Sc, Op) \
   do { \
-      stack_end_op(sc) = (s7_pointer)(Op); \
+      stack_end_op(sc) = (s7_pointer)(opcode_t)(Op); \
       Sc->stack_end += 4; \
   } while (0)
 
 #define push_stack_op_let(Sc, Op) \
   do { \
       stack_end_let(sc) = Sc->curlet; \
-      stack_end_op(sc) = (s7_pointer)(Op); \
+      stack_end_op(sc) = (s7_pointer)(opcode_t)(Op); \
       Sc->stack_end += 4; \
   } while (0)
 #endif
@@ -56708,6 +56708,7 @@ static s7_pointer fx_safe_closure_aa_a(s7_scheme *sc, s7_pointer code)
 {
   s7_pointer p = cdr(code);
   s7_pointer f = opt1_lambda(code);
+  check_stack_size(sc); /* lint+s7test.scm can overflow here */
   gc_protect_2_via_stack(sc, sc->curlet, fx_call(sc, cdr(p))); /* this is needed even if one of the args is a symbol */
   set_curlet(sc, update_let_with_two_slots(sc, closure_let(f), fx_call(sc, p), stack_protected2(sc)));
   p = fx_call(sc, closure_body(f));
@@ -78697,6 +78698,7 @@ static void check_set(s7_scheme *sc)
     if (!is_symbol(settee))                                          /* (set! 12345 1) */
       error_nr(sc, sc->syntax_error_symbol,                          /* (set! #_abs 32) -> "error: set! can't change abs (a c-function), (set! abs 32)" */
 	       set_elist_4(sc, wrap_string(sc, "set! can't change ~S (~A), ~S", 29), settee, sc->type_names[type(settee)], form));
+#if 0
     else
       if ((is_constant_symbol(sc, settee)) &&                        /* (set! pi 3) */
 	  (settee != value))                                         /* (set! pi pi) -- kinda dumb */
@@ -78705,6 +78707,7 @@ static void check_set(s7_scheme *sc)
 		 set_elist_3(sc, wrap_string(sc, (is_keyword(settee)) ? "set!: can't change keyword's value: ~S in ~S" :
 					     "set!: can't alter constant's value: ~S in ~S", 44),
 			     settee, form));
+#endif
   if (is_pair(settee))                                               /* here we have (set! (...) ...) */
     {
       pair_set_syntax_op(form, OP_SET_UNCHECKED); /* if not pair car, op_set_normal below */
@@ -78991,7 +78994,7 @@ static bool pair3_cfunc(s7_scheme *sc, s7_pointer obj, s7_pointer setf, s7_point
     {
       sc->code = setf;
       sc->args = list_2(sc, arg, value);
-      return(true);
+      return(true); /* goto APPLY */
     }
   sc->value = c_function_call(setf)(sc, with_list_t2(arg, value));
   return(false);
@@ -84582,7 +84585,7 @@ static void op_any_closure_3p(s7_scheme *sc)
 	{
 	  stack_end_code(sc) = sc->code; /* push_stack_direct(sc, OP_ANY_CLOSURE_3P_3) here but trying to be too clever? */
 	  stack_end_args(sc) = sc->args; /* stack[args] == arg1 to closure) */
-	  stack_end_op(sc) = (s7_pointer)(OP_ANY_CLOSURE_3P_3);
+	  stack_end_op(sc) = (s7_pointer)(opcode_t)(OP_ANY_CLOSURE_3P_3);
 	  sc->stack_end += 4;
 	  set_stack_protected3_with(sc, fx_call(sc, p), OP_ANY_CLOSURE_3P_3);
 	  /* (i.e. stack[curlet] == arg2 of closure), fx_call might push_stack gc_protect etc, so push_stack via +4 before it */
@@ -88658,6 +88661,28 @@ static bool op_pair_sym(s7_scheme *sc)
   return(true);
 }
 
+static void op_eval_set2_no_mv(s7_scheme *sc) 
+{
+  s7_pointer p = sc->args;
+  while (is_pair(cdr(p))) {p = cdr(p);}
+  cdr(p) = list_1(sc, sc->value); /* sc->value is a normal value */ /* args = (ind... val), code = setter */
+}
+
+static void op_eval_set3(s7_scheme *sc)
+{
+  push_stack(sc, is_null(cdr(sc->code)) ? OP_EVAL_SET3_NO_MV : OP_EVAL_SET3, sc->args, cdr(sc->code));
+  sc->code = car(sc->code);
+  sc->cur_op = optimize_op(sc->code);
+}
+
+static void op_eval_set3_no_mv(s7_scheme *sc)
+{
+  s7_pointer p = sc->args;
+  while (is_pair(cdr(p))) {p = cdr(p);}
+  cdr(p) = list_1(sc, sc->value); /* sc->value is a normal value */
+  sc->code = pop_op_stack(sc);    /* args = (ind... val), code = setter */
+}
+
 static void op_eval_args2(s7_scheme *sc)
 {
   sc->code = pop_op_stack(sc);
@@ -91627,13 +91652,7 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	  sc->args = list_1(sc, sc->value); 
 	  goto APPLY; /* args = (val), code = setter */
 
-	case OP_EVAL_SET2_NO_MV: /* <val> is a normal value */
-	  {
-	    s7_pointer p = sc->args;
-	    while (is_pair(cdr(p))) {p = cdr(p);}
-	    cdr(p) = list_1(sc, sc->value); 
-	    goto APPLY;       /* args = (ind... val), code = setter */
-	  }
+	case OP_EVAL_SET2_NO_MV: op_eval_set2_no_mv(sc); goto APPLY; /* <val> is a normal value */
 
 	case OP_EVAL_SET2_MV: /* <inds> = sc->value is a mv */
 	  push_stack(sc, OP_EVAL_SET2_NO_MV, sc->value, sc->code); /* sc->value = inds */
@@ -91644,30 +91663,18 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	EVAL_SET2:
 	  sc->code = sc->args; /* value */
 	  sc->cur_op = optimize_op(sc->code);
-	  /* fprintf(stderr, "%s[%d]: code: %s, cur_op: %d %s\n", __func__, __LINE__, display(sc->code), (int)(sc->cur_op), op_names[sc->cur_op]); */
 	  goto TOP_NO_POP;
 
-	case OP_EVAL_SET3_NO_MV: /* <val> is a normal value */
-	  {
-	    s7_pointer p = sc->args;
-	    while (is_pair(cdr(p))) {p = cdr(p);}
-	    cdr(p) = list_1(sc, sc->value); 
-	    sc->code = pop_op_stack(sc);
-	    goto APPLY;       /* args = (ind... val), code = setter */
-	  }
+	case OP_EVAL_SET3_NO_MV: op_eval_set3_no_mv(sc); goto APPLY; /* <val> is a normal value */
 
 	case OP_EVAL_SET3_MV: /* <inds> = sc->value is a mv */
-	  sc->args = (is_null(sc->args)) ? sc->value : pair_append(sc, sc->args, sc->value);
+	  sc->args = (is_null(sc->args)) ? sc->value : pair_append(sc, sc->args, sc->value); /* pair_append copies sc->args -- is that necessary? */
 	  goto EVAL_SET3;
 
 	case OP_EVAL_SET3: /* <ind> = sc->value is a normal value */
 	  sc->args = (is_null(sc->args)) ? list_1(sc, sc->value) : pair_append(sc, sc->args, list_1(sc, sc->value));
 
-	EVAL_SET3:
-	  push_stack(sc, is_null(cdr(sc->code)) ? OP_EVAL_SET3_NO_MV : OP_EVAL_SET3, sc->args, cdr(sc->code));
-	  sc->code = car(sc->code);
-	  sc->cur_op = optimize_op(sc->code);
-	  goto TOP_NO_POP;
+	EVAL_SET3: op_eval_set3(sc); goto TOP_NO_POP;
 
 	case OP_EVAL_ARGS1: sc->args = cons(sc, sc->value, sc->args); goto EVAL_ARGS;
 	case OP_EVAL_ARGS2: op_eval_args2(sc); goto APPLY; /* sc->value is the last arg, [so if is_null(cdr(sc->code) and current is pair, push args2] */
@@ -96979,7 +96986,7 @@ int main(int argc, char **argv)
  * index     1026   1016    973    967    966    966
  * tmock     1177   1165   1057   1019   1027   1027
  * tvect     2519   2464   1772   1669   1647   1647
- * timp      2637   2575   1930   1694   1709   1715
+ * timp      2637   2575   1930   1694   1709   1738 [pair_append]
  * texit     ----   ----   1778   1741   1765   1765
  * s7test    1873   1831   1818   1829   1846   1824
  * thook     ----   ----   2590   2030   2048   2045
@@ -96991,7 +96998,7 @@ int main(int argc, char **argv)
  * fbench    2688   2583   2460   2430   2458   2461
  * trclo     2735   2574   2454   2445   2461   2462
  * titer     2865   2842   2641   2509   2465   2465
- * tload     ----   ----   3046   2404   2502   2502
+ * tload     ----   ----   3046   2404   2502   2548 [s7_make_function s7_define_function]
  * tmat      3065   3042   2524   2578   2586   2583
  * tsort     3105   3104   2856   2804   2828   2832
  * tobj      4016   3970   3828   3577   3511   3514
@@ -97021,34 +97028,23 @@ int main(int argc, char **argv)
  * cb        11.2   11.0   9658   9564   9611   9604
  * tgen      11.2   11.4   12.0   12.1   12.1   12.2
  * tall      15.6   15.6   15.6   15.6   15.1   15.1
- * calls     36.7   37.5   37.0   37.5   37.2   37.1
+ * calls     36.7   37.5   37.0   37.5   37.2   37.2
  * sg        ----   ----   55.9   55.8   55.4   55.3
  * lg        ----   ----  105.2  106.4  107.2  106.1
  * tbig     177.4  175.8  156.5  148.1  146.0  146.0
  * ---------------------------------------------------
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
- * safety for exp->mac? check-define-macro in lint (given eval-string, we can't do this in s7.c I think)
  * catch in C outside scheme code? setting *error-hook* doesn't help -- it falls into the longjmp
  * s7test needs while/anaphoric-when tests (stuff.scm, t656) -- any others?
  * more ongoing free_cell (mark/check ref)
- *   safe do let+slots?
- * set! constant msg squelched if values eq? (or symbols eq? if it's faster) (see t718) -- see op_set1 for first case -- there are many immutable slot checks
+ *   safe do let+slots? let-wrapper/slot-wrapper
+ *   perhaps interesting to record where all allocs are, sort by biggest
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  *   s7test qq helper func?  g_list_values, qq should probably also use #_apply-values, apply-values print as ,@?
- * t660 -- print very deeply nested list?, maybe no fragments if linting s7test?
- * too many args to set! (values) t718 t662
- *   in (set! (...) <2 or more args>) the setter should be assuming that the trailing args are in the (...) section
- *   need n-arg closure/c_func cases
- *   t662 -> s7test, check opts (no reverse, push*, etc), func'd cases in t662
- *   s7test-block: c-macro-with-values, c-function-with-values, safe-c-function-with-2-values, also in s7test [got 0=arg cases in t622]
- *   can (set! (with-baffle...) val) work (or any syntax case?)
- *   check for set3 opts, and cleanup eval (->func), decide if set2* is worth the bother
  * separate gensym table? why 5500?
- * lint arith error checks?
- *   lint: sublet and better inlet, maybe catch loss of accuracy int->float etc?
- *   lint do->make-list (line 1342): pointless list member: #_quote in (memq (car fill) '(quote #_quote))?
- *   lint (line 22367): case key #_quote in ((quote #_quote) tree) is unlikely to work (case uses eqv? but #_quote is a syntax?)
- * s7.html: add warning about s7_values
+ * lint arith error checks? lint: sublet and better inlet, maybe catch loss of accuracy int->float etc?
+ *   lint s7test still hits "- argument, -9223372036854775808, is out of range..." -- need another catch somewhere
+ * t718 troubles, see recursion in error
  */

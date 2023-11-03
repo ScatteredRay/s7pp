@@ -41,7 +41,7 @@
 (define *report-recursion->iteration* #t)                 ; named-let -> do and the like
 
 ;;; these turn out to be less useful than I expected
-(define *report-repeated-code-fragments* 200)             ; #t, #f, or an int = min reported fragment size * uses * uses, #t=130.
+(define *report-repeated-code-fragments* #f)              ; #t, #f, or an int = min reported fragment size * uses * uses, #t=130.
 (define *fragment-max-size* 128)  ; biggest seen if 512: 180 -- appears to be in a test suite, if 128 max at 125
 (define *fragment-min-size* 5)    ; smallest seen - 1 -- maybe 8 would be better
 
@@ -7109,6 +7109,7 @@
 							     (char? x)
 							     (number? x)
 							     (procedure? x) ; (memq abs '(1 #_abs 2)) !
+							     (syntax? x)    ; (memq x '(quote #_quote))
 							     (memq x '(#f #t () #<unspecified> #<undefined> #<eof>)))))
 						  (cadr items))))
 			   (if bad
@@ -18527,7 +18528,7 @@
 				    (lint-format "case key ~S in ~S is unlikely to work" caller key clause)
 				    (if (or (and (sequence? key)
 						 (not (null? key)))
-					    (memq (type-of key) '(procedure? macro? iterator? c-object? c-pointer? syntax? input-port? output-port? random-state?)))
+					    (memq (type-of key) '(procedure? macro? iterator? c-object? c-pointer? input-port? output-port? random-state?)))
 					;; (case x ((#(0)) 2)) or (apply case ...)
 					(lint-format "case key ~S in ~S is unlikely to work (case uses eqv? but ~S is a ~A)" caller
 						     key clause key
@@ -22884,6 +22885,7 @@
 
 		      (when (and (not (= line-number last-simplify-numeric-line-number))
 				 (hash-table-ref numeric-ops head)
+				 (< (tree-leaves form) 100)
 				 (proper-tree? form))
 			;; head always is (car form) here
 			(let ((val (simplify-numerics form env)))

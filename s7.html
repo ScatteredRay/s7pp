@@ -10322,6 +10322,8 @@ calling values or s7_values.  (values) returns a special object that is eq? to
 #&lt;unspecified&gt; but not C == to it (that is, there are two things in s7 that
 represent the unspecified object, one being the result of calling values with no
 arguments).  (values obj) returns obj, which is not considered a multiple-value.
+Don't use s7_values in the new code portion of a C-side scheme macro definition
+(one from s7_define_macro).  Use the symbol 'values instead.
 </p>
 <p>s7_is_valid is a debugging aid; it tries to tell if an arbitrary value is pointing to
 an s7 object.  Set the compile-time switch TRAP_SEGFAULT to 1 before using this function!

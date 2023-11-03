@@ -273,7 +273,7 @@ static s7_pointer mac_plus(s7_scheme *sc, s7_pointer args)
 
 static s7_pointer mac_plus_mv(s7_scheme *sc, s7_pointer args)
 {
-  return(s7_list(sc, 2, s7_make_symbol(sc, "+"), s7_values(sc, args)));
+  return(s7_list(sc, 2, s7_make_symbol(sc, "+"), s7_values(sc, args))); /* s7_values is not a good idea here */
 }
 
 static s7_pointer open_plus(s7_scheme *sc, s7_pointer args)
