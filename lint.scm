@@ -5379,7 +5379,7 @@
 		    ((0) form)
 		    ((1) ; negate
 		     (if (number? (car args))
-			 (- (car args))
+			 (catch #t (lambda () (- (car args))) (lambda (type info) (apply format outport info) +nan.0))
 			 (if (not (list? (car args)))
 			     (cons '- args)
 			     (case (length (car args))
@@ -6099,12 +6099,12 @@
 			 (car args))
 
 			((case head
-			   ((quotient)                       ; (quotient (remainder x y) y) -> 0
+			   ((quotient)                 ; (quotient (remainder x y) y) -> 0
 			    (and len2
 				 (len=3? (car args))
 				 (eq? (caar args) 'remainder)
 				 (eqv? (caddar args) (cadr args))))
-			   ((ash modulo)                     ; (modulo 0 x) -> 0
+			   ((ash modulo)               ; (modulo 0 x) -> 0
 			    (and len2 (eqv? (car args) 0)))
 			   (else #f))
 			 0)
@@ -6402,14 +6402,7 @@
 		    (not (hash-table-ref no-side-effect-functions (car x)))
 		    (var-member (car x) env))
 		x
-		(let ((f (simplify-numerics x env)))
-		  (if (and (pair? f)
-			   (just-rationals? f))
-		      (catch #t
-			(lambda ()
-			  (eval f))
-			(lambda ignore f))
-		      f))))
+		(simplify-numerics x env)))
 	  (let ((args (map simplify-arg (cdr form))))
 	    (cond ((hash-table-ref numerics-table (car form))
 		   => (lambda (f)

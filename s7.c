@@ -5047,7 +5047,7 @@ void s7_show_let(s7_scheme *sc) /* debugging convenience */
     }
 }
 
-static const char *check_name(s7_scheme *sc, int32_t typ)
+static const char *checked_type_name(s7_scheme *sc, int32_t typ)
 {
   if ((typ >= 0) && (typ < NUM_TYPES))
     {
@@ -5069,7 +5069,7 @@ static void set_local_1(s7_scheme *sc, s7_pointer symbol, const char *func, int3
 }
 #endif
 
-static char *safe_object_to_string(s7_pointer p)
+static char *object_raw_type_to_string(s7_pointer p)
 {
   char *buf = (char *)Malloc(128);
   snprintf(buf, 128, "type: %d", unchecked_type(p));
@@ -5078,7 +5078,7 @@ static char *safe_object_to_string(s7_pointer p)
 
 static void complain(const char* complaint, s7_pointer p, const char *func, int32_t line, uint8_t typ)
 {
-  fprintf(stderr, complaint, bold_text, func, line, check_name(cur_sc, typ), safe_object_to_string(p), unbold_text);
+  fprintf(stderr, complaint, bold_text, func, line, checked_type_name(cur_sc, typ), object_raw_type_to_string(p), unbold_text);
   if (cur_sc->stop_at_error) abort();
 }
 
@@ -5143,7 +5143,7 @@ static s7_pointer check_ref(s7_pointer p, uint8_t expected_type, const char *fun
 	    {
 	      fprintf(stderr, "%s%s[%d]: not %s, but %s (%s)%s\n",
 		      bold_text,
-		      func, line, check_name(cur_sc, expected_type), check_name(cur_sc, typ), safe_object_to_string(p),
+		      func, line, checked_type_name(cur_sc, expected_type), checked_type_name(cur_sc, typ), object_raw_type_to_string(p),
 		      unbold_text);
 	      if (cur_sc->stop_at_error) abort();
 	    }
@@ -5151,7 +5151,7 @@ static s7_pointer check_ref(s7_pointer p, uint8_t expected_type, const char *fun
 	    if ((strcmp(func, func1) != 0) &&
 		((!func2) || (strcmp(func, func2) != 0)))
 	      {
-		fprintf(stderr, "%s%s[%d]: free cell, not %s%s\n", bold_text, func, line, check_name(cur_sc, expected_type), unbold_text);
+		fprintf(stderr, "%s%s[%d]: free cell, not %s%s\n", bold_text, func, line, checked_type_name(cur_sc, expected_type), unbold_text);
 		if (cur_sc->stop_at_error) abort();
 	      }}}
   return(p);
@@ -5369,7 +5369,7 @@ static s7_pointer check_ref16(s7_pointer p, const char *func, int32_t line) /* l
   if ((typ != T_LET) && (typ != T_NIL)) complain("%s%s[%d]: not a let or nil, but %s (%s)%s\n", p, func, line, typ);
   if (p == cur_sc->rootlet)
     {
-      fprintf(stderr, "%s%s[%d]: T_Lid(rootlet) %s?%s\n", bold_text, func, line, safe_object_to_string(p), unbold_text);
+      fprintf(stderr, "%s%s[%d]: T_Lid(rootlet) %s?%s\n", bold_text, func, line, checked_type_name(cur_sc, type(p)), unbold_text);
       if (cur_sc->stop_at_error) abort();
     }
   return(p);
@@ -5382,7 +5382,7 @@ static s7_pointer check_ref16a(s7_pointer p, const char *func, int32_t line) /* 
   if (typ != T_LET) complain("%s%s[%d]: not a let, but %s (%s)%s\n", p, func, line, typ);
   if (p == cur_sc->rootlet)
     {
-      fprintf(stderr, "%s%s[%d]: T_Lsd(rootlet) %s?%s\n", bold_text, func, line, safe_object_to_string(p), unbold_text);
+      fprintf(stderr, "%s%s[%d]: T_Lsd(rootlet) %s?%s\n", bold_text, func, line, checked_type_name(cur_sc, type(p)), unbold_text);
       if (cur_sc->stop_at_error) abort();
     }
   return(p);
@@ -10754,10 +10754,9 @@ static bool let_symbol_is_safe(s7_scheme *sc, s7_pointer sym, s7_pointer e)
 {
   if (is_slot(global_slot(sym)))
     return(true);
-  if (is_null(e))
-    e = sc->rootlet;
-  return((!is_with_let_let(e)) &&
-	 (is_slot(s7_slot(sc, sym))));
+  if ((is_null(e)) || (e == sc->rootlet))
+    return(false);
+  return((!is_with_let_let(e)) && (is_slot(s7_slot(sc, sym))));
 }
 
 static bool let_symbol_is_safe_or_listed(s7_scheme *sc, s7_pointer sym, s7_pointer e)
@@ -31491,7 +31490,7 @@ static s7_pointer titr_let(s7_scheme *sc, s7_pointer p, const char *func, int32_
   if (!is_let(iterator_sequence(p)))
     {
       fprintf(stderr, "%s%s[%d]: let iterator sequence is %s%s\n",
-	      bold_text, func, line, check_name(sc, unchecked_type(iterator_sequence(p))), unbold_text);
+	      bold_text, func, line, checked_type_name(sc, unchecked_type(iterator_sequence(p))), unbold_text);
       if (sc->stop_at_error) abort();
     }
   return(p);
@@ -31502,7 +31501,7 @@ static s7_pointer titr_pair(s7_scheme *sc, s7_pointer p, const char *func, int32
   if (!is_pair(iterator_sequence(p)))
     {
       fprintf(stderr, "%s%s[%d]: pair iterator sequence is %s%s\n",
-	      bold_text, func, line, check_name(sc, unchecked_type(iterator_sequence(p))), unbold_text);
+	      bold_text, func, line, checked_type_name(sc, unchecked_type(iterator_sequence(p))), unbold_text);
       if (sc->stop_at_error) abort();
     }
   return(p);
@@ -31513,7 +31512,7 @@ static s7_pointer titr_hash(s7_scheme *sc, s7_pointer p, const char *func, int32
   if (!is_hash_table(iterator_sequence(p)))
     {
       fprintf(stderr, "%s%s[%d]: hash iterator sequence is %s%s\n",
-	      bold_text, func, line, check_name(sc, unchecked_type(iterator_sequence(p))), unbold_text);
+	      bold_text, func, line, checked_type_name(sc, unchecked_type(iterator_sequence(p))), unbold_text);
       if (sc->stop_at_error) abort();
     }
   return(p);
@@ -31524,7 +31523,7 @@ static s7_pointer titr_len(s7_scheme *sc, s7_pointer p, const char *func, int32_
   if ((is_hash_table(iterator_sequence(p))) || (is_pair(iterator_sequence(p))))
     {
       fprintf(stderr, "%s%s[%d]: iterator length sequence is %s%s\n",
-	      bold_text, func, line, check_name(sc, unchecked_type(iterator_sequence(p))), unbold_text);
+	      bold_text, func, line, checked_type_name(sc, unchecked_type(iterator_sequence(p))), unbold_text);
       if (sc->stop_at_error) abort();
     }
   return(p);
@@ -31536,7 +31535,7 @@ static s7_pointer titr_pos(s7_scheme *sc, s7_pointer p, const char *func, int32_
       (is_pair(iterator_sequence(p))))
     {
       fprintf(stderr, "%s%s[%d]: iterator-position sequence is %s%s\n",
-	      bold_text, func, line, check_name(sc, unchecked_type(iterator_sequence(p))), unbold_text);
+	      bold_text, func, line, checked_type_name(sc, unchecked_type(iterator_sequence(p))), unbold_text);
       if (sc->stop_at_error) abort();
     }
   return(p);
@@ -49965,7 +49964,7 @@ static s7_pointer g_reverse_in_place(s7_scheme *sc, s7_pointer args)
 
 
 /* -------------------------------- fill! -------------------------------- */
-static s7_pointer pair_fill(s7_scheme *sc, s7_pointer args)
+static s7_pointer pair_fill(s7_scheme *sc, s7_pointer args) /* args=(list tree-to-fill fill-val start end) */
 {
   /* ambiguous ("tree-fill"?) but if it's like vector-fill, we just stomp on the top level */
   s7_pointer obj = car(args), val;
@@ -78698,16 +78697,6 @@ static void check_set(s7_scheme *sc)
     if (!is_symbol(settee))                                          /* (set! 12345 1) */
       error_nr(sc, sc->syntax_error_symbol,                          /* (set! #_abs 32) -> "error: set! can't change abs (a c-function), (set! abs 32)" */
 	       set_elist_4(sc, wrap_string(sc, "set! can't change ~S (~A), ~S", 29), settee, sc->type_names[type(settee)], form));
-#if 0
-    else
-      if ((is_constant_symbol(sc, settee)) &&                        /* (set! pi 3) */
-	  (settee != value))                                         /* (set! pi pi) -- kinda dumb */
-	/* TODO: maybe leave this check for runtime? */
-	error_nr(sc, sc->syntax_error_symbol,
-		 set_elist_3(sc, wrap_string(sc, (is_keyword(settee)) ? "set!: can't change keyword's value: ~S in ~S" :
-					     "set!: can't alter constant's value: ~S in ~S", 44),
-			     settee, form));
-#endif
   if (is_pair(settee))                                               /* here we have (set! (...) ...) */
     {
       pair_set_syntax_op(form, OP_SET_UNCHECKED); /* if not pair car, op_set_normal below */
@@ -80035,6 +80024,14 @@ static goto_t set_implicit_let(s7_scheme *sc, s7_pointer let, s7_pointer inds, s
   sc->code = car(inds);
   sc->cur_op = optimize_op(sc->code);
   return(goto_top_no_pop);
+}
+
+static s7_pointer pair_append_in_place(s7_scheme *sc, s7_pointer a, s7_pointer b)
+{
+  s7_pointer p = a;
+  while (is_pair(cdr(p))) {p = cdr(p);}
+  cdr(p) = list_1(sc, b); /* sc->value is a normal value */ /* args = (ind... val), code = setter */
+  return(a);
 }
 
 static goto_t set_implicit_c_function(s7_scheme *sc, s7_pointer fnc)  /* (let ((lst (list 1 2))) (set! (list-ref lst 0) 2) lst) */
@@ -83322,7 +83319,7 @@ static bool apply_pair(s7_scheme *sc)                       /* -------- list as 
   if (is_multiple_value(sc->code))                          /* ((values + 2 3) 4) */
     {
       /* car of values can be anything, so conjure up a new expression, and apply again */
-      sc->args = pair_append(sc, cdr(sc->code), sc->args);
+      sc->args = pair_append(sc, cdr(sc->code), sc->args);  /* can't use pair_append_in_place here */
       sc->code = car(sc->code);
       return(false);
     }
@@ -88661,12 +88658,14 @@ static bool op_pair_sym(s7_scheme *sc)
   return(true);
 }
 
+#if 0
 static void op_eval_set2_no_mv(s7_scheme *sc) 
 {
   s7_pointer p = sc->args;
   while (is_pair(cdr(p))) {p = cdr(p);}
   cdr(p) = list_1(sc, sc->value); /* sc->value is a normal value */ /* args = (ind... val), code = setter */
 }
+#endif
 
 static void op_eval_set3(s7_scheme *sc)
 {
@@ -88677,9 +88676,13 @@ static void op_eval_set3(s7_scheme *sc)
 
 static void op_eval_set3_no_mv(s7_scheme *sc)
 {
+#if 0
   s7_pointer p = sc->args;
   while (is_pair(cdr(p))) {p = cdr(p);}
-  cdr(p) = list_1(sc, sc->value); /* sc->value is a normal value */
+  cdr(p) = list_1(sc, sc->value); /* sc->value is a normal value */ /* hit a case where this list is freed incorrectly? */
+#else
+  sc->args = pair_append(sc, sc->args, list_1(sc, sc->value));
+#endif
   sc->code = pop_op_stack(sc);    /* args = (ind... val), code = setter */
 }
 
@@ -91652,7 +91655,8 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	  sc->args = list_1(sc, sc->value); 
 	  goto APPLY; /* args = (val), code = setter */
 
-	case OP_EVAL_SET2_NO_MV: op_eval_set2_no_mv(sc); goto APPLY; /* <val> is a normal value */
+	case OP_EVAL_SET2_NO_MV: sc->args = pair_append_in_place(sc, sc->args, sc->value); goto APPLY; /* <val> is a normal value */
+	  /* perhaps in_place is safe here: args=list_1(sc->value) if eval_set2, mv if eval_set2_mv */
 
 	case OP_EVAL_SET2_MV: /* <inds> = sc->value is a mv */
 	  push_stack(sc, OP_EVAL_SET2_NO_MV, sc->value, sc->code); /* sc->value = inds */
@@ -91668,11 +91672,11 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	case OP_EVAL_SET3_NO_MV: op_eval_set3_no_mv(sc); goto APPLY; /* <val> is a normal value */
 
 	case OP_EVAL_SET3_MV: /* <inds> = sc->value is a mv */
-	  sc->args = (is_null(sc->args)) ? sc->value : pair_append(sc, sc->args, sc->value); /* pair_append copies sc->args -- is that necessary? */
+	  sc->args = (is_null(sc->args)) ? sc->value : pair_append(sc, sc->args, sc->value);
 	  goto EVAL_SET3;
 
 	case OP_EVAL_SET3: /* <ind> = sc->value is a normal value */
-	  sc->args = (is_null(sc->args)) ? list_1(sc, sc->value) : pair_append(sc, sc->args, list_1(sc, sc->value));
+	  sc->args = (is_null(sc->args)) ? list_1(sc, sc->value) : pair_append(sc, sc->args, list_1(sc, sc->value)); /* not in_place here */
 
 	EVAL_SET3: op_eval_set3(sc); goto TOP_NO_POP;
 
@@ -97043,8 +97047,6 @@ int main(int argc, char **argv)
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  *   s7test qq helper func?  g_list_values, qq should probably also use #_apply-values, apply-values print as ,@?
- * separate gensym table? why 5500?
- * lint arith error checks? lint: sublet and better inlet, maybe catch loss of accuracy int->float etc?
- *   lint s7test still hits "- argument, -9223372036854775808, is out of range..." -- need another catch somewhere
- * t718 troubles, see recursion in error
+ * separate gensym table? why 5500? [check heap holder]
+ * lint arith error checks? lint: sublet and better inlet
  */
