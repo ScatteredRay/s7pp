@@ -2965,7 +2965,13 @@ static void init_types(void)
 #define car(p)                         (T_Pair(p))->object.cons.car
 #define set_car(p, Val)                car(p) = T_Pos(Val) /* can be a slot or #<unsed> */
 #define cdr(p)                         (T_Pair(p))->object.cons.cdr
+#if S7_DEBUGGING
+static void check_set_cdr(s7_pointer p, s7_pointer Val, const char *func, int32_t line);
+#define set_cdr(p, Val)                check_set_cdr(p, Val, __func__, __LINE__)
+#else
 #define set_cdr(p, Val)                cdr(p) = T_Pos(Val)
+#endif
+#define unchecked_set_cdr(p, Val)      cdr(p) = T_Pos(Val)
 #define unchecked_car(p)               (T_Pos(p))->object.cons.car
 #define unchecked_cdr(p)               (T_Pos(p))->object.cons.cdr
 
@@ -5436,6 +5442,13 @@ static s7_pointer check_opcode(s7_pointer p, const char *func, int32_t line)
   return(p);
 }
 
+static void check_set_cdr(s7_pointer p, s7_pointer Val, const char *func, int32_t line)
+{
+  if ((is_immutable(p)) && (!in_heap(p)))
+    fprintf(stderr, "%s[%d]: set_cdr target is immutable/unheaped, %p\n", func, line, p);
+  cdr(p) = Val;
+}
+
 static const char *opt1_role_name(uint64_t role)
 {
   if (role == OPT1_FAST) return("opt1_fast");
@@ -5934,7 +5947,7 @@ static s7_pointer set_dlist_1(s7_scheme *sc, s7_pointer x1) /* another like clis
 static s7_pointer set_ulist_1(s7_scheme *sc, s7_pointer x1, s7_pointer x2)
 {
   set_car(sc->u1_1, x1);
-  set_cdr(sc->u1_1, x2);
+  unchecked_set_cdr(sc->u1_1, x2);
   return(sc->u1_1);
 }
 
@@ -6978,7 +6991,7 @@ static void add_setter(s7_scheme *sc, s7_pointer p, s7_pointer setter)
       s7_pointer x = sc->setters[i];
       if (car(x) == p)
 	{
-	  set_cdr(x, setter);
+	  unchecked_set_cdr(x, setter);
 	  return;
  	}}
   if (sc->setters_loc == sc->setters_size)
@@ -8461,7 +8474,7 @@ static /* inline */ s7_pointer new_symbol(s7_scheme *sc, const char *name, s7_in
     }
   full_type(p) = T_PAIR | T_IMMUTABLE | T_UNHEAP;  /* add x to the symbol table */
   set_car(p, x);
-  set_cdr(p, vector_element(sc->symbol_table, location));
+  unchecked_set_cdr(p, vector_element(sc->symbol_table, location));
   vector_element(sc->symbol_table, location) = p;
   pair_set_raw_hash(p, hash);
   pair_set_raw_len(p, (uint64_t)len); /* symbol name length, so it ought to fit! */
@@ -8583,7 +8596,7 @@ static void remove_gensym_from_symbol_table(s7_scheme *sc, s7_pointer sym)
     for (s7_pointer y = x, z = cdr(x); is_pair(z); y = z, z = cdr(z))
       if (car(z) == sym)
 	{
-	  set_cdr(y, cdr(z));
+	  unchecked_set_cdr(y, cdr(z));
 	  return;
 	}
 }
@@ -8691,7 +8704,7 @@ static s7_pointer g_gensym(s7_scheme *sc, s7_pointer args)
   if (S7_DEBUGGING) full_type(stc) = 0;
   set_full_type(stc, T_PAIR | T_IMMUTABLE | T_UNHEAP);
   set_car(stc, x);
-  set_cdr(stc, vector_element(sc->symbol_table, location));
+  unchecked_set_cdr(stc, vector_element(sc->symbol_table, location));
   vector_element(sc->symbol_table, location) = stc;
   pair_set_raw_hash(stc, hash);
   pair_set_raw_len(stc, (uint64_t)string_length(str));
@@ -37000,7 +37013,7 @@ static s7_pointer semipermanent_cons(s7_scheme *sc, s7_pointer a, s7_pointer b, 
   s7_pointer x = alloc_pointer(sc);
   set_full_type(x, type | T_UNHEAP);
   set_car(x, a);
-  set_cdr(x, b);
+  unchecked_set_cdr(x, b);
   return(x);
 }
 
@@ -37050,7 +37063,7 @@ s7_pointer s7_make_circular_signature(s7_scheme *sc, s7_int cycle_point, s7_int 
       if (i == (len - 1)) end = p;
     }
   va_end(ap);
-  if (end) set_cdr(end, back);
+  if (end) unchecked_set_cdr(end, back);
   if (i < len)
     s7_warn(sc, 256, "s7_make_circular_signature got too few entries: %s\n", display(res));
   return((s7_pointer)res);
@@ -51318,7 +51331,7 @@ static s7_pointer history_cons(s7_scheme *sc, s7_pointer code, s7_pointer args)
   s7_pointer p = car(sc->history_pairs);
   sc->history_pairs = cdr(sc->history_pairs);
   set_car(p, code);
-  set_cdr(p, args);
+  unchecked_set_cdr(p, args);
   return(p);
 }
 #else
@@ -73186,8 +73199,7 @@ static body_t form_is_safe(s7_scheme *sc, s7_pointer func, s7_pointer x, bool at
 	   * (let () (define (hi1 a) (define (ho1 b) b) (define (hi1 b) (+ b 1)) (hi1 a)) (hi1 1))
 	   */
 	  return(UNSAFE_BODY);
-	}
-    }
+	}}
   else /* car(x) is not syntactic */
     {
       if (expr == func) /* try to catch tail call, expr is car(x) */
@@ -73313,8 +73325,7 @@ static body_t form_is_safe(s7_scheme *sc, s7_pointer func, s7_pointer x, bool at
 	      if (is_null(cdr(x))) return(result);
 	      if ((is_pair(cdr(x))) && (is_null(cddr(x))))
 		return((is_pair(cadr(x))) ? min_body(result, form_is_safe(sc, func, cadr(x), false)) : result);
-	    }
-	}
+	    }}
       else
 	if (expr == sc->quote_function)
 	  return(((!is_pair(cdr(x))) || (!is_null(cddr(x)))) ? UNSAFE_BODY : VERY_SAFE_BODY);  /* (#_quote . 1) or (#_quote 1 2) etc */
@@ -79686,7 +79697,7 @@ static goto_t set_implicit_vector(s7_scheme *sc, s7_pointer vect, s7_pointer ind
 	      return(goto_start);
 	    }}
       push_op_stack(sc, sc->vector_set_function); /* vector_setter(vect) has wrong args */
-      sc->code = (is_null(cdr(inds))) ? val : pair_append(sc, cdr(inds), val); /* i.e. rest(args) + val */
+      sc->code = (is_null(cdr(inds))) ? val : pair_append(sc, cdr(inds), T_Lst(val)); /* i.e. rest(args) + val */
       push_stack(sc, OP_EVAL_ARGS4, list_1(sc, vect), sc->code);
       sc->code = car(inds);
       sc->cur_op = optimize_op(sc->code);
@@ -79755,7 +79766,7 @@ static goto_t set_implicit_c_object(s7_scheme *sc, s7_pointer c_obj, s7_pointer 
 	}
       else
 	{
-	  sc->code = pair_append(sc, cdr(inds), val);
+	  sc->code = pair_append(sc, cdr(inds), T_Lst(val));
 	  push_stack(sc, OP_EVAL_ARGS4, list_1(sc, c_obj), sc->code);
 	  sc->code = car(inds);
 	}
@@ -80026,14 +80037,6 @@ static goto_t set_implicit_let(s7_scheme *sc, s7_pointer let, s7_pointer inds, s
   return(goto_top_no_pop);
 }
 
-static s7_pointer pair_append_in_place(s7_scheme *sc, s7_pointer a, s7_pointer b)
-{
-  s7_pointer p = a;
-  while (is_pair(cdr(p))) {p = cdr(p);}
-  cdr(p) = list_1(sc, b); /* sc->value is a normal value */ /* args = (ind... val), code = setter */
-  return(a);
-}
-
 static goto_t set_implicit_c_function(s7_scheme *sc, s7_pointer fnc)  /* (let ((lst (list 1 2))) (set! (list-ref lst 0) 2) lst) */
 {
   if (!is_t_procedure(c_function_setter(fnc)))
@@ -80229,12 +80232,12 @@ static goto_t op_set2(s7_scheme *sc)
 	    }
 	  else   /* this has to be at least 2 args, sc->args and sc->code make 2 more, so... */
 	    syntax_error_nr(sc, "set!: too many arguments: ~S", 28,
-			    set_ulist_1(sc, sc->set_symbol, pair_append(sc, multiple_value(sc->value), pair_append(sc, sc->args, sc->code))));
+			    set_ulist_1(sc, sc->set_symbol, pair_append(sc, multiple_value(sc->value), pair_append(sc, sc->args, T_Lst(sc->code)))));
 	}
       if (is_null(sc->args))
 	syntax_error_nr(sc, "list set!: not enough arguments: ~S", 35, sc->code);
       push_op_stack(sc, sc->list_set_function);
-      if (!is_null(cdr(sc->args))) sc->code = pair_append(sc, cdr(sc->args), sc->code);
+      if (!is_null(cdr(sc->args))) sc->code = pair_append(sc, cdr(sc->args), T_Lst(sc->code));
       push_stack(sc, OP_EVAL_ARGS4, list_1(sc, sc->value), T_Pair(sc->code));
       sc->code = car(sc->args);
       return(goto_eval);
@@ -80248,7 +80251,7 @@ static goto_t op_set2(s7_scheme *sc)
       if (sc->args == sc->nil)
 	syntax_error_nr(sc, "vector set!: not enough arguments: ~S", 37, sc->code);
       push_op_stack(sc, sc->vector_set_function);
-      if (!is_null(cdr(sc->args))) sc->code = pair_append(sc, cdr(sc->args), sc->code);
+      if (!is_null(cdr(sc->args))) sc->code = pair_append(sc, cdr(sc->args), T_Lst(sc->code));
       push_stack(sc, OP_EVAL_ARGS4, list_1(sc, sc->value), T_Pair(sc->code));
       sc->code = car(sc->args);
       return(goto_eval);
@@ -83319,7 +83322,7 @@ static bool apply_pair(s7_scheme *sc)                       /* -------- list as 
   if (is_multiple_value(sc->code))                          /* ((values + 2 3) 4) */
     {
       /* car of values can be anything, so conjure up a new expression, and apply again */
-      sc->args = pair_append(sc, cdr(sc->code), sc->args);  /* can't use pair_append_in_place here */
+      sc->args = pair_append(sc, cdr(sc->code), T_Lst(sc->args));  /* can't use pair_append_in_place here */
       sc->code = car(sc->code);
       return(false);
     }
@@ -88531,7 +88534,7 @@ static void op_safe_c_pa_mv(s7_scheme *sc)
   gc_protect_via_stack(sc, val);
   for (p = val; is_pair(cdr(p)); p = cdr(p));          /* must be more than 1 member of list or it's not mv */
   sc->args = fx_call(sc, cddr(sc->code));
-  cdr(p) = set_plist_1(sc, sc->args);                  /* do we need to copy sc->args if it is immutable (i.e. plist)? */
+  set_cdr(p, set_plist_1(sc, sc->args));               /* do we need to copy sc->args if it is immutable (i.e. plist)? */
   sc->args = val;
   unstack_gc_protect(sc);
   sc->code = c_function_base(opt1_cfunc(sc->code));
@@ -88658,15 +88661,6 @@ static bool op_pair_sym(s7_scheme *sc)
   return(true);
 }
 
-#if 0
-static void op_eval_set2_no_mv(s7_scheme *sc) 
-{
-  s7_pointer p = sc->args;
-  while (is_pair(cdr(p))) {p = cdr(p);}
-  cdr(p) = list_1(sc, sc->value); /* sc->value is a normal value */ /* args = (ind... val), code = setter */
-}
-#endif
-
 static void op_eval_set3(s7_scheme *sc)
 {
   push_stack(sc, is_null(cdr(sc->code)) ? OP_EVAL_SET3_NO_MV : OP_EVAL_SET3, sc->args, cdr(sc->code));
@@ -88676,13 +88670,7 @@ static void op_eval_set3(s7_scheme *sc)
 
 static void op_eval_set3_no_mv(s7_scheme *sc)
 {
-#if 0
-  s7_pointer p = sc->args;
-  while (is_pair(cdr(p))) {p = cdr(p);}
-  cdr(p) = list_1(sc, sc->value); /* sc->value is a normal value */ /* hit a case where this list is freed incorrectly? */
-#else
   sc->args = pair_append(sc, sc->args, list_1(sc, sc->value));
-#endif
   sc->code = pop_op_stack(sc);    /* args = (ind... val), code = setter */
 }
 
@@ -91655,7 +91643,7 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	  sc->args = list_1(sc, sc->value); 
 	  goto APPLY; /* args = (val), code = setter */
 
-	case OP_EVAL_SET2_NO_MV: sc->args = pair_append_in_place(sc, sc->args, sc->value); goto APPLY; /* <val> is a normal value */
+	case OP_EVAL_SET2_NO_MV: sc->args = pair_append(sc, sc->args, list_1(sc, sc->value)); goto APPLY; /* <val> is a normal value */
 	  /* perhaps in_place is safe here: args=list_1(sc->value) if eval_set2, mv if eval_set2_mv */
 
 	case OP_EVAL_SET2_MV: /* <inds> = sc->value is a mv */
@@ -91672,13 +91660,14 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	case OP_EVAL_SET3_NO_MV: op_eval_set3_no_mv(sc); goto APPLY; /* <val> is a normal value */
 
 	case OP_EVAL_SET3_MV: /* <inds> = sc->value is a mv */
-	  sc->args = (is_null(sc->args)) ? sc->value : pair_append(sc, sc->args, sc->value);
+	  sc->args = (is_null(sc->args)) ? sc->value : pair_append(sc, sc->args, T_Lst(sc->value));
 	  goto EVAL_SET3;
 
 	case OP_EVAL_SET3: /* <ind> = sc->value is a normal value */
 	  sc->args = (is_null(sc->args)) ? list_1(sc, sc->value) : pair_append(sc, sc->args, list_1(sc, sc->value)); /* not in_place here */
-
-	EVAL_SET3: op_eval_set3(sc); goto TOP_NO_POP;
+	EVAL_SET3: 
+	  op_eval_set3(sc);
+	  goto TOP_NO_POP;
 
 	case OP_EVAL_ARGS1: sc->args = cons(sc, sc->value, sc->args); goto EVAL_ARGS;
 	case OP_EVAL_ARGS2: op_eval_args2(sc); goto APPLY; /* sc->value is the last arg, [so if is_null(cdr(sc->code) and current is pair, push args2] */
@@ -95040,7 +95029,7 @@ static void init_wrappers(s7_scheme *sc)
       full_type(p) = T_INTEGER | T_IMMUTABLE | T_MUTABLE | T_UNHEAP;  /* mutable to turn off set_has_number_name */
       integer(p) = 0;
     }
-  cdr(qp) = sc->integer_wrappers;
+  unchecked_set_cdr(qp, sc->integer_wrappers);
 
   sc->real_wrappers = semipermanent_list(sc, NUM_REAL_WRAPPERS);
   for (cp = sc->real_wrappers, qp = sc->real_wrappers; is_pair(cp); qp = cp, cp = cdr(cp))
@@ -95050,7 +95039,7 @@ static void init_wrappers(s7_scheme *sc)
       full_type(p) = T_REAL | T_IMMUTABLE | T_MUTABLE | T_UNHEAP;
       real(p) = 0.0;
     }
-  cdr(qp) = sc->real_wrappers;
+  unchecked_set_cdr(qp, sc->real_wrappers);
 
   sc->string_wrappers = semipermanent_list(sc, NUM_STRING_WRAPPERS);
   for (cp = sc->string_wrappers, qp = sc->string_wrappers; is_pair(cp); qp = cp, cp = cdr(cp))
@@ -95063,7 +95052,7 @@ static void init_wrappers(s7_scheme *sc)
       string_length(p) = 0;
       string_hash(p) = 0;
     }
-  cdr(qp) = sc->string_wrappers;
+  unchecked_set_cdr(qp, sc->string_wrappers);
 }
 
 static s7_pointer syntax(s7_scheme *sc, const char *name, opcode_t op, s7_pointer min_args, s7_pointer max_args, const char *doc)
@@ -96172,15 +96161,15 @@ s7_scheme *s7_init(void)
   sc->eval_history2 = semipermanent_list(sc, DEFAULT_HISTORY_SIZE);
   sc->history_pairs = semipermanent_list(sc, DEFAULT_HISTORY_SIZE);
   sc->history_sink = semipermanent_list(sc, 1);
-  cdr(sc->history_sink) = sc->history_sink;
+  unchecked_set_cdr(sc->history_sink, sc->history_sink);
   {
     s7_pointer p1, p2, p3;
     for (p3 = sc->history_pairs; is_pair(cdr(p3)); p3 = cdr(p3)) set_car(p3, semipermanent_list(sc, 1));
     set_car(p3, semipermanent_list(sc, 1));
-    set_cdr(p3, sc->history_pairs);
+    unchecked_set_cdr(p3, sc->history_pairs);
     for (p1 = sc->eval_history1, p2 = sc->eval_history2; is_pair(cdr(p1)); p1 = cdr(p1), p2 = cdr(p2));
-    set_cdr(p1, sc->eval_history1);
-    set_cdr(p2, sc->eval_history2);
+    unchecked_set_cdr(p1, sc->eval_history1);
+    unchecked_set_cdr(p2, sc->eval_history2);
     sc->cur_code = sc->eval_history1;
     sc->using_history1 = true;
     sc->old_cur_code = sc->cur_code;
@@ -96990,7 +96979,7 @@ int main(int argc, char **argv)
  * index     1026   1016    973    967    966    966
  * tmock     1177   1165   1057   1019   1027   1027
  * tvect     2519   2464   1772   1669   1647   1647
- * timp      2637   2575   1930   1694   1709   1738 [pair_append]
+ * timp      2637   2575   1930   1694   1709   1738
  * texit     ----   ----   1778   1741   1765   1765
  * s7test    1873   1831   1818   1829   1846   1824
  * thook     ----   ----   2590   2030   2048   2045
@@ -97002,7 +96991,7 @@ int main(int argc, char **argv)
  * fbench    2688   2583   2460   2430   2458   2461
  * trclo     2735   2574   2454   2445   2461   2462
  * titer     2865   2842   2641   2509   2465   2465
- * tload     ----   ----   3046   2404   2502   2548 [s7_make_function s7_define_function]
+ * tload     ----   ----   3046   2404   2502   2548
  * tmat      3065   3042   2524   2578   2586   2583
  * tsort     3105   3104   2856   2804   2828   2832
  * tobj      4016   3970   3828   3577   3511   3514
@@ -97049,4 +97038,5 @@ int main(int argc, char **argv)
  *   s7test qq helper func?  g_list_values, qq should probably also use #_apply-values, apply-values print as ,@?
  * separate gensym table? why 5500? [check heap holder]
  * lint arith error checks? lint: sublet and better inlet
+ * check_set_car for immutable? || in check_set_cdr?
  */
