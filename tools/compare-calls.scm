@@ -265,7 +265,6 @@
 		     ("tmap.scm" . "/home/bil/motif-snd/v-map85")
 		     ("tmat.scm" . "/home/bil/motif-snd/v-mat85")
 		     ("tmisc.scm" . "/home/bil/motif-snd/v-misc85")
-		     ("lg.scm" . "/home/bil/motif-snd/v-lg85")
 		     ("titer.scm" . "/home/bil/motif-snd/v-iter85")
 		     ("tsort.scm" . "/home/bil/motif-snd/v-sort85")
 		     ("tlet.scm" . "/home/bil/motif-snd/v-let85")

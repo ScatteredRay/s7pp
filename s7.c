@@ -8349,6 +8349,7 @@ static void resize_stack(s7_scheme *sc)
 
 s7_pointer s7_gc_protect_via_stack(s7_scheme *sc, s7_pointer x)
 {
+  check_stack_size(sc); /* this can be called externally, so we need to be careful about this */
   push_stack_no_let_no_code(sc, OP_GC_PROTECT, x);
   return(x);
 }
@@ -27155,7 +27156,7 @@ static s7_pointer g_string_append_1(s7_scheme *sc, s7_pointer args, s7_pointer c
   if (is_null(args))
     return(nil_string);
 
-  s7_gc_protect_via_stack(sc, args);
+  gc_protect_via_stack(sc, args);
   /* get length for new string */
   for (x = args; is_not_null(x); x = cdr(x))
     {
@@ -31014,7 +31015,7 @@ static s7_pointer g_require(s7_scheme *sc, s7_pointer args)
 The symbols refer to the argument to \"provide\".  (require lint.scm)"
   /* #define Q_require s7_make_circular_signature(sc, 1, 2, sc->T, sc->is_symbol_symbol) */
 
-  s7_gc_protect_via_stack(sc, args);
+  gc_protect_via_stack(sc, args);
   for (s7_pointer p = args; is_pair(p); p = cdr(p))
     {
       s7_pointer sym;
@@ -32941,7 +32942,7 @@ static void vector_to_port(s7_scheme *sc, s7_pointer vect, s7_pointer port, use_
 	}}
 
   check_stack_size(sc);
-  s7_gc_protect_via_stack(sc, vect);
+  gc_protect_via_stack(sc, vect);
   if (use_write == P_READABLE)
     {
       int32_t vref;
@@ -33212,7 +33213,7 @@ static void int_vector_to_port(s7_scheme *sc, s7_pointer vect, s7_pointer port, 
     {
       plen = catstrs_direct(buf, "#i", pos_int_to_str_direct(sc, vector_ndims(vect)), "d", (const char *)NULL);
       port_write_string(port)(sc, buf, plen, port);
-      s7_gc_protect_via_stack(sc, vect);
+      gc_protect_via_stack(sc, vect);
       multivector_to_port(sc, vect, port, len, 0, 0, vector_ndims(vect), P_DISPLAY, NULL);
       unstack_gc_protect(sc);
     }
@@ -33275,7 +33276,7 @@ static void float_vector_to_port(s7_scheme *sc, s7_pointer vect, s7_pointer port
     {
       plen = catstrs_direct(buf, "#r", pos_int_to_str_direct(sc, vector_ndims(vect)), "d", (const char *)NULL);
       port_write_string(port)(sc, buf, plen, port);
-      s7_gc_protect_via_stack(sc, vect);
+      gc_protect_via_stack(sc, vect);
       multivector_to_port(sc, vect, port, len, 0, 0, vector_ndims(vect), P_DISPLAY, NULL);
       unstack_gc_protect(sc);
     }
@@ -33510,7 +33511,7 @@ static void pair_to_port(s7_scheme *sc, s7_pointer lst, s7_pointer port, use_wri
   else port_write_character(port)(sc, '(', port);
 
   check_stack_size(sc);
-  s7_gc_protect_via_stack(sc, lst);
+  gc_protect_via_stack(sc, lst);
 
   if (use_write == P_READABLE)
     {
@@ -39345,7 +39346,7 @@ static s7_pointer g_list_append(s7_scheme *sc, s7_pointer args)
   s7_pointer tp = sc->nil, np = NULL, pp;
 
   /* we know here that car(args) is a list and cdr(args) is not nil; this function does not check sc->max_list_length; called only in g_append */
-  s7_gc_protect_via_stack(sc, args);
+  gc_protect_via_stack(sc, args);
   for (s7_pointer y = args; is_pair(y); y = cdr(y)) /* arglist so not dotted */
     {
       s7_pointer p = car(y), func;
@@ -50106,7 +50107,7 @@ static s7_pointer vector_append(s7_scheme *sc, s7_pointer args, uint8_t typ, s7_
   s7_int i, len;
   bool typed;
 
-  s7_gc_protect_via_stack(sc, args);
+  gc_protect_via_stack(sc, args);
   len = total_sequence_length(sc, args, caller, (typ == T_VECTOR) ? T_FREE : ((typ == T_FLOAT_VECTOR) ? T_REAL : T_INTEGER));
   if (len > sc->max_vector_length)
     {
@@ -50194,7 +50195,7 @@ static s7_pointer hash_table_append(s7_scheme *sc, s7_pointer args)
 {
   s7_pointer new_hash, key_typer = NULL, value_typer = NULL;
   bool typed = true;
-  s7_gc_protect_via_stack(sc, args);
+  gc_protect_via_stack(sc, args);
   check_stack_size(sc);
   new_hash = s7_make_hash_table(sc, sc->default_hash_table_length);
   set_stack_protected2(sc, new_hash);
@@ -50240,7 +50241,7 @@ static s7_pointer let_append(s7_scheme *sc, s7_pointer args)
 {
   s7_pointer new_let, e = car(args);
   check_method(sc, e, sc->append_symbol, args);
-  s7_gc_protect_via_stack(sc, args);
+  gc_protect_via_stack(sc, args);
   new_let = make_let(sc, sc->nil);
   set_stack_protected2(sc, new_let);
   for (s7_pointer p = args; is_pair(p); p = cdr(p))
@@ -65829,7 +65830,7 @@ static s7_pointer opt_do_any(opt_info *o)
   opt_info *os[NUM_VUNIONS];
   opt_info_fp fp[NUM_VUNIONS];
   s7_pointer old_e = sc->curlet;
-  s7_gc_protect_via_stack(sc, old_e);
+  gc_protect_via_stack(sc, old_e);
   set_curlet(sc, do_curlet(o));
   /* init */
   for (k = 0, vp = let_slots(sc->curlet); tis_slot(vp); k++, vp = next_slot(vp))
@@ -65891,7 +65892,7 @@ static s7_pointer opt_do_step_1(opt_info *o)
   s7_pointer vp, result, stepper = NULL;
   s7_scheme *sc = o->sc;
   s7_pointer old_e = sc->curlet;
-  s7_gc_protect_via_stack(sc, old_e);
+  gc_protect_via_stack(sc, old_e);
   set_curlet(sc, do_curlet(o));
   for (k = 0, vp = let_slots(sc->curlet); tis_slot(vp); k++, vp = next_slot(vp))
     {
@@ -65924,7 +65925,7 @@ static s7_pointer opt_do_step_i(opt_info *o)
   s7_scheme *sc = o->sc;
   s7_int end, incr;
   s7_pointer old_e = sc->curlet;
-  s7_gc_protect_via_stack(sc, old_e);
+  gc_protect_via_stack(sc, old_e);
   set_curlet(sc, do_curlet(o));
   for (k = 0, vp = let_slots(sc->curlet); tis_slot(vp); k++, vp = next_slot(vp))
     {
@@ -65960,7 +65961,7 @@ static s7_pointer opt_do_no_vars(opt_info *o)
   s7_scheme *sc = o->sc;
   bool (*fb)(opt_info *o) = ostart->v[0].fb;
   s7_pointer old_e = sc->curlet;
-  s7_gc_protect_via_stack(sc, old_e);
+  gc_protect_via_stack(sc, old_e);
   set_curlet(sc, do_curlet(o));
   if (len == 0)       /* titer */
     while (!(fb(ostart)));
@@ -65990,7 +65991,7 @@ static s7_pointer opt_do_1(opt_info *o)
   s7_pointer vp = let_slots(do_curlet(o));
   s7_scheme *sc = o->sc;
   s7_pointer old_e = sc->curlet;
-  s7_gc_protect_via_stack(sc, old_e);
+  gc_protect_via_stack(sc, old_e);
   set_curlet(sc, do_curlet(o));
   slot_set_value(vp, o1->v[0].fp(o1));
   if ((o->v[8].i == 1) &&
@@ -66042,7 +66043,7 @@ static s7_pointer opt_do_n(opt_info *o)
   s7_pointer vp = let_slots(do_curlet(o));
   s7_scheme *sc = o->sc;
   s7_pointer old_e = sc->curlet;
-  s7_gc_protect_via_stack(sc, old_e);
+  gc_protect_via_stack(sc, old_e);
   set_curlet(sc, do_curlet(o));
   slot_set_value(vp, o1->v[0].fp(o1));
   if (len == 2) /* tmac tshoot */
@@ -66090,7 +66091,7 @@ static s7_pointer opt_do_times(opt_info *o)
   s7_pointer vp = let_dox1_value(do_curlet(o));
   s7_scheme *sc = o->sc;
   s7_pointer old_e = sc->curlet;
-  s7_gc_protect_via_stack(sc, old_e);
+  gc_protect_via_stack(sc, old_e);
   set_curlet(sc, do_curlet(o));
   integer(vp) = integer(o1->v[0].fp(o1));
   if (len == 2)                 /* tmac tmisc */
@@ -66124,7 +66125,7 @@ static s7_pointer opt_do_list_simple(opt_info *o)
   s7_scheme *sc = o->sc;
   s7_pointer (*fp)(opt_info *o);
   s7_pointer old_e = sc->curlet;
-  s7_gc_protect_via_stack(sc, old_e);
+  gc_protect_via_stack(sc, old_e);
   set_curlet(sc, do_curlet(o));
   slot_set_value(vp, o1->v[0].fp(o1));
   o1 = do_any_body(o);
@@ -66156,7 +66157,7 @@ static s7_pointer opt_do_very_simple(opt_info *o)
   s7_pointer (*f)(opt_info *o);
   s7_scheme *sc = o->sc;
   s7_pointer old_e = sc->curlet;
-  s7_gc_protect_via_stack(sc, old_e);
+  gc_protect_via_stack(sc, old_e);
   set_curlet(sc, do_curlet(o));
   integer(vp) = integer(o1->v[0].fp(o1));
   o1 = do_any_body(o);
@@ -66248,7 +66249,7 @@ static s7_pointer opt_do_prepackaged(opt_info *o)
   s7_pointer vp = let_dox1_value(do_curlet(o));
   s7_scheme *sc = o->sc;
   s7_pointer old_e = sc->curlet;
-  s7_gc_protect_via_stack(sc, old_e);
+  gc_protect_via_stack(sc, old_e);
   set_curlet(sc, do_curlet(o));
   integer(vp) = integer(o1->v[0].fp(o1));
 
@@ -69240,7 +69241,7 @@ and splices the resultant list into the outer list. `(1 ,(+ 1 1) ,@(list 3 4)) -
 	len = -len;
 	dotted = true;
       }
-    s7_gc_protect_via_stack(sc, sc->w);
+    gc_protect_via_stack(sc, sc->w);
 
     check_free_heap_size(sc, len + 1);
     sc->w = sc->nil;
@@ -69290,7 +69291,7 @@ static s7_pointer g_quasiquote(s7_scheme *sc, s7_pointer args) /* this is for ex
 
 static s7_pointer g_qq_append(s7_scheme *sc, s7_pointer args)
 {
-  #define H_qq_append "[list*]: CL list* (I think) for quasiquote's internal use"
+  #define H_qq_append "<list*>: CL list* (I think) for quasiquote's internal use"
   #define Q_qq_append s7_make_signature(sc, 3, sc->is_list_symbol, sc->is_list_symbol, sc->T)
   s7_pointer a = car(args), b = cadr(args);
   s7_pointer p, tp, np;
@@ -69298,7 +69299,7 @@ static s7_pointer g_qq_append(s7_scheme *sc, s7_pointer args)
   p = cdr(a);
   if (is_null(p)) return(cons(sc, car(a), b));
   tp = list_1(sc, car(a));
-  s7_gc_protect_via_stack(sc, tp);
+  gc_protect_via_stack(sc, tp);
   for (np = tp; is_pair(p); p = cdr(p), np = cdr(np))
     set_cdr(np, list_1(sc, car(p)));
   set_cdr(np, b);
@@ -86188,7 +86189,7 @@ static bool op_tc_let_if_a_z_la(s7_scheme *sc, s7_pointer code)
   s7_pointer inner_let = make_let_with_slot(sc, sc->curlet, car(let_var), fx_call(sc, cdr(let_var)));
   s7_pointer let_slot = let_slots(inner_let);
   set_curlet(sc, inner_let);
-  s7_gc_protect_via_stack(sc, inner_let);
+  gc_protect_via_stack(sc, inner_let);
   let_var = cdr(let_var);
 
   while (fx_call(sc, if_test) == sc->F)
@@ -86228,7 +86229,7 @@ static bool op_tc_let_if_a_z_laa(s7_scheme *sc, s7_pointer code)
   s7_pointer inner_let = make_let_with_slot(sc, sc->curlet, car(let_var), fx_call(sc, cdr(let_var)));
   s7_pointer let_slot = let_slots(inner_let);
   set_curlet(sc, inner_let);
-  s7_gc_protect_via_stack(sc, inner_let);
+  gc_protect_via_stack(sc, inner_let);
   let_var = cdr(let_var);
 #if (!WITH_GMP)
   if (!no_bool_opt(code))
@@ -86307,7 +86308,7 @@ static void op_tc_let_when_laa(s7_scheme *sc, bool when, s7_pointer code)
   s7_pointer inner_let = make_let_with_slot(sc, sc->curlet, car(let_var), fx_call(sc, cdr(let_var)));
   s7_pointer let_slot = let_slots(inner_let);
   set_curlet(sc, inner_let);
-  s7_gc_protect_via_stack(sc, inner_let);
+  gc_protect_via_stack(sc, inner_let);
   let_var = cdr(let_var);
 
   for (p = if_true; is_pair(cdr(p)); p = cdr(p));
@@ -86405,7 +86406,7 @@ static bool op_tc_if_a_z_let_if_a_z_laa(s7_scheme *sc, s7_pointer code)
   s7_pointer laa_slot = next_slot(la_slot);
   s7_pointer inner_let = inline_make_let(sc, sc->curlet);
 
-  s7_gc_protect_via_stack(sc, inner_let);
+  gc_protect_via_stack(sc, inner_let);
   slot = make_slot(sc, caar(let_vars), sc->F);
   slot_set_next(slot, slot_end);
   let_set_slots(inner_let, slot);
@@ -86449,7 +86450,7 @@ static bool op_tc_let_cond(s7_scheme *sc, s7_pointer code)
   s7_pointer inner_let = make_let_with_slot(sc, sc->curlet, car(let_var), fx_call(sc, cdr(let_var)));
   s7_pointer let_slot = let_slots(inner_let);
   set_curlet(sc, inner_let);
-  s7_gc_protect_via_stack(sc, inner_let);
+  gc_protect_via_stack(sc, inner_let);
   let_var = cadr(let_var);
   if ((letf == fx_c_s_direct) &&
       (symbol_id(cadr(let_var)) != let_id(outer_let))) /* i.e. not an argument to the recursive function, and not set! (safe closure body) */
@@ -95879,7 +95880,10 @@ static void init_rootlet(s7_scheme *sc)
 #else
   sc->unquote_symbol =               make_symbol(sc, "unquote", 7);
 #endif
-  sc->qq_append_symbol =             defun("#<list*>",          qq_append,		2, 0, false); /* occurs via quasiquote only as #_[list*] */
+  sc->qq_append_symbol =             defun("<list*>",          qq_append,		2, 0, false); /* occurs via quasiquote only as #_<list*> */
+#if (!DISABLE_DEPRECATED)
+  defun("[list*]", qq_append, 2, 0, false);
+#endif
   sc->apply_values_symbol =          unsafe_defun("apply-values", apply_values,         0, 1, false);
   set_immutable(sc->apply_values_symbol);
   set_immutable_slot(global_slot(sc->apply_values_symbol));
@@ -97023,20 +97027,16 @@ int main(int argc, char **argv)
  * tall      15.6   15.6   15.6   15.6   15.1   15.1
  * calls     36.7   37.5   37.0   37.5   37.2   37.2
  * sg        ----   ----   55.9   55.8   55.4   55.3
- * lg        ----   ----  105.2  106.4  107.2  106.1
  * tbig     177.4  175.8  156.5  148.1  146.0  146.0
  * ---------------------------------------------------
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * catch in C outside scheme code? setting *error-hook* doesn't help -- it falls into the longjmp
  * s7test needs while/anaphoric-when tests (stuff.scm, t656) -- any others?
- * more ongoing free_cell (mark/check ref)
- *   safe do let+slots? let-wrapper/slot-wrapper
- *   perhaps interesting to record where all allocs are, sort by biggest
+ * more ongoing free_cell (mark/check ref), perhaps interesting to record where all allocs are, sort by biggest
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  *   s7test qq helper func?  g_list_values, qq should probably also use #_apply-values, apply-values print as ,@?
  * separate gensym table? why 5500? [check heap holder]
  * lint arith error checks? lint: sublet and better inlet
- * check_set_car for immutable? || in check_set_cdr?
  */

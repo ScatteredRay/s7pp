@@ -295,9 +295,6 @@
 (format *stderr* "~NC bench ~NC~%" 20 #\- 20 #\-)
 (system "(cd /home/bil/test/scheme/bench/src ; /home/bil/cl/repl test-all.scm)")
 
-;(format *stderr* "~NC lg ~NC~%" 20 #\- 20 #\-)
-;(system "./repl lg.scm")
-
 (format *stderr* "~NC full s7test ~NC~%" 20 #\- 20 #\-)
 (system "./repl full-s7test.scm")
 

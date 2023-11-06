@@ -16,7 +16,6 @@
 		     ("tmap.scm" . "v-map")
 		     ("tmat.scm" . "v-mat")
 		     ("tmisc.scm" . "v-misc")
-		     ("lg.scm" . "v-lg")
 		     ("titer.scm" . "v-iter")
 		     ("tsort.scm" . "v-sort")
 		     ("tlet.scm" . "v-let")
@@ -133,7 +132,6 @@
 	 (list "snd -noinit" "tall.scm")
 	 (list "snd -l" "snd-test.scm")
 	 (list "snd -l" "full-snd-test.scm")
-	 (list "repl" "lg.scm")
 	 (list "repl" "tbig.scm")
 	 )))
 

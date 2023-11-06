@@ -9019,6 +9019,25 @@ and so on, then longjmps to unwind the C stack.  If a catch is found, its error 
 of execution.
 </p>
 
+<p>s7 has an internal debugger that checks everything for consistency.  If you're writing C code that
+calls the s7.h functions a lot, it is sometimes helpful to turn on this debugger by adding the
+-DS7_DEBUGGING=1 compiler flag.  s7 will run 10 to 20 times slower, but it will complain loudly
+about anything it doesn't expect.  
+The internal debugger normally calls abort whenever it detects some error, so it's most convenient
+to run s7 in gdb if this flag is on.
+S7_DEBUGGING also provides various debugging functions that
+can be called from gdb.  By far the most useful is display.  It takes two arguments, the s7_scheme
+pointer to the currently running interpreter, and the object you want to display.  For much more
+detail, there is object_to_let_p_p.  If you're trying to look at a scheme object and have only
+its name in scheme code, use s7_name_to_value.  heap_scan, heap_analyze, and heap holders provide
+a view of the heap.  The scheme function (*s7* 'memory-usage) might also be useful in
+this context.
+s7_show_stack returns a brief list of the current Scheme stack.
+Due to tail calls and whatnot, the s7 stack is not as informative as the equivalent C stack would be.
+The s7 file <a href="#gdb">gdbinit</a> has a few gdb functions that might be helpful.  See also
+(*s7* 'history).
+</p>
+
 
 <div class="shortheader" id="cgcprotection">GC protection</div>
 
