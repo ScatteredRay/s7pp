@@ -69293,7 +69293,7 @@ static s7_pointer g_qq_append(s7_scheme *sc, s7_pointer args)
 {
   #define H_qq_append "<list*>: CL list* (I think) for quasiquote's internal use"
   #define Q_qq_append s7_make_signature(sc, 3, sc->is_list_symbol, sc->is_list_symbol, sc->T)
-  s7_pointer a = car(args), b = cadr(args);
+  s7_pointer a = T_Lst(car(args)), b = cadr(args);
   s7_pointer p, tp, np;
   if (is_null(a)) return(b);
   p = cdr(a);
@@ -97038,5 +97038,6 @@ int main(int argc, char **argv)
  *   lots of is_global(sc->quote_symbol)
  *   s7test qq helper func?  g_list_values, qq should probably also use #_apply-values, apply-values print as ,@?
  * separate gensym table? why 5500? [check heap holder]
- * lint arith error checks? lint: sublet and better inlet
+ * lint: sublet and better inlet
+ * t718 *error-hook*
  */
