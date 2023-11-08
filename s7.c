@@ -1153,7 +1153,7 @@ struct s7_scheme {
   unsigned char number_separator;
   s7_double default_rationalize_error, equivalent_float_epsilon, hash_table_float_epsilon;
   s7_int default_hash_table_length, initial_string_port_length, print_length, objstr_max_len, history_size, true_history_size, output_file_port_data_size;
-  s7_int max_vector_length, max_string_length, max_list_length, max_vector_dimensions, max_format_length, max_port_data_size, rec_loc, rec_len;
+  s7_int max_vector_length, max_string_length, max_list_length, max_vector_dimensions, max_format_length, max_port_data_size, rec_loc, rec_len, show_stack_limit;
   s7_pointer stacktrace_defaults;
 
   s7_pointer rec_stack, rec_testp, rec_f1p, rec_f2p, rec_f3p, rec_f4p, rec_f5p, rec_f6p, rec_f7p, rec_f8p, rec_f9p;
@@ -2963,6 +2963,7 @@ static void init_types(void)
 /* fx_call can affect the stack and sc->value */
 
 #define car(p)                         (T_Pair(p))->object.cons.car
+#define unchecked_car(p)               (T_Pos(p))->object.cons.car
 #define set_car(p, Val)                car(p) = T_Pos(Val) /* can be a slot or #<unsed> */
 #define cdr(p)                         (T_Pair(p))->object.cons.cdr
 #if S7_DEBUGGING
@@ -2972,7 +2973,6 @@ static void check_set_cdr(s7_pointer p, s7_pointer Val, const char *func, int32_
 #define set_cdr(p, Val)                cdr(p) = T_Pos(Val)
 #endif
 #define unchecked_set_cdr(p, Val)      cdr(p) = T_Pos(Val)
-#define unchecked_car(p)               (T_Pos(p))->object.cons.car
 #define unchecked_cdr(p)               (T_Pos(p))->object.cons.cdr
 
 #define caar(p)                        car(car(p))
@@ -4688,35 +4688,6 @@ void s7_show_history(s7_scheme *sc)
 #endif
 }
 
-#define stack_op(Stack, Loc)         ((opcode_t)T_Op(stack_element(Stack, Loc)))
-#define stack_args(Stack, Loc)       stack_element(Stack, Loc - 1)
-#define stack_let(Stack, Loc)        stack_element(Stack, Loc - 2)
-#define stack_code(Stack, Loc)       stack_element(Stack, Loc - 3)
-#define set_stack_op(Stack, Loc, Op) stack_element(Stack, Loc) = (s7_pointer)(opcode_t)(Op)
-
-#define stack_top_op(Sc)             ((opcode_t)T_Op(Sc->stack_end[-1]))
-#define unchecked_stack_top_op(Sc)   ((opcode_t)(Sc->stack_end[-1]))
-#define stack_top_args(Sc)           (Sc->stack_end[-2])
-#define stack_top_let(Sc)            (Sc->stack_end[-3])
-#define stack_top_code(Sc)           (Sc->stack_end[-4])
-#define set_stack_top_op(Sc, Op)     Sc->stack_end[-1] = (s7_pointer)(opcode_t)(Op)
-#define set_stack_top_args(Sc, Args) Sc->stack_end[-2] = Args
-#define set_stack_top_code(Sc, Code) Sc->stack_end[-4] = Code
-
-/* stack_top_code changes.  If a function has a tail-call, the stack_top_code that form sees
- *   if stack_top_op==op-begin1 can change from call to call -- the begin actually refers
- *   to the caller, which is dependent on where the current function was called, so we can't hard-wire
- *   any optimizations based on that sequence.
- */
-
-void s7_show_stack(s7_scheme *sc);
-void s7_show_stack(s7_scheme *sc)
-{
-  fprintf(stderr, "stack:\n");
-  for (int64_t i = stack_top(sc) - 1; i >= 3; i -= 4)
-    fprintf(stderr, "  %s\n", op_names[stack_op(sc->stack, i)]);
-}
-
 #if S7_DEBUGGING
 #define UNUSED_BITS 0xfc00000000c0 /* high 6 bits of optimizer code + high 2 bits of type */
 
@@ -5445,7 +5416,9 @@ static s7_pointer check_opcode(s7_pointer p, const char *func, int32_t line)
 static void check_set_cdr(s7_pointer p, s7_pointer Val, const char *func, int32_t line)
 {
   if ((is_immutable(p)) && (!in_heap(p)))
-    fprintf(stderr, "%s[%d]: set_cdr target is immutable/unheaped, %p\n", func, line, p);
+    fprintf(stderr, "%s[%d]: set_cdr target is immutable and not in the heap, %p\n", func, line, p);
+  if ((!in_heap(p)) && (in_heap(Val)))
+    fprintf(stderr, "%s[%d]: set_cdr target is not in the heap, but the new value is, %p %p\n", func, line, p, Val);
   cdr(p) = Val;
 }
 
@@ -8025,6 +7998,8 @@ static inline void remove_from_heap(s7_scheme *sc, s7_pointer x)
 
 
 /* -------------------------------- stacks -------------------------------- */
+
+/* -------- op stack -------- */
 #define OP_STACK_INITIAL_SIZE 64
 
 #define op_stack_entry(Sc) (*(Sc->op_stack_now - 1))
@@ -8076,6 +8051,28 @@ static void resize_op_stack(s7_scheme *sc)
 }
 
 
+/* -------- main stack -------- */
+/* stack_top_code changes.  If a function has a tail-call, the stack_top_code that form sees
+ *   if stack_top_op==op-begin1 can change from call to call -- the begin actually refers
+ *   to the caller, which is dependent on where the current function was called, so we can't hard-wire
+ *   any optimizations based on that sequence.
+ */
+
+#define stack_op(Stack, Loc)         ((opcode_t)T_Op(stack_element(Stack, Loc)))
+#define stack_args(Stack, Loc)       stack_element(Stack, Loc - 1)
+#define stack_let(Stack, Loc)        stack_element(Stack, Loc - 2)
+#define stack_code(Stack, Loc)       stack_element(Stack, Loc - 3)
+#define set_stack_op(Stack, Loc, Op) stack_element(Stack, Loc) = (s7_pointer)(opcode_t)(Op)
+
+#define stack_top_op(Sc)             ((opcode_t)T_Op(Sc->stack_end[-1]))
+#define unchecked_stack_top_op(Sc)   ((opcode_t)(Sc->stack_end[-1]))
+#define stack_top_args(Sc)           (Sc->stack_end[-2])
+#define stack_top_let(Sc)            (Sc->stack_end[-3])
+#define stack_top_code(Sc)           (Sc->stack_end[-4])
+#define set_stack_top_op(Sc, Op)     Sc->stack_end[-1] = (s7_pointer)(opcode_t)(Op)
+#define set_stack_top_args(Sc, Args) Sc->stack_end[-2] = Args
+#define set_stack_top_code(Sc, Code) Sc->stack_end[-4] = Code
+
 #define stack_end_code(Sc) Sc->stack_end[0]
 #define stack_end_let(Sc)  Sc->stack_end[1]
 #define stack_end_args(Sc) Sc->stack_end[2]
@@ -8099,11 +8096,6 @@ static void pop_stack_1(s7_scheme *sc, const char *func, int32_t line)
   sc->curlet = stack_end_let(sc);  /* not T_Lid|Pos, see op_any_closure_3p_end et al (stack used to pass args, not curlet) */
   sc->args = stack_end_args(sc);
   sc->cur_op = (opcode_t)T_Op(stack_end_op(sc));
-  if (sc->cur_op >= NUM_OPS)
-    {
-      fprintf(stderr, "%s%s[%d]: pop_stack invalid opcode: %" p64 " %s\n", bold_text, func, line, sc->cur_op, unbold_text);
-      if (sc->stop_at_error) abort();
-    }
   if ((sc->cur_op != OP_GC_PROTECT) &&
       (!is_let(stack_end_let(sc))) && (!is_null(stack_end_let(sc))) &&
       (sc->cur_op != OP_ANY_CLOSURE_3P_3)) /* used as third GC protection field */
@@ -8128,6 +8120,7 @@ static void pop_stack_no_op_1(s7_scheme *sc, const char *func, int32_t line)
 
 #define push_stack(Sc, Op, Args, Code)	\
   do {s7_pointer *_end_; _end_ = Sc->stack_end; push_stack_1(Sc, Op, Args, Code, _end_, __func__, __LINE__);} while (0)
+void s7_show_stack(s7_scheme *sc);
 
 static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer code, s7_pointer *end, const char *func, int32_t line)
 {
@@ -8140,9 +8133,6 @@ static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer
 	      (s7_int)((intptr_t)(sc->stack_resize_trigger - sc->stack_start)),
 	      unbold_text);
       s7_show_stack(sc);
-      /* make room for debugging */
-
-      abort();
       if (sc->stop_at_error) abort();
     }
   if (sc->stack_end >= sc->stack_resize_trigger)
@@ -8311,6 +8301,41 @@ static uint32_t resize_stack_unchecked(s7_scheme *sc)
   return(new_size);
 }
 
+#define display_40(Obj) string_value(object_to_truncated_string(sc, Obj, 40))
+
+void s7_show_stack(s7_scheme *sc)
+{
+  resize_stack_unchecked(sc);
+  fprintf(stderr, "stack:\n");
+  for (int64_t i = stack_top(sc) - 1, j = 0; (i >= 3) && (j < sc->show_stack_limit); i -= 4, j++)
+#if 1
+    fprintf(stderr, "  %s\n", op_names[stack_op(sc->stack, i)]);
+#else
+    {
+      opcode_t op = stack_op(sc->stack, i);
+      s7_pointer code = stack_code(sc->stack, i);
+      s7_pointer args = stack_args(sc->stack, i);
+      switch (op)
+	{
+	case OP_GC_PROTECT:
+	  fprintf(stderr, "  %s %s\n", op_names[op], display(args));
+	  break;
+	case OP_EVAL_DONE: case OP_UNOPT:
+	  fprintf(stderr, "  %s\n", op_names[op]);
+	  break;
+	case OP_BEGIN: case OP_BEGIN_NO_HOOK: case OP_BEGIN_HOOK:
+	  fprintf(stderr, "  %s %s\n", op_names[op], ((s7_is_valid(sc, sc->code)) && (sc->code != sc->unused)) ? display_40(sc->code) : "");
+	  break;
+	  /* op_read* op_begin* etc */
+	  /* op_begin* assume sc->code, nothing in stack is interesting */
+	default:
+	    fprintf(stderr, "  %s %s %s\n", op_names[op], 
+		    ((s7_is_valid(sc, code)) && (code != sc->unused)) ? display(code) : "",
+		    ((s7_is_valid(sc, args)) && (args != sc->unused)) ? display(args) : "");
+	}}
+#endif
+}
+
 #if S7_DEBUGGING
 #define resize_stack(Sc) resize_stack_1(Sc, __func__, __LINE__)
 static void resize_stack_1(s7_scheme *sc, const char *func, int line)
@@ -8322,12 +8347,7 @@ static void resize_stack_1(s7_scheme *sc, const char *func, int line)
 	      (s7_int)((intptr_t)(sc->stack_end - sc->stack_start)), sc->stack_size,
 	      (s7_int)((intptr_t)(sc->stack_resize_trigger - sc->stack_start)),
 	      unbold_text);
-      /* s7_show_stack(sc); */ /* prints so much the error message is inaccessible */
-      fprintf(stderr, "stack:\n");
-      for (int64_t i = stack_top(sc) - 1; i >= stack_top(sc) - 100; i -= 4)
-	fprintf(stderr, "  %s\n", op_names[stack_op(sc->stack, i)]);
-      resize_stack_unchecked(sc); /* give us some room while debugging! */
-      abort();
+      s7_show_stack(sc);
       if (sc->stop_at_error) abort();
     }
   resize_stack_unchecked(sc);
@@ -75306,7 +75326,7 @@ static s7_pointer check_named_let(s7_scheme *sc, int32_t vars)
 	  s7_pointer val = cdar(ex);
 	  s7_function fx = fx_choose(sc, val, sc->curlet, let_symbol_is_safe);
 	  if (fx) set_fx_direct(val, fx); else fx_ok = false;
-	  car(exp) = caar(ex);
+	  set_car(exp, caar(ex));
 	}
       if (fx_ok)
 	{
@@ -76587,10 +76607,10 @@ static bool op_let_temp_init1(s7_scheme *sc)
       s7_pointer binding = caar(sc->args);
       s7_pointer settee = car(binding);
       s7_pointer new_value = cadr(binding);
-      cadr(sc->args) = cons(sc, settee, cadr(sc->args));
+      set_cadr(sc->args, cons(sc, settee, cadr(sc->args)));
       binding = cdddr(sc->args);
       set_car(binding, cons_unchecked(sc, new_value, car(binding)));
-      car(sc->args) = cdar(sc->args);
+      set_car(sc->args, cdar(sc->args));
       if (is_symbol(settee))                    /* get initial values */
 	set_caddr(sc->args, cons_unchecked(sc, lookup_checked(sc, settee), caddr(sc->args)));
       else
@@ -76603,7 +76623,7 @@ static bool op_let_temp_init1(s7_scheme *sc)
 	    }
 	  set_caddr(sc->args, cons_unchecked(sc, new_value, caddr(sc->args)));
 	}}
-  car(sc->args) = cadr(sc->args);
+  set_car(sc->args, cadr(sc->args));
   return(false);
 }
 
@@ -76620,7 +76640,7 @@ static goto_t op_let_temp_init2(s7_scheme *sc)
       s7_pointer settee = caar(sc->args), slot, p = cdddr(sc->args);
       s7_pointer new_value = caar(p);
       set_car(p, cdar(p));
-      car(sc->args) = cdar(sc->args);
+      set_car(sc->args, cdar(sc->args));
       if ((!is_symbol(settee)) || (is_pair(new_value)))
 	{
 	  if (is_symbol(settee))
@@ -76643,7 +76663,7 @@ static goto_t op_let_temp_init2(s7_scheme *sc)
 	new_value = lookup_checked(sc, new_value);
       slot_set_value(slot, (slot_has_setter(slot)) ? call_setter(sc, slot, new_value) : new_value);
     }
-  car(sc->args) = cadr(sc->args);
+  set_car(sc->args, cadr(sc->args));
   /* pop_stack(sc); */ /* this clobbers sc->args! 7-May-22 */
   unstack_gc_protect(sc);         /* pop_stack_no_args(sc) in effect */
   sc->code = cdr(stack_end_code(sc));
@@ -76663,7 +76683,7 @@ static bool op_let_temp_done1(s7_scheme *sc)
       s7_pointer settee = caar(sc->args), p = cddr(sc->args);
       sc->value = caar(p);
       set_car(p, cdar(p));
-      car(sc->args) = cdar(sc->args);
+      set_car(sc->args, cdar(sc->args));
 
       if ((is_pair(settee)) && (car(settee) == sc->s7_starlet_symbol) &&  /* (let-temporarily (((*s7* (symbol "print-length")) 43))...) */
 	  ((is_symbol_and_keyword(cadr(settee))) ||
@@ -79676,7 +79696,7 @@ static goto_t set_implicit_vector(s7_scheme *sc, s7_pointer vect, s7_pointer ind
 	      s7_pointer pa;
 	      s7_pointer args = safe_list_if_possible(sc, argnum + 2);
 	      if (in_heap(args)) gc_protect_via_stack(sc, args);
-	      car(args) = vect;
+	      set_car(args, vect);
 	      for (p = inds, pa = cdr(args); is_pair(p); p = cdr(p), pa = cdr(pa))
 		{
 		  index = car(p);
@@ -79687,11 +79707,11 @@ static goto_t set_implicit_vector(s7_scheme *sc, s7_pointer vect, s7_pointer ind
 		      if (in_heap(args)) unstack_gc_protect(sc);
 		      error_nr(sc, sc->wrong_type_arg_symbol, set_elist_2(sc, wrap_string(sc, "vector-set!: index must be an integer: ~S", 41), form));
 		    }
-		  car(pa) = index;
+		  set_car(pa, index);
 		}
-	      car(pa) = car(val);
+	      set_car(pa, car(val));
 	      if (is_symbol(car(pa)))
-		car(pa) = lookup_checked(sc, car(pa));
+		set_car(pa, lookup_checked(sc, car(pa)));
 	      sc->value = g_vector_set(sc, args);
 	      if (in_heap(args)) unstack_gc_protect(sc);
 	      else clear_list_in_use(args);
@@ -92380,14 +92400,12 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	  if (op_let_temp_done1(sc)) continue;
 	  goto SET_UNCHECKED;
 
-
 	case OP_LET_TEMP_S7:        if(op_let_temp_s7(sc))         goto BEGIN; sc->value = sc->nil; continue;
 	case OP_LET_TEMP_S7_DIRECT: if (op_let_temp_s7_direct(sc)) goto BEGIN; sc->value = sc->nil; continue;
-
-	case OP_LET_TEMP_NA:     if (op_let_temp_na(sc))     goto BEGIN; sc->value = sc->nil; continue;
-	case OP_LET_TEMP_A:      if (op_let_temp_a(sc))      goto BEGIN; sc->value = sc->nil; continue;
-	case OP_LET_TEMP_SETTER: if (op_let_temp_setter(sc)) goto BEGIN; sc->value = sc->nil; continue;
-	case OP_LET_TEMP_A_A:    sc->value = fx_let_temp_a_a(sc, sc->code); continue;
+	case OP_LET_TEMP_NA:        if (op_let_temp_na(sc))        goto BEGIN; sc->value = sc->nil; continue;
+	case OP_LET_TEMP_A:         if (op_let_temp_a(sc))         goto BEGIN; sc->value = sc->nil; continue;
+	case OP_LET_TEMP_SETTER:    if (op_let_temp_setter(sc))    goto BEGIN; sc->value = sc->nil; continue;
+	case OP_LET_TEMP_A_A:       sc->value = fx_let_temp_a_a(sc, sc->code); continue;
 
 	case OP_LET_TEMP_UNWIND:           op_let_temp_unwind(sc);           continue;
 	case OP_LET_TEMP_S7_UNWIND:        op_let_temp_s7_unwind(sc);        continue;
@@ -93017,9 +93035,16 @@ static s7_pointer g_heap_holders(s7_scheme *sc, s7_pointer args)
 /* random debugging stuff */
 static s7_pointer g_show_stack(s7_scheme *sc, s7_pointer args)
 {
-  #define H_show_stack "no help"
-  #define Q_show_stack s7_make_signature(sc, 1, sc->not_symbol)
-  s7_show_stack(sc);
+  #define H_show_stack "(show-stack ((limit sc->show_stack_limit)))"
+  #define Q_show_stack s7_make_signature(sc, 2, sc->not_symbol, sc->is_integer_symbol)
+  if ((!is_null(args)) && (s7_is_integer(car(args))))
+    {
+      s7_int old_limit = sc->show_stack_limit;
+      sc->show_stack_limit = s7_integer(car(args));
+      s7_show_stack(sc);
+      sc->show_stack_limit = old_limit;
+    }
+  else s7_show_stack(sc);
   return(sc->F);
 }
 
@@ -95026,7 +95051,7 @@ static void init_wrappers(s7_scheme *sc)
   for (cp = sc->integer_wrappers, qp = sc->integer_wrappers; is_pair(cp); qp = cp, cp = cdr(cp))
     {
       s7_pointer p = alloc_pointer(sc);
-      car(cp) = p;
+      car(cp) = p; /* not set_car, it checks T_Pos */
       full_type(p) = T_INTEGER | T_IMMUTABLE | T_MUTABLE | T_UNHEAP;  /* mutable to turn off set_has_number_name */
       integer(p) = 0;
     }
@@ -95036,7 +95061,7 @@ static void init_wrappers(s7_scheme *sc)
   for (cp = sc->real_wrappers, qp = sc->real_wrappers; is_pair(cp); qp = cp, cp = cdr(cp))
     {
       s7_pointer p = alloc_pointer(sc);
-      car(cp) = p;
+      car(cp) = p;  /* not set_car, it checks T_Pos */
       full_type(p) = T_REAL | T_IMMUTABLE | T_MUTABLE | T_UNHEAP;
       real(p) = 0.0;
     }
@@ -95046,7 +95071,7 @@ static void init_wrappers(s7_scheme *sc)
   for (cp = sc->string_wrappers, qp = sc->string_wrappers; is_pair(cp); qp = cp, cp = cdr(cp))
     {
       s7_pointer p = alloc_pointer(sc);
-      car(cp) = p;
+      car(cp) = p;  /* not set_car, it checks T_Pos */
       full_type(p) = T_STRING | T_IMMUTABLE | T_SAFE_PROCEDURE | T_UNHEAP;
       string_block(p) = NULL;
       string_value(p) = NULL;
@@ -95138,7 +95163,7 @@ static s7_pointer g_symbol_set(s7_scheme *sc, s7_pointer args) /* (set! (symbol 
   len = proper_list_length(args) - 1;
   lst = safe_list_if_possible(sc, len);
   if (in_heap(lst)) gc_protect_via_stack(sc, lst);
-  for (s7_pointer ap = args, lp = lst; i < len; ap = cdr(ap), lp = cdr(lp), i++) car(lp) = car(ap);
+  for (s7_pointer ap = args, lp = lst; i < len; ap = cdr(ap), lp = cdr(lp), i++) set_car(lp, car(ap));
   val = symbol_set_1(sc, g_symbol(sc, lst), s7_list_ref(sc, args, len));
   if (in_heap(lst)) unstack_gc_protect(sc); else clear_list_in_use(lst);
   return(val);
@@ -95925,7 +95950,7 @@ static void init_rootlet(s7_scheme *sc)
   defun("heap-holder", heap_holder, 1, 0, false);
   defun("heap-holders", heap_holders, 1, 0, false);
 
-  defun("show-stack", show_stack, 0, 0, false);
+  defun("show-stack", show_stack, 0, 1, false);
   defun("show-op-stack", show_op_stack, 0, 0, false);
   defun("op-stack?", is_op_stack, 0, 0, false);
 #endif
@@ -96211,6 +96236,7 @@ s7_scheme *s7_init(void)
   sc->is_autoloading = true;
 #endif
   sc->rec_stack = NULL;
+  sc->show_stack_limit = 20;
 
   sc->heap_size = INITIAL_HEAP_SIZE;
   if ((sc->heap_size % 32) != 0)
@@ -97040,4 +97066,5 @@ int main(int argc, char **argv)
  * separate gensym table? why 5500? [check heap holder]
  * lint: sublet and better inlet
  * t718 *error-hook*
+ * better show_stack, and error msg for stack ovfl
  */

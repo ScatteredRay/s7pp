@@ -9953,8 +9953,11 @@ s7_pointer s7_memq(s7_scheme *sc, s7_pointer obj, s7_pointer x);
 bool s7_tree_memq(s7_scheme *sc, s7_pointer sym, s7_pointer tree);
 </pre>
 <p>These functions are mostly obvious: s7_car corresponds to scheme car, etc.
-s7_list_nl was added to catch a typo that affected s7_list: the latter would accept
-trailing, but ignored list values.  s7_tree_memq is like s7_memq, but searches
+s7_list_nl is a version of s7_list. s7_list will accept a list of arguments that does
+not fill the list (that is, "num_values" does not match the actual number of values),
+leaving null pointers that will later wreak havoc.  The list of arguments to s7_list_nl on the other hand must be
+null-terminated, and must match "num_values", or you'll get an error.
+s7_tree_memq is like s7_memq, but searches
 an entire tree structure. not just the top-level list.  s7_array_to_list takes
 an array of s7_pointers and returns a list of them (similar to s7_vector_to_list).
 </p>
