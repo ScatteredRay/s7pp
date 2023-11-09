@@ -2173,7 +2173,7 @@ static void init_types(void)
 /* this marks things that don't evaluate their arguments */
 
 #define T_EXPANSION                    (1 << (TYPE_BITS + 6))
-#define is_expansion(p)                has_type0_bit(T_Pos(p), T_EXPANSION)
+#define is_expansion(p)                has_type0_bit(T_Ext(p), T_EXPANSION)
 #define clear_expansion(p)             clear_type0_bit(T_Sym(p), T_EXPANSION)
 /* this marks the symbol and its run-time macro value, distinguishing it from an ordinary macro */
 
@@ -2717,8 +2717,8 @@ static void init_types(void)
 
 #define T_UNHEAP                       0x4000000000000000
 #define T_SHORT_UNHEAP                 (1 << 14)
-#define in_heap(p)                     (((T_Pos(p))->tf.opts.high_flag & T_SHORT_UNHEAP) == 0)
-#define unheap(sc, p)                  set_type1_bit(T_Pos(p), T_SHORT_UNHEAP)
+#define in_heap(p)                     (((T_Pos(p))->tf.opts.high_flag & T_SHORT_UNHEAP) == 0) /* can be slot, make_s7_starlet let_set_slot */
+#define unheap(sc, p)                  set_type1_bit(T_Ext(p), T_SHORT_UNHEAP)
 
 #define is_eof(p)                      ((T_Ext(p)) == eof_object)
 #define is_true(Sc, p)                 ((T_Ext(p)) != Sc->F)
@@ -2731,7 +2731,7 @@ static void init_types(void)
 #endif
 
 #define is_pair(p)                     (type(p) == T_PAIR)
-#define is_mutable_pair(p)             ((is_pair(p)) && (!is_immutable(p))) /* same speed: ((full_type(T_Pos(p)) & (TYPE_MASK | T_IMMUTABLE)) == T_PAIR) */
+#define is_mutable_pair(p)             ((is_pair(p)) && (!is_immutable(p))) /* same speed: ((full_type(p) & (TYPE_MASK | T_IMMUTABLE)) == T_PAIR) */
 #define is_null(p)                     ((T_Pos(p)) == sc->nil)  /* can be a slot */
 #define is_not_null(p)                 ((T_Pos(p)) != sc->nil)
 #define is_list(p)                     ((is_pair(p)) || (type(p) == T_NIL))
@@ -2964,33 +2964,33 @@ static void init_types(void)
 
 #define car(p)                         (T_Pair(p))->object.cons.car
 #define unchecked_car(p)               (T_Pos(p))->object.cons.car
-#define set_car(p, Val)                car(p) = T_Pos(Val) /* can be a slot or #<unsed> */
+#define set_car(p, Val)                car(p) = T_Pos(Val)      /* can be a slot or #<unsed> */
 #define cdr(p)                         (T_Pair(p))->object.cons.cdr
 #if S7_DEBUGGING
 static void check_set_cdr(s7_pointer p, s7_pointer Val, const char *func, int32_t line);
 #define set_cdr(p, Val)                check_set_cdr(p, Val, __func__, __LINE__)
 #else
-#define set_cdr(p, Val)                cdr(p) = T_Pos(Val)
+#define set_cdr(p, Val)                cdr(p) = T_Ext(Val)
 #endif
-#define unchecked_set_cdr(p, Val)      cdr(p) = T_Pos(Val)
+#define unchecked_set_cdr(p, Val)      cdr(p) = T_Pos(Val)      /* #<unused> in g_gc */
 #define unchecked_cdr(p)               (T_Pos(p))->object.cons.cdr
 
 #define caar(p)                        car(car(p))
 #define cadr(p)                        car(cdr(p))
-#define set_cadr(p, Val)               car(cdr(p)) = T_Pos(Val)
+#define set_cadr(p, Val)               car(cdr(p)) = T_Pos(Val) /* #<unused> in g_gc */
 #define cdar(p)                        cdr(car(p))
-#define set_cdar(p, Val)               cdr(car(p)) = T_Pos(Val)
+#define set_cdar(p, Val)               cdr(car(p)) = T_Ext(Val)
 #define cddr(p)                        cdr(cdr(p))
 
 #define caaar(p)                       car(car(car(p)))
 #define cadar(p)                       car(cdr(car(p)))
 #define cdadr(p)                       cdr(car(cdr(p)))
 #define caddr(p)                       car(cdr(cdr(p)))
-#define set_caddr(p, Val)              car(cdr(cdr(p))) = T_Pos(Val)
+#define set_caddr(p, Val)              car(cdr(cdr(p))) = T_Ext(Val)
 #define caadr(p)                       car(car(cdr(p)))
 #define cdaar(p)                       cdr(car(car(p)))
 #define cdddr(p)                       cdr(cdr(cdr(p)))
-#define set_cdddr(p, Val)              cdr(cdr(cdr(p))) = T_Pos(Val)
+#define set_cdddr(p, Val)              cdr(cdr(cdr(p))) = T_Ext(Val)
 #define cddar(p)                       cdr(cdr(car(p)))
 
 #define caaadr(p)                      car(car(car(cdr(p))))
@@ -3354,7 +3354,7 @@ static s7_int let_id(s7_pointer p) {if (p == cur_sc->rootlet) {fprintf(stderr, "
 #define iterator_position(p)           (T_Itr_Pos(p))->object.iter.lc.loc
 #define iterator_length(p)             (T_Itr_Len(p))->object.iter.lw.len
 #define iterator_next(p)               (T_Itr(p))->object.iter.next
-#define iterator_is_at_end(p)          (!iter_ok(p))                                /* ((full_type(T_Itr(p)) & T_ITER_OK) == 0) */
+#define iterator_is_at_end(p)          (!iter_ok(p))                /* ((full_type(T_Itr(p)) & T_ITER_OK) == 0) */
 #define iterator_slow(p)               T_Lst((T_Itr_Pair(p))->object.iter.lw.slow)
 #define iterator_set_slow(p, Val)      (T_Itr_Pair(p))->object.iter.lw.slow = T_Lst(Val)
 #define iterator_hash_current(p)       (T_Itr_Hash(p))->object.iter.lw.hcur
@@ -3386,7 +3386,7 @@ static s7_int let_id(s7_pointer p) {if (p == cur_sc->rootlet) {fprintf(stderr, "
 #define port_block(p)                  (T_Prt(p))->object.prt.block
 #define port_type(p)                   port_port(p)->ptype
 #define port_is_closed(p)              port_port(p)->is_closed
-#define port_set_closed(p, Val)        port_port(p)->is_closed = Val /* this can't be a type bit because sweep checks it after the type has been cleared */
+#define port_set_closed(p, Val)        port_port(p)->is_closed = Val
 #define port_needs_free(p)             port_port(p)->needs_free
 #define port_next(p)                   port_block(p)->nx.next
 #define port_output_function(p)        port_port(p)->output_function /* these two are for function ports */
@@ -3437,7 +3437,7 @@ static s7_int let_id(s7_pointer p) {if (p == cur_sc->rootlet) {fprintf(stderr, "
 #define c_function_symbol(f)           c_function_data(f)->sam.c_sym
 
 #define c_function_bool_setter(f)      c_function_data(f)->dam.bool_setter
-#define c_function_set_bool_setter(f, Val) c_function_data(f)->dam.bool_setter = Val
+#define c_function_set_bool_setter(f, Val) c_function_data(f)->dam.bool_setter = T_Fnc(Val)
 
 #define c_function_arg_defaults(f)     c_function_data(T_Fst(f))->dam.arg_defaults
 #define c_function_call_args(f)        c_function_data(T_Fst(f))->cam.call_args
@@ -4801,7 +4801,7 @@ static char *describe_type_bits(s7_scheme *sc, s7_pointer obj)
 							 " ?21?")))))))) : "",
 	  /* bit 30 [pair and symbol free here] */
 	  ((full_typ & T_HAS_METHODS) != 0) ?    (((is_let(obj)) || (is_c_object(obj)) || (is_any_closure(obj)) ||
-						   (is_any_macro(obj)) || (is_c_pointer(obj))) ? " has-methods" : 
+						   (is_any_macro(obj)) || (is_c_pointer(obj))) ? " has-methods" :
 						  " ?22?") : "",
 	  /* bit 31 */
 	  ((full_typ & T_ITER_OK) != 0) ?        ((is_iterator(obj)) ? " iter-ok" :
@@ -5288,11 +5288,11 @@ static void print_gc_info(s7_scheme *sc, s7_pointer obj, int32_t line)
 	s7_int free_type = full_type(obj);
 	char *bits;
 	char fline[128];
-	full_type(obj) = obj->alloc_type;
+	set_full_type(obj, obj->alloc_type);
 	sc->printing_gc_info = true;
 	bits = describe_type_bits(sc, obj); /* this func called in type macro */
 	sc->printing_gc_info = false;
-	full_type(obj) = free_type;
+	set_full_type(obj, free_type);
 	if (obj->explicit_free_line > 0)
 	  snprintf(fline, 128, ", freed at %d, ", obj->explicit_free_line);
 	fprintf(stderr, "%s%p is free (line %d, alloc type: %s %" ld64 " #x%" PRIx64 " (%s)), alloc: %s[%d], %sgc: %s[%d]%s",
@@ -5746,9 +5746,9 @@ static void print_debugging_state(s7_scheme *sc, s7_pointer obj, s7_pointer port
   block_t *b;
   char *current_bits = describe_type_bits(sc, obj);
 
-  full_type(obj) = obj->alloc_type;
+  set_full_type(obj, obj->alloc_type);
   allocated_bits = describe_type_bits(sc, obj);
-  full_type(obj) = save_full_type;
+  set_full_type(obj, save_full_type);
 
   len = safe_strlen(excl_name) + safe_strlen(current_bits) + safe_strlen(allocated_bits) + safe_strlen(obj->alloc_func) + 512;
   b = mallocate(sc, len);
@@ -6868,7 +6868,7 @@ static /* inline */ void add_to_gc_list(gc_list_t *gp, s7_pointer p)
 #if S7_DEBUGGING
   if ((!in_heap(p)) && (gp != cur_sc->opt1_funcs))
     {
-      char *s = describe_type_bits(cur_sc, p); 
+      char *s = describe_type_bits(cur_sc, p);
       fprintf(stderr, "%s[%d]: %s not in heap, %s\n", __func__, __LINE__, display(p), s);
       free(s);
       if (cur_sc->stop_at_error) abort();
@@ -7937,7 +7937,7 @@ static void remove_gensym_from_heap(s7_scheme *sc, s7_pointer x) /* x known to b
   sc->heap[loc] = (s7_pointer)alloc_big_pointer(sc, loc);
   free_cell(sc, sc->heap[loc]);
 #if S7_DEBUGGING
-  x->gc_func = func;
+  x->gc_func = func; /* main culprit in s7test/t725 is (essentially) (symbol->keyword (gensym)) */
   x->gc_line = line;
 #endif
   unheap(sc, x); /* set UNHEAP bit in type(x) */
@@ -8329,7 +8329,7 @@ void s7_show_stack(s7_scheme *sc)
 	  /* op_read* op_begin* etc */
 	  /* op_begin* assume sc->code, nothing in stack is interesting */
 	default:
-	    fprintf(stderr, "  %s %s %s\n", op_names[op], 
+	    fprintf(stderr, "  %s %s %s\n", op_names[op],
 		    ((s7_is_valid(sc, code)) && (code != sc->unused)) ? display(code) : "",
 		    ((s7_is_valid(sc, args)) && (args != sc->unused)) ? display(args) : "");
 	}}
@@ -8563,6 +8563,7 @@ static s7_pointer g_symbol_table(s7_scheme *sc, s7_pointer unused_args)
    *    at the time it is called.
    *    (define (for-each-symbol func num) (for-each (lambda (sym) (if (> num 0) (for-each-symbol func (- num 1)) (func sym))) (symbol-table)))
    *    (for-each-symbol (lambda (sym) (gensym) 1))
+   * can be called in gdb: p display(s7_eval_c_string(sc, "(for-each (lambda (x) (when (gensym? x) (format *stderr* \"~A \" x))) (symbol-table))"))
    */
   for (int32_t i = 0; i < SYMBOL_TABLE_SIZE; i++)
     for (s7_pointer x = entries[i]; is_not_null(x); x = cdr(x))
@@ -46306,7 +46307,7 @@ static void op_unwind_input(s7_scheme *sc)
 
 static bool op_dynamic_wind(s7_scheme *sc)
 {
-  if (SHOW_EVAL_OPS) fprintf(stderr, "  %s[%d]: %s\n", __func__, __LINE__, display(sc->code));
+  if (SHOW_EVAL_OPS) fprintf(stderr, "  %s[%d]: %s\n", __func__, __LINE__, display_80(sc->code));
   if (dynamic_wind_state(sc->code) == DWIND_INIT)
     {
       dynamic_wind_state(sc->code) = DWIND_BODY;
@@ -51676,7 +51677,7 @@ s7_pointer s7_call_with_catch(s7_scheme *sc, s7_pointer tag, s7_pointer body, s7
     if (jump_loc == NO_JUMP)
       {
 	catch_cstack(p) = &new_goto_start;
-	if (SHOW_EVAL_OPS) fprintf(stderr, "  longjmp call %s\n", display(body));
+	if (SHOW_EVAL_OPS) fprintf(stderr, "  longjmp call %s\n", display_80(body));
 	push_stack(sc, OP_CATCH, error_handler, p);
 	result = s7_call(sc, body, sc->nil);
 	if (stack_top_op(sc) == OP_CATCH) sc->stack_end -= 4;
@@ -52148,7 +52149,7 @@ static bool catch_let_temp_unwind_function(s7_scheme *sc, s7_int catch_loc, s7_p
 {
   s7_pointer slot = stack_code(sc->stack, catch_loc);
   s7_pointer val = stack_args(sc->stack, catch_loc);
-  if (SHOW_EVAL_OPS) fprintf(stderr, "catcher: %s, unwind setting %s to %s\n", __func__, display(slot), display(val));
+  if (SHOW_EVAL_OPS) fprintf(stderr, "catcher: %s, unwind setting %s to %s\n", __func__, display_80(slot), display_80(val));
   if (is_immutable_slot(slot)) /* we're already in an error/throw situation, so raising an error here leads to an infinite loop */
     s7_warn(sc, 512, "let-temporarily can't reset %s to %s: it is immutable!", symbol_name(slot_symbol(slot)), display(val));
   else slot_set_value(slot, val);
@@ -53385,7 +53386,7 @@ s7_pointer s7_call(s7_scheme *sc, s7_pointer func, s7_pointer args)
     declare_jump_info();
     TRACK(sc);
     set_current_code(sc, history_cons(sc, func, args));
-    if (SHOW_EVAL_OPS) safe_print(fprintf(stderr, "%s: %s %s\n", __func__, display(func), display_80(args)));
+    if (SHOW_EVAL_OPS) safe_print(fprintf(stderr, "%s: %s %s\n", __func__, display_80(func), display_80(args)));
 
     sc->temp4 = T_App(func);                           /* this is feeble GC protection */
     sc->temp2 = T_Lst(args);                           /* only use of temp2 */
@@ -68758,10 +68759,10 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
     case OP_EVAL_SET3_NO_MV: /* same as above */
       syntax_error_nr(sc, "too many arguments to set!: ~S", 30, set_ulist_1(sc, sc->values_symbol, args));
     case OP_EVAL_SET2:       /* here <ind> = args is mv */
-      set_stack_top_op(sc, OP_EVAL_SET2_MV); 
+      set_stack_top_op(sc, OP_EVAL_SET2_MV);
       return(args); /* ?? */
     case OP_EVAL_SET3:       /* here <ind> = args is mv */
-      set_stack_top_op(sc, OP_EVAL_SET3_MV); 
+      set_stack_top_op(sc, OP_EVAL_SET3_MV);
       return(args); /* ?? */
 
       /* in the next set, the main evaluator branches blithely assume no multiple-values, and if it happens anyway, we go to a different branch here */
@@ -68959,7 +68960,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 	if (S7_DEBUGGING)
 	  if (SHOW_EVAL_OPS)
 	    fprintf(stderr, "  eval_macro_mv splice %s with %s, code: %s, args: %s, value: %s\n",
-		    display(args), op_names[s_op], display(sc->code), display(sc->args), display(sc->value));
+		    display_80(args), op_names[s_op], display_80(sc->code), display_80(sc->args), display_80(sc->value));
 	if ((s_op == OP_DO_STEP) || (s_op == OP_DEACTIVATE_GOTO) || (s_op == OP_LET1))
 	  return(args); /* tricky reader-cond as macro in do body returning values... or call-with-exit */
 
@@ -68975,7 +68976,8 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 	    sc->w = sc->unused;
 	    if (SHOW_EVAL_OPS)
 	      fprintf(stderr, "  eval_macro splice %s with %s, code: %s, args: %s, value: %s -> %s %s\n",
-		      display(args), op_names[s_op], display(sc->code), display(sc->args), display(sc->value), display(stack_top4_args(sc)), display(car(x)));
+		      display_80(args), op_names[s_op], display_80(sc->code), display_80(sc->args),
+		      display_80(sc->value), display_80(stack_top4_args(sc)), display_80(car(x)));
 	    return(car(x));
 	  }
 	/* fall through */
@@ -68993,7 +68995,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
        */
       if (SHOW_EVAL_OPS)
 	fprintf(stderr, "  %s[%d]: %s stack top: %" ld64 ", op: %s, args: %s\n", __func__, __LINE__,
-		op_names[stack_top_op(sc)], (s7_int)(intptr_t)stack_top(sc), op_names[stack_top4_op(sc)], display(args));
+		op_names[stack_top_op(sc)], (s7_int)(intptr_t)stack_top(sc), op_names[stack_top4_op(sc)], display_80(args));
       if (stack_top4_op(sc) == OP_LOAD_RETURN_IF_EOF)
 	{
 	  /* expansion at top-level returned values, eval args in order */
@@ -78181,7 +78183,7 @@ static void op_finish_expansion(s7_scheme *sc)
   /* after the expander has finished, if a list was returned, we need to add some annotations.
    *   if the expander returned (values), the list-in-progress vanishes! (This mimics map and *#readers*).
    */
-  if (SHOW_EVAL_OPS) fprintf(stderr, "%s[%d]: op: %s, value: %s\n", __func__, __LINE__, op_names[stack_top_op(sc)], display(sc->value));
+  if (SHOW_EVAL_OPS) fprintf(stderr, "%s[%d]: op: %s, value: %s\n", __func__, __LINE__, op_names[stack_top_op(sc)], display_80(sc->value));
   if (sc->value == sc->no_value)
     {
       if (stack_top_op(sc) != OP_LOAD_RETURN_IF_EOF) /* latter op if empty expansion at top-level */
@@ -84921,6 +84923,7 @@ static inline void op_safe_closure_aa_o(s7_scheme *sc)
   sc->code = fx_call(sc, cdr(p));
   set_curlet(sc, update_let_with_two_slots(sc, closure_let(f), fx_call(sc, p), sc->code));
   sc->code = car(closure_body(f));
+  /* (let values ((x 1) (y 2)) (values 1 2)): sc->code incoming is 0x7fffbf681c98 (values 1 2), car(closure_body) out is the same -> infinite loop! */
 }
 
 static void op_closure_aa(s7_scheme *sc)
@@ -88954,7 +88957,7 @@ static bool eval_car_pair(s7_scheme *sc)
 static goto_t trailers(s7_scheme *sc)
 {
   s7_pointer code = T_Ext(sc->code);
-  if (SHOW_EVAL_OPS) fprintf(stderr, "  trailers %s\n", display(code));
+  if (SHOW_EVAL_OPS) fprintf(stderr, "  trailers %s\n", display_80(code));
   set_current_code(sc, code);
   if (is_pair(code))
     {
@@ -89767,7 +89770,7 @@ static bool pop_read_list(s7_scheme *sc)
 
 static bool op_load_return_if_eof(s7_scheme *sc)
 {
-  if (SHOW_EVAL_OPS) fprintf(stderr, "  op_load_return_if_eof: value: %s\n", display(sc->value));
+  if (SHOW_EVAL_OPS) fprintf(stderr, "  op_load_return_if_eof: value: %s\n", display_80(sc->value));
   if (sc->tok != TOKEN_EOF)
     {
       push_stack_op_let(sc, OP_LOAD_RETURN_IF_EOF);
@@ -89921,7 +89924,7 @@ static bool op_unknown(s7_scheme *sc)
   s7_pointer code = sc->code, f = sc->last_function;
   if (!f) /* can be NULL if unbound variable */
     unbound_variable_error_nr(sc, car(sc->code));
-  if (SHOW_EVAL_OPS) fprintf(stderr, "%s %s %s\n", __func__, display(f), s7_type_names[type(f)]);
+  if (SHOW_EVAL_OPS) fprintf(stderr, "%s %s %s\n", __func__, display_80(f), s7_type_names[type(f)]);
 
   switch (type(f))
     {
@@ -90059,7 +90062,7 @@ static bool op_unknown_s(s7_scheme *sc)
   s7_pointer code = sc->code, f = sc->last_function;
 
   if (!f) unbound_variable_error_nr(sc, car(sc->code));
-  if (SHOW_EVAL_OPS) fprintf(stderr, "%s %s\n", __func__, display(f));
+  if (SHOW_EVAL_OPS) fprintf(stderr, "%s %s\n", __func__, display_80(f));
 
   if ((S7_DEBUGGING) && (!is_normal_symbol(cadr(code)))) fprintf(stderr, "%s[%d]: not a symbol: %s\n", __func__, __LINE__, display(code));
   if ((!is_any_macro(f)) &&   /* if f is a macro, its argument can be unbound legitimately */
@@ -90148,7 +90151,7 @@ static bool op_unknown_a(s7_scheme *sc)
 {
   s7_pointer code = sc->code, f = sc->last_function;
   if (!f) unbound_variable_error_nr(sc, car(sc->code));
-  if (SHOW_EVAL_OPS) fprintf(stderr, "%s %s\n", __func__, display(f));
+  if (SHOW_EVAL_OPS) fprintf(stderr, "%s %s\n", __func__, display_80(f));
 
   switch (type(f))
     {
@@ -90225,7 +90228,7 @@ static bool op_unknown_gg(s7_scheme *sc)
   bool s1, s2;
   s7_pointer code = sc->code, f = sc->last_function;
   if (!f) unbound_variable_error_nr(sc, car(sc->code));
-  if (SHOW_EVAL_OPS) fprintf(stderr, "%s %s\n", __func__, display(f));
+  if (SHOW_EVAL_OPS) fprintf(stderr, "%s %s\n", __func__, display_80(f));
 
   s1 = is_normal_symbol(cadr(code));
   s2 = is_normal_symbol(caddr(code));
@@ -90360,7 +90363,7 @@ static bool op_unknown_ns(s7_scheme *sc)
   int32_t num_args = opt3_arglen(cdr(code));
 
   if (!f) unbound_variable_error_nr(sc, car(sc->code));
-  if (SHOW_EVAL_OPS) fprintf(stderr, "%s %s\n", __func__, display(f));
+  if (SHOW_EVAL_OPS) fprintf(stderr, "%s %s\n", __func__, display_80(f));
 
   for (s7_pointer arg = cdr(code); is_pair(arg); arg = cdr(arg))
     if (!is_slot(s7_slot(sc, car(arg))))
@@ -90430,7 +90433,7 @@ static bool op_unknown_aa(s7_scheme *sc)
   s7_pointer code = sc->code, f = sc->last_function;
 
   if (!f) unbound_variable_error_nr(sc, car(sc->code));
-  if (SHOW_EVAL_OPS) fprintf(stderr, "%s %s\n", __func__, display(f));
+  if (SHOW_EVAL_OPS) fprintf(stderr, "%s %s\n", __func__, display_80(f));
 
   switch (type(f))
     {
@@ -90518,7 +90521,7 @@ static bool op_unknown_na(s7_scheme *sc)
   int32_t num_args = (is_pair(cdr(code))) ? opt3_arglen(cdr(code)) : 0;
 
   if (!f) unbound_variable_error_nr(sc, car(sc->code));
-  if (SHOW_EVAL_OPS) fprintf(stderr, "%s[%d]: %s %s\n", __func__, __LINE__, display(f), display(sc->code));
+  if (SHOW_EVAL_OPS) fprintf(stderr, "%s[%d]: %s %s\n", __func__, __LINE__, display_80(f), display_80(sc->code));
   if (num_args == 0) return(fixup_unknown_op(sc, code, f, OP_S));  /* via op_closure*-fx where original had 0 args, safe case -> op_safe_closure*_0 */
 
   switch (type(f))
@@ -90636,7 +90639,7 @@ static bool op_unknown_np(s7_scheme *sc)
   int32_t num_args = (is_pair(cdr(code))) ? opt3_arglen(cdr(code)) : 0;
 
   if (!f) unbound_variable_error_nr(sc, car(sc->code));
-  if (SHOW_EVAL_OPS) fprintf(stderr, "%s[%d]: %s %s %s\n", __func__, __LINE__, display(f), type_name(sc, f, NO_ARTICLE), display(sc->code));
+  if (SHOW_EVAL_OPS) fprintf(stderr, "%s[%d]: %s %s %s\n", __func__, __LINE__, display_80(f), type_name(sc, f, NO_ARTICLE), display_80(sc->code));
 
   switch (type(f))
     {
@@ -91660,8 +91663,8 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	case OP_PAIR_ANY:    sc->value = car(sc->code);                    goto EVAL_ARGS_TOP;
 	case OP_PAIR_SYM:    if (op_pair_sym(sc)) goto EVAL_ARGS_TOP;      continue;
 
-	case OP_EVAL_SET1_NO_MV: 
-	  sc->args = list_1(sc, sc->value); 
+	case OP_EVAL_SET1_NO_MV:
+	  sc->args = list_1(sc, sc->value);
 	  goto APPLY; /* args = (val), code = setter */
 
 	case OP_EVAL_SET2_NO_MV: sc->args = pair_append(sc, sc->args, list_1(sc, sc->value)); goto APPLY; /* <val> is a normal value */
@@ -91670,7 +91673,7 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	case OP_EVAL_SET2_MV: /* <inds> = sc->value is a mv */
 	  push_stack(sc, OP_EVAL_SET2_NO_MV, sc->value, sc->code); /* sc->value = inds */
 	  goto EVAL_SET2;
-	  
+
 	case OP_EVAL_SET2: /* <ind> = sc->value is a normal value */
 	  push_stack(sc, OP_EVAL_SET2_NO_MV, list_1(sc, sc->value), sc->code); /* sc->value = ind */
 	EVAL_SET2:
@@ -91686,7 +91689,7 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 
 	case OP_EVAL_SET3: /* <ind> = sc->value is a normal value */
 	  sc->args = (is_null(sc->args)) ? list_1(sc, sc->value) : pair_append(sc, sc->args, list_1(sc, sc->value)); /* not in_place here */
-	EVAL_SET3: 
+	EVAL_SET3:
 	  op_eval_set3(sc);
 	  goto TOP_NO_POP;
 
@@ -97057,14 +97060,10 @@ int main(int argc, char **argv)
  * ---------------------------------------------------
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
- * catch in C outside scheme code? setting *error-hook* doesn't help -- it falls into the longjmp
- * s7test needs while/anaphoric-when tests (stuff.scm, t656) -- any others?
+ * s7test needs while/anaphoric-when tests (stuff.scm, t656)
  * more ongoing free_cell (mark/check ref), perhaps interesting to record where all allocs are, sort by biggest
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  *   s7test qq helper func?  g_list_values, qq should probably also use #_apply-values, apply-values print as ,@?
- * separate gensym table? why 5500? [check heap holder]
- * lint: sublet and better inlet
- * t718 *error-hook*
  * better show_stack, and error msg for stack ovfl
  */

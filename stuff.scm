@@ -315,6 +315,11 @@
 (define-macro (progv vars vals . body)
   `(apply (apply lambda ,vars ',body) ,vals))
 
+;; these also appear to work:
+;;   (define-macro (progv vars vals . body) `((apply lambda ,vars ',body) (apply values ,vals)))
+;;   (define-macro (progv vars vals . body) `((apply lambda ,vars ',body) `,@,vals))
+
+
 (define-macro (symbol-set! var val) ; like CL's set
   `(apply set! ,var ',val ()))
 
@@ -719,8 +724,6 @@ Unlike full-find-if, safe-find-if can handle any circularity in the sequences.")
       (error 'wrong-type-arg "safe-count-if second argument, ~A, should be a sequence" sequence)))
 
 
-
-
 ;;; ----------------
 (define sequences->list
   (let ((+documentation+ "(sequences->list . sequences) returns a list of elements of all the sequences:\n\
@@ -997,7 +1000,7 @@ Unlike full-find-if, safe-find-if can handle any circularity in the sequences.")
 				 (cons (car method) (cadr method))
 				 (cons method #f)))
 			   ,methods)                     ; the incoming new methods
-		      
+
 		      ;; add an object->string method for this class (this is already a generic function).
 		      (list (cons 'object->string
 				  (lambda (obj . rest)
@@ -1453,11 +1456,11 @@ Unlike full-find-if, safe-find-if can handle any circularity in the sequences.")
 ;;; --------------------------------------------------------------------------------
 
 (define (*s7*->list) ; (let->list *s7*) flattened and using keywords
-  (do ((p (let->list *s7*) (cdr p)) 
+  (do ((p (let->list *s7*) (cdr p))
        (L ()))
-      ((null? p) 
+      ((null? p)
        (reverse L))
-    (set! L (cons (cdar p) 
+    (set! L (cons (cdar p)
 		  (cons (symbol->keyword (caar p))
 			L)))))
 
@@ -1566,8 +1569,8 @@ Unlike full-find-if, safe-find-if can handle any circularity in the sequences.")
 
 ;;; but hooks need an indication that a name passed as an argument is not a parameter name even when it is defined (in rootlet for example)
 ;;;   (define h (make-hook 'x)) (set! (hook-functions h) (list (lambda (hk) (set! (hk 'result) (hk 'abs))))) (h 123) -> abs
-;;; but the current s7.c version is much faster than using copy, and surely copy isn't needed here; the current version returns #<undefined> for anything that 
-;;;  would otherwise be found in rootlet, but ideally we wouldn't have to create a new let, load up the fallback etc -- 
+;;; but the current s7.c version is much faster than using copy, and surely copy isn't needed here; the current version returns #<undefined> for anything that
+;;;  would otherwise be found in rootlet, but ideally we wouldn't have to create a new let, load up the fallback etc --
 ;;;  maybe add a flag on the let (blocked?) or notice let-ref-fallback in lets (as opposed to sublet), then it could be in the let with result.
 
 ;;; here is a macro make-hook:
@@ -1601,7 +1604,7 @@ Unlike full-find-if, safe-find-if can handle any circularity in the sequences.")
 ;;; (sandbox '(let ((x 1)) (+ x 2))) -> 3
 ;;; (sandbox '(let ((x 1)) (+ x 2) (exit))) -> #f
 
-;;; perhaps tgsl's (immutable-let (rootlet))? 
+;;; perhaps tgsl's (immutable-let (rootlet))?
 ;;; perhaps use the blocking let?
 
 (define sandbox
@@ -1646,7 +1649,7 @@ Unlike full-find-if, safe-find-if can handle any circularity in the sequences.")
 	      hash-table-set! hash-table-entries cyclic-sequences call/cc call-with-current-continuation
 	      call-with-exit apply for-each map dynamic-wind values type-of
 	      catch throw error documentation signature help procedure-source
-	      setter arity aritable? not eq? eqv? equal? equivalent? 
+	      setter arity aritable? not eq? eqv? equal? equivalent?
 	      dilambda make-hook hook-functions stacktrace tree-leaves tree-memq tree-set-memq tree-cyclic? tree-count object->let
 	      pi most-positive-fixnum most-negative-fixnum ; +nan.0 +inf.0 -nan.0 -inf.0
 	      *stderr* *stdout* *stdin*
@@ -1744,4 +1747,3 @@ Unlike full-find-if, safe-find-if can handle any circularity in the sequences.")
 				 (apply format #f (cadr args)))
 			       (lambda args
 				 (copy "?")))))))))))))
-
