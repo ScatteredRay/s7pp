@@ -8301,39 +8301,13 @@ static uint32_t resize_stack_unchecked(s7_scheme *sc)
   return(new_size);
 }
 
-#define display_40(Obj) string_value(object_to_truncated_string(sc, Obj, 40))
-
 void s7_show_stack(s7_scheme *sc)
 {
-  resize_stack_unchecked(sc);
+  if (sc->stack_end >= sc->stack_resize_trigger) 
+    resize_stack_unchecked(sc);
   fprintf(stderr, "stack:\n");
   for (int64_t i = stack_top(sc) - 1, j = 0; (i >= 3) && (j < sc->show_stack_limit); i -= 4, j++)
-#if 1
     fprintf(stderr, "  %s\n", op_names[stack_op(sc->stack, i)]);
-#else
-    {
-      opcode_t op = stack_op(sc->stack, i);
-      s7_pointer code = stack_code(sc->stack, i);
-      s7_pointer args = stack_args(sc->stack, i);
-      switch (op)
-	{
-	case OP_GC_PROTECT:
-	  fprintf(stderr, "  %s %s\n", op_names[op], display(args));
-	  break;
-	case OP_EVAL_DONE: case OP_UNOPT:
-	  fprintf(stderr, "  %s\n", op_names[op]);
-	  break;
-	case OP_BEGIN: case OP_BEGIN_NO_HOOK: case OP_BEGIN_HOOK:
-	  fprintf(stderr, "  %s %s\n", op_names[op], ((s7_is_valid(sc, sc->code)) && (sc->code != sc->unused)) ? display_40(sc->code) : "");
-	  break;
-	  /* op_read* op_begin* etc */
-	  /* op_begin* assume sc->code, nothing in stack is interesting */
-	default:
-	    fprintf(stderr, "  %s %s %s\n", op_names[op],
-		    ((s7_is_valid(sc, code)) && (code != sc->unused)) ? display(code) : "",
-		    ((s7_is_valid(sc, args)) && (args != sc->unused)) ? display(args) : "");
-	}}
-#endif
 }
 
 #if S7_DEBUGGING
@@ -37192,6 +37166,8 @@ static inline s7_int tree_len(s7_scheme *sc, s7_pointer p)
 
 static s7_int tree_leaves_i_7p(s7_scheme *sc, s7_pointer p)
 {
+  if (!is_list(p))
+    sole_arg_wrong_type_error_nr(sc, sc->tree_leaves_symbol, p, a_list_string);
   if ((sc->safety > NO_SAFETY) &&
       (tree_is_cyclic(sc, p)))
     error_nr(sc, sc->wrong_type_arg_symbol, set_elist_2(sc, wrap_string(sc, "tree-leaves: tree is cyclic: ~S", 31), p));
@@ -37200,16 +37176,13 @@ static s7_int tree_leaves_i_7p(s7_scheme *sc, s7_pointer p)
 
 static s7_pointer tree_leaves_p_p(s7_scheme *sc, s7_pointer tree)
 {
-  if ((sc->safety > NO_SAFETY) && /* repeat code to avoid extra call overhead */
-      (tree_is_cyclic(sc, tree)))
-    error_nr(sc, sc->wrong_type_arg_symbol, set_elist_2(sc, wrap_string(sc, "tree-leaves: tree is cyclic: ~S", 31), tree));
-  return(make_integer(sc, tree_len(sc, tree)));
+  return(make_integer(sc, tree_leaves_i_7p(sc, tree)));
 }
 
 static s7_pointer g_tree_leaves(s7_scheme *sc, s7_pointer args)
 {
   #define H_tree_leaves "(tree-leaves tree) returns the number of leaves in the tree"
-  #define Q_tree_leaves s7_make_signature(sc, 2, sc->is_integer_symbol, sc->T)
+  #define Q_tree_leaves s7_make_signature(sc, 2, sc->is_integer_symbol, sc->is_list_symbol)
   return(tree_leaves_p_p(sc, car(args)));
 }
 
@@ -37262,8 +37235,11 @@ bool s7_tree_memq(s7_scheme *sc, s7_pointer sym, s7_pointer tree)
 static s7_pointer g_tree_memq(s7_scheme *sc, s7_pointer args)
 {
   #define H_tree_memq "(tree-memq obj tree) is a tree-oriented version of memq, but returning #t if the object is in the tree."
-  #define Q_tree_memq s7_make_signature(sc, 3, sc->is_boolean_symbol, sc->T, sc->T)
-  return(make_boolean(sc, s7_tree_memq(sc, car(args), cadr(args))));
+  #define Q_tree_memq s7_make_signature(sc, 3, sc->is_boolean_symbol, sc->T, sc->is_list_symbol)
+  s7_pointer tree = cadr(args);
+  if (!is_list(tree))
+    wrong_type_error_nr(sc, sc->tree_memq_symbol, 2, tree, a_list_string);
+  return(make_boolean(sc, s7_tree_memq(sc, car(args), tree)));
 }
 
 
@@ -37290,17 +37266,20 @@ static inline bool pair_set_memq(s7_scheme *sc, s7_pointer tree)
 
 static bool tree_set_memq(s7_scheme *sc, s7_pointer tree)
 {
-  if (is_symbol(tree))
-    return(symbol_is_in_list(sc, tree));
-  if ((!is_pair(tree)) ||
-      (is_quote(car(tree))))
+  if (is_quote(car(tree)))
     return(false);
   return(pair_set_memq(sc, tree));
 }
 
 static bool tree_set_memq_b_7pp(s7_scheme *sc, s7_pointer syms, s7_pointer tree)
 {
-  if (!is_pair(syms)) return(false);
+  bool non_symbols = false;
+  if (!is_list(syms))
+    wrong_type_error_nr(sc, sc->tree_set_memq_symbol, 1, syms, a_list_string);
+  if (is_null(syms)) return(false);
+  if (!is_list(tree))
+    wrong_type_error_nr(sc, sc->tree_set_memq_symbol, 2, tree, a_list_string);
+  if (is_null(tree)) return(false);
   if (sc->safety > NO_SAFETY)
     {
       if (tree_is_cyclic(sc, syms))
@@ -37312,7 +37291,17 @@ static bool tree_set_memq_b_7pp(s7_scheme *sc, s7_pointer syms, s7_pointer tree)
   for (s7_pointer p = syms; is_pair(p); p = cdr(p))
     if (is_symbol(car(p)))
       add_symbol_to_list(sc, car(p));
-  return(tree_set_memq(sc, tree));
+    else non_symbols = true;
+
+  if (tree_set_memq(sc, tree)) return(true);
+
+  if (non_symbols)
+    /* brute force this case for the moment, TODO: optimize non-symbol tree-set-memq case */
+    for (s7_pointer p = syms; is_pair(p); p = cdr(p))
+      if ((!is_symbol(car(p))) &&
+	  (s7_tree_memq(sc, car(p), tree)))
+	return(true);
+  return(false);
 }
 
 static s7_pointer tree_set_memq_p_pp(s7_scheme *sc, s7_pointer syms, s7_pointer tree)
@@ -37323,12 +37312,15 @@ static s7_pointer tree_set_memq_p_pp(s7_scheme *sc, s7_pointer syms, s7_pointer 
 static s7_pointer g_tree_set_memq(s7_scheme *sc, s7_pointer args)
 {
   #define H_tree_set_memq "(tree-set-memq symbols tree) returns #t if any of the list of symbols is in the tree"
-  #define Q_tree_set_memq s7_make_signature(sc, 3, sc->is_boolean_symbol, sc->T, sc->T)
+  #define Q_tree_set_memq s7_make_signature(sc, 3, sc->is_boolean_symbol, sc->is_list_symbol, sc->is_list_symbol)
   return(make_boolean(sc, tree_set_memq_b_7pp(sc, car(args), cadr(args))));
 }
 
-static s7_pointer tree_set_memq_direct(s7_scheme *sc, s7_pointer syms, s7_pointer tree)
+static s7_pointer tree_set_memq_syms_direct(s7_scheme *sc, s7_pointer syms, s7_pointer tree)
 {
+  if (!is_list(tree))
+    wrong_type_error_nr(sc, sc->tree_set_memq_symbol, 2, tree, a_list_string);
+  if (is_null(tree)) return(sc->F);
   if ((sc->safety > NO_SAFETY) &&
       (tree_is_cyclic(sc, tree)))
     error_nr(sc, sc->wrong_type_arg_symbol, set_elist_2(sc, wrap_string(sc, "tree-set-memq: tree is cyclic: ~S", 33), tree));
@@ -37338,20 +37330,20 @@ static s7_pointer tree_set_memq_direct(s7_scheme *sc, s7_pointer syms, s7_pointe
   return(make_boolean(sc, tree_set_memq(sc, tree)));
 }
 
-static s7_pointer g_tree_set_memq_1(s7_scheme *sc, s7_pointer args)
+static s7_pointer g_tree_set_memq_syms(s7_scheme *sc, s7_pointer args)
 {
-  return(tree_set_memq_direct(sc, car(args), cadr(args)));
+  return(tree_set_memq_syms_direct(sc, car(args), cadr(args))); /* need other form for pp */
 }
 
 static s7_pointer tree_set_memq_chooser(s7_scheme *sc, s7_pointer f, int32_t unused_args, s7_pointer expr, bool unused_ops)
 {
-  if ((is_proper_quote(sc, cadr(expr))) &&   /* not (tree-set-memq (quote) ... */
-      (is_pair(cadadr(expr))))
+  if ((is_proper_quote(sc, cadr(expr))) &&   /* not (tree-set-memq (quote) ...) */
+      (is_pair(cadadr(expr))))               /*  (tree-set-memq '(...)...) */
     {
       for (s7_pointer p = cadadr(expr); is_pair(p); p = cdr(p))
 	if (!is_symbol(car(p)))
 	  return(f);
-      return(sc->tree_set_memq_syms); /* this is tree_set_memq_1 */
+      return(sc->tree_set_memq_syms);
     }
   return(f);
 }
@@ -37381,7 +37373,7 @@ static inline s7_int tree_count_at_least(s7_scheme *sc, s7_pointer x, s7_pointer
 static s7_pointer g_tree_count(s7_scheme *sc, s7_pointer args)
 {
   #define H_tree_count "(tree-count obj tree max-count) returns how many times obj is in tree (using eq?), stopping at max-count (if specified)"
-  #define Q_tree_count s7_make_signature(sc, 4, sc->is_integer_symbol, sc->T, sc->T, sc->is_integer_symbol)
+  #define Q_tree_count s7_make_signature(sc, 4, sc->is_integer_symbol, sc->T, sc->is_list_symbol, sc->is_integer_symbol)
   s7_pointer obj = car(args);
   s7_pointer tree = cadr(args), count;
 
@@ -37390,11 +37382,8 @@ static s7_pointer g_tree_count(s7_scheme *sc, s7_pointer args)
       if ((is_pair(cddr(args))) &&
 	  (!s7_is_integer(caddr(args))))
 	wrong_type_error_nr(sc, sc->tree_count_symbol, 3, caddr(args), sc->type_names[T_INTEGER]);
-      /* here we need eqv? not eq? for integers: (tree-count <0-int-zero> <0-not-int-zero>)
-       *   perhaps split tree_count|_at_least into eq?/eqv?/equal?/equivalent? cases?
-       *   this is used primarily for symbol counts in lint.scm
-       */
-      return((obj == tree) ? int_one : int_zero);
+      if (is_null(tree)) return(int_zero);
+      wrong_type_error_nr(sc, sc->tree_count_symbol, 2, tree, a_list_string);
     }
   if ((sc->safety > NO_SAFETY) &&
       (tree_is_cyclic(sc, tree)))
@@ -51778,7 +51767,7 @@ static s7_pointer cull_history(s7_scheme *sc, s7_pointer code)
   add_symbol_to_list(sc, make_symbol(sc, "history-enabled", 15));
   for (s7_pointer p = code; is_pair(p); p = cdr(p))
     {
-      if (tree_set_memq(sc, car(p)))
+      if ((is_pair(car(p))) && (tree_set_memq(sc, car(p))))
 	set_car(p, sc->nil);
       if (cdr(p) == code) break;
     }
@@ -57840,8 +57829,8 @@ static bool fx_tree_in(s7_scheme *sc, s7_pointer tree, s7_pointer var1, s7_point
 	    {
 	      if (is_global_and_has_func(car(p), s7_p_pp_function))
 		{
-		  if (fn_proc(p) == g_tree_set_memq_1)
-		    set_opt3_direct(cdr(p), (s7_pointer)tree_set_memq_direct);
+		  if (fn_proc(p) == g_tree_set_memq_syms)
+		    set_opt3_direct(cdr(p), (s7_pointer)tree_set_memq_syms_direct);
 		  else set_opt3_direct(cdr(p), (s7_pointer)(s7_p_pp_function(global_value(car(p)))));
 		  set_fx_direct(tree, fx_c_ct_direct);
 		}
@@ -69048,7 +69037,7 @@ s7_pointer s7_values(s7_scheme *sc, s7_pointer args)
   if (is_null(cdr(args)))
     return(car(args));
   set_needs_copied_args(args);
-  /* copy needed: see s7test (test `(,x ,@y ,x) '(3 a b c 3)) -> (append (list-values x (apply-values y)) x), and apply_values calls s7_values directly */
+  /* copy needed: see s7test (test `(,x ,@y ,x) '(3 a b c 3)) -> (append (list-values x (#_apply-values y)) x), and #_apply_values calls s7_values directly */
   return(splice_in_values(sc, args));
 }
 
@@ -69630,7 +69619,7 @@ static void init_choosers(s7_scheme *sc)
 
   /* tree-set-memq */
   f = set_function_chooser(sc->tree_set_memq_symbol, tree_set_memq_chooser);
-  sc->tree_set_memq_syms = make_function_with_class(sc, f, "tree-set-memq", g_tree_set_memq_1, 2, 0, false);
+  sc->tree_set_memq_syms = make_function_with_class(sc, f, "tree-set-memq", g_tree_set_memq_syms, 2, 0, false);
 
   /* eval-string */
   set_function_chooser(sc->eval_string_symbol, eval_string_chooser);
@@ -89807,8 +89796,7 @@ static bool op_load_close_and_pop_if_eof(s7_scheme *sc)
 
 static bool op_read_apply_values(s7_scheme *sc)
 {
-  sc->value = list_2_unchecked(sc, sc->unquote_symbol, list_2(sc, sc->apply_values_symbol, sc->value));
-  /* initial_value(sc->apply_values_symbol) works here but lint and s7test need checks for that value rather than the symbol */
+  sc->value = list_2_unchecked(sc, sc->unquote_symbol, list_2(sc, initial_value(sc->apply_values_symbol), sc->value));
   return(stack_top_op(sc) != OP_READ_LIST);
 }
 
@@ -95913,8 +95901,10 @@ static void init_rootlet(s7_scheme *sc)
   defun("[list*]", qq_append, 2, 0, false);
 #endif
   sc->apply_values_symbol =          unsafe_defun("apply-values", apply_values,         0, 1, false);
+#if 0
   set_immutable(sc->apply_values_symbol);
   set_immutable_slot(global_slot(sc->apply_values_symbol));
+#endif
   sc->list_values_symbol =           defun("list-values",       list_values,            0, 0, true);
   set_immutable(sc->list_values_symbol);
   set_immutable_slot(global_slot(sc->list_values_symbol));
@@ -97060,10 +97050,12 @@ int main(int argc, char **argv)
  * ---------------------------------------------------
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
- * s7test needs while/anaphoric-when tests (stuff.scm, t656)
  * more ongoing free_cell (mark/check ref), perhaps interesting to record where all allocs are, sort by biggest
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
- *   s7test qq helper func?  g_list_values, qq should probably also use #_apply-values, apply-values print as ,@?
- * better show_stack, and error msg for stack ovfl
+ *   s7test qq helper func?  g_list_values, #_apply-values print as ,@?
+ * tree-set-memq + non-symbols needs optimization
+ *   lint: 72 list-values, s7test: 223 list-values
+ *   list-values checked twice as symbol, used in quasiquote, there's also unquote
+ * WASM in s7.html?
  */
