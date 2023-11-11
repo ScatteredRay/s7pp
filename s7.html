@@ -1084,7 +1084,7 @@ The calling environment itself is (outlet (curlet)) from within a bacro, so
 	     (if (pair? f) (car f) f))
 	   (map (lambda (slot)
 		  (values (symbol-&gt;keyword (car slot)) (cdr slot)))		  
-		(reverse (map values ,(outlet (curlet)))))))
+		(map values ,(outlet (curlet))))))
 
 (define (f1 a b)
   (holler)

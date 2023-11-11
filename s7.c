@@ -1355,7 +1355,7 @@ struct s7_scheme {
              wrong_number_of_args_symbol, read_error_symbol, string_read_error_symbol, syntax_error_symbol, division_by_zero_symbol, bad_result_symbol,
              io_error_symbol, invalid_escape_function_symbol, wrong_type_arg_symbol, out_of_range_symbol, out_of_memory_symbol,
              missing_method_symbol, unbound_variable_symbol, if_keyword, symbol_table_symbol, profile_in_symbol, trace_in_symbol,
-             quote_function;
+             quote_function, quasiquote_function;
 
   /* signatures of sequences used as applicable objects: ("hi" 1) */
   s7_pointer string_signature, vector_signature, float_vector_signature, int_vector_signature, byte_vector_signature,
@@ -3186,7 +3186,7 @@ static s7_pointer slot_expression(s7_pointer p)    \
 #define pair_set_syntax_op(p, X)       do {set_optimize_op(p, X); set_syntactic_pair(p);} while (0)
 #define symbol_syntax_op_checked(p)    ((is_syntactic_pair(p)) ? optimize_op(p) : symbol_syntax_op(car(p)))
 #define symbol_syntax_op(p)            syntax_opcode(global_value(p))
-#define is_syntax_or_qq(p)	       ((is_syntax(p)) || ((p) == initial_value(sc->quasiquote_symbol))) /* qq is from s7_define_macro -> T_C_MACRO */
+#define is_syntax_or_qq(p)	       ((is_syntax(p)) || ((p) == sc->quasiquote_function)) /* qq is from s7_define_macro -> T_C_MACRO */
 
 #define INITIAL_ROOTLET_SIZE           512
 #if S7_DEBUGGING                       /* let_id(rootlet) is not -1 */
@@ -37264,13 +37264,6 @@ static inline bool pair_set_memq(s7_scheme *sc, s7_pointer tree)
   return((is_symbol(tree)) && (symbol_is_in_list(sc, tree)));
 }
 
-static bool tree_set_memq(s7_scheme *sc, s7_pointer tree)
-{
-  if (is_quote(car(tree)))
-    return(false);
-  return(pair_set_memq(sc, tree));
-}
-
 static bool tree_set_memq_b_7pp(s7_scheme *sc, s7_pointer syms, s7_pointer tree)
 {
   bool non_symbols = false;
@@ -37293,10 +37286,10 @@ static bool tree_set_memq_b_7pp(s7_scheme *sc, s7_pointer syms, s7_pointer tree)
       add_symbol_to_list(sc, car(p));
     else non_symbols = true;
 
-  if (tree_set_memq(sc, tree)) return(true);
+  if /* ((!is_quote(car(tree))) && */ (pair_set_memq(sc, tree)) return(true);
 
   if (non_symbols)
-    /* brute force this case for the moment, TODO: optimize non-symbol tree-set-memq case */
+    /* brute force for the moment, TODO: optimize non-symbol tree-set-memq case */
     for (s7_pointer p = syms; is_pair(p); p = cdr(p))
       if ((!is_symbol(car(p))) &&
 	  (s7_tree_memq(sc, car(p), tree)))
@@ -37327,7 +37320,8 @@ static s7_pointer tree_set_memq_syms_direct(s7_scheme *sc, s7_pointer syms, s7_p
   clear_symbol_list(sc);
   for (s7_pointer p = syms; is_pair(p); p = cdr(p))
     add_symbol_to_list(sc, car(p));
-  return(make_boolean(sc, tree_set_memq(sc, tree)));
+  if (is_quote(car(tree))) return(sc->F);
+  return(make_boolean(sc, pair_set_memq(sc, tree)));
 }
 
 static s7_pointer g_tree_set_memq_syms(s7_scheme *sc, s7_pointer args)
@@ -51767,7 +51761,7 @@ static s7_pointer cull_history(s7_scheme *sc, s7_pointer code)
   add_symbol_to_list(sc, make_symbol(sc, "history-enabled", 15));
   for (s7_pointer p = code; is_pair(p); p = cdr(p))
     {
-      if ((is_pair(car(p))) && (tree_set_memq(sc, car(p))))
+      if ((is_pair(car(p))) && (!is_quote(car(p))) && (pair_set_memq(sc, car(p))))
 	set_car(p, sc->nil);
       if (cdr(p) == code) break;
     }
@@ -66306,6 +66300,7 @@ static bool stop_is_safe(s7_scheme *sc, s7_pointer stop, s7_pointer body)
 
 static bool tree_has_setters(s7_scheme *sc, s7_pointer tree)
 {
+  if (is_quote(car(tree))) return(false);
   clear_symbol_list(sc);
   add_symbol_to_list(sc, sc->set_symbol);
   add_symbol_to_list(sc, sc->vector_set_symbol);
@@ -66314,7 +66309,7 @@ static bool tree_has_setters(s7_scheme *sc, s7_pointer tree)
   add_symbol_to_list(sc, sc->hash_table_set_symbol);
   add_symbol_to_list(sc, sc->set_car_symbol);
   add_symbol_to_list(sc, sc->set_cdr_symbol);
-  return(tree_set_memq(sc, tree));
+  return(pair_set_memq(sc, tree));
 }
 
 static bool do_is_safe(s7_scheme *sc, s7_pointer body, s7_pointer stepper, s7_pointer var_list, bool *has_set);
@@ -66861,7 +66856,7 @@ static bool float_optimize_1(s7_scheme *sc, s7_pointer expr)
 	{
 	  s7_pointer body = closure_body(s_func);
 	  if ((is_null(cdr(body))) && (is_pair(car(body))) &&
-	      ((caar(body) == sc->list_symbol) || (caar(body) == sc->list_values_symbol)))
+	      ((caar(body) == sc->list_symbol) || (caar(body) == sc->list_values_symbol) || (caar(body) == initial_value(sc->list_values_symbol))))
 	    {
 	      s7_pointer result = s7_macroexpand(sc, s_func, cdar(expr));
 	      if (result == sc->F) return_false(sc, car_x);
@@ -66936,7 +66931,7 @@ static bool int_optimize_1(s7_scheme *sc, s7_pointer expr)
 	{
 	  s7_pointer body = closure_body(s_func);
 	  if ((is_null(cdr(body))) && (is_pair(car(body))) &&
-	      ((caar(body) == sc->list_symbol) || (caar(body) == sc->list_values_symbol)))
+	      ((caar(body) == sc->list_symbol) || (caar(body) == sc->list_values_symbol) || (caar(body) == initial_value(sc->list_values_symbol))))
 	    {
 	      s7_pointer result = s7_macroexpand(sc, s_func, cdar(expr));
 	      if (result == sc->F) return_false(sc, car_x);
@@ -69259,7 +69254,7 @@ and splices the resultant list into the outer list. `(1 ,(+ 1 1) ,@(list 3 4)) -
     for (i = 0; i <= len; i++)
       sc->w = cons_unchecked(sc, sc->nil, sc->w);
 
-    set_car(sc->w, sc->list_values_symbol);
+    set_car(sc->w, initial_value(sc->list_values_symbol));
     if (!dotted)
       {
 	for (orig = form, bq = cdr(sc->w), i = 0; i < len; i++, orig = cdr(orig), bq = cdr(bq))
@@ -80219,6 +80214,16 @@ static goto_t set_implicit(s7_scheme *sc) /* sc->code incoming is (set! (...) ..
   return(call_set_implicit(sc, obj, cdar(sc->code), cdr(sc->code), form));
 }
 
+static noreturn void set_with_let_error_nr(s7_scheme *sc)
+{
+  s7_pointer target = cadr(sc->code), value = caddr(sc->code);
+  error_nr(sc, sc->no_setter_symbol,
+	   set_elist_3(sc, wrap_string(sc, "can't set ~A in ~S", 18), target,
+		       list_3(sc, sc->set_symbol,
+			      (is_pair(target)) ? copy_proper_list(sc, target) : target,
+			      (is_pair(value)) ? copy_proper_list(sc, value) : value)));
+}
+
 static goto_t op_set2(s7_scheme *sc)
 {
   if (is_pair(sc->value))
@@ -80862,7 +80867,7 @@ static s7_pointer check_do(s7_scheme *sc)
 		  if (((caddr(step_expr) == int_one) || (cadr(step_expr) == int_one)) &&
 		      (do_is_safe(sc, body, car(v), sc->nil, &has_set)))
 		    {
-		      pair_set_syntax_op(form, OP_SAFE_DO);          /* safe_do: body is safe, step by 1 */
+		      pair_set_syntax_op(form, OP_SAFE_DO);             /* safe_do: body is safe, step by 1 */
 		      /* no semipermanent let here because apparently do_is_safe accepts recursive calls? */
 		      if ((!has_set) &&
 			  (c_function_class(opt1_cfunc(end)) == sc->num_eq_class))
@@ -89953,8 +89958,8 @@ static bool op_unknown(s7_scheme *sc)
 
     case T_GOTO:       return(fixup_unknown_op(sc, code, f, OP_IMPLICIT_GOTO));
     case T_ITERATOR:   return(fixup_unknown_op(sc, code, f, OP_IMPLICIT_ITERATE));
-    case T_MACRO:      return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_D, f)));
-    case T_MACRO_STAR: return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_STAR_D, f)));
+    case T_BACRO: case T_MACRO:           return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_D, f)));
+    case T_BACRO_STAR: case T_MACRO_STAR: return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_STAR_D, f)));
 
     default:
       if ((is_symbol(car(code))) &&
@@ -90124,8 +90129,8 @@ static bool op_unknown_s(s7_scheme *sc)
       fx_annotate_arg(sc, cdr(code), sc->curlet);
       return(fixup_unknown_op(sc, code, f, OP_IMPLICIT_CONTINUATION_A));
 
-    case T_MACRO:      return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_D, f)));
-    case T_MACRO_STAR: return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_STAR_D, f)));
+    case T_BACRO: case T_MACRO:           return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_D, f)));
+    case T_BACRO_STAR: case T_MACRO_STAR: return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_STAR_D, f)));
 
     default: break;
     }
@@ -90188,8 +90193,8 @@ static bool op_unknown_a(s7_scheme *sc)
     case T_HASH_TABLE:   return(fixup_unknown_op(sc, code, f, OP_IMPLICIT_HASH_TABLE_REF_A));
     case T_GOTO:         return(fixup_unknown_op(sc, code, f, OP_IMPLICIT_GOTO_A));
     case T_CONTINUATION: return(fixup_unknown_op(sc, code, f, OP_IMPLICIT_CONTINUATION_A));
-    case T_MACRO:        return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_D, f)));
-    case T_MACRO_STAR:   return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_STAR_D, f)));
+    case T_BACRO: case T_MACRO:             return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_D, f)));
+    case T_BACRO_STAR: case T_MACRO_STAR:   return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_STAR_D, f)));
 
     case T_LET:
       {
@@ -90333,8 +90338,8 @@ static bool op_unknown_gg(s7_scheme *sc)
       fx_annotate_args(sc, cdr(code), sc->curlet);
       return(fixup_unknown_op(sc, code, f, OP_IMPLICIT_HASH_TABLE_REF_AA));
 
-    case T_MACRO:      return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_D, f)));
-    case T_MACRO_STAR: return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_STAR_D, f)));
+    case T_BACRO: case T_MACRO:           return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_D, f)));
+    case T_BACRO_STAR: case T_MACRO_STAR: return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_STAR_D, f)));
 
     default: break;
     }
@@ -90407,8 +90412,8 @@ static bool op_unknown_ns(s7_scheme *sc)
 	}
       break;
 
-    case T_MACRO:      return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_D, f)));
-    case T_MACRO_STAR: return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_STAR_D, f)));
+    case T_BACRO: case T_MACRO:           return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_D, f)));
+    case T_BACRO_STAR: case T_MACRO_STAR: return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_STAR_D, f)));
 
       /* PERHAPS: vector, but need op_implicit_vector_ns? */
     default: break;
@@ -92075,12 +92080,7 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	      case goto_unopt:      goto UNOPT;
 	      default:              goto EVAL_ARGS; /* unopt */
 	      }
-	  error_nr(sc, sc->no_setter_symbol,
-		   set_elist_3(sc, wrap_string(sc, "can't set ~A in ~S", 18), cadr(sc->code),
-			       list_3(sc, sc->set_symbol,
-				      (is_pair(cadr(sc->code))) ? copy_proper_list(sc, cadr(sc->code)) : cadr(sc->code),
-				      (is_pair(caddr(sc->code))) ? copy_proper_list(sc, caddr(sc->code)) : caddr(sc->code))));
-
+	  set_with_let_error_nr(sc);
 
 	case OP_IF:           op_if(sc);           goto EVAL;
 	case OP_IF_UNCHECKED: op_if_unchecked(sc); goto EVAL;
@@ -95891,7 +95891,7 @@ static void init_rootlet(s7_scheme *sc)
 
   /* quasiquote helper funcs */
 #if WITH_IMMUTABLE_UNQUOTE
-  sc->unquote_symbol =               make_symbol(sc, "#<unquote>", 10);
+  sc->unquote_symbol =               make_symbol(sc, "<unquote>", 9);
   set_immutable(sc->unquote_symbol);
 #else
   sc->unquote_symbol =               make_symbol(sc, "unquote", 7);
@@ -95901,13 +95901,7 @@ static void init_rootlet(s7_scheme *sc)
   defun("[list*]", qq_append, 2, 0, false);
 #endif
   sc->apply_values_symbol =          unsafe_defun("apply-values", apply_values,         0, 1, false);
-#if 0
-  set_immutable(sc->apply_values_symbol);
-  set_immutable_slot(global_slot(sc->apply_values_symbol));
-#endif
   sc->list_values_symbol =           defun("list-values",       list_values,            0, 0, true);
-  set_immutable(sc->list_values_symbol);
-  set_immutable_slot(global_slot(sc->list_values_symbol));
 
   sc->documentation_symbol =         defun("documentation",     documentation,          1, 0, false);
   sc->signature_symbol =             defun("signature",         signature,	        1, 0, false);
@@ -95982,6 +95976,7 @@ static void init_rootlet(s7_scheme *sc)
   sc->tree_is_cyclic_symbol = defun("tree-cyclic?",  tree_is_cyclic, 1, 0, false);
 
   sc->quasiquote_symbol = s7_define_macro(sc, "quasiquote", g_quasiquote, 1, 0, false, H_quasiquote); /* is this considered syntax? r7rs says yes; also unquote */
+  sc->quasiquote_function = initial_value(sc->quasiquote_symbol);
   sc->profile_in_symbol = unsafe_defun("profile-in", profile_in, 2, 0, false); /* calls dynamic-unwind */
   sc->profile_out = NULL;
 
@@ -97002,12 +96997,12 @@ int main(int argc, char **argv)
  * index     1026   1016    973    967    966    966
  * tmock     1177   1165   1057   1019   1027   1027
  * tvect     2519   2464   1772   1669   1647   1647
- * timp      2637   2575   1930   1694   1709   1738
+ * timp      2637   2575   1930   1694   1709   1749 [pair_append gc]
  * texit     ----   ----   1778   1741   1765   1765
- * s7test    1873   1831   1818   1829   1846   1824
- * thook     ----   ----   2590   2030   2048   2045
- * tauto     ----   ----   2562   2048   2046   2058
- * lt        2187   2172   2150   2185   2198   2193
+ * s7test    1873   1831   1818   1829   1846   1837
+ * thook     ----   ----   2590   2030   2048   2053 [pair_append]
+ * tauto     ----   ----   2562   2048   2046   2048
+ * lt        2187   2172   2150   2185   2198   1951
  * dup       3805   3788   2492   2239   2219   2219
  * tcopy     8035   5546   2539   2375   2381   2386
  * tread     2440   2421   2419   2408   2403   2403
@@ -97034,17 +97029,17 @@ int main(int argc, char **argv)
  * tlamb     6423   6273   5720   5560   5620   5620
  * tmisc     8869   7612   6435   6076   6220   6239
  * tgsl      8485   7802   6373   6282   6233   6233
- * tlist     7896   7546   6558   6240   6284   6284
- * tset      ----   ----   ----   6260   6308   6352
+ * tlist     7896   7546   6558   6240   6284   6304
+ * tset      ----   ----   ----   6260   6308   6365 [pair_append]
  * tari      13.0   12.7   6827   6543   6490   6490
  * trec      6936   6922   6521   6588   6581   6581
  * tleft     10.4   10.2   7657   7479   7610   7610
  * tgc       11.9   11.1   8177   7857   7965   7965
  * thash     11.8   11.7   9734   9479   9536   9536
  * cb        11.2   11.0   9658   9564   9611   9604
- * tgen      11.2   11.4   12.0   12.1   12.1   12.2
+ * tgen      11.2   11.4   12.0   12.1   12.1   12.3
  * tall      15.6   15.6   15.6   15.6   15.1   15.1
- * calls     36.7   37.5   37.0   37.5   37.2   37.2
+ * calls     36.7   37.5   37.0   37.5   37.2   37.1
  * sg        ----   ----   55.9   55.8   55.4   55.3
  * tbig     177.4  175.8  156.5  148.1  146.0  146.0
  * ---------------------------------------------------
@@ -97053,9 +97048,5 @@ int main(int argc, char **argv)
  * more ongoing free_cell (mark/check ref), perhaps interesting to record where all allocs are, sort by biggest
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
- *   s7test qq helper func?  g_list_values, #_apply-values print as ,@?
- * tree-set-memq + non-symbols needs optimization
- *   lint: 72 list-values, s7test: 223 list-values
- *   list-values checked twice as symbol, used in quasiquote, there's also unquote
  * WASM in s7.html?
  */

@@ -919,7 +919,7 @@
 		      (symbol? (cadr tree))
 		      (not (memq (cadr tree) (car syms))))
 		 (tree-symbol-walk (cddr tree) (begin (set-car! syms (cons (cadr tree) (car syms))) syms))))
-	    ((list-values)
+	    ((list-values #_list-values)
 	     (if (and (pair? (cdr tree))
 		      (pair? (cadr tree))
 		      (memq (caadr tree) '(quote #_quote))
@@ -6797,7 +6797,7 @@
 		    (not (memq (car tree) '(quote #_quote)))))
 	  tree
 	  (case (car tree)
-	    ((list-values)
+	    ((list-values #_list-values)
 	     (if (and (or (assq 'apply-values (cdr tree))
 			  (assq #_apply-values (cdr tree)))
 		      (len=2? (cdr tree))
@@ -6811,7 +6811,7 @@
 	    ((append)
 	     (if (and (len=2? (cdr tree))
 		      (pair? (cadr tree))
-		      (eq? (caadr tree) 'list-values))
+		      (memq (caadr tree) '(list-values #_list-values)))
 		 (let ((lst (unlist-values (cadr tree)))
 		       (rest (caddr tree)))
 		   (if (pair? rest) (set! rest (unlist-values rest)))
@@ -6827,8 +6827,8 @@
     (define (qq-tree? tree)
       (and (pair? tree)
 	   (or (memq (car tree) '(apply-values #_apply-values))
-	       (if (and (eq? (car tree) 'list-values)
-			(pair? (cdr tree))              ; (assq '(list-values  .\ " (  \"))...)
+	       (if (and (memq (car tree) '(list-values #_list-values))
+			(pair? (cdr tree))              ; (assq '(list-values #_list-values  .\ " (  \"))...)
 			(or (assq 'apply-values (cdr tree))
 			    (assq #_apply-values (cdr tree))))
 		   (or (not (= (length tree) 3))
@@ -7239,7 +7239,7 @@
 		  (let ((arg1 (cadr arg))
 			(arg2 (caddr arg)))
 		    (if (and (pair? arg2)
-			     (or (and (memq (car arg2) '(cons list list-values))
+			     (or (and (memq (car arg2) '(cons list list-values #_list-values))
 				      (eq? head 'cdr))
 				 (memq (car arg2) '(error throw))
 				 (quoted-pair? arg2)))
@@ -8919,7 +8919,7 @@
 		    (let ((op (caaddr form)))
 
 		      (cond ((or (eq? op 'list)         ; (cons x (list ...)) -> (list x ...)
-				 (and (eq? op 'list-values)
+				 (and (memq op '(list-values #_list-values))
 				      (not (lint-tree-set-memq '(apply-values #_apply-values) (cdaddr form)))))
 			     (lint-format "perhaps ~A" caller (lists->string form (cons 'list (cons (cadr form) (unlist-values (cdaddr form)))))))
 
@@ -9175,7 +9175,7 @@
 				(lint-format "perhaps ~A" caller (lists->string form `(cons ,(cadr arg1) (cons ,(caddr arg1) ,arg2)))))
 
 			       ;; not sure about this: reports the un-qq'd form
-			       ((and (eq? (car arg1) 'list-values)
+			       ((and (memq (car arg1) '(list-values #_list-values))
 				     (not (qq-tree? arg1)))
 				(set! last-checker-line-number -1)
 				(sp-append caller 'append (list 'append (unlist-values arg1) arg2) env))
@@ -9376,7 +9376,7 @@
 						     ;; cursory timing tests indicate that (apply append ...) is faster
 
 						     ;; need to check for only one apply values
-						     ((list-values)          ; (apply f `(,x ,@z)) -> (apply f x z)
+						     ((list-values #_list-values)          ; (apply f `(,x ,@z)) -> (apply f x z)
 						      (let ((last-arg (last-ref args)))
 							(if (and (pair? last-arg)
 								 (memq (car last-arg) '(apply-values #_apply-values))
@@ -10411,21 +10411,22 @@
 		   (lint-format "perhaps ~A" caller
 				(lists->string form              ;  (values (list-values 'x (apply-values y))) -> (cons 'x y)
 					       (if (and (pair? (cadr form))
-							(eq? (caadr form) 'list-values)
+							(memq (caadr form) '(list-values #_list-values))
 							(not (qq-tree? (cadr form))))
 						   (unlist-values (cadr form))
 						   (cadr form)))))
-		  ((and (assq 'list-values (cdr form))
+		  ((and (or (assq 'list-values (cdr form))
+			    (assq '#_list-values (cdr form)))
 			(not (lint-any? (lambda (a)
 					  (and (pair? a)
-					       (memq (car a) '(list-values apply-values #_apply-values))
+					       (memq (car a) '(list-values #_list-values apply-values #_apply-values))
 					       (qq-tree? a)))
 					(cdr form))))
 		   (lint-format "perhaps ~A" caller
 				(lists->string form              ;  (values (list-values 'x y) a) -> (values (list 'x y) a)
 					       (cons 'values (map (lambda (a)
 								    (if (and (pair? a)
-									     (eq? (car a) 'list-values))
+									     (memq (car a) '(list-values #_list-values)))
 									(unlist-values a)
 									a))
 								  (cdr form))))))))
@@ -12185,7 +12186,7 @@
 	      (when (pair? first)
 		(let ((op (car first)))
 		  (when (and (symbol? op)
-			     (not (or (memq op '(unquote apply-values #_apply-values list-values))
+			     (not (or (memq op '(unquote apply-values #_apply-values list-values #_list-values))
 				      (hash-table-ref makers op)
 				      (eq? vname op)))              ; not a function (this kind if repetition is handled elsewhere)
 			     (len>1? (cdr hist))
@@ -15103,7 +15104,7 @@
 				    (not (symbol? (cadr body)))
 				    (not (unquoted-pair? (cadr body))))
 			       (not (or (memq (car body) '(quote #_quote quasiquote list cons append))
-					(lint-tree-set-memq '(list-values apply-values #_apply-values append) body)))))
+					(lint-tree-set-memq '(list-values #_list-values apply-values #_apply-values append) body)))))
 		      (lint-format "perhaps ~A or ~A" caller
 				   (lists->string form (list 'define outer-name (unquoted body)))
 				   (truncated-list->string (list 'define (list outer-name) (unquoted body)))))
@@ -15111,7 +15112,7 @@
 		  (when (pair? body)
 		    (let ((args (cdr body)))
 		      (case (car body)
-			((list-values) ; was list also briefly
+			((list-values #_list-values) ; was list also briefly
 			 (when (and (pair? args)
 				    (quoted-symbol? (car args)))
 			   (if (proper-list? outer-args)
@@ -15933,7 +15934,7 @@
 	      (when (and (pair? true)
 			 (pair? false)
 			 (pair? true-rest)
-			 (not (memq true-op '(quote #_quote list-values not)))
+			 (not (memq true-op '(quote #_quote list-values #_list-values not)))
 			 (not (any-macro? true-op env))
 			 (or (not (hash-table-ref syntaces true-op))
 			     (memq true-op '(let let* set! and or begin))))
@@ -16064,7 +16065,7 @@
 
 						      (not (and (pair? test)
 								(or (side-effect? test env)
-								    (memq (car test) '(list-values apply-values #_apply-values append unquote))))))
+								    (memq (car test) '(list-values #_list-values apply-values #_apply-values append unquote))))))
 
 						  (tree-subst-eq (cons 'if (cons test (cadr diff))) subst-loc true))
 
@@ -17250,7 +17251,7 @@
 	    ;; at least (car result) has to match across all
 	    (when (and (> len 1) ; (cond (else ...)) is handled elsewhere
 		       (pair? (cdr form))
-		       (not (lint-tree-set-memq '(unquote list-values) form)))
+		       (not (lint-tree-set-memq '(unquote list-values #_list-values) form)))
 	      (let ((first-clause (cadr form))
 		    (else-clause (list-ref form len)))
 		(when (and (len=1? (cdr first-clause))
@@ -18712,7 +18713,7 @@
 						    ,@(if (memv (car (caaddr form)) (cdar svs)) () '(...))
 						    ,@(map (lambda (sv)
 							     (list (reverse (cdr sv)) '=> (case (car sv)
-											    ((list-values) 'list)
+											    ((list-values #_list-values) 'list)
 											    (else))))
 							   svs)
 						    ,@(if others '(...) ())))))))
@@ -18807,7 +18808,7 @@
 		      (let ((len (- (length form) 2))) ; number of clauses
 			(when (and (> len 1)                 ; (case x (else ...)) is handled elsewhere
 				   (len>1? (cdr form))
-				   (not (lint-tree-set-memq '(unquote list-values) form)))
+				   (not (lint-tree-set-memq '(unquote list-values #_list-values) form)))
 			  (case->case+args caller form len)
 			  (case->header+case+trailer caller form len env)))
 		      (case->symbol->value caller form)
@@ -20748,7 +20749,7 @@
 					    (hash-table-ref definers-table (car call))
 					    (side-effect? (caddr prev) env) ; this is needed -- let* in effect
 					    (any-macro? (car call) env)
-					    (memq (car call) '(map for-each list-values))
+					    (memq (car call) '(map for-each list-values #_list-values))
 					    (and (eq? (car call) 'let)
 						 (symbol? (cadr call))))) ; i.e. not named-let
 				   (or (not (eq? (car call) 'do))
@@ -22644,7 +22645,7 @@
 				    ;; so without lots of effort (a dummy var if null lvars, etc), we can only handle
 				    ;; functions within a function (fvar not #f).
 				    ;; but adding that possibility got no hits
-				    list-values apply-values #_apply-values append quasiquote unquote
+				    list-values #_list-values apply-values #_apply-values append quasiquote unquote
 				    define-constant define-macro define-macro* define-expansion
 				    define-syntax let-syntax letrec-syntax match syntax-rules
 				    require import module cond-expand reader-cond while case-lambda
@@ -22733,7 +22734,7 @@
 	;; -------- walk head=symbol --------
 	(denote walk-symbol
 	  (letrec ((unsafe-makers '(sublet inlet copy cons list append subvector vector hash-table
-				    make-hash-table make-hook list-values append gentemp or and not))
+				    make-hash-table make-hook list-values #_list-values append gentemp or and not))
 
 		   (equal-ignoring-constants?
 		    (lambda (a b)
@@ -22826,7 +22827,7 @@
 								 (else ,else-clause))))))))))
 		  (unless (or (<= branches 2)
 			      (any-macro? head env)
-			      (memq head '(for-each map list-values * + - /)))
+			      (memq head '(for-each map list-values #_list-values * + - /)))
 		    (let ((leaves (lint-tree-leaves form)))
 		      (when (> leaves (max *report-bloated-arg* (* branches 3)))
 			(do ((p (cdr form) (cdr p))
@@ -23094,7 +23095,7 @@
 	    (define (safe-av? p)
 	      (and (pair? p)
 		   (memq (car p) '(apply-values #_apply-values))
-		   (not (lint-tree-set-memq '(apply-values #_apply-values list-values append unquote) (cdr p)))))
+		   (not (lint-tree-set-memq '(apply-values #_apply-values list-values #_list-values append unquote) (cdr p)))))
 
 	    (lambda (caller head form env)
 	      (for-each (lambda (p)
@@ -23117,7 +23118,7 @@
 		  (if (eq? head 'append)                   ; `(f . g) -> (cons f g) ignoring quotes etc
 		      (if (and (= (length form) 3)          ; `(f . (g . h)) -> (cons f (cons g h))
 			       (pair? (cadr form))
-			       (eq? (caadr form) 'list-values)
+			       (memq (caadr form) '(list-values #_list-values))
 			       (not (lint-tree-set-memq '(apply-values #_apply-values append unquote) (cdr form))))
 			  (let ((lst (unlist-values (cadr form)))
 				(rest (caddr form)))
@@ -23130,7 +23131,7 @@
 								 `(cons ,(cadr lst)
 									(cons ,(caddr lst) ,rest)))))))))
 
-		      (when (eq? head 'list-values)
+		      (when (memq head '(list-values #_list-values))
 			(case (length form)
 			  ((1) #f)  ; this never happens
 			  ((2)
@@ -23177,14 +23178,14 @@
 						  (lint-tree-set-memq '(apply-values #_apply-values append unquote) arg1))
 					     (and (pair? arg2)
 						  (or (lint-tree-set-memq '(append unquote) arg2)
-						      (lint-tree-set-memq '(list-values apply-values #_apply-values) (cdr arg2))))))
+						      (lint-tree-set-memq '(list-values #_list-values apply-values #_apply-values) (cdr arg2))))))
 				    (lint-format "perhaps ~A" caller        ; `(f ,(map g x)) -> (list 'f (map g x))
 						 (lists->string form        ; `(f ,@(map g x)) -> (cons 'f (map g x))
 								(if (pair? arg2)
 								    (case (car arg2)
 								      ((apply-values #_apply-values)
 								       (list 'cons (unlist-values arg1) (cadr arg2)))
-								      ((list-values)
+								      ((list-values #_list-values)
 								       (list 'list (unlist-values arg1) (cons 'list (cdr arg2))))
 								      (else
 								       (list 'list (unlist-values arg1) arg2)))
@@ -23211,11 +23212,11 @@
 				   ((and (len=3? arg1)                        ; `((a . b) (c . d)) -> (list (cons a b) (cons c d))
 					 (eq? (car arg1) 'append)            ; `((a . (b . c))...) -> (list (cons a (cons b c)) ...)
 					 (pair? (cadr arg1))
-					 (eq? (caadr arg1) 'list-values) ; was memq+list
+					 (memq (caadr arg1) '(list-values #_list-values)) ; was memq+list
 					 (len=3? arg2)
 					 (eq? (car arg2) 'append)
 					 (pair? (cadr arg2))
-					 (eq? (caadr arg2) 'list-values)) ; same
+					 (memq (caadr arg2) '(list-values #_list-values))) ; same
 				    (let ((ca1 (cadr arg1))
 					  (ca2 (cadr arg2)))
 				      (let ((len1 (length ca1))
@@ -23246,7 +23247,7 @@
 							(eq? (car p) 'append)
 							(len=2? (cdr p))
 							(len=2? (cadr p))
-							(eq? (caadr p) 'list-values)))
+							(memq (caadr p) '(list-values #_list-values))))
 						 args)
 				    (lint-format "perhaps ~A" caller
 						 (truncated-lists->string form
@@ -23332,7 +23333,7 @@
 	      env)
 
 	     ((and *report-quasiquote-rewrites*
-		   (memq head '(list-values apply-values #_apply-values)))
+		   (memq head '(list-values #_list-values apply-values #_apply-values)))
 	      (walk-qq caller head form env))
 
 	     ((symbol? head)
