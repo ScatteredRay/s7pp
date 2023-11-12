@@ -1746,7 +1746,7 @@ static bool t_mappable_p[NUM_TYPES], t_sequence_p[NUM_TYPES], t_vector_p[NUM_TYP
 static bool t_procedure_p[NUM_TYPES], t_applicable_p[NUM_TYPES], t_macro_setter_p[NUM_TYPES];
 #if S7_DEBUGGING
 static bool t_freeze_p[NUM_TYPES]; /* free_cell sanity check */
-static bool t_ext_p[NUM_TYPES];    /* make sure internal types don't leak out */
+static bool t_ext_p[NUM_TYPES], t_exs_p[NUM_TYPES];    /* make sure internal types don't leak out */
 #endif
 
 static void init_types(void)
@@ -1772,6 +1772,7 @@ static void init_types(void)
 #if S7_DEBUGGING
       t_freeze_p[i] = false;
       t_ext_p[i] = false;
+      t_exs_p[i] = false;
 #endif
     }
   t_number_p[T_INTEGER] = true; t_number_p[T_RATIO] = true; t_number_p[T_REAL] = true; t_number_p[T_COMPLEX] = true;
@@ -1897,6 +1898,10 @@ static void init_types(void)
 #if (!WITH_GMP)
   t_ext_p[T_BIG_INTEGER] = true; t_ext_p[T_BIG_RATIO] = true; t_ext_p[T_BIG_REAL] = true; t_ext_p[T_BIG_COMPLEX] = true;
 #endif
+  t_exs_p[T_STACK] = true;
+  t_exs_p[T_DYNAMIC_WIND] = true;
+  t_exs_p[T_CATCH] = true;
+  t_exs_p[T_COUNTER] = true;
 #endif
 }
 
@@ -1924,6 +1929,7 @@ static void init_types(void)
   static s7_pointer check_ref16(s7_pointer p, const char *func, int32_t line);
   static s7_pointer check_ref16a(s7_pointer p, const char *func, int32_t line);
   static s7_pointer check_ref19(s7_pointer p, const char *func, int32_t line);
+  static s7_pointer check_ref19a(s7_pointer p, const char *func, int32_t line);
   static s7_pointer check_nref(s7_pointer p, const char *func, int32_t line);
   static s7_pointer check_opcode(s7_pointer p, const char *func, int32_t line);
   static s7_pointer check_let_ref(s7_pointer p, uint64_t role, const char *func, int32_t line);
@@ -1952,6 +1958,7 @@ static void init_types(void)
   #define T_Ctr(P) check_ref(P, T_COUNTER,           __func__, __LINE__, NULL, NULL)
   #define T_Dyn(P) check_ref(P, T_DYNAMIC_WIND,      __func__, __LINE__, NULL, NULL)
   #define T_Eof(P) check_ref(P, T_EOF,               __func__, __LINE__, "sweep", NULL)
+  #define T_Exs(P) check_ref19a(P,                   __func__, __LINE__)                /* not an internal type, but #<unused> and slot are ok */
   #define T_Ext(P) check_ref19(P,                    __func__, __LINE__)                /* not an internal type */
   #define T_Fnc(P) check_ref6(P,                     __func__, __LINE__)                /* any c_function|c_macro */
   #define T_Frc(P) check_ref2(P, T_RATIO, T_INTEGER, __func__, __LINE__, NULL, NULL)
@@ -1969,7 +1976,7 @@ static void init_types(void)
   #define T_Lst(P) check_ref2(P, T_PAIR, T_NIL,      __func__, __LINE__, "gc", NULL)
   #define T_Mac(P) check_ref17(P,                    __func__, __LINE__)                /* a non-C macro */
   #define T_Met(P) check_ref9(P,                     __func__, __LINE__)                /* anything that might contain a method */
-  #define T_Nmv(P) check_ref15(P,                    __func__, __LINE__)                /* not multiple-value, not free */
+  #define T_Nmv(P) check_ref15(P,                    __func__, __LINE__)                /* not multiple-value, not free, only affects slot values */
   #define T_Num(P) check_ref7(P,                     __func__, __LINE__)                /* any number (not bignums) */
   #define T_Nvc(P) check_ref(P, T_VECTOR,            __func__, __LINE__, "sweep", NULL)
   #define T_Obj(P) check_ref(P, T_C_OBJECT,          __func__, __LINE__, "sweep", "s7_c_object_value")
@@ -2013,6 +2020,7 @@ static void init_types(void)
   #define T_Ctr(P)  P
   #define T_Dyn(P)  P
   #define T_Eof(P)  P
+  #define T_Exs(P)  P
   #define T_Ext(P)  P
   #define T_Fnc(P)  P
   #define T_Frc(P)  P
@@ -2178,7 +2186,7 @@ static void init_types(void)
 /* this marks the symbol and its run-time macro value, distinguishing it from an ordinary macro */
 
 #define T_MULTIPLE_VALUE               (1 << (TYPE_BITS + 7))
-#define is_multiple_value(p)           has_type0_bit(T_Pos(p), T_MULTIPLE_VALUE) /* not T_Ext -- can be a slot */
+#define is_multiple_value(p)           has_type0_bit(T_Exs(p), T_MULTIPLE_VALUE) /* not T_Ext -- can be a slot */
 #if S7_DEBUGGING
 #define set_multiple_value(p)          do {if (!in_heap(p)) {fprintf(stderr, "%s[%d]: mv\n", __func__, __LINE__); abort();} set_type0_bit(T_Pair(p), T_MULTIPLE_VALUE);} while (0)
 #else
@@ -2321,8 +2329,8 @@ static void init_types(void)
 /* marks a let that includes the dox_slot2 */
 
 #define T_IMMUTABLE                    (1 << (TYPE_BITS + 16))
-#define is_immutable(p)                has_type_bit(T_Pos(p), T_IMMUTABLE)
-#define set_immutable(p)               set_type_bit(T_Pos(p), T_IMMUTABLE) /* can be a slot, so not T_Ext */
+#define is_immutable(p)                has_type_bit(T_Exs(p), T_IMMUTABLE)
+#define set_immutable(p)               set_type_bit(T_Exs(p), T_IMMUTABLE) /* can be a slot, so not T_Ext */
 #define set_immutable_let(p)           set_type_bit(T_Lsd(p), T_IMMUTABLE)
 #define set_immutable_slot(p)          set_type_bit(T_Slt(p), T_IMMUTABLE)
 #define is_immutable_port(p)           has_type_bit(T_Prt(p), T_IMMUTABLE)
@@ -2481,7 +2489,7 @@ static void init_types(void)
 #define slot_has_setter_or_pending_value(p) has_type_bit(p, T_HAS_SETTER | T_HAS_PENDING_VALUE)
 
 #define T_HAS_METHODS                  (1 << (TYPE_BITS + 22))
-#define has_methods(p)                 has_type_bit(T_Pos(p), T_HAS_METHODS) /* display slot hits T_Ext here */
+#define has_methods(p)                 has_type_bit(T_Exs(p), T_HAS_METHODS) /* display slot hits T_Ext here */
 #define is_openlet(p)                  has_type_bit(T_Let(p), T_HAS_METHODS)
 #define has_active_methods(sc, p)      ((has_type_bit(T_Ext(p), T_HAS_METHODS)) && (sc->has_openlets)) /* g_char #<eof> */
 #define set_has_methods(p)             set_type_bit(T_Met(p), T_HAS_METHODS)
@@ -2732,8 +2740,8 @@ static void init_types(void)
 
 #define is_pair(p)                     (type(p) == T_PAIR)
 #define is_mutable_pair(p)             ((is_pair(p)) && (!is_immutable(p))) /* same speed: ((full_type(p) & (TYPE_MASK | T_IMMUTABLE)) == T_PAIR) */
-#define is_null(p)                     ((T_Pos(p)) == sc->nil)  /* can be a slot */
-#define is_not_null(p)                 ((T_Pos(p)) != sc->nil)
+#define is_null(p)                     ((T_Exs(p)) == sc->nil)  /* can be a slot */
+#define is_not_null(p)                 ((T_Exs(p)) != sc->nil)
 #define is_list(p)                     ((is_pair(p)) || (type(p) == T_NIL))
 #define is_quote(p)                    (((p) == sc->quote_symbol) || ((p) == sc->quote_function)) /* order here apparently does not matter */
 #define is_safe_quote(p)               ((((p) == sc->quote_symbol) && (is_global(sc->quote_symbol))) || ((p) == sc->quote_function))
@@ -2879,20 +2887,20 @@ static void init_types(void)
 
 #define opt1_fast(P)                   T_Lst(opt1(P,                OPT1_FAST))
 #define set_opt1_fast(P, X)            set_opt1(P, T_Pair(X),       OPT1_FAST)
-#define opt1_cfunc(P)                  T_Pos(opt1(P,                OPT1_CFUNC))
+#define opt1_cfunc(P)                  T_Exs(opt1(P,                OPT1_CFUNC))
 #define set_opt1_cfunc(P, X)           set_opt1(P, T_Fnc(X),       OPT1_CFUNC)
 #define opt1_lambda_unchecked(P)       opt1(P,                      OPT1_LAMBDA) /* can be free/null? from s7_call? */
 #define opt1_lambda(P)                 T_Clo(opt1(P,                OPT1_LAMBDA))
 #define set_opt1_lambda(P, X)          set_opt1(P, T_Clo(X),        OPT1_LAMBDA)
 #define set_opt1_lambda_add(P, X)      do {set_opt1(P, T_Clo(X),    OPT1_LAMBDA); add_opt1_func(sc, P);} while (0)
-#define opt1_clause(P)                 T_Pos(opt1(P,                OPT1_CLAUSE))
-#define set_opt1_clause(P, X)          set_opt1(P, T_Pos(X),        OPT1_CLAUSE)
+#define opt1_clause(P)                 T_Exs(opt1(P,                OPT1_CLAUSE))
+#define set_opt1_clause(P, X)          set_opt1(P, T_Exs(X),        OPT1_CLAUSE)
 #define opt1_sym(P)                    T_Sym(opt1(P,                OPT1_SYM))
 #define set_opt1_sym(P, X)             set_opt1(P, T_Sym(X),        OPT1_SYM)
 #define opt1_pair(P)                   T_Lst(opt1(P,                OPT1_PAIR))
 #define set_opt1_pair(P, X)            set_opt1(P, T_Lst(X),        OPT1_PAIR)
-#define opt1_con(P)                    T_Pos(opt1(P,                OPT1_CON))
-#define set_opt1_con(P, X)             set_opt1(P, T_Pos(X),        OPT1_CON)    /* can be #<unused> */
+#define opt1_con(P)                    T_Exs(opt1(P,                OPT1_CON))
+#define set_opt1_con(P, X)             set_opt1(P, T_Exs(X),        OPT1_CON)    /* can be #<unused> */
 #define opt1_any(P)                    opt1(P,                      OPT1_ANY)    /* can be free in closure_is_ok */
 #define set_opt1_any(P, X)             set_opt1(P, X,               OPT1_ANY)
 
@@ -2906,8 +2914,8 @@ static void init_types(void)
 #define set_opt2_sym(P, X)             set_opt2(P, T_Sym(X),        OPT2_SYM)
 #define opt2_pair(P)                   T_Lst(opt2(P,                OPT2_PAIR))
 #define set_opt2_pair(P, X)            set_opt2(P, T_Lst(X),        OPT2_PAIR)
-#define opt2_con(P)                    T_Pos(opt2(P,                OPT2_CON))
-#define set_opt2_con(P, X)             set_opt2(P, T_Pos(X),        OPT2_CON)
+#define opt2_con(P)                    T_Exs(opt2(P,                OPT2_CON))
+#define set_opt2_con(P, X)             set_opt2(P, T_Exs(X),        OPT2_CON)
 #define opt2_lambda(P)                 T_Pair(opt2(P,               OPT2_LAMBDA))
 #define set_opt2_lambda(P, X)          set_opt2(P, T_Pair(X),       OPT2_LAMBDA)
 #define opt2_direct(P)                 opt2(P,                      OPT2_DIRECT)
@@ -2919,8 +2927,8 @@ static void init_types(void)
 #define set_opt3_int(P, X)             set_opt3_n(P, X,             OPT3_INT)
 #define opt3_sym(P)                    T_Sym(opt3(P,                OPT3_SYM))
 #define set_opt3_sym(P, X)             set_opt3(P, T_Sym(X),        OPT3_SYM)
-#define opt3_con(P)                    T_Pos(opt3(P,                OPT3_CON))
-#define set_opt3_con(P, X)             set_opt3(P, T_Pos(X),        OPT3_CON)
+#define opt3_con(P)                    T_Exs(opt3(P,                OPT3_CON))
+#define set_opt3_con(P, X)             set_opt3(P, T_Exs(X),        OPT3_CON)
 #define opt3_pair(P)                   T_Pair(opt3(P,               OPT3_AND))
 #define set_opt3_pair(P, X)            set_opt3(P, T_Pair(X),       OPT3_AND)
 #define opt3_any(P)                    opt3(P,                      OPT3_ANY)
@@ -2964,7 +2972,7 @@ static void init_types(void)
 
 #define car(p)                         (T_Pair(p))->object.cons.car
 #define unchecked_car(p)               (T_Pos(p))->object.cons.car
-#define set_car(p, Val)                car(p) = T_Pos(Val)      /* can be a slot or #<unsed> */
+#define set_car(p, Val)                car(p) = T_Pos(Val)      /* can be a slot or #<unused> or #<catch> etc */
 #define cdr(p)                         (T_Pair(p))->object.cons.cdr
 #if S7_DEBUGGING
 static void check_set_cdr(s7_pointer p, s7_pointer Val, const char *func, int32_t line);
@@ -2972,12 +2980,12 @@ static void check_set_cdr(s7_pointer p, s7_pointer Val, const char *func, int32_
 #else
 #define set_cdr(p, Val)                cdr(p) = T_Ext(Val)
 #endif
-#define unchecked_set_cdr(p, Val)      cdr(p) = T_Pos(Val)      /* #<unused> in g_gc */
-#define unchecked_cdr(p)               (T_Pos(p))->object.cons.cdr
+#define unchecked_set_cdr(p, Val)      cdr(p) = T_Exs(Val)      /* #<unused> in g_gc */
+#define unchecked_cdr(p)               (T_Exs(p))->object.cons.cdr
 
 #define caar(p)                        car(car(p))
 #define cadr(p)                        car(cdr(p))
-#define set_cadr(p, Val)               car(cdr(p)) = T_Pos(Val) /* #<unused> in g_gc */
+#define set_cadr(p, Val)               car(cdr(p)) = T_Exs(Val) /* #<unused> in g_gc */
 #define cdar(p)                        cdr(car(p))
 #define set_cdar(p, Val)               cdr(car(p)) = T_Ext(Val)
 #define cddr(p)                        cdr(cdr(p))
@@ -5327,7 +5335,7 @@ static s7_pointer check_nref(s7_pointer p, const char *func, int32_t line)
   return(p);
 }
 
-static s7_pointer check_ref15(s7_pointer p, const char *func, int32_t line) /* called in mark_let so s7_scheme* for cur_sc is difficult */
+static s7_pointer check_ref15(s7_pointer p, const char *func, int32_t line)
 {
   uint8_t typ = unchecked_type(p);
   check_nref(p, func, line);
@@ -5336,6 +5344,11 @@ static s7_pointer check_ref15(s7_pointer p, const char *func, int32_t line) /* c
     complain("%s%s[%d]: slot value is a multiple-value, %s (%s)%s?\n", p, func, line, typ);
   if (has_odd_bits(p))
     {char *s; fprintf(stderr, "odd bits: %s\n", s = describe_type_bits(cur_sc, p)); free(s);}
+  if (t_exs_p[typ])
+    {
+      fprintf(stderr, "%s[%d]: slot_value is %s?\n", func, line, s7_type_names[typ]);
+      if (cur_sc->stop_at_error) abort();
+    }
   return(p);
 }
 
@@ -5395,6 +5408,18 @@ static s7_pointer check_ref19(s7_pointer p, const char *func, int32_t line)
   uint8_t typ = unchecked_type(p);
   check_nref(p, func, line);
   if (t_ext_p[typ])
+    {
+      fprintf(stderr, "%s%s[%d]: attempt to use (internal) %s cell%s\n", bold_text, func, line, s7_type_names[typ], unbold_text);
+      if (cur_sc->stop_at_error) abort();
+    }
+  return(p);
+}
+
+static s7_pointer check_ref19a(s7_pointer p, const char *func, int32_t line)
+{
+  uint8_t typ = unchecked_type(p);
+  check_nref(p, func, line);
+  if (t_exs_p[typ])
     {
       fprintf(stderr, "%s%s[%d]: attempt to use (internal) %s cell%s\n", bold_text, func, line, s7_type_names[typ], unbold_text);
       if (cur_sc->stop_at_error) abort();
@@ -68495,7 +68520,7 @@ a list of the results.  Its arguments can be lists, vectors, strings, hash-table
 		  if (iterator_is_at_end(car(x)))
 		    {
 		      unstack_gc_protect(sc); /* free_cell(sc, car(x)); */ /* 16-Jan-19 iterator in circular list -- see s7test */
-		      sc->args = T_Pos(old_args); /* can be #<unused> */
+		      sc->args = T_Exs(old_args); /* can be #<unused> */
 		      return(proper_list_reverse_in_place(sc, car(val)));
 		    }}
 	      z = func(sc, cdr(val1)); /* multiple-values? values is unsafe, but s7_values used externally and claims to be safe? */ /* func = c_function_call(f) */
@@ -69821,7 +69846,7 @@ static s7_pointer check_autoload_and_error_hook(s7_scheme *sc, s7_pointer sym)
 	      unstack_gc_protect(sc);
 	    }}
       sc->value = T_Ext(value);
-      sc->args = T_Pos(args); /* can be #<unused> */
+      sc->args = T_Exs(args); /* can be #<unused> */
       sc->code = code;
       set_curlet(sc, current_let);
       sc->x = x;
@@ -71475,7 +71500,7 @@ static opt_t optimize_safe_c_func_three_args(s7_scheme *sc, s7_pointer expr, s7_
 		  (is_safe_c_s(arg1)))
 		{
 		  set_safe_optimize_op(expr, hop + OP_SAFE_C_opSq_CS); /* lg */
-		  set_opt1_con(cdr(expr), cadr(arg2)); /* opt1_con is T_Pos|Ext (unchecked) */
+		  set_opt1_con(cdr(expr), cadr(arg2)); /* opt1_con is T_Exs (unchecked) */
 		  set_opt2_sym(cdr(expr), arg3);
 		  set_opt3_sym(cdr(expr), cadr(arg1));
 		  choose_c_function(sc, expr, func, 3);
@@ -93492,7 +93517,7 @@ static s7_pointer sl_active_catches(s7_scheme *sc)
 	lst = cons(sc, sc->T, lst);
 	break;
       case OP_CATCH_2: case OP_CATCH_1: case OP_CATCH:
-	lst = cons(sc, catch_tag(T_Cat(stack_code(sc->stack, i))), lst);
+	lst = cons(sc, catch_tag(stack_code(sc->stack, i)), lst);
 	break;
       }
   return(reverse_in_place_unchecked(sc, sc->nil, lst));
@@ -95042,9 +95067,9 @@ static void init_wrappers(s7_scheme *sc)
   for (cp = sc->integer_wrappers, qp = sc->integer_wrappers; is_pair(cp); qp = cp, cp = cdr(cp))
     {
       s7_pointer p = alloc_pointer(sc);
-      car(cp) = p; /* not set_car, it checks T_Pos */
       full_type(p) = T_INTEGER | T_IMMUTABLE | T_MUTABLE | T_UNHEAP;  /* mutable to turn off set_has_number_name */
       integer(p) = 0;
+      set_car(cp, p);
     }
   unchecked_set_cdr(qp, sc->integer_wrappers);
 
@@ -95052,9 +95077,9 @@ static void init_wrappers(s7_scheme *sc)
   for (cp = sc->real_wrappers, qp = sc->real_wrappers; is_pair(cp); qp = cp, cp = cdr(cp))
     {
       s7_pointer p = alloc_pointer(sc);
-      car(cp) = p;  /* not set_car, it checks T_Pos */
       full_type(p) = T_REAL | T_IMMUTABLE | T_MUTABLE | T_UNHEAP;
       real(p) = 0.0;
+      set_car(cp, p);
     }
   unchecked_set_cdr(qp, sc->real_wrappers);
 
@@ -95062,12 +95087,12 @@ static void init_wrappers(s7_scheme *sc)
   for (cp = sc->string_wrappers, qp = sc->string_wrappers; is_pair(cp); qp = cp, cp = cdr(cp))
     {
       s7_pointer p = alloc_pointer(sc);
-      car(cp) = p;  /* not set_car, it checks T_Pos */
       full_type(p) = T_STRING | T_IMMUTABLE | T_SAFE_PROCEDURE | T_UNHEAP;
       string_block(p) = NULL;
       string_value(p) = NULL;
       string_length(p) = 0;
       string_hash(p) = 0;
+      set_car(cp, p);
     }
   unchecked_set_cdr(qp, sc->string_wrappers);
 }
@@ -97046,7 +97071,10 @@ int main(int argc, char **argv)
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * more ongoing free_cell (mark/check ref), perhaps interesting to record where all allocs are, sort by biggest
+ *   also let/slot wrappers and maybe use safe-lists? or pair-wrappers, number-wrappers if any possibilities
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * WASM in s7.html?
+ * tighten internal type checks
+ * c-object method list in s7?
  */
