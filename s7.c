@@ -1779,7 +1779,7 @@ static void init_types(void)
   t_number_p[T_BIG_INTEGER] = true; t_number_p[T_BIG_RATIO] = true; t_number_p[T_BIG_REAL] = true; t_number_p[T_BIG_COMPLEX] = true;
 
   t_rational_p[T_INTEGER] = true; t_rational_p[T_RATIO] = true;
- t_rational_p[T_BIG_INTEGER] = true; t_rational_p[T_BIG_RATIO] = true;
+  t_rational_p[T_BIG_INTEGER] = true; t_rational_p[T_BIG_RATIO] = true;
 
   t_small_real_p[T_INTEGER] = true; t_small_real_p[T_RATIO] = true; t_small_real_p[T_REAL] = true;
 
@@ -3650,8 +3650,36 @@ const char *display(s7_pointer obj)
 #define display_80(Obj) string_value(object_to_truncated_string(sc, Obj, 80))
 
 #if S7_DEBUGGING
+#if WITH_ALLOC_COUNTERS
+static int allocs[100000];
+static const char *alloc_funcs[100000];
+static void report_allocs(int lim)
+{
+  int mx = -1, mxline = -1;
+  const char *mxfunc;
+  for (int j = 0; j < lim; j++)
+    {
+      for (int i = 0; i < 100000; i++)
+	if (allocs[i] > mx)
+	  {
+	    mx = allocs[i];
+	    mxline = i;
+	    mxfunc = alloc_funcs[i];
+	  }
+      if (mx <= 0) break;
+      fprintf(stderr, "%s[%d]: %d\n", mxfunc, mxline, mx);
+      allocs[mxline] = 0;
+      mx = -1;
+    }
+}
+#endif
+
 static void set_type_1(s7_pointer p, uint64_t f, const char *func, int32_t line)
 {
+#if WITH_ALLOC_COUNTERS
+  alloc_funcs[line] = func;
+  allocs[line]++;
+#endif
   p->alloc_line = line;
   p->alloc_func = func;
   p->alloc_type = f;
@@ -9117,12 +9145,11 @@ static inline void make_let_with_five_slots(s7_scheme *sc, s7_pointer func, s7_p
 
 static s7_pointer reuse_as_let(s7_scheme *sc, s7_pointer let, s7_pointer next_let)
 {
-  /* we're reusing let here as a let -- it was probably a pair */
 #if S7_DEBUGGING
   let->debugger_bits = 0;
   if (!in_heap(let)) {fprintf(stderr, "reusing an unheaped %s as a let?\n", s7_type_names[type(let)]); abort();}
 #endif
-  set_full_type(T_Pair(let), T_LET | T_SAFE_PROCEDURE);
+  set_full_type(T_Pair(let), T_LET | T_SAFE_PROCEDURE); /* we're reusing let here as a let -- it was a pair */
   let_set_slots(let, slot_end);
   let_set_outlet(let, next_let);
   let_set_id(let, ++sc->let_number);
@@ -9131,6 +9158,10 @@ static s7_pointer reuse_as_let(s7_scheme *sc, s7_pointer let, s7_pointer next_le
 
 static s7_pointer reuse_as_slot(s7_pointer slot, s7_pointer symbol, s7_pointer value)
 {
+#if S7_DEBUGGING
+  slot->debugger_bits = 0;
+  if (!in_heap(slot)) {fprintf(stderr, "reusing an unheaped %s as a slot?\n", s7_type_names[type(slot)]); abort();}
+#endif
   set_full_type(T_Pair(slot), T_SLOT);
   slot_set_symbol_and_value(slot, symbol, value);
   return(slot);
@@ -20902,6 +20933,7 @@ static s7_pointer multiply_p_pp(s7_scheme *sc, s7_pointer x, s7_pointer y)
 
 static s7_pointer multiply_p_ppp(s7_scheme *sc, s7_pointer x, s7_pointer y, s7_pointer z)
 {
+  /* TODO: this is dumb if x y z are same type int/real tnum */
   x = multiply_p_pp(sc, x, y);
   sc->error_argnum = 1;
   x = multiply_p_pp(sc, x, z);
@@ -37473,6 +37505,7 @@ s7_int s7_list_length(s7_scheme *sc, s7_pointer a) /* returns -len if list is do
 /* -------------------------------- proper-list? -------------------------------- */
 static inline s7_pointer copy_proper_list(s7_scheme *sc, s7_pointer lst)
 {
+  /* TODO: in tset this is nearly always list_1! */
   s7_pointer tp;
   if (!is_pair(lst)) return(sc->nil);
   sc->temp5 = lst;
@@ -53560,6 +53593,9 @@ static s7_pointer g_exit(s7_scheme *sc, s7_pointer args)
   #define Q_exit s7_make_signature(sc, 2, sc->T, sc->T)
   /* calling s7_eval_c_string in an atexit function seems to be problematic -- it works, but args can be changed? longjmp perhaps? */
 
+#if WITH_ALLOC_COUNTERS
+  report_allocs(20);
+#endif
   s7_quit(sc);
   if (show_gc_stats(sc))
     s7_warn(sc, 256, "gc calls %" ld64 " total time: %f\n", sc->gc_calls, (double)(sc->gc_total_time) / ticks_per_second());
@@ -55607,6 +55643,7 @@ fx_c_s_car_s_any(fx_c_t_car_v, t_lookup, v_lookup)
     val2 = (is_pair(val2)) ? car(val2) : g_car(sc, set_plist_1(sc, val2)); \
     return(((is_t_integer(val1)) && (is_t_integer(val2))) ? make_integer(sc, integer(val1) + integer(val2)) : add_p_pp(sc, val1, val2)); \
   }
+    /* TODO: can we see temps here and reuse? */
 
 fx_add_s_car_s_any(fx_add_s_car_s, s_lookup, s_lookup)
 fx_add_s_car_s_any(fx_add_u_car_t, u_lookup, t_lookup)
@@ -65965,6 +66002,7 @@ static s7_pointer opt_do_step_i(opt_info *o)
   end = integer(slot_value(ostart->v[2].p));
   incr = ostep->v[2].i;
   si = make_mutable_integer(sc, integer(slot_value(ostart->v[1].p)));
+  /* TODO: wrapper? */
   if (stepper) slot_set_value(stepper, si);
   while (integer(si) != end)
     {
@@ -66094,7 +66132,7 @@ static s7_pointer opt_do_n(opt_info *o)
 	  fp[i] = os[i]->v[0].fp;
 	}
       if (len == 7)
-	while (!ostart->v[0].fb(ostart)) /* tfft teq */
+	while (!ostart->v[0].fb(ostart)) /* tfft teq */ /* TODO: this can probably be improved (fft code) */
 	  {
 	    fp[0](os[0]); fp[1](os[1]); fp[2](os[2]); fp[3](os[3]); fp[4](os[4]); fp[5](os[5]); fp[6](os[6]);
 	    slot_set_value(vp, ostep->v[0].fp(ostep));
@@ -69076,7 +69114,7 @@ bool s7_is_multiple_value(s7_pointer obj) {return(is_multiple_value(obj));}
 
 
 /* -------------------------------- list-values -------------------------------- */
-static s7_pointer splice_out_values(s7_scheme *sc, s7_pointer args)
+static s7_pointer splice_out_values(s7_scheme *sc, s7_pointer args) /* TODO: check for list_1 case */
 {
   s7_pointer tp;
   while (car(args) == sc->no_value) {args = cdr(args); if (is_null(args)) return(sc->nil);}
@@ -69846,7 +69884,7 @@ static s7_pointer check_autoload_and_error_hook(s7_scheme *sc, s7_pointer sym)
 	      unstack_gc_protect(sc);
 	    }}
       sc->value = T_Ext(value);
-      sc->args = T_Exs(args); /* can be #<unused> */
+      sc->args = T_Pos(args); /* can be #<unused> or #<counter>! */
       sc->code = code;
       set_curlet(sc, current_let);
       sc->x = x;
@@ -79563,13 +79601,14 @@ static Inline bool inline_op_implicit_vector_ref_a(s7_scheme *sc) /* called once
       if ((index < vector_length(v)) && (index >= 0))
 	{
 	  sc->value = (is_float_vector(v)) ? make_real(sc, float_vector(v, index)) : vector_getter(v)(sc, v, index);
+	  /* TODO: for tnum, add int_vector case here */
 	  return(true);
 	}}
   sc->value = vector_ref_1(sc, v, set_plist_1(sc, x));
   return(true);
 }
 
-static bool op_implicit_vector_ref_aa(s7_scheme *sc) /* if Inline 70 in concordance */
+static bool op_implicit_vector_ref_aa(s7_scheme *sc) /* if Inline 70 in concordance *//* TODO: possibly implicit_float_vector_ref_aa? */
 {
   s7_pointer x, y, code;
   s7_pointer v = lookup_checked(sc, car(sc->code));
@@ -81665,6 +81704,7 @@ static inline bool op_dox_step_1(s7_scheme *sc) /* inline for 50 in concordance,
   do {                                      /* every dox case has vars (else op_do_no_vars) */
     if (slot_has_expression(slot))
       slot_set_value(slot, fx_call(sc, slot_expression(slot)));
+    /* TODO: this fx_call is often fx_add_ss et al */
     slot = next_slot(slot);
     } while (tis_slot(slot));
   sc->value = fx_call(sc, cadr(sc->code));
@@ -81714,6 +81754,7 @@ static void op_dox_no_body(s7_scheme *sc)
     {
       s7_int incr = integer(opt2_con(sc->code));
       s7_pointer istep = make_mutable_integer(sc, integer(slot_value(slot)));
+      /* TODO: can this be a wrapped value? */
       /* this can cause unexpected, but correct behavior: (do ((x 0) (i 0 (+ i 1))) ((= i 1) x) (set! x (memq x '(0)))) -> #f
        *   because (eq? 0 x) here is false -- memv will return '(0).  tree-count is similar.
        */
@@ -82096,6 +82137,7 @@ static bool op_simple_do_1(s7_scheme *sc, s7_pointer code)
   step_var = caddr(step_expr);
   /* use g* funcs (not fx) because we're passing the actual values, not the expressions */
 
+  /* TODO: all these make_integers -- can we see simple_do bodies that are safe in that regard? */
   if ((stepf == g_add_x1) &&
       (is_t_integer(slot_value(ctr_slot))) &&
       ((endf == g_num_eq_2) || (endf == g_num_eq_xi) || (endf == g_geq_2)) &&
@@ -82112,7 +82154,7 @@ static bool op_simple_do_1(s7_scheme *sc, s7_pointer code)
 	  if ((fp == opt_p_ppp_sss) || (fp == opt_p_ppp_sss_mul) || (fp == opt_p_ppp_sss_hset))
 	    {
 	      s7_p_ppp_t fpt = o->v[4].p_ppp_f;
-	      for (i = start; i < stop; i++)
+	      for (i = start; i < stop; i++)  /* thash and below */
 		{
 		  slot_set_value(ctr_slot, make_integer(sc, i));
 		  fpt(sc, slot_value(o->v[1].p), slot_value(o->v[2].p), slot_value(o->v[3].p));
@@ -83776,7 +83818,7 @@ static inline bool lambda_star_default(s7_scheme *sc)
 		  sc->code = val;
 		  return(true); /* goto eval */
 		}}}
-  return(false);
+  return(false); /* goto BEGIN */
 }
 
 static bool op_lambda_star_default(s7_scheme *sc)
@@ -83789,7 +83831,7 @@ static bool op_lambda_star_default(s7_scheme *sc)
   if (lambda_star_default(sc)) return(true);
   pop_stack_no_op(sc);
   sc->code = T_Pair(closure_body(sc->code));
-  return(false);
+  return(false); /* goto BEGIN */
 }
 
 static inline bool set_star_args(s7_scheme *sc, s7_pointer top)
@@ -83804,7 +83846,7 @@ static inline bool set_star_args(s7_scheme *sc, s7_pointer top)
       pop_stack_no_op(sc);              /* get original args and code back */
     }
   sc->code = closure_body(sc->code);
-  return(false);
+  return(false); /* goto BEGIN */
 }
 
 static inline bool apply_safe_closure_star_1(s7_scheme *sc)  /* -------- define* (lambda*) -------- */
@@ -88713,7 +88755,7 @@ static void op_eval_set3(s7_scheme *sc)
 
 static void op_eval_set3_no_mv(s7_scheme *sc)
 {
-  sc->args = pair_append(sc, sc->args, list_1(sc, sc->value));
+  sc->args = pair_append(sc, sc->args, list_1(sc, sc->value)); /* TODO: is there a way to tell copy is not needed, and perhaps not even the list? */
   sc->code = pop_op_stack(sc);    /* args = (ind... val), code = setter */
 }
 
@@ -88850,6 +88892,7 @@ static /* inline */ bool eval_args_last_arg(s7_scheme *sc) /* inline: no diff tm
   else sc->code = car_code;
   /* get the current arg, which is not a list */
   sc->args = proper_list_reverse_in_place(sc, cons_unchecked(sc, sc->code, cons(sc, sc->value, sc->args)));
+  /* TODO: this is reverse(args) + value + code?  can that be used directly? */
   sc->code = pop_op_stack(sc);
   return(false);
 }
@@ -92531,6 +92574,7 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	READ_LIST:
 	case OP_READ_LIST:        /* sc->args is sc->nil at first */
 	  sc->args = cons(sc, sc->value, sc->args);
+	  /* TODO: if reading a vector constant, can we do it directly and store the vector? (i.e. no list etc) */
 
 	READ_NEXT:
 	case OP_READ_NEXT:       /* this is 75% of the token calls, so expanding it saves lots of time */
@@ -96100,6 +96144,9 @@ s7_scheme *s7_init(void)
       init_catchers();
       init_s7_starlet_immutable_field();
       already_inited = true;
+#if WITH_ALLOC_COUNTERS
+      for (int i = 0; i < 100000; i++) allocs[i] = 0;
+#endif
     }
 #if S7_DEBUGGING
   init_never_unheaped();
@@ -97070,11 +97117,14 @@ int main(int argc, char **argv)
  * ---------------------------------------------------
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
- * more ongoing free_cell (mark/check ref), perhaps interesting to record where all allocs are, sort by biggest
+ * more ongoing free_cell (mark/check ref)
  *   also let/slot wrappers and maybe use safe-lists? or pair-wrappers, number-wrappers if any possibilities
+ *   in tgsl looped call with temp (double*...) could use c-pointer wrapper? (double* not returned, so count + use wrapper if under lim) 
+ *      [g_to_doubles libgsl.scm, but would require wrap|temp-double* or eqivalent in libgsl.scm -> tgsl + circular list of c-pointers (semi?permanent) + init]
+ *   are wrappers cleared? C/Scheme stack alloc?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * WASM in s7.html?
- * tighten internal type checks
- * c-object method list in s7?
+ * c-object method list in s7? (object->let (block)) -> let itself [c_object_let] s7_c_object_let (block-let in s7test)
+ * t718
  */

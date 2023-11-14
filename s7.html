@@ -1106,8 +1106,8 @@ Since a bacro (normally) sheds its define-time environment:
 <em class="red">error</em><em class="gray">: x: unbound variable</em>
 </pre>
 <p>
-A macro here returns 3.  But don't be hasty!  The bacro can get its define-time environment (its closure)
-via funclet, so in fact, define-macro is a special case of define-bacro!  We can define
+A macro here returns 3.  The bacro can get its define-time environment (its closure)
+via funclet, so define-macro is a special case of define-bacro!  We can define
 macros that work in all four ways: the expansion can happen in either the definition or calling environment,
 as can the evaluation of that expansion.  In a bacro, both happen in the calling environment
 if we take no other action, and in a normal macro (define-macro), the expansion happens in the definition
