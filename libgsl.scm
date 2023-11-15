@@ -818,6 +818,12 @@
                     return(s7_make_c_pointer_with_type(sc, (void *)s7_float_vector_elements(s7_car(args)), double__symbol, s7_f(sc)));
                   return(s7_car(args));
                 }
+                static s7_pointer g_to_wrapped_doubles(s7_scheme *sc, s7_pointer args)
+                {
+                  if (s7_is_vector(s7_car(args)))
+                    return(s7_make_c_pointer_wrapper_with_type(sc, (void *)s7_float_vector_elements(s7_car(args)), double__symbol, s7_f(sc)));
+                  return(s7_car(args));
+                }
                 ")
 	 
 	 (C-function ("gsl_sf_result.make" g_gsl_sf_result_make "" 0))
@@ -825,6 +831,7 @@
 	 (C-function ("gsl_sf_result.val" g_gsl_sf_result_val "" 1))
 	 (C-function ("gsl_sf_result.err" g_gsl_sf_result_err "" 1))
 	 (C-function ("double*" g_to_doubles "" 1))
+	 (C-function ("wrap-double*" g_to_wrapped_doubles "" 1))
 	 
 	 (double gsl_log1p (double))
 	 (double gsl_expm1 (double))

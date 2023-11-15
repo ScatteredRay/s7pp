@@ -1,10 +1,10 @@
 #ifndef S7_H
 #define S7_H
 
-#define S7_VERSION "10.6"
-#define S7_DATE "15-Nov-2023"
+#define S7_VERSION "10.7"
+#define S7_DATE "16-Nov-2023"
 #define S7_MAJOR_VERSION 10
-#define S7_MINOR_VERSION 6
+#define S7_MINOR_VERSION 7
 
 #include <stdint.h>           /* for int64_t */
 
@@ -68,6 +68,7 @@ void *s7_c_pointer_with_type(s7_scheme *sc, s7_pointer p, s7_pointer expected_ty
 s7_pointer s7_c_pointer_type(s7_pointer p);
 s7_pointer s7_make_c_pointer(s7_scheme *sc, void *ptr);              /* these are for passing uninterpreted C pointers through Scheme */
 s7_pointer s7_make_c_pointer_with_type(s7_scheme *sc, void *ptr, s7_pointer type, s7_pointer info);
+s7_pointer s7_make_c_pointer_wrapper_with_type(s7_scheme *sc, void *ptr, s7_pointer type, s7_pointer info);
 
 s7_pointer s7_eval_c_string(s7_scheme *sc, const char *str);         /* (eval-string str) */
 s7_pointer s7_eval_c_string_with_environment(s7_scheme *sc, const char *str, s7_pointer e);
@@ -903,6 +904,7 @@ bool s7_is_bignum(s7_pointer obj);
  *
  *        s7 changes
  *
+ * 15-Nov:    s7_make_c_pointer_wrapper_with_type.
  * 17-Mar-23: moved s7_is_bignum declaration outside WITH_GMP.
  * --------
  * 9-Nov:     nan, nan-payload, +nan.<int>.

@@ -1239,7 +1239,7 @@ struct s7_scheme {
   c_proc_t *alloc_function_cells;
   uint32_t alloc_big_pointer_k;
   s7_big_cell *alloc_big_pointer_cells;
-  s7_pointer string_wrappers, integer_wrappers, real_wrappers;
+  s7_pointer string_wrappers, integer_wrappers, real_wrappers, c_pointer_wrappers;
   uint8_t *alloc_symbol_cells;
   char *num_to_str;
 
@@ -6214,7 +6214,7 @@ static noreturn void wrong_number_of_arguments_error_nr(s7_scheme *sc, const cha
 s7_pointer s7_wrong_number_of_args_error(s7_scheme *sc, const char *caller, s7_pointer args)
 {
   error_nr(sc, sc->wrong_number_of_args_symbol,
-	   set_elist_2(sc, s7_make_string_wrapper(sc, caller), args)); /* "caller" includes the format directives */
+	   set_elist_2(sc, wrap_string(sc, caller, safe_strlen(caller)), args)); /* "caller" includes the format directives */
   return(sc->wrong_number_of_args_symbol);
 }
 
@@ -8518,7 +8518,7 @@ static /* inline */ s7_pointer new_symbol(s7_scheme *sc, const char *name, s7_in
       slot = make_semipermanent_slot(sc, x, x);
       set_global_slot(x, slot);
       set_local_slot(x, slot);
-      if (S7_DEBUGGING) set_immutable_slot(slot);
+      set_immutable_slot(slot);
     }
   full_type(p) = T_PAIR | T_IMMUTABLE | T_UNHEAP;  /* add x to the symbol table */
   set_car(p, x);
@@ -9378,7 +9378,7 @@ s7_pointer s7_make_slot(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7_poi
 	{
 	  slot = global_slot(symbol);
 	  if (is_immutable_slot(slot))     /* 2-Oct-23: (immutable! 'abs) (set! abs 3) */
-	    immutable_object_error_nr(sc, set_elist_3(sc, immutable_error_string, sc->set_symbol, symbol)); /* TODO: is symbol correct? or "abs in rootlet"? */
+	    immutable_object_error_nr(sc, set_elist_3(sc, immutable_error_string, sc->set_symbol, symbol));
 	  symbol_increment_ctr(symbol);
 	  slot_set_value_with_hook(slot, value);
 	  return(slot);
@@ -11529,6 +11529,18 @@ s7_pointer s7_make_c_pointer_with_type(s7_scheme *sc, void *ptr, s7_pointer type
 }
 
 s7_pointer s7_make_c_pointer(s7_scheme *sc, void *ptr) {return(s7_make_c_pointer_with_type(sc, ptr, sc->F, sc->F));}
+
+#define NUM_C_POINTER_WRAPPERS 16 /* need at least 9 for gsl */
+
+s7_pointer s7_make_c_pointer_wrapper_with_type(s7_scheme *sc, void *ptr, s7_pointer type, s7_pointer info)
+{
+  s7_pointer x = car(sc->c_pointer_wrappers);
+  sc->c_pointer_wrappers = cdr(sc->c_pointer_wrappers);
+  c_pointer(x) = ptr;
+  c_pointer_type(x) = type;
+  c_pointer_info(x) = info;
+  return(x);
+}
 
 static s7_pointer g_c_pointer(s7_scheme *sc, s7_pointer args)
 {
@@ -15023,12 +15035,7 @@ static s7_pointer make_sharp_constant(s7_scheme *sc, const char *name, bool with
       {
 	s7_pointer res = make_atom(sc, (char *)(name + 1), (name[0] == 'o') ? 8 : ((name[0] == 'x') ? 16 : 2), NO_SYMBOLS, with_error);
 	if ((error_if_bad_number) && (res == sc->F)) /* #b32 etc but not if called from string->number */
-	  {
-	    char buf[256];
-	    size_t len = snprintf(buf, 256, "#%s is not a number", name);
-	    error_nr(sc, sc->read_error_symbol,
-		     set_elist_1(sc, s7_make_string_with_length(sc, buf, len))); /* can't use wrap_string here (buf is local) */
-	  }
+	  error_nr(sc, sc->read_error_symbol, set_elist_2(sc, wrap_string(sc, "#~A is not a number", 19), wrap_string(sc, name, safe_strlen(name))));
 	return(res);
       }
 
@@ -20933,7 +20940,8 @@ static s7_pointer multiply_p_pp(s7_scheme *sc, s7_pointer x, s7_pointer y)
 
 static s7_pointer multiply_p_ppp(s7_scheme *sc, s7_pointer x, s7_pointer y, s7_pointer z)
 {
-  /* TODO: this is dumb if x y z are same type int/real tnum */
+  /* TODO: this is dumb if x y z are same type int/real tnum but no hits for reals in tnum */
+  /* if ((is_t_real(x)) && (is_t_real(y)) && (is_t_real(z))) return(make_real(sc, real(x) * real(y) * real(z))); */
   x = multiply_p_pp(sc, x, y);
   sc->error_argnum = 1;
   x = multiply_p_pp(sc, x, z);
@@ -28750,7 +28758,7 @@ static s7_pointer stdin_read_line(s7_scheme *sc, s7_pointer port, bool with_eol)
     }
   if (fgets(sc->read_line_buf, sc->read_line_buf_size, stdin))
     return(s7_make_string(sc, sc->read_line_buf)); /* fgets adds the trailing '\0' */
-  return(nil_string); /* make_string_with_length(sc, NULL, 0)); */
+  return(nil_string);
 }
 
 static s7_pointer file_read_line(s7_scheme *sc, s7_pointer port, bool with_eol)
@@ -31280,7 +31288,7 @@ static s7_pointer op_eval_string(s7_scheme *sc)
 	  s7_pointer trail_data;
 	  s7_int trail_len = port_data_size(current_input_port(sc)) - port_position(current_input_port(sc)) + 1;
 	  if (trail_len > 32) trail_len = 32;
-	  trail_data = make_string_with_length(sc, (const char *)(port_data(current_input_port(sc)) + port_position(current_input_port(sc)) - 1), trail_len);
+	  trail_data = wrap_string(sc, (const char *)(port_data(current_input_port(sc)) + port_position(current_input_port(sc)) - 1), trail_len);
 	  s7_close_input_port(sc, current_input_port(sc));
 	  pop_input_port(sc);
 	  error_nr(sc, sc->read_error_symbol, set_elist_2(sc, wrap_string(sc, "eval-string trailing junk: ~S", 29), trail_data));
@@ -31788,7 +31796,7 @@ static s7_pointer c_object_iterate(s7_scheme *sc, s7_pointer obj)
   p = iterator_sequence(obj);
   cur = iterator_current(obj);
   set_car(cur, p);
-  set_car(cdr(cur), make_integer(sc, iterator_position(obj)));
+  set_car(cdr(cur), wrap_integer(sc, iterator_position(obj))); /* was make_integer, c_object_ref->c_object_getter is c_function in scheme? 14-Nov-23 */
   result = (*(c_object_ref(sc, p)))(sc, cur); /* used to save/restore sc->x|z here */
   iterator_position(obj)++;
   if (result == ITERATOR_END)
@@ -35785,7 +35793,7 @@ static s7_pointer g_with_output_to_file(s7_scheme *sc, s7_pointer args)
 
 
 /* -------------------------------- format -------------------------------- */
-static inline s7_pointer copy_proper_list(s7_scheme *sc, s7_pointer lst);
+static /* inline */ s7_pointer copy_proper_list(s7_scheme *sc, s7_pointer lst);
 
 static noreturn void format_error_nr(s7_scheme *sc, const char *ur_msg, s7_int msg_len, const char *str, s7_pointer ur_args, format_data_t *fdat)
 {
@@ -36002,8 +36010,8 @@ static bool format_method(s7_scheme *sc, const char *str, format_data_t *fdat, s
   ctrl_str[2] = '\0';
 
   if (port == obj)    /* a problem! we need the openlet port for format, but that's an infinite loop when it calls format again as obj */
-    s7_apply_function(sc, func, set_plist_3(sc, port, s7_make_string_wrapper(sc, ctrl_str), s7_make_string_wrapper(sc, "#<format port>")));
-  else s7_apply_function(sc, func, set_plist_3(sc, port, s7_make_string_wrapper(sc, ctrl_str), obj));
+    s7_apply_function(sc, func, set_plist_3(sc, port, wrap_string(sc, ctrl_str, 2), wrap_string(sc, "#<format port>", 14)));
+  else s7_apply_function(sc, func, set_plist_3(sc, port, wrap_string(sc, ctrl_str, 2), obj));
 
   fdat->args = cdr(fdat->args);
   fdat->ctr++;
@@ -37503,15 +37511,15 @@ s7_int s7_list_length(s7_scheme *sc, s7_pointer a) /* returns -len if list is do
 
 
 /* -------------------------------- proper-list? -------------------------------- */
-static inline s7_pointer copy_proper_list(s7_scheme *sc, s7_pointer lst)
+static /* inline */ s7_pointer copy_proper_list(s7_scheme *sc, s7_pointer lst)
 {
-  /* TODO: in tset this is nearly always list_1! */
   s7_pointer tp;
-  if (!is_pair(lst)) return(sc->nil);
+  if (is_null(lst)) return(sc->nil);
+  if (is_null(cdr(lst))) return(list_1(sc, car(lst)));
   sc->temp5 = lst;
-  tp = list_1(sc, car(lst));
+  tp = list_2(sc, car(lst), cadr(lst));
   sc->temp8 = tp;
-  for (s7_pointer p = cdr(lst), np = tp; is_pair(p); p = cdr(p), np = cdr(np))
+  for (s7_pointer p = cddr(lst), np = cdr(tp); is_pair(p); p = cdr(p), np = cdr(np))
     {
       set_cdr(np, list_1_unchecked(sc, car(p)));
       p = cdr(p);
@@ -46434,7 +46442,7 @@ static s7_pointer g_c_object_set(s7_scheme *sc, s7_pointer args) /* called in c_
   return((*(c_object_set(sc, obj)))(sc, args));
 }
 
-s7_int s7_make_c_type(s7_scheme *sc, const char *name)
+s7_int s7_make_c_type(s7_scheme *sc, const char *name) /* shouldn't this be s7_make_c_object_type? */
 {
   c_object_t *c_type;
   s7_int tag = sc->num_c_object_types++;
@@ -48809,12 +48817,12 @@ static s7_pointer string_getter(s7_scheme *sc, s7_pointer str, s7_int loc)
 
 static s7_pointer c_object_setter(s7_scheme *sc, s7_pointer obj, s7_int loc, s7_pointer val)
 {
-  return((*(c_object_set(sc, obj)))(sc, with_list_t3(obj, make_integer(sc, loc), val)));
+  return((*(c_object_set(sc, obj)))(sc, with_list_t3(obj, wrap_integer(sc, loc), val))); /* was make_integer 14-Nov-23 */
 }
 
 static s7_pointer c_object_getter(s7_scheme *sc, s7_pointer obj, s7_int loc)
 {
-  return((*(c_object_ref(sc, obj)))(sc, set_plist_2(sc, obj, make_integer(sc, loc))));
+  return((*(c_object_ref(sc, obj)))(sc, set_plist_2(sc, obj, wrap_integer(sc, loc)))); /* was make_integer 14-Nov-23 */
 }
 
 static s7_pointer let_setter(s7_scheme *sc, s7_pointer e, s7_int loc, s7_pointer val)
@@ -66002,7 +66010,7 @@ static s7_pointer opt_do_step_i(opt_info *o)
   end = integer(slot_value(ostart->v[2].p));
   incr = ostep->v[2].i;
   si = make_mutable_integer(sc, integer(slot_value(ostart->v[1].p)));
-  /* TODO: wrapper? */
+  /* TODO: wrapper? can the body involve opt_do_step_i? */
   if (stepper) slot_set_value(stepper, si);
   while (integer(si) != end)
     {
@@ -68558,7 +68566,7 @@ a list of the results.  Its arguments can be lists, vectors, strings, hash-table
 		  if (iterator_is_at_end(car(x)))
 		    {
 		      unstack_gc_protect(sc); /* free_cell(sc, car(x)); */ /* 16-Jan-19 iterator in circular list -- see s7test */
-		      sc->args = T_Exs(old_args); /* can be #<unused> */
+		      sc->args = T_Pos(old_args); /* can be #<unused> or #<counter> */
 		      return(proper_list_reverse_in_place(sc, car(val)));
 		    }}
 	      z = func(sc, cdr(val1)); /* multiple-values? values is unsafe, but s7_values used externally and claims to be safe? */ /* func = c_function_call(f) */
@@ -78778,6 +78786,12 @@ static void check_set(s7_scheme *sc)
     if (!is_symbol(settee))                                          /* (set! 12345 1) */
       error_nr(sc, sc->syntax_error_symbol,                          /* (set! #_abs 32) -> "error: set! can't change abs (a c-function), (set! abs 32)" */
 	       set_elist_4(sc, wrap_string(sc, "set! can't change ~S (~A), ~S", 29), settee, sc->type_names[type(settee)], form));
+
+    else
+      if (is_keyword(settee))                                        /* (set! :hi 3) */
+	error_nr(sc, sc->syntax_error_symbol,
+		 set_elist_3(sc, wrap_string(sc, "set!: can't change keyword's value: ~S in ~S", 44), settee, form));
+
   if (is_pair(settee))                                               /* here we have (set! (...) ...) */
     {
       pair_set_syntax_op(form, OP_SET_UNCHECKED); /* if not pair car, op_set_normal below */
@@ -90197,8 +90211,10 @@ static bool op_unknown_s(s7_scheme *sc)
       fx_annotate_arg(sc, cdr(code), sc->curlet);
       return(fixup_unknown_op(sc, code, f, OP_IMPLICIT_CONTINUATION_A));
 
-    case T_BACRO: case T_MACRO:           return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_D, f)));
-    case T_BACRO_STAR: case T_MACRO_STAR: return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_STAR_D, f)));
+    case T_BACRO: case T_MACRO:
+      return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_D, f)));
+    case T_BACRO_STAR: case T_MACRO_STAR: 
+      return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_STAR_D, f)));
 
     default: break;
     }
@@ -90261,8 +90277,10 @@ static bool op_unknown_a(s7_scheme *sc)
     case T_HASH_TABLE:   return(fixup_unknown_op(sc, code, f, OP_IMPLICIT_HASH_TABLE_REF_A));
     case T_GOTO:         return(fixup_unknown_op(sc, code, f, OP_IMPLICIT_GOTO_A));
     case T_CONTINUATION: return(fixup_unknown_op(sc, code, f, OP_IMPLICIT_CONTINUATION_A));
-    case T_BACRO: case T_MACRO:             return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_D, f)));
-    case T_BACRO_STAR: case T_MACRO_STAR:   return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_STAR_D, f)));
+    case T_BACRO: case T_MACRO:
+      return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_D, f)));
+    case T_BACRO_STAR: case T_MACRO_STAR:
+      return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_STAR_D, f)));
 
     case T_LET:
       {
@@ -90406,8 +90424,10 @@ static bool op_unknown_gg(s7_scheme *sc)
       fx_annotate_args(sc, cdr(code), sc->curlet);
       return(fixup_unknown_op(sc, code, f, OP_IMPLICIT_HASH_TABLE_REF_AA));
 
-    case T_BACRO: case T_MACRO:           return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_D, f)));
-    case T_BACRO_STAR: case T_MACRO_STAR: return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_STAR_D, f)));
+    case T_BACRO: case T_MACRO:
+      return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_D, f)));
+    case T_BACRO_STAR: case T_MACRO_STAR:
+      return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_STAR_D, f)));
 
     default: break;
     }
@@ -90480,8 +90500,10 @@ static bool op_unknown_ns(s7_scheme *sc)
 	}
       break;
 
-    case T_BACRO: case T_MACRO:           return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_D, f)));
-    case T_BACRO_STAR: case T_MACRO_STAR: return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_STAR_D, f)));
+    case T_BACRO: case T_MACRO:
+      return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_D, f)));
+    case T_BACRO_STAR: case T_MACRO_STAR:
+      return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_STAR_D, f)));
 
       /* PERHAPS: vector, but need op_implicit_vector_ns? */
     default: break;
@@ -95139,6 +95161,20 @@ static void init_wrappers(s7_scheme *sc)
       set_car(cp, p);
     }
   unchecked_set_cdr(qp, sc->string_wrappers);
+
+  sc->c_pointer_wrappers = semipermanent_list(sc, NUM_C_POINTER_WRAPPERS);
+  for (cp = sc->c_pointer_wrappers, qp = sc->c_pointer_wrappers; is_pair(cp); qp = cp, cp = cdr(cp))
+    {
+      s7_pointer p = alloc_pointer(sc);
+      full_type(p) = T_C_POINTER | T_IMMUTABLE | T_UNHEAP;
+      c_pointer(p) = NULL;
+      c_pointer_type(p) = sc->F;
+      c_pointer_info(p) = sc->F;
+      c_pointer_weak1(p) = sc->F;
+      c_pointer_weak2(p) = sc->F;
+      set_car(cp, p);
+    }
+  unchecked_set_cdr(qp, sc->c_pointer_wrappers);
 }
 
 static s7_pointer syntax(s7_scheme *sc, const char *name, opcode_t op, s7_pointer min_args, s7_pointer max_args, const char *doc)
@@ -97087,12 +97123,12 @@ int main(int argc, char **argv)
  * tobj      4016   3970   3828   3577   3511   3514
  * teq       4068   4045   3536   3486   3568   3570
  * tio       3816   3752   3683   3620   3607   3607
- * tmac      3950   3873   3033   3677   3685   3682
+ * tmac      3950   3873   3033   3677   3685   3682  3672
  * tcase     4960   4793   4439   4430   4436   4435
  * tclo      4787   4735   4390   4384   4445   4449
  * tlet      7775   5640   4450   4427   4452   4455
  * tfft      7820   7729   4755   4476   4512   4512
- * tstar     6139   5923   5519   4449   4560   4567
+ * tstar     6139   5923   5519   4449   4560   4567  4564
  * tmap      8869   8774   4489   4541   4618   4618
  * tshoot    5525   5447   5183   5055   5047   5045
  * tform     5357   5348   5307   5316   5161   5161
@@ -97100,7 +97136,7 @@ int main(int argc, char **argv)
  * tnum      6348   6013   5433   5396   5403   5403
  * tlamb     6423   6273   5720   5560   5620   5620
  * tmisc     8869   7612   6435   6076   6220   6239
- * tgsl      8485   7802   6373   6282   6233   6233
+ * tgsl      8485   7802   6373   6282   6233   6233  6220
  * tlist     7896   7546   6558   6240   6284   6304
  * tset      ----   ----   ----   6260   6308   6365 [pair_append]
  * tari      13.0   12.7   6827   6543   6490   6490
@@ -97119,12 +97155,11 @@ int main(int argc, char **argv)
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * more ongoing free_cell (mark/check ref)
  *   also let/slot wrappers and maybe use safe-lists? or pair-wrappers, number-wrappers if any possibilities
- *   in tgsl looped call with temp (double*...) could use c-pointer wrapper? (double* not returned, so count + use wrapper if under lim) 
- *      [g_to_doubles libgsl.scm, but would require wrap|temp-double* or eqivalent in libgsl.scm -> tgsl + circular list of c-pointers (semi?permanent) + init]
- *   are wrappers cleared? C/Scheme stack alloc?
+ *   C/Scheme stack alloc? vector constants: use a sc->strbuf like buffer? OP_READ_FLOAT_VECTOR loop?
+ *   how to track reref so free_cell can be automated?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * WASM in s7.html?
  * c-object method list in s7? (object->let (block)) -> let itself [c_object_let] s7_c_object_let (block-let in s7test)
- * t718
+ *   but c_type has the built-in methods like copy reverse fill etc -- how to access in scheme? [many are c_functions from scheme point of view]
  */

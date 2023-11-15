@@ -1004,6 +1004,9 @@ int main(int argc, char **argv)
     if (!s7_is_c_pointer_of_type(csc, s7_make_symbol(sc, "s7_scheme*")))
       {fprintf(stderr, "c-pointer type %s != s7_scheme*\n", s1 = TO_STR(s7_c_pointer_type(csc))); free(s1);}
     s7_c_pointer_with_type(sc, csc, s7_make_symbol(sc, "s7_scheme*"), "ffitest", __LINE__);
+    csc = s7_make_c_pointer_wrapper_with_type(sc, (void *)sc, s7_make_symbol(sc, "s7_scheme*"), s7_f(sc));
+    if (!s7_is_c_pointer_of_type(csc, s7_make_symbol(sc, "s7_scheme*")))
+      {fprintf(stderr, "c-pointer wrapper type %s != s7_scheme*\n", s1 = TO_STR(s7_c_pointer_type(csc))); free(s1);}
   }
   if (!s7_is_int_vector(s7_make_int_vector(sc, 3, 1, NULL)))
     fprintf(stderr, "s7_make_int_vector did not make an int-vector\n");
