@@ -3657,6 +3657,7 @@ static void report_allocs(int lim)
 {
   int mx = -1, mxline = -1;
   const char *mxfunc;
+  fprintf(stderr, "\n");
   for (int j = 0; j < lim; j++)
     {
       for (int i = 0; i < 100000; i++)
@@ -14838,7 +14839,7 @@ static s7_pointer check_sharp_readers(s7_scheme *sc, const char *name)
     if (name[0] == s7_character(caar(reader)))
       {
 	if (args == sc->F)
-	  args = set_plist_1(sc, s7_make_string_wrapper(sc, name));
+	  args = set_plist_1(sc, wrap_string(sc, name, safe_strlen(name)));
 	/* args is GC protected by s7_apply_function?? (placed on the stack) */
 	value = s7_apply_function(sc, cdar(reader), args); /* this is much less error-safe than s7_call */
 	if (value != sc->F)
@@ -14928,7 +14929,7 @@ static s7_pointer unknown_sharp_constant(s7_scheme *sc, const char *name, s7_poi
   if (hook_has_functions(sc->read_error_hook))  /* check *read-error-hook* */
     {
       bool old_history_enabled = s7_set_history_enabled(sc, false); /* see sc->error_hook for a more robust way to handle this */
-      s7_pointer result = s7_call(sc, sc->read_error_hook, set_plist_2(sc, sc->T, s7_make_string_wrapper(sc, name)));
+      s7_pointer result = s7_call(sc, sc->read_error_hook, set_plist_2(sc, sc->T, wrap_string(sc, name, safe_strlen(name))));
       s7_set_history_enabled(sc, old_history_enabled);
       if (result != sc->unspecified)
 	return(result);
@@ -18150,9 +18151,7 @@ static s7_pointer big_expt(s7_scheme *sc, s7_pointer args)
 
   if (is_zero(x))
     {
-      if ((s7_is_integer(x)) &&
-	  (s7_is_integer(y)) &&
-	  (is_zero(y)))
+      if ((s7_is_integer(x)) && (s7_is_integer(y)) && (is_zero(y)))
 	return(int_one);
 
       if (is_real(y))
@@ -18164,8 +18163,7 @@ static s7_pointer big_expt(s7_scheme *sc, s7_pointer args)
 	if (is_negative(sc, real_part_p_p(sc, y))) /* handle big_complex as well as complex */
 	  division_by_zero_error_2_nr(sc, sc->expt_symbol, x, y);
 
-      if ((is_rational(x)) &&
-	  (is_rational(y)))
+      if ((is_rational(x)) && (is_rational(y)))
 	return(int_zero);
       return(real_zero);
     }
@@ -20940,7 +20938,7 @@ static s7_pointer multiply_p_pp(s7_scheme *sc, s7_pointer x, s7_pointer y)
 
 static s7_pointer multiply_p_ppp(s7_scheme *sc, s7_pointer x, s7_pointer y, s7_pointer z)
 {
-  /* TODO: this is dumb if x y z are same type int/real tnum but no hits for reals in tnum */
+  /* no hits for reals in tnum */
   /* if ((is_t_real(x)) && (is_t_real(y)) && (is_t_real(z))) return(make_real(sc, real(x) * real(y) * real(z))); */
   x = multiply_p_pp(sc, x, y);
   sc->error_argnum = 1;
@@ -31974,7 +31972,7 @@ s7_pointer s7_make_iterator(s7_scheme *sc, s7_pointer e)
 	{
 	  free_cell(sc, iter);
 	  sole_arg_wrong_type_error_nr(sc, sc->make_iterator_symbol, e,
-						      wrap_string(sc, "a function or macro with a '+iterator+ local that is not #f", 59));
+				       wrap_string(sc, "a function or macro with a '+iterator+ local that is not #f", 59));
 	}
       break;
 
@@ -42099,6 +42097,7 @@ static inline s7_int ref_check_index(s7_scheme *sc, s7_pointer v, s7_int i)
 
 static inline s7_double float_vector_ref_d_7pi(s7_scheme *sc, s7_pointer v, s7_int i) {return(float_vector(v, ref_check_index(sc, v, i)));}
 static s7_pointer float_vector_ref_p_pi_direct(s7_scheme *sc, s7_pointer v, s7_int i) {return(make_real(sc, float_vector(v, i)));}
+static s7_pointer float_vector_ref_p_pi_direct_wrapped(s7_scheme *sc, s7_pointer v, s7_int i) {return(wrap_real(sc, float_vector(v, i)));}
 
 static inline s7_double float_vector_ref_d_7pii(s7_scheme *sc, s7_pointer v, s7_int i1, s7_int i2)
 {
@@ -42255,6 +42254,7 @@ static s7_pointer g_int_vector_ref(s7_scheme *sc, s7_pointer args)
 
 static s7_int int_vector_ref_i_7pi_direct(s7_scheme *unused_sc, s7_pointer v, s7_int i) {return(int_vector(v, i));}
 static s7_pointer int_vector_ref_p_pi_direct(s7_scheme *sc, s7_pointer v, s7_int i) {return(make_integer(sc, int_vector(v, i)));}
+static s7_pointer int_vector_ref_p_pi_direct_wrapped(s7_scheme *sc, s7_pointer v, s7_int i) {return(wrap_integer(sc, int_vector(v, i)));}
 
 static s7_int int_vector_ref_i_7pi(s7_scheme *sc, s7_pointer v, s7_int i)
 {
@@ -46513,8 +46513,7 @@ void s7_c_type_set_ref(s7_scheme *sc, s7_int tag, s7_pointer (*ref)(s7_scheme *s
 
 void s7_c_type_set_getter(s7_scheme *sc, s7_int tag, s7_pointer getter)
 {
-  if ((S7_DEBUGGING) && (getter) && (!is_c_function(getter))) fprintf(stderr, "%s[%d]: %p is not a c_function\n", __func__, __LINE__, getter);
-  sc->c_object_types[tag]->getter = (getter) ? getter : sc->F;
+  sc->c_object_types[tag]->getter = (getter) ? T_Fnc(getter) : sc->F;
 }
 
 void s7_c_type_set_set(s7_scheme *sc, s7_int tag, s7_pointer (*set)(s7_scheme *sc, s7_pointer args))
@@ -46524,8 +46523,7 @@ void s7_c_type_set_set(s7_scheme *sc, s7_int tag, s7_pointer (*set)(s7_scheme *s
 
 void s7_c_type_set_setter(s7_scheme *sc, s7_int tag, s7_pointer setter)
 {
-  if ((S7_DEBUGGING) && (setter) && (!is_c_function(setter))) fprintf(stderr, "%s[%d]: %p is not a c_function\n", __func__, __LINE__, setter);
-  sc->c_object_types[tag]->setter = (setter) ? setter : sc->F;
+  sc->c_object_types[tag]->setter = (setter) ? T_Fnc(setter) : sc->F;
 }
 
 void *s7_c_object_value(s7_pointer obj) {return(c_object_value(obj));}
@@ -46604,10 +46602,14 @@ static s7_pointer copy_c_object(s7_scheme *sc, s7_pointer args)
 
 static s7_pointer c_object_type_to_let(s7_scheme *sc, s7_pointer cobj)
 {
-  return(internal_inlet(sc, 4,
-			sc->name_symbol, c_object_scheme_name(sc, cobj),
-			sc->setter_symbol, (c_object_set(sc, cobj) != fallback_set) ? sc->c_object_set_function : sc->F));
-  /* should we make new wrappers every time this is called? or save the let somewhere and reuse it? */
+  s7_int type = c_object_type(cobj);
+  c_object_t *c_type = sc->c_object_types[type];
+
+  return(internal_inlet(sc, 6,
+			sc->name_symbol, c_type->scheme_name,
+			make_symbol(sc, "getter", 6), s7_object_to_string(sc, c_type->getter, false),
+			sc->setter_symbol, s7_object_to_string(sc, c_type->setter, false)));
+  /* can't display equal et al in c_types -- maybe sc->F or the pointer? or add getter equivalent fields for equal et al? */
 }
 
 static void apply_c_object(s7_scheme *sc)  /* -------- applicable c_object -------- */
@@ -49793,10 +49795,11 @@ static s7_pointer vector_reverse(s7_scheme *sc, s7_pointer p)
 static s7_pointer reverse_p_p(s7_scheme *sc, s7_pointer p)
 {
   sc->temp3 = p;
+  if (is_pair(p)) return(s7_reverse(sc, p)); /* by far the most common case */
   switch (type(p))
     {
     case T_NIL:          return(sc->nil);
-    case T_PAIR:         return(s7_reverse(sc, p));
+    /* case T_PAIR:      return(s7_reverse(sc, p)); */
     case T_STRING:       return(string_reverse(sc, p));
     case T_BYTE_VECTOR:  return(byte_vector_reverse(sc, p));
     case T_INT_VECTOR:   return(int_vector_reverse(sc, p));
@@ -55651,7 +55654,6 @@ fx_c_s_car_s_any(fx_c_t_car_v, t_lookup, v_lookup)
     val2 = (is_pair(val2)) ? car(val2) : g_car(sc, set_plist_1(sc, val2)); \
     return(((is_t_integer(val1)) && (is_t_integer(val2))) ? make_integer(sc, integer(val1) + integer(val2)) : add_p_pp(sc, val1, val2)); \
   }
-    /* TODO: can we see temps here and reuse? */
 
 fx_add_s_car_s_any(fx_add_s_car_s, s_lookup, s_lookup)
 fx_add_s_car_s_any(fx_add_u_car_t, u_lookup, t_lookup)
@@ -59891,6 +59893,7 @@ static bool d_d_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer c
 	  opc->v[0].fd = (func) ? ((func == abs_d_d) ? opt_d_d_f_abs : ((func == sin_d_d) ? opt_d_d_f_sin :
 				    ((func == cos_d_d) ? opt_d_d_f_cos : opt_d_d_f))) :
 	                          ((func7 == divide_d_7d) ? opt_d_7d_f_divide : opt_d_7d_f);
+	  /* if (opc->v[0].fd == opt_d_7d_f_divide) in tnum we know the arg is not 0.0, so it could be further optimized (but it's the loop stepper) */
 	  opc->v[5].fd = opc->v[4].o1->v[0].fd;
 	  if ((func == abs_d_d) && (opc->v[5].fd == opt_d_7pi_ss_fvref_direct))
 	    opc->v[0].fd = opt_abs_d_ss_fvref;
@@ -62817,7 +62820,11 @@ static s7_pointer opt_p_p_s_iterate_unchecked(opt_info *o) {s7_pointer iter = sl
 
 static s7_pointer opt_p_pi_ss_vref_direct(opt_info *o);
 static s7_pointer opt_p_pi_ss_fvref_direct(opt_info *o);
-static s7_pointer opt_p_p_fvref(opt_info *o) {return(o->v[2].p_p_f(o->sc, opt_p_pi_ss_fvref_direct(o->v[3].o1)));} /* unwrap to fvref is not faster */
+static s7_pointer opt_p_pi_ss_ivref_direct(opt_info *o);
+static s7_pointer opt_p_pi_ss_fvref_direct_wrapped(opt_info *o);
+static s7_pointer opt_p_pi_ss_ivref_direct_wrapped(opt_info *o);
+static s7_pointer opt_p_p_fvref(opt_info *o) {return(o->v[2].p_p_f(o->sc, opt_p_pi_ss_fvref_direct_wrapped(o->v[3].o1)));} /* unwrap to fvref is not faster */
+static s7_pointer opt_p_p_ivref(opt_info *o) {return(o->v[2].p_p_f(o->sc, opt_p_pi_ss_ivref_direct_wrapped(o->v[3].o1)));} /* unwrap to fvref is not faster */
 static s7_pointer opt_p_p_vref(opt_info *o) {return(o->v[2].p_p_f(o->sc, opt_p_pi_ss_vref_direct(o->v[3].o1)));}
 
 static bool p_p_f_combinable(s7_scheme *sc, opt_info *opc)
@@ -62935,6 +62942,7 @@ static bool p_p_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer c
 	      opc->v[4].fp = fp;
 	      if (fp == opt_p_pi_ss_fvref_direct) opc->v[0].fp = opt_p_p_fvref;
 	      else if (fp == opt_p_pi_ss_vref_direct) opc->v[0].fp = opt_p_p_vref;
+	      else if (fp == opt_p_pi_ss_ivref_direct) opc->v[0].fp = opt_p_p_ivref;
 	    }
 	  return_true(sc, car_x);
 	}}
@@ -63149,6 +63157,8 @@ static s7_pointer opt_p_pi_ss_vref(opt_info *o) {return(normal_vector_ref_p_pi_u
 static s7_pointer opt_p_pi_ss_vref_direct(opt_info *o) {return(normal_vector_ref_p_pi_direct(o->sc, slot_value(o->v[1].p), integer(slot_value(o->v[2].p))));}
 static s7_pointer opt_p_pi_ss_fvref_direct(opt_info *o) {return(float_vector_ref_p_pi_direct(o->sc, slot_value(o->v[1].p), integer(slot_value(o->v[2].p))));}
 static s7_pointer opt_p_pi_ss_ivref_direct(opt_info *o) {return(int_vector_ref_p_pi_direct(o->sc, slot_value(o->v[1].p), integer(slot_value(o->v[2].p))));}
+static s7_pointer opt_p_pi_ss_fvref_direct_wrapped(opt_info *o) {return(float_vector_ref_p_pi_direct_wrapped(o->sc, slot_value(o->v[1].p), integer(slot_value(o->v[2].p))));}
+static s7_pointer opt_p_pi_ss_ivref_direct_wrapped(opt_info *o) {return(int_vector_ref_p_pi_direct_wrapped(o->sc, slot_value(o->v[1].p), integer(slot_value(o->v[2].p))));}
 static s7_pointer opt_p_pi_ss_lref(opt_info *o) {return(list_ref_p_pi_unchecked(o->sc, slot_value(o->v[1].p), integer(slot_value(o->v[2].p))));}
 static s7_pointer opt_p_pi_sc(opt_info *o) {return(o->v[3].p_pi_f(o->sc, slot_value(o->v[1].p), o->v[2].i));}
 static s7_pointer opt_p_pi_sc_lref(opt_info *o) {return(list_ref_p_pi_unchecked(o->sc, slot_value(o->v[1].p), o->v[2].i));}
@@ -63514,6 +63524,10 @@ static bool p_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 		  if (func == add_p_pp) opc->v[0].fp = opt_p_pp_ff_add_mul_mul;
 		  else if (func == subtract_p_pp) opc->v[0].fp = opt_p_pp_ff_sub_mul_mul;
 		}
+	      if (opc->v[9].fp == opt_p_pi_ss_ivref_direct) opc->v[9].fp = opt_p_pi_ss_ivref_direct_wrapped;
+	      if (opc->v[9].fp == opt_p_pi_ss_fvref_direct) opc->v[9].fp = opt_p_pi_ss_fvref_direct_wrapped;
+	      if (opc->v[11].fp == opt_p_pi_ss_ivref_direct) opc->v[11].fp = opt_p_pi_ss_ivref_direct_wrapped;
+	      if (opc->v[11].fp == opt_p_pi_ss_fvref_direct) opc->v[11].fp = opt_p_pi_ss_fvref_direct_wrapped;
 
 	      return_true(sc, car_x);
 	    }}}
@@ -63611,6 +63625,11 @@ static bool p_call_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_poi
 	    {
 	      opc->v[9].fp = opc->v[8].o1->v[0].fp;
 	      opc->v[0].fp = opt_p_call_ff;
+
+	      if (opc->v[9].fp == opt_p_pi_ss_ivref_direct) opc->v[9].fp = opt_p_pi_ss_ivref_direct_wrapped;
+	      if (opc->v[9].fp == opt_p_pi_ss_fvref_direct) opc->v[9].fp = opt_p_pi_ss_fvref_direct_wrapped;
+	      if (opc->v[11].fp == opt_p_pi_ss_ivref_direct) opc->v[11].fp = opt_p_pi_ss_ivref_direct_wrapped;
+	      if (opc->v[11].fp == opt_p_pi_ss_fvref_direct) opc->v[11].fp = opt_p_pi_ss_fvref_direct_wrapped;
 	      return_true(sc, car_x);
 	    }}}
   sc->pc = pstart;
@@ -97107,7 +97126,7 @@ int main(int argc, char **argv)
  * tvect     2519   2464   1772   1669   1647   1647
  * timp      2637   2575   1930   1694   1709   1749 [pair_append gc]
  * texit     ----   ----   1778   1741   1765   1765
- * s7test    1873   1831   1818   1829   1846   1837
+ * s7test    1873   1831   1818   1829   1846   1837  1830
  * thook     ----   ----   2590   2030   2048   2053 [pair_append]
  * tauto     ----   ----   2562   2048   2046   2048
  * lt        2187   2172   2150   2185   2198   1951
@@ -97139,12 +97158,12 @@ int main(int argc, char **argv)
  * tgsl      8485   7802   6373   6282   6233   6233  6220
  * tlist     7896   7546   6558   6240   6284   6304
  * tset      ----   ----   ----   6260   6308   6365 [pair_append]
- * tari      13.0   12.7   6827   6543   6490   6490
+ * tari      13.0   12.7   6827   6543   6490   6490  6296
  * trec      6936   6922   6521   6588   6581   6581
  * tleft     10.4   10.2   7657   7479   7610   7610
  * tgc       11.9   11.1   8177   7857   7965   7965
  * thash     11.8   11.7   9734   9479   9536   9536
- * cb        11.2   11.0   9658   9564   9611   9604
+ * cb        11.2   11.0   9658   9564   9611   9604  9597
  * tgen      11.2   11.4   12.0   12.1   12.1   12.3
  * tall      15.6   15.6   15.6   15.6   15.1   15.1
  * calls     36.7   37.5   37.0   37.5   37.2   37.1
@@ -97154,12 +97173,15 @@ int main(int argc, char **argv)
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * more ongoing free_cell (mark/check ref)
- *   also let/slot wrappers and maybe use safe-lists? or pair-wrappers, number-wrappers if any possibilities
- *   C/Scheme stack alloc? vector constants: use a sc->strbuf like buffer? OP_READ_FLOAT_VECTOR loop?
+ *   also let/slot wrappers? 86510 -- we can tell in advance how many slots are needed, and we're currently using free_cell
+ *     mutable-int 49006 also freed, 86305 and others
+ *     closure_let(opt1_lambda) is essentially the same
+ *   opt_p_pi_ss_ivref_direct could be wrapped in most uses (as embedded call) -- try more like the i|fvref direct wrapped cases
+ *     int|float_vector_ref_p_pi_direct_wrapped [also opt_p_call_f, opt_b_7pp_ff etc]
+ *     funcize the checks
+ *   vector constants: use a sc->strbuf like buffer? OP_READ_FLOAT_VECTOR loop?
  *   how to track reref so free_cell can be automated?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * WASM in s7.html?
- * c-object method list in s7? (object->let (block)) -> let itself [c_object_let] s7_c_object_let (block-let in s7test)
- *   but c_type has the built-in methods like copy reverse fill etc -- how to access in scheme? [many are c_functions from scheme point of view]
  */
