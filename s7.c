@@ -1197,7 +1197,8 @@ struct s7_scheme {
   s7_pointer temp1, temp2, temp3, temp4, temp5, temp7, temp8, temp9, temp10;
   s7_pointer t1_1, t2_1, t2_2, t3_1, t3_2, t3_3, t4_1, u1_1;
   s7_pointer elist_1, elist_2, elist_3, elist_4, elist_5, elist_6, elist_7;
-  s7_pointer plist_1, plist_2, plist_2_2, plist_3, qlist_2, qlist_3, clist_1, clist_2, dlist_1, mlist_1, mlist_2; /* dlist|clist and ulist can't overlap */
+  s7_pointer plist_1, plist_2, plist_2_2, plist_3, plist_4;
+  s7_pointer qlist_2, qlist_3, clist_1, clist_2, dlist_1, mlist_1, mlist_2; /* dlist|clist and ulist can't overlap */
 
   Jmp_Buf *goto_start;
   bool longjmp_ok;
@@ -3038,7 +3039,7 @@ static void check_set_cdr(s7_pointer p, s7_pointer Val, const char *func, int32_
 #define with_list_t1(A)                (set_car(sc->t1_1, A), sc->t1_1) /* this is slower than explicit code, esp t3, procedures are same as this */
 #define with_list_t2(A, B)             (set_car(sc->t2_1, A), set_car(sc->t2_2, B), sc->t2_1)
 #define with_list_t3(A, B, C)          (set_car(sc->t3_1, A), set_car(sc->t3_2, B), set_car(sc->t3_3, C), sc->t3_1)
-#define with_list_t4(A, B, C, D)       (set_car(sc->t4_1, A), set_car(sc->t3_1, B), set_car(sc->t3_2, C), set_car(sc->t3_3, D), sc->t4_1)
+/* #define with_list_t4(A, B, C, D)       (set_car(sc->t4_1, A), set_car(sc->t3_1, B), set_car(sc->t3_2, C), set_car(sc->t3_3, D), sc->t4_1) */
 
 #define is_string(p)                   (type(p) == T_STRING)
 #define is_mutable_string(p)           ((full_type(T_Ext(p)) & (TYPE_MASK | T_IMMUTABLE)) == T_STRING)
@@ -3757,7 +3758,6 @@ static s7_pointer make_permanent_integer(s7_int i)
 #define NUM_CHARS 256
 #ifndef NUM_SMALL_INTS
   #define NUM_SMALL_INTS 8192
-  /* 65536: tshoot -6, tvect -50, dup -26, trclo -27, tmap -48, tsort -14, tlet -16, trec -58, thash -40 */
 #else
 #if (NUM_SMALL_INTS < NUM_CHARS) /* g_char_to_integer assumes this is at least NUM_CHARS, as does the byte_vector stuff (256) */
   #error NUM_SMALL_INTS is less than NUM_CHARS which will not work
@@ -5955,6 +5955,11 @@ static s7_pointer set_plist_3(s7_scheme *sc, s7_pointer x1, s7_pointer x2, s7_po
   return(set_wlist_3(sc->plist_3, x1, x2, x3));
 }
 
+static s7_pointer set_plist_4(s7_scheme *sc, s7_pointer x1, s7_pointer x2, s7_pointer x3, s7_pointer x4)
+{
+  return(set_wlist_4(sc->plist_4, x1, x2, x3, x4));
+}
+
 static s7_pointer set_qlist_2(s7_scheme *sc, s7_pointer x1, s7_pointer x2) /* let_ref_fallback */
 {
   set_car(sc->qlist_2, x1);
@@ -7548,8 +7553,8 @@ static int64_t gc(s7_scheme *sc)
   gc_mark(car(sc->mlist_1));
   gc_mark(car(sc->mlist_2)); gc_mark(cadr(sc->mlist_2));
   gc_mark(car(sc->plist_1));
-  gc_mark(car(sc->plist_2)); gc_mark(cadr(sc->plist_2));
-  gc_mark(car(sc->plist_3)); gc_mark(cadr(sc->plist_3)); gc_mark(caddr(sc->plist_3));
+  gc_mark(car(sc->plist_2)); gc_mark(car(sc->plist_2_2));
+  gc_mark(car(sc->plist_3)); gc_mark(cadr(sc->plist_3)); gc_mark(caddr(sc->plist_3)); gc_mark(car(sc->plist_4));
   gc_mark(car(sc->qlist_2)); gc_mark(cadr(sc->qlist_2));
   gc_mark(car(sc->qlist_3));
   gc_mark(car(sc->u1_1));
@@ -7856,6 +7861,7 @@ Evaluation produces a surprising amount of garbage, so don't leave the GC off fo
   set_plist_1(sc, sc->unused);
   set_plist_2(sc, sc->unused, sc->unused);
   set_plist_3(sc, sc->unused, sc->unused, sc->unused);
+  set_car(sc->plist_4, sc->unused);
   set_qlist_2(sc, sc->unused, sc->unused);
   set_car(sc->qlist_3, sc->unused);
   set_elist_1(sc, sc->unused);
@@ -17341,8 +17347,7 @@ static s7_pointer c_asin(s7_scheme *sc, s7_double x)
   s7_double absx = fabs(x), recip;
   s7_complex result;
 
-  if (absx <= 1.0)
-    return(make_real(sc, asin(x)));
+  if (absx <= 1.0) return(make_real(sc, asin(x)));
 
   /* otherwise use maxima code: */
   recip = 1.0 / absx;
@@ -41081,7 +41086,7 @@ static s7_pointer vector_set_p_piip(s7_scheme *sc, s7_pointer v, s7_int i1, s7_i
       (vector_rank(v) != 2) ||
       (i1 < 0) || (i2 < 0) ||
       (i1 >= vector_dimension(v, 0)) || (i2 >= vector_dimension(v, 1)))
-    return(g_vector_set(sc, set_elist_4(sc, v, make_integer(sc, i1), make_integer_unchecked(sc, i2), p))); /* someday these should use plist_4 */
+    return(g_vector_set(sc, set_plist_4(sc, v, make_integer(sc, i1), make_integer_unchecked(sc, i2), p)));
 
   if (is_typed_vector(v))
     return(typed_vector_setter(sc, v, i2 + (i1 * vector_offset(v, 0)), p));
@@ -41097,7 +41102,7 @@ static s7_pointer vector_set_p_piip_direct(s7_scheme *sc, s7_pointer v, s7_int i
   /* normal untyped vector, rank == 2, uncallable? */
   if ((i1 < 0) || (i2 < 0) ||
       (i1 >= vector_dimension(v, 0)) || (i2 >= vector_dimension(v, 1)))
-    return(g_vector_set(sc, set_elist_4(sc, v, make_integer(sc, i1), make_integer_unchecked(sc, i2), p)));
+    return(g_vector_set(sc, set_plist_4(sc, v, make_integer(sc, i1), make_integer_unchecked(sc, i2), p)));
   vector_element(v, i2 + (i1 * vector_offset(v, 0))) = p;
   return(p);
 }
@@ -41114,7 +41119,7 @@ static s7_pointer typed_vector_set_p_piip_direct(s7_scheme *sc, s7_pointer v, s7
 {
   if ((i1 < 0) || (i2 < 0) ||
       (i1 >= vector_dimension(v, 0)) || (i2 >= vector_dimension(v, 1)))
-    return(g_vector_set(sc, set_elist_4(sc, v, make_integer(sc, i1), make_integer_unchecked(sc, i2), p)));
+    return(g_vector_set(sc, set_plist_4(sc, v, make_integer(sc, i1), make_integer_unchecked(sc, i2), p)));
   return(typed_vector_setter(sc, v, i2 + (i1 * vector_offset(v, 0)), p));
 }
 
@@ -50521,7 +50526,7 @@ static s7_pointer c_obj_to_list(s7_scheme *sc, s7_pointer obj) /* "c_object_to_l
 
   result = make_list(sc, len, sc->nil);
   sc->temp7 = result;
-  zc = make_mutable_integer(sc, 0);
+  zc = wrapped_integer(sc); /* was make_mutable_integer 17-Nov-23 */
   z = list_2_unchecked(sc, obj, zc);
   gc_z = gc_protect_1(sc, z);
   x = result;
@@ -68901,6 +68906,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 
     case OP_SAFE_C_SP_1: case OP_SAFE_CONS_SP_1: case OP_SAFE_ADD_SP_1: case OP_SAFE_MULTIPLY_SP_1:
       set_stack_top_op(sc, OP_SAFE_C_SP_MV);
+      clear_multiple_value(args); /* see op_safe_c_sp_mv in s7test */
       return(args);
 
     case OP_SAFE_C_PS_1:
@@ -79361,17 +79367,17 @@ static bool set_pair4(s7_scheme *sc, s7_pointer obj, s7_pointer index1, s7_point
       return(set_pair3(sc, sc->value, index2, value));
 
     case T_FLOAT_VECTOR:
-      sc->value = g_float_vector_set(sc, with_list_t4(obj, index1, index2, value)); /* would set_plist_4 be faster? or fv_unchecked_set_4? */
+      sc->value = g_float_vector_set(sc, set_plist_4(sc, obj, index1, index2, value)); /* fv_unchecked_set_4? */
       break;
     case T_INT_VECTOR:
-      sc->value = g_int_vector_set(sc, with_list_t4(obj, index1, index2, value));
+      sc->value = g_int_vector_set(sc, set_plist_4(sc, obj, index1, index2, value));
       break;
     case T_BYTE_VECTOR:
-      sc->value = g_byte_vector_set(sc, with_list_t4(obj, index1, index2, value));
+      sc->value = g_byte_vector_set(sc, set_plist_4(sc, obj, index1, index2, value));
       break;
     case T_VECTOR:
       if (vector_rank(obj) == 2)
-	sc->value = g_vector_set_4(sc, with_list_t4(obj, index1, index2, value));
+	sc->value = g_vector_set_4(sc, set_plist_4(sc, obj, index1, index2, value));
       else
 	{
 	  sc->value = g_vector_ref(sc, with_list_t2(obj, index1));
@@ -81261,8 +81267,9 @@ static bool has_safe_steppers(s7_scheme *sc, s7_pointer let)
 	{
 	  if (is_t_real(val))
 	    slot_set_value(slot, s7_make_mutable_real(sc, real(val)));
-	  if (is_t_integer(val))
-	    slot_set_value(slot, make_mutable_integer(sc, integer(val)));
+	  else
+	    if (is_t_integer(val))
+	      slot_set_value(slot, make_mutable_integer(sc, integer(val)));
 	  set_safe_stepper(slot);
 	}
       if (!is_safe_stepper(slot))
@@ -82205,7 +82212,6 @@ static bool op_simple_do_1(s7_scheme *sc, s7_pointer code)
   step_var = caddr(step_expr);
   /* use g* funcs (not fx) because we're passing the actual values, not the expressions */
 
-  /* TODO: all these make_integers -- can we see simple_do bodies that are safe in that regard? */
   if ((stepf == g_add_x1) &&
       (is_t_integer(slot_value(ctr_slot))) &&
       ((endf == g_num_eq_2) || (endf == g_num_eq_xi) || (endf == g_geq_2)) &&
@@ -82580,7 +82586,7 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool saf
 		      if ((o->v[0].fd == opt_d_7pid_ssc) &&
 			  (o->v[4].d_7pid_f == float_vector_set_d_7pid_direct) &&
 			  (stepper == slot_value(o->v[2].p)))
-			s7_fill(sc, set_elist_4(sc, slot_value(o->v[1].p), wrap_real(sc, o->v[3].x), stepper, wrap_integer(sc, end))); /* wrapped 16-Nov-23 */
+			s7_fill(sc, set_plist_4(sc, slot_value(o->v[1].p), wrap_real(sc, o->v[3].x), stepper, wrap_integer(sc, end))); /* wrapped 16-Nov-23 */
 		      else
 			{
 			  s7_int end4 = end - 4;
@@ -82597,7 +82603,7 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool saf
 		      ((o->v[3].p_pip_f == string_set_p_pip_direct) ||
 		       (o->v[3].p_pip_f == normal_vector_set_p_pip_direct) ||
 		       (o->v[3].p_pip_f == list_set_p_pip_unchecked)))
-		    s7_fill(sc, set_elist_4(sc, slot_value(o->v[1].p), o->v[4].p, stepper, wrap_integer(sc, end)));  /* wrapped 16-Nov-23 */
+		    s7_fill(sc, set_plist_4(sc, slot_value(o->v[1].p), o->v[4].p, stepper, wrap_integer(sc, end)));  /* wrapped 16-Nov-23 */
 		  else
 		    if (fp == opt_if_bp)
 		      {
@@ -82624,7 +82630,7 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool saf
 		opt_info *o = sc->opts[0];
 		s7_int (*fi)(opt_info *o) = o->v[0].fi;
 		if ((fi == opt_i_7pii_ssc) && (stepper == slot_value(o->v[2].p)) && (o->v[3].i_7pii_f == int_vector_set_i_7pii_direct))
-		  s7_fill(sc, set_elist_4(sc, slot_value(o->v[1].p), wrap_integer(sc, o->v[4].i), stepper, wrap_integer(sc, end)));  /* wrapped 16-Nov-23 */
+		  s7_fill(sc, set_plist_4(sc, slot_value(o->v[1].p), wrap_integer(sc, o->v[4].i), stepper, wrap_integer(sc, end)));  /* wrapped 16-Nov-23 */
 		else
 		  if ((o->v[3].i_7pii_f == int_vector_set_i_7pii_direct) && (o->v[5].fi == opt_7pi_ss_ivref) && (o->v[2].p == o->v[4].o1->v[2].p))
 		    copy_to_same_type(sc, slot_value(o->v[1].p), slot_value(o->v[4].o1->v[1].p), integer(stepper), end, integer(stepper));
@@ -89320,8 +89326,7 @@ static token_t read_sharp(s7_scheme *sc, s7_pointer pt)
 		error_nr(sc, sc->read_error_symbol,
 			 set_elist_4(sc, wrap_string(sc, "reading #~A...: ~D is too large, (*s7* 'max-vector-dimensions): ~D", 66),
 				     wrap_string(sc, sc->strbuf, loc),
-				     wrap_integer(sc, dims),
-				     wrap_integer(sc, sc->max_vector_dimensions)));
+				     wrap_integer(sc, dims), wrap_integer(sc, sc->max_vector_dimensions)));
 	      }
 	    sc->strbuf[loc++] = (unsigned char)d;
 	  }
@@ -92996,6 +93001,7 @@ void s7_heap_analyze(s7_scheme *sc)
   mark_holdee(NULL, car(sc->plist_1), "car(sc->plist_1)");
   mark_holdee(NULL, car(sc->plist_2), "car(sc->plist_2)");
   mark_holdee(NULL, car(sc->plist_3), "car(sc->plist_3)");
+  mark_holdee(NULL, car(sc->plist_4), "car(sc->plist_4)");
   mark_holdee(NULL, car(sc->qlist_2), "car(sc->qlist_2)");
   mark_holdee(NULL, car(sc->qlist_3), "car(sc->qlist_3)");
   mark_holdee(NULL, car(sc->elist_1), "car(sc->elist_1)");
@@ -93005,7 +93011,7 @@ void s7_heap_analyze(s7_scheme *sc)
   mark_holdee(NULL, car(sc->elist_5), "car(sc->elist_5)");
   mark_holdee(NULL, car(sc->elist_6), "car(sc->elist_6)");
   mark_holdee(NULL, car(sc->elist_7), "car(sc->elist_7)");
-  mark_holdee(NULL, cadr(sc->plist_2), "cadr(sc->plist_2)");
+  mark_holdee(NULL, car(sc->plist_2_2), "cadr(sc->plist_2)");
   mark_holdee(NULL, cadr(sc->plist_3), "cadr(sc->plist_3)");
   mark_holdee(NULL, cadr(sc->elist_2), "cadr(sc->elist_2)");
   mark_holdee(NULL, cadr(sc->elist_3), "cadr(sc->elist_3)");
@@ -96551,6 +96557,7 @@ s7_scheme *s7_init(void)
   sc->plist_2 = semipermanent_list(sc, 2);
   sc->plist_2_2 = cdr(sc->plist_2);
   sc->plist_3 = semipermanent_list(sc, 3);
+  sc->plist_4 = semipermanent_cons(sc, sc->unused, sc->plist_3, T_PAIR | T_IMMUTABLE);
   sc->qlist_2 = semipermanent_list(sc, 2);
   sc->qlist_3 = semipermanent_cons(sc, sc->unused, sc->qlist_2, T_PAIR | T_IMMUTABLE);
   sc->clist_1 = semipermanent_list(sc, 1);
@@ -97183,7 +97190,7 @@ int main(int argc, char **argv)
  * tlet      7775   5640   4450   4427   4452   4455
  * tfft      7820   7729   4755   4476   4512   4512
  * tstar     6139   5923   5519   4449   4560   4567  4545
- * tmap      8869   8774   4489   4541   4618   4618
+ * tmap      8869   8774   4489   4541   4618   4618  4590
  * tshoot    5525   5447   5183   5055   5047   5045
  * tform     5357   5348   5307   5316   5161   5161
  * tstr      6880   6342   5488   5162   5206   5210
@@ -97208,8 +97215,7 @@ int main(int argc, char **argv)
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * more ongoing free_cell (mark/check ref)
- *   also let/slot wrappers? 86510 -- we can tell in advance how many slots are needed, and we're currently using free_cell
- *     mutable-int (see 49002 for one case) 86305 and others, plist_4?
+ *   also let/slot wrappers? 86510 -- we can tell in advance how many slots are needed (if no definers)
  *     closure_let(opt1_lambda) is essentially the same
  *   opt_p_pi_ss_ivref_direct could be wrapped in most uses (as embedded call) -- try more like the i|fvref direct wrapped cases
  *     int|float_vector_ref_p_pi_direct_wrapped [also opt_p_call_f, opt_b_7pp_ff etc]
@@ -97217,6 +97223,6 @@ int main(int argc, char **argv)
  *   how to track reref so free_cell can be automated?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
- * WASM in s7.html?
  * make-macro-hygienic
+ * int/real wrapper test via negative/large limits etc
  */
