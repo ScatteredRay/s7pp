@@ -31814,7 +31814,7 @@ static s7_pointer c_object_iterate(s7_scheme *sc, s7_pointer obj)
   p = iterator_sequence(obj);
   cur = iterator_current(obj);
   set_car(cur, p);
-  set_car(cdr(cur), wrap_integer(sc, iterator_position(obj))); /* was make_integer, c_object_ref->c_object_getter is c_function in scheme? 14-Nov-23 */
+  set_car(cdr(cur), make_integer(sc, iterator_position(obj))); /* perhaps wrap_integer, c_object_ref->c_object_getter is c_function in scheme? */
   result = (*(c_object_ref(sc, p)))(sc, cur); /* used to save/restore sc->x|z here */
   iterator_position(obj)++;
   if (result == ITERATOR_END)
@@ -72640,7 +72640,7 @@ static opt_t optimize_funcs(s7_scheme *sc, s7_pointer expr, s7_pointer func, int
 {
   int32_t pairs = 0, symbols = 0, args = 0, bad_pairs = 0, quotes = 0;
   s7_pointer p;
-  if (SHOW_EVAL_OPS) fprintf(stderr, "%s[%d]: %s\n", __func__, __LINE__, display_80(expr));
+  if (SHOW_EVAL_OPS) fprintf(stderr, "  %s[%d]: %s\n", __func__, __LINE__, display_80(expr));
   for (p = cdr(expr); is_pair(p); p = cdr(p), args++) /* check the args (the calling expression) */
     {
       s7_pointer car_p = car(p);
@@ -76208,7 +76208,6 @@ static bool check_let_star(s7_scheme *sc)
   if (is_null(car(code)))
     {
       pair_set_syntax_op(form, OP_LET_NO_VARS);   /* (let* () ...) */
-
       set_curlet(sc, make_let(sc, sc->curlet));
       sc->code = T_Pair(cdr(code));
       return(false);
@@ -81959,23 +81958,27 @@ static bool op_do_no_vars(s7_scheme *sc)
       s7_pointer end = cadr(sc->code);
       set_curlet(sc, inline_make_let(sc, sc->curlet));
       if (i == 1)
-	{
-	  while ((sc->value = fx_call(sc, end)) == sc->F) body[0]->v[0].fp(body[0]);
-	  sc->code = cdr(end);
-	  return(true);
-	}
-      if (i == 0) /* null body! */
-	{
-	  s7_function endf = fx_proc(end);
-	  s7_pointer endp = car(end);
-	  while (!is_true(sc, sc->value = endf(sc, endp))); /* the assignment is (normally) in the noise */
-	  sc->code = cdr(end);
-	  return(true);
-	}
-      while ((sc->value = fx_call(sc, end)) == sc->F)
-	for (int32_t k = 0; k < i; k++)
-	  body[k]->v[0].fp(body[k]);
-      sc->code = cdr(end);
+	while ((sc->value = fx_call(sc, end)) == sc->F) body[0]->v[0].fp(body[0]); /* presetting body[0] and body[0]->v[0].fp is not faster */
+      else
+	if (i == 2)
+	  {
+	    opt_info *o0 = body[0], *o1 = body[1];
+	    s7_pointer (*fp0)(opt_info *o) = o0->v[0].fp;
+	    s7_pointer (*fp1)(opt_info *o) = o1->v[0].fp;
+	    while ((sc->value = fx_call(sc, end)) == sc->F) {fp0(o0); fp1(o1);}
+	  }
+	else
+	  if (i == 0) /* null body! */
+	    {
+	      s7_function endf = fx_proc(end);
+	      s7_pointer endp = car(end);
+	      while (!is_true(sc, sc->value = endf(sc, endp))); /* the assignment is (normally) in the noise */
+	    }
+	  else
+	    while ((sc->value = fx_call(sc, end)) == sc->F)
+	      for (int32_t k = 0; k < i; k++)
+		body[k]->v[0].fp(body[k]);
+      sc->code = cdr(end); /* inner let still active during result */
       return(true);
     }
   /* back out */
@@ -97215,8 +97218,6 @@ int main(int argc, char **argv)
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * more ongoing free_cell (mark/check ref)
- *   also let/slot wrappers? 86510 -- we can tell in advance how many slots are needed (if no definers)
- *     closure_let(opt1_lambda) is essentially the same
  *   opt_p_pi_ss_ivref_direct could be wrapped in most uses (as embedded call) -- try more like the i|fvref direct wrapped cases
  *     int|float_vector_ref_p_pi_direct_wrapped [also opt_p_call_f, opt_b_7pp_ff etc]
  *   vector constants: use a sc->strbuf like buffer? OP_READ_FLOAT_VECTOR loop?
@@ -97224,5 +97225,5 @@ int main(int argc, char **argv)
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * make-macro-hygienic
- * int/real wrapper test via negative/large limits etc
+ * int/real wrapper test via negative/large limits etc, more quote tests, c-obj->list
  */
