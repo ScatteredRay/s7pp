@@ -2486,7 +2486,7 @@ static void init_types(void)
 #define T_HAS_PENDING_VALUE            T_GENSYM
 #define slot_set_has_pending_value(p)  set_type_bit(T_Slt(p), T_HAS_PENDING_VALUE)
 #define slot_has_pending_value(p)      has_type_bit(T_Slt(p), T_HAS_PENDING_VALUE)
-#define slot_clear_has_pending_value(p) clear_type_bit(T_Slt(p), T_HAS_PENDING_VALUE)
+#define slot_clear_has_pending_value(p) do {clear_type_bit(T_Slt(p), T_HAS_PENDING_VALUE); slot_set_pending_value(p, sc->F);} while (0)
 #define slot_has_setter_or_pending_value(p) has_type_bit(p, T_HAS_SETTER | T_HAS_PENDING_VALUE)
 
 #define T_HAS_METHODS                  (1 << (TYPE_BITS + 22))
@@ -3175,8 +3175,8 @@ static s7_pointer slot_expression(s7_pointer p)    \
 
 #define slot_set_expression(p, Val)    do {(T_Slt(p))->object.slt.expr = T_Ext(Val); slot_set_has_expression(p);} while (0)
 #define slot_just_set_expression(p, Val) (T_Slt(p))->object.slt.expr = T_Ext(Val)
-#define slot_setter(p)                 T_Prc(T_Slt(p)->object.slt.pending_value)
-#define slot_set_setter_1(p, Val)      (T_Slt(p))->object.slt.pending_value = T_Prc(Val)
+#define slot_setter(p)                 (T_Slt(p)->object.slt.pending_value)
+#define slot_set_setter_1(p, Val)      (T_Slt(p))->object.slt.pending_value = Val
 #if S7_DEBUGGING
 #define tis_slot(p) ((p) && (T_Slt(p)))
 #else
@@ -47113,8 +47113,9 @@ static s7_pointer symbol_setter(s7_scheme *sc, s7_pointer sym, s7_pointer e)
       set_curlet(sc, old_e);
     }
   if ((!is_slot(slot)) || (!slot_has_setter(slot))) return(sc->F);
+  /* fprintf(stderr, "setter %s %s %d\n", display(slot), display(slot->object.slt.pending_value), slot_has_pending_value(slot)); */
   setter = slot_setter(slot);
-  if (is_bool_function(setter)) return(c_function_setter(setter));
+  if ((is_any_procedure(setter)) && (is_bool_function(setter))) return(c_function_setter(setter));
   return(setter);
 }
 
@@ -65936,7 +65937,7 @@ static void let_set_has_pending_value(s7_pointer lt)
     slot_set_pending_value(vp, eof_object); /* gc needs a legit value here */
 }
 
-static void let_clear_has_pending_value(s7_pointer lt)
+static void let_clear_has_pending_value(s7_scheme *sc, s7_pointer lt)
 {
   for (s7_pointer vp = let_slots(lt); tis_slot(vp); vp = next_slot(vp))
     slot_clear_has_pending_value(vp);
@@ -66002,7 +66003,7 @@ static s7_pointer opt_do_any(opt_info *o)
       o1 = results->v[i].o1;
       result = o1->v[0].fp(o1);
     }
-  let_clear_has_pending_value(sc->curlet);
+  let_clear_has_pending_value(sc, sc->curlet);
   unstack_gc_protect(sc);
   set_curlet(sc, old_e);
   return(result);
@@ -81917,7 +81918,7 @@ static void op_dox_pending_no_body(s7_scheme *sc)
 	  slot_set_value(slot1, slot_pending_value(slot1));
 	}
       sc->code = cdr(test);
-      let_clear_has_pending_value(sc->curlet);
+      let_clear_has_pending_value(sc, sc->curlet);
       return;
     }
   while ((sc->value = fx_call(sc, test)) == sc->F)
@@ -81936,7 +81937,7 @@ static void op_dox_pending_no_body(s7_scheme *sc)
       } while (tis_slot(slt));
     }
   sc->code = cdr(test);
-  let_clear_has_pending_value(sc->curlet);
+  let_clear_has_pending_value(sc, sc->curlet);
 }
 
 static bool op_do_no_vars(s7_scheme *sc)
@@ -86675,7 +86676,7 @@ static bool op_tc_let_cond(s7_scheme *sc, s7_pointer code)
 	    }
 	  break;
 	}
-  let_clear_has_pending_value(outer_let);
+  let_clear_has_pending_value(sc, outer_let);
 
  TC_LET_COND_DONE:
   unstack_gc_protect(sc);
@@ -97225,5 +97226,6 @@ int main(int argc, char **argv)
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * make-macro-hygienic
- * int/real wrapper test via negative/large limits etc, more quote tests, c-obj->list
+ * int/real wrapper test via negative/large limits etc, more quote tests (apostrophe), c-obj->list
+ * t725 temp set! block [with-(temporarily-)immutable?
  */
