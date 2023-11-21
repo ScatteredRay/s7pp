@@ -63467,6 +63467,7 @@ static bool p_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
                             ((opc->v[3].p_pp_f == s7_hash_table_ref) ? opt_p_pp_sf_href : opt_p_pp_sf)))));
 	  opc->v[4].o1 = sc->opts[pstart];
 	  opc->v[5].fp = sc->opts[pstart]->v[0].fp;
+	  if (opc->v[5].fp == opt_p_pi_ss_ivref_direct) opc->v[5].fp = opt_p_pi_ss_ivref_direct_wrapped;
 	  return_true(sc, car_x);
 	}}
   else
@@ -63724,6 +63725,7 @@ static bool p_pip_ssf_combinable(s7_scheme *sc, opt_info *opc, int32_t start)
 	  opc->v[4].p = o1->v[2].p;
 	  opc->v[0].fp = opt_p_pip_sso;
 	  backup_pc(sc);
+	  /* TODO: check wrapper and below */
 	  return_true(sc, NULL);
 	}
       if (o1->v[0].fp == opt_p_p_c)
@@ -63746,7 +63748,7 @@ static bool p_pip_ssf_combinable(s7_scheme *sc, opt_info *opc, int32_t start)
 
 static bool p_pip_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer car_x)
 {
-  s7_pointer obj, slot1, sig, checker = NULL;
+  s7_pointer obj, slot1, sig, checker = NULL, val_type;
   s7_p_pip_t func = s7_p_pip_function(s_func);
   if (!func)
     return_false(sc, car_x);
@@ -63767,6 +63769,7 @@ static bool p_pip_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
       (vector_rank(slot_value(slot1)) > 1))
     return_false(sc, car_x);
 
+  val_type = opt_arg_type(sc, cdddr(car_x));
   opc->v[1].p = slot1;
   obj = slot_value(opc->v[1].p);
   opc->v[3].p_pip_f = func;
@@ -63779,15 +63782,13 @@ static bool p_pip_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 	if ((is_pair(obj)) && (checker == sc->is_pair_symbol)) /* avoid dumb mismatch in val_type and sig below, #t integer:any? and integer? integer:any? */
 	  opc->v[3].p_pip_f = s7_p_pip_unchecked_function(s_func);
 	else
-	  {
-	    s7_pointer val_type = opt_arg_type(sc, cdddr(car_x));
-	    if ((val_type == cadddr(sig)) &&
-		(((is_string(obj)) && (checker == sc->is_string_symbol)) ||
-		 ((is_float_vector(obj)) && (checker == sc->is_float_vector_symbol)) ||
-		 ((is_int_vector(obj)) && (checker == sc->is_int_vector_symbol)) ||
-		 ((is_byte_vector(obj)) && (checker == sc->is_byte_vector_symbol))))
-	      opc->v[3].p_pip_f = s7_p_pip_unchecked_function(s_func);
-	  }}
+	  if ((val_type == cadddr(sig)) &&
+	      (((is_string(obj)) && (checker == sc->is_string_symbol)) ||
+	       ((is_float_vector(obj)) && (checker == sc->is_float_vector_symbol)) ||
+	       ((is_int_vector(obj)) && (checker == sc->is_int_vector_symbol)) ||
+	       ((is_byte_vector(obj)) && (checker == sc->is_byte_vector_symbol))))
+	    opc->v[3].p_pip_f = s7_p_pip_unchecked_function(s_func);
+    }
   if (is_symbol(caddr(car_x)))
     {
       int32_t start = sc->pc;
@@ -63802,11 +63803,19 @@ static bool p_pip_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 		if (loop_end(slot2) <= vector_length(obj))
 		  opc->v[3].p_pip_f = (is_typed_vector(obj)) ? typed_normal_vector_set_p_pip_direct : normal_vector_set_p_pip_direct;
 		break;
+	      case T_BYTE_VECTOR:
+		if ((checker == sc->is_vector_symbol) && ((val_type != sc->is_integer_symbol) || (val_type != sc->is_byte_symbol))) return_false(sc, car_x);
+		if (loop_end(slot2) <= vector_length(obj))
+		  opc->v[3].p_pip_f = byte_vector_set_p_pip_direct;
+		break;
 	      case T_INT_VECTOR:
+		/* TODO: a51 case introduced (at least internally) between nov 5 and now?? */
+		if ((checker == sc->is_vector_symbol) && ((val_type != sc->is_integer_symbol) || (val_type != sc->is_byte_symbol))) return_false(sc, car_x);
 		if (loop_end(slot2) <= vector_length(obj))
 		  opc->v[3].p_pip_f = int_vector_set_p_pip_direct;
 		break;
 	      case T_FLOAT_VECTOR:
+		if ((checker == sc->is_vector_symbol) && ((val_type != sc->is_float_symbol) || (val_type != sc->is_real_symbol))) return_false(sc, car_x);		
 		if (loop_end(slot2) <= vector_length(obj))
 		  opc->v[3].p_pip_f = float_vector_set_p_pip_direct;
 		break;
@@ -63814,15 +63823,12 @@ static bool p_pip_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 		if (loop_end(slot2) <= string_length(obj))
 		  opc->v[3].p_pip_f = string_set_p_pip_direct;
 		break;
-	      case T_BYTE_VECTOR:
-		if (loop_end(slot2) <= vector_length(obj))
-		  opc->v[3].p_pip_f = byte_vector_set_p_pip_direct;
-		break;
 	      } /* T_PAIR here would require list_length check which sort of defeats the purpose */
 
 	  if (is_symbol(cadddr(car_x)))
 	    {
 	      s7_pointer val_slot = opt_simple_symbol(sc, cadddr(car_x));
+	      /* TODO: for int|byte|float-vector and string need opt_arg_type check?? see val_type above, if vector-set! but have int-vector sig is wrong */
 	      if (val_slot)
 		{
 		  opc->v[4].p_pip_f = opc->v[3].p_pip_f;
@@ -97203,8 +97209,8 @@ int main(int argc, char **argv)
  * tmisc     8869   7612   6435   6076   6220   6231
  * tgsl      8485   7802   6373   6282   6233   6233  6220
  * tlist     7896   7546   6558   6240   6284   6300
- * tset      ----   ----   ----   6260   6308   6365  6379 [pair_append]
  * tari      13.0   12.7   6827   6543   6490   6490  6300
+ * tset      ----   ----   ----   6260   6308   6365  6379 [pair_append]
  * trec      6936   6922   6521   6588   6581   6581
  * tleft     10.4   10.2   7657   7479   7610   7610
  * tgc       11.9   11.1   8177   7857   7965   7965  7995
@@ -97221,11 +97227,10 @@ int main(int argc, char **argv)
  * more ongoing free_cell (mark/check ref)
  *   opt_p_pi_ss_ivref_direct could be wrapped in most uses (as embedded call) -- try more like the i|fvref direct wrapped cases
  *     int|float_vector_ref_p_pi_direct_wrapped [also opt_p_call_f, opt_b_7pp_ff etc]
+ *     vref in tvect [opt_i_7p_f], several in tari
  *   vector constants: use a sc->strbuf like buffer? OP_READ_FLOAT_VECTOR loop?
  *   how to track reref so free_cell can be automated?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * make-macro-hygienic
- * int/real wrapper test via negative/large limits etc, more quote tests (apostrophe), c-obj->list
- * t725 temp set! block [with-(temporarily-)immutable?
  */

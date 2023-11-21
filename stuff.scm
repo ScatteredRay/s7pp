@@ -1365,7 +1365,7 @@ Unlike full-find-if, safe-find-if can handle any circularity in the sequences.")
   (let ((new-len (let ((len (length obj)))
 		   (- (min len (or end len)) start))))
     (if (negative? new-len)
-	(error 'out-of-range "end: ~A should be greater than start: ~A" end start))
+	(error 'out-of-range "end: ~A should be greater than start: ~A" (min len (or end len)) start))
 
     (cond ((vector? obj)
 	   (subvector obj start (+ start new-len)))

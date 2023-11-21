@@ -852,7 +852,7 @@
 (define-constant typed-let1 (immutable! (let ((a 1)) (set! (setter 'a) integer?) (curlet))))
 (define-constant constant-let (immutable! (let () (define-constant a 1) (curlet))))
 
-(define-constant bight (let* ((size 1000)
+(define-constant bight (let* ((size 10) ; was 1000 for a long time
 			      (ht (make-hash-table size)))
 			 (do ((i 0 (+ i 1)))
 			     ((= i size))
@@ -880,6 +880,15 @@
 (define (bool/int? x) (or (boolean? x) (integer? x)))
 
 (set! (hook-functions *read-error-hook*) ())
+
+(define-macro (with-immutable objs . body)
+  `(let-temporarily (,@(map (lambda (obj)
+			      `((setter ',obj) (lambda (s v) 
+						 (error 'immutable-object-error 
+							"in with-immutable, can't set! ~A" 
+							',obj))))
+			    objs))
+     ,@body))
 
 (immutable! 'cosh)
 
@@ -1138,7 +1147,7 @@
 		    "(macro (x) (let ((g (gensym))) (let ((,g ,x)) `(values g g))))"
 		    "((dilambda (lambda () 3) (lambda (x) x)))"
 		    "(macro (a) `(+ ,a 1))" "(bacro (a) `(* ,a 2))" "(macro* (a (b 1)) `(+ ,a ,b))" "(bacro* (a (b 2)) `(* ,a ,b))"
-		    "(macro a `(copy ,a))" "(macro (a . b) `(cons ,a ,b))" "(macro* (a . b) `(cons ,a ,b))" "(macro (a b . c) `(list a b ,c))"
+		    "(macro a `(copy ,a))" "(macro (a . b) `(cons ,a ,b))" "(macro* (a . b) `(cons ,a ,b))" "(macro (a b . c) `(list ,a ,b ,c))"
 		    "(string #\\c #\\null #\\b)" "#2d((100 200) (3 4))" "#r(0 1)" "#i2d((101 201) (3 4))" "#r2d((.1 .2) (.3 .4))" "#i1d(15 25)"
 		    "(values 1 2)" "(values)" "(values #\\c 3 1.2)" "(values \"ho\")" "(values 1 2 3 4 5 6 7 8 9 10)" "(values (define b1 3))"
 		    "(apply values (make-list 128 1/2))"
@@ -1227,7 +1236,7 @@
 		    "(random 1)" "(random 0)" "(random -1)"
 		    ;"(else ())" "(else (f x) B)"
 		    "(else)"
-		    "else" "x" "(+ x 1)" "(+ 1/2 x)" "(abs x)" "(+ x 1 2+i)" "(* 2 x 3.0 4)" "((x 1234))" "((x 1234) (y 1/2))" "'x" "(x 1)"
+		    "else" "x" "i" "j" "(+ x 1)" "(+ 1/2 x)" "(abs x)" "(+ x 1 2+i)" "(* 2 x 3.0 4)" "((x 1234))" "((x 1234) (y 1/2))" "'x" "(x 1)"
 		    "_undef_" "(begin |undef1|)" "(setter 'x)" "(setter 'i)"
 
 		    "+signature+" "+documentation+" "+setter+" "+iterator+"
@@ -1498,10 +1507,14 @@
 		    (lambda (s) (string-append "(let ((one 1)) (cond (one => (lambda (i) " s ")) (else 'oops)))")))
 	      (list (lambda (s) (string-append "(catch #t (lambda () (let-temporarily ((x (list " s "))) x)) (lambda (type info) 'error))"))
 		    (lambda (s) (string-append "(catch #t (lambda () (let ((x (list " s "))) x)) (lambda (type info) 'error))")))
-	      (list (lambda (s) (string-append "(do ((i 0 (+ i 1))) ((= i 1)) " s ")"))
-                    (lambda (s) (string-append "(do ((j 0 (+ j 1))) ((= j 1)) (do ((i 0 (+ i 1))) ((= i 1)) " s "))")))
-	      (list (lambda (s) (string-append "(do ((i 0 (+ i 1))) ((= i 1)) (apply values " s " ()))"))
-                    (lambda (s) (string-append "(do ((j 0 (+ j 1))) ((= j 1)) (do ((i 0 (+ i 1))) ((= i 1)) (apply values " s " ())))")))
+	      (list (lambda (s) (string-append "(do ((i 0 (+ i 1))) ((= i 1)) (with-immutable (i) " s "))"))
+                    (lambda (s) (string-append "(do ((j 0 (+ j 1))) ((= j 1)) (do ((i 0 (+ i 1))) ((= i 1)) (with-immutable (i j) " s ")))")))
+	      (list (lambda (s) (string-append "(do ((i 0 (- i 1))) ((= i -1)) (with-immutable (i) " s "))"))
+                    (lambda (s) (string-append "(do ((j 0 (+ j 1))) ((= j 1)) (do ((i 0 (- i 1))) ((= i -1)) (with-immutable (i j) " s ")))")))
+	      (list (lambda (s) (string-append "(do ((i -10 (+ i 1))) ((= i 0)) (with-immutable (i) " s "))"))
+                    (lambda (s) (string-append "(do ((j 0 (+ j 1))) ((= j 1)) (do ((i -10 (+ i 1))) ((= i 0)) (with-immutable (i j) " s ")))")))
+	      (list (lambda (s) (string-append "(do ((i 0 (+ i 1))) ((= i 1)) (with-immutable (i) (apply values " s " ())))"))
+                    (lambda (s) (string-append "(do ((j 0 (+ j 1))) ((= j 1)) (do ((i 0 (+ i 1))) ((= i 1)) (with-immutable (i j) (apply values " s " ()))))")))
 	      (list (let ((last-s "#f")) (lambda (s) (let ((res (string-append "(if (car (list " last-s ")) (begin " s "))"))) (set! last-s s) res)))
                     (let ((last-s "#f")) (lambda (s) (let ((res (string-append "(if (not (car (list " last-s "))) #<unspecified> (begin " s "))"))) (set! last-s s) res))))
 
