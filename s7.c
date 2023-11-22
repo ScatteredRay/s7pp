@@ -8153,6 +8153,8 @@ static void resize_op_stack(s7_scheme *sc)
 #define stack_end_args(Sc) Sc->stack_end[2]
 #define stack_end_op(Sc)   Sc->stack_end[3]
 
+void s7_show_stack(s7_scheme *sc);
+
 #if S7_DEBUGGING
 #define pop_stack(Sc) pop_stack_1(Sc, __func__, __LINE__)
 static void pop_stack_1(s7_scheme *sc, const char *func, int32_t line)
@@ -8195,7 +8197,6 @@ static void pop_stack_no_op_1(s7_scheme *sc, const char *func, int32_t line)
 
 #define push_stack(Sc, Op, Args, Code)	\
   do {s7_pointer *_end_; _end_ = Sc->stack_end; push_stack_1(Sc, Op, Args, Code, _end_, __func__, __LINE__);} while (0)
-void s7_show_stack(s7_scheme *sc);
 
 static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer code, s7_pointer *end, const char *func, int32_t line)
 {
@@ -11289,16 +11290,21 @@ Only the let is searched if ignore-globals is not #f."
       s7_pointer e = cadr(args), b, x;
       if (!is_let(e))
 	{
-	  bool nil_is_rootlet = is_any_procedure(e); /* (defined? 'abs (lambda () 1)) -- unsure about this */
-	  e = find_let(sc, e);
-	  if ((is_null(e)) && (nil_is_rootlet))
+	  /* bool nil_is_rootlet = is_any_procedure(e); */ /* (defined? 'abs (lambda () 1)) -- unsure about this -- changed 21-Nov-23 */
+	  e = find_let(sc, e);  /* returns () if none */
+#if 0
+	  if (is_null(e)) /* && (nil_is_rootlet)) */
 	    e = sc->rootlet;
 	  else
+#endif
 	    if (!is_let(e))
 	      wrong_type_error_nr(sc, sc->is_defined_symbol, 2, cadr(args), a_let_string); /* not e */
 	}
       if (is_keyword(sym))                       /* if no "e", is global -> #t */
-	sym = keyword_symbol(sym);               /* (defined? :print-length *s7*) */
+	{                                        /* we're treating :x as 'x outside rootlet, but consider all keywords defined (as themselves) in rootlet? */
+	  if (e == sc->rootlet) return(sc->T);   /* (defined? x (rootlet)) where x value is a keyword */
+	  sym = keyword_symbol(sym);             /* (defined? :print-length *s7*) */
+	}
       if (e == sc->s7_starlet)
 	return(make_boolean(sc, s7_starlet_symbol(sym) != SL_NO_FIELD));
       if (is_pair(cddr(args)))
@@ -11331,7 +11337,7 @@ static s7_pointer g_is_defined_in_rootlet(s7_scheme *sc, s7_pointer args) /* aim
   s7_pointer sym = lookup_checked(sc, car(args)); /* ok because we know car(args) is an unquoted symbol, lookup_checked for (defined? ... (rootlet)) */
   if (!is_symbol(sym))                            /* if sym is openlet with defined? perhaps it makes sense to call it, but we need to include the rootlet arg */
     return(method_or_bust_pp(sc, sym, sc->is_defined_symbol, sym, sc->rootlet, sc->type_names[T_SYMBOL], 1));
-  return(make_boolean(sc, is_slot(global_slot(sym))));
+  return(make_boolean(sc, (is_keyword(sym)) || (is_slot(global_slot(sym)))));
 }
 
 static s7_pointer is_defined_chooser(s7_scheme *sc, s7_pointer f, int32_t args, s7_pointer expr, bool ops)
@@ -34192,6 +34198,16 @@ static void slot_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, use_wri
   object_to_port_with_circle_check(sc, slot_value(obj), port, use_write, ci);
 }
 
+static void internal_slot_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, use_write_t use_write, shared_info_t *ci)
+{
+  /* here we're displaying a slot in the debugger -- T_SLOT objects are not directly accessible in scheme */
+  port_write_string(port)(sc, "#<slot: ", 8, port);
+  symbol_to_port(sc, slot_symbol(obj), port, P_DISPLAY, NULL);
+  port_write_character(port)(sc, ' ', port);
+  object_to_port_with_circle_check(sc, slot_value(obj), port, use_write, ci);
+  port_write_character(port)(sc, '>', port);
+}
+
 static void let_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, use_write_t use_write, shared_info_t *ci)
 {
   /* if outer env points to (say) method list, the object needs to specialize object->string itself */
@@ -35098,9 +35114,11 @@ static void goto_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, use_wri
   else port_write_string(port)(sc, "#<goto>", 7, port);
 }
 
-static void catch_to_port(s7_scheme *sc, s7_pointer unused_obj, s7_pointer port, use_write_t unused_use_write, shared_info_t *unused_ci)
+static void catch_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, use_write_t use_write, shared_info_t *ci)
 {
-  port_write_string(port)(sc, "#<catch>", 8, port);
+  port_write_string(port)(sc, "#<catch: ", 9, port);
+  object_to_port(sc, catch_tag(obj), port, use_write, ci);
+  port_write_character(port)(sc, '>', port);
 }
 
 static void dynamic_wind_to_port(s7_scheme *sc, s7_pointer unused_obj, s7_pointer port, use_write_t unused_use_write, shared_info_t *unused_ci)
@@ -35263,7 +35281,7 @@ static void init_display_functions(void)
   display_functions[T_CATCH] =        catch_to_port;
   display_functions[T_DYNAMIC_WIND] = dynamic_wind_to_port;
   display_functions[T_C_OBJECT] =     c_object_to_port;
-  display_functions[T_SLOT] =         slot_to_port;
+  display_functions[T_SLOT] =         internal_slot_to_port;
 }
 
 static void object_to_port_with_circle_check_1(s7_scheme *sc, s7_pointer vr, s7_pointer port, use_write_t use_write, shared_info_t *ci)
@@ -35822,13 +35840,13 @@ static noreturn void format_error_nr(s7_scheme *sc, const char *ur_msg, s7_int m
   if (fdat->loc == 0)
     {
       if (is_pair(args))
-	x = set_elist_4(sc, format_string_1, ctrl_str, args, msg);
-      else x = set_elist_3(sc, format_string_2, ctrl_str, msg);
+	x = set_elist_4(sc, format_string_1, ctrl_str, args, msg);                                 /* "~S ~{~S~^ ~}: ~A" */
+      else x = set_elist_3(sc, format_string_2, ctrl_str, msg);                                    /* "~S: ~A" */
     }
   else
     if (is_pair(args))
-      x = set_elist_5(sc, format_string_3, ctrl_str, args, wrap_integer(sc, fdat->loc + 20), msg);
-    else x = set_elist_4(sc, format_string_4, ctrl_str, wrap_integer(sc, fdat->loc + 20), msg);
+      x = set_elist_5(sc, format_string_3, ctrl_str, args, wrap_integer(sc, fdat->loc + 20), msg); /* "~S ~{~S~^ ~}~&~NT^: ~A" */
+    else x = set_elist_4(sc, format_string_4, ctrl_str, wrap_integer(sc, fdat->loc + 20), msg);    /* "~S~&~NT^: ~A" */
   if (fdat->port)
     {
       close_format_port(sc, fdat->port);
@@ -63809,7 +63827,6 @@ static bool p_pip_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 		  opc->v[3].p_pip_f = byte_vector_set_p_pip_direct;
 		break;
 	      case T_INT_VECTOR:
-		/* TODO: a51 case introduced (at least internally) between nov 5 and now?? */
 		if ((checker == sc->is_vector_symbol) && ((val_type != sc->is_integer_symbol) || (val_type != sc->is_byte_symbol))) return_false(sc, car_x);
 		if (loop_end(slot2) <= vector_length(obj))
 		  opc->v[3].p_pip_f = int_vector_set_p_pip_direct;
@@ -64905,18 +64922,30 @@ static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_sy
 		}}
 
 	  atype = opt_arg_type(sc, cddr(car_x));
-	  if ((is_some_number(sc, atype)) &&
-	      (!is_some_number(sc, stype)))
+	  if (is_some_number(sc, stype) != is_some_number(sc, atype))
 	    return_false(sc, car_x);
+
+	  /* a|stype can also be #t */
+
 	  if (cell_optimize(sc, cddr(car_x)))
 	    {
+	      /* if ((S7_DEBUGGING) || (OPT_PRINT)) fprintf(stderr, "  %d: %s: %s != %s for %s\n", __LINE__, display(car_x), display(stype), display(atype), display(settee)); */
+
+	      /* TODO: this is a disaster -- the goal is that set! in opt_* should not change type of settee */
+	      /* if stype != atype, int=>byte, float=>real?, symbol=>keyword? -- other stypes/atypes => false? */
+	      /* also none of this depends on cell_optimize -- put it earlier */
+
 	      if ((stype != atype) &&
 		  (is_symbol(stype)) &&
-		  (((t_sequence_p[symbol_type(stype)]) &&
-		    (stype != sc->is_null_symbol) &&
-		    (stype != sc->is_pair_symbol)) || /* compatible with is_proper_list! */
-		   (stype == sc->is_iterator_symbol)))
-		return_false(sc, car_x);
+		  (((t_sequence_p[symbol_type(stype)]) && 
+		    (stype != sc->is_null_symbol) && (stype != sc->is_pair_symbol)) || /* compatible with is_proper_list! */
+		   (stype == sc->is_iterator_symbol) ||
+		   (((is_symbol_and_keyword(caddr(car_x))) || ((is_symbol(atype)) && (t_sequence_p[symbol_type(atype)]))) &&
+		    ((stype == sc->is_integer_symbol) || (stype == sc->is_float_symbol)))))
+		{
+		  if ((S7_DEBUGGING) || (OPT_PRINT)) fprintf(stderr, "  %d: %s: %s != %s for %s\n", __LINE__, display(car_x), display(stype), display(atype), display(settee));
+		  return_false(sc, car_x);
+		}
 	      opc->v[0].fp = opt_set_p_p_f;
 	      opc->v[3].o1 = sc->opts[start_pc];
 	      opc->v[4].fp = sc->opts[start_pc]->v[0].fp;
@@ -97233,4 +97262,6 @@ int main(int argc, char **argv)
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * make-macro-hygienic
+ * add wasm test to test suite somehow (at least emscripten)
+ * t718
  */
