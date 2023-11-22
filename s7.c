@@ -8382,7 +8382,7 @@ void s7_show_stack(s7_scheme *sc)
   if (sc->stack_end >= sc->stack_resize_trigger) 
     resize_stack_unchecked(sc);
   fprintf(stderr, "stack:\n");
-  for (int64_t i = stack_top(sc) - 1, j = 0; (i >= 3) && (j < sc->show_stack_limit); i -= 4, j++)
+  for (s7_int i = stack_top(sc) - 1, j = 0; (i >= 3) && (j < sc->show_stack_limit); i -= 4, j++) /* s7_int (or uint64_t?) is correct -- not uint32_t */
     fprintf(stderr, "  %s\n", op_names[stack_op(sc->stack, i)]);
 }
 
@@ -8392,9 +8392,8 @@ static void resize_stack_1(s7_scheme *sc, const char *func, int line)
 {
   if ((sc->stack_size * 2) > sc->max_stack_size)
     {
-      fprintf(stderr, "%s%s[%d]: stack too big, %" ld64 " > %u, trigger: %" ld64 " %s\n",
-	      bold_text, func, line,
-	      (s7_int)((intptr_t)(sc->stack_end - sc->stack_start)), sc->stack_size,
+      fprintf(stderr, "%s%s[%d]: stack will be too big after resize, %u > %u, trigger: %" ld64 "%s\n",
+	      bold_text, func, line, sc->stack_size * 2, sc->max_stack_size,
 	      (s7_int)((intptr_t)(sc->stack_resize_trigger - sc->stack_start)),
 	      unbold_text);
       s7_show_stack(sc);
@@ -11290,15 +11289,9 @@ Only the let is searched if ignore-globals is not #f."
       s7_pointer e = cadr(args), b, x;
       if (!is_let(e))
 	{
-	  /* bool nil_is_rootlet = is_any_procedure(e); */ /* (defined? 'abs (lambda () 1)) -- unsure about this -- changed 21-Nov-23 */
 	  e = find_let(sc, e);  /* returns () if none */
-#if 0
-	  if (is_null(e)) /* && (nil_is_rootlet)) */
-	    e = sc->rootlet;
-	  else
-#endif
-	    if (!is_let(e))
-	      wrong_type_error_nr(sc, sc->is_defined_symbol, 2, cadr(args), a_let_string); /* not e */
+	  if (!is_let(e))
+	    wrong_type_error_nr(sc, sc->is_defined_symbol, 2, cadr(args), a_let_string); /* not e */
 	}
       if (is_keyword(sym))                       /* if no "e", is global -> #t */
 	{                                        /* we're treating :x as 'x outside rootlet, but consider all keywords defined (as themselves) in rootlet? */
@@ -45747,12 +45740,12 @@ s7_pointer s7_define_safe_function(s7_scheme *sc, const char *name, s7_function 
   return(sym);
 }
 
-s7_pointer s7_define_typed_function(s7_scheme *sc, const char *name, s7_function fnc,
+s7_pointer s7_define_typed_function(s7_scheme *sc, const char *name, s7_function fnc, /* same as above, but include sig */
 				    s7_int required_args, s7_int optional_args, bool rest_arg,
 				    const char *doc, s7_pointer signature)
 {
   /* returns (string->symbol name), not the c_proc_t func */
-  s7_pointer func = s7_make_typed_function(sc, name, fnc, required_args, optional_args, rest_arg, doc, signature);
+  s7_pointer func = s7_make_typed_function(sc, name, fnc, required_args, optional_args, rest_arg, doc, signature); /* includes "safe" bit */
   s7_pointer sym = make_symbol_with_strlen(sc, name);
   s7_define(sc, sc->nil, sym, func);
   c_function_set_marker(func, NULL);
@@ -45765,7 +45758,7 @@ static s7_pointer define_bool_function(s7_scheme *sc, const char *name, s7_funct
 				       bool simple, s7_function bool_setter)
 {
   s7_pointer bfunc;
-  s7_pointer func = s7_make_typed_function(sc, name, fnc, 1, optional_args, false, doc, signature);
+  s7_pointer func = s7_make_typed_function(sc, name, fnc, 1, optional_args, false, doc, signature); /* includes "safe" bit */
   s7_pointer sym = make_symbol_with_strlen(sc, name);
   s7_define(sc, sc->nil, sym, func);
   if (sym_to_type != T_FREE)
@@ -58691,7 +58684,7 @@ static opt_info *alloc_opt_info(s7_scheme *sc)
 
 #define backup_pc(sc) sc->pc--
 
-#define OPT_PRINT 0
+#define OPT_PRINT 0 /* print out info about the opt_* optimizations */
 #if OPT_PRINT
 
 #define return_false(Sc, Expr) return(return_false_1(Sc, Expr, __func__, __LINE__))
@@ -58707,7 +58700,7 @@ static bool return_false_1(s7_scheme *sc, s7_pointer expr, const char *func, int
 static bool return_true_1(s7_scheme *sc, s7_pointer expr, const char *func, int32_t line)
 {
   if (expr)
-    fprintf(stderr, "   %s%s[%d]%s: %s\n", blue_text, func, line, uncolor_text, display_80(expr));
+    fprintf(stderr, "   %s%s[%d]%s: %s\n", bold_text blue_text, func, line, unbold_text uncolor_text, display_80(expr));
   else fprintf(stderr, "   %s%s[%d]%s: true\n", blue_text, func, line, uncolor_text);
   return(true);
 }
@@ -62240,6 +62233,13 @@ static s7_pointer opt_arg_type(s7_scheme *sc, s7_pointer argp)
       else
 	if ((car(arg) == sc->quote_function) && (is_pair(cdr(arg))))
 	  return(s7_type_of(sc, cadr(arg)));
+	else
+	  if (is_c_function(car(arg)))
+	    {
+	      s7_pointer sig = c_function_signature(car(arg));
+	      if (is_pair(sig))
+		return(car(sig));
+	    }
       return(sc->T);
     }
   if (is_symbol(arg))
@@ -64925,27 +64925,24 @@ static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_sy
 	  if (is_some_number(sc, stype) != is_some_number(sc, atype))
 	    return_false(sc, car_x);
 
-	  /* a|stype can also be #t */
+	  if ((atype == sc->T) &&
+	      (stype == sc->is_pair_symbol) && (is_pair(cddr(car_x))) && (is_pair(caddr(car_x))) && (is_pair(cdr(caddr(car_x)))) && /* (set! p (cdr p)) where p is pair */
+	      (car(caddr(car_x)) == sc->cdr_symbol) && (target == cadr(caddr(car_x))))
+	    goto CELL_OPT_1;
+	  
+	  if (!((is_symbol(atype)) && (is_symbol(stype))))
+	    return_false(sc, car_x);
+	  if (stype == sc->is_iterator_symbol)
+	    return_false(sc, car_x);
+	  if ((stype != atype) &&
+	      (!(((stype == sc->is_null_symbol) || (stype == sc->is_pair_symbol)) && 
+		 ((atype == sc->is_pair_symbol) || (atype == sc->is_proper_list_symbol) || (atype == sc->is_list_symbol)))))
+	    return_false(sc, car_x);
 
+	CELL_OPT_1:
 	  if (cell_optimize(sc, cddr(car_x)))
 	    {
-	      /* if ((S7_DEBUGGING) || (OPT_PRINT)) fprintf(stderr, "  %d: %s: %s != %s for %s\n", __LINE__, display(car_x), display(stype), display(atype), display(settee)); */
-
-	      /* TODO: this is a disaster -- the goal is that set! in opt_* should not change type of settee */
-	      /* if stype != atype, int=>byte, float=>real?, symbol=>keyword? -- other stypes/atypes => false? */
-	      /* also none of this depends on cell_optimize -- put it earlier */
-
-	      if ((stype != atype) &&
-		  (is_symbol(stype)) &&
-		  (((t_sequence_p[symbol_type(stype)]) && 
-		    (stype != sc->is_null_symbol) && (stype != sc->is_pair_symbol)) || /* compatible with is_proper_list! */
-		   (stype == sc->is_iterator_symbol) ||
-		   (((is_symbol_and_keyword(caddr(car_x))) || ((is_symbol(atype)) && (t_sequence_p[symbol_type(atype)]))) &&
-		    ((stype == sc->is_integer_symbol) || (stype == sc->is_float_symbol)))))
-		{
-		  if ((S7_DEBUGGING) || (OPT_PRINT)) fprintf(stderr, "  %d: %s: %s != %s for %s\n", __LINE__, display(car_x), display(stype), display(atype), display(settee));
-		  return_false(sc, car_x);
-		}
+	      /* if ((OPT_DEBUG) || (OPT_PRINT)) fprintf(stderr, "  %d ok: %s: %s %s for %s\n", __LINE__, display(car_x), display(stype), display(atype), display(settee)); */
 	      opc->v[0].fp = opt_set_p_p_f;
 	      opc->v[3].o1 = sc->opts[start_pc];
 	      opc->v[4].fp = sc->opts[start_pc]->v[0].fp;
@@ -97263,5 +97260,5 @@ int main(int argc, char **argv)
  *   lots of is_global(sc->quote_symbol)
  * make-macro-hygienic
  * add wasm test to test suite somehow (at least emscripten)
- * t718
  */
+

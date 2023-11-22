@@ -426,7 +426,7 @@
 		(when (and (eq? return-type 'double)
 			   (< num-args 5)
 			   (sig-every? (lambda (p) (eq? p 'double)) arg-types)
-			   (not (defined? (symbol scheme-name) rootlet))) ; see below, double-funcs entry not used if already defined
+			   (not (defined? (symbol scheme-name) (rootlet)))) ; see below, double-funcs entry not used if already defined
 		  (let ((local-name #f))
 		    (case num-args
 		      ((0)
@@ -452,7 +452,7 @@
 		    (set! double-funcs (cons (list func-name scheme-name local-name) double-funcs))))
 		
 		(when (and (memq return-type '(int size_t))        ; int (f int|double|void)
-			   (not (defined? (symbol scheme-name) rootlet)) ; see below, int-funcs entry not used if already defined
+			   (not (defined? (symbol scheme-name) (rootlet))) ; see below, int-funcs entry not used if already defined
 			   (or ;(= num-args 0)
 			    (and (= num-args 1)
 				 (memq (car arg-types) '(int size_t double)))

@@ -89,7 +89,7 @@
 ;;; --------------------------------------------------------------------------------
 
 (define (cat)
-  (let ((inport (open-input-file "/home/bil/cl/all-lg-results"))
+  (let ((inport (open-input-file "/home/bil/cl/s7test.scm"))
 	(outport (open-output-file "/dev/null"))) 
     (catch #t
       (lambda ()
