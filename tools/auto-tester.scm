@@ -141,6 +141,7 @@
 
 (define error-type 'no-error)
 (define error-info #f)
+(define error-code "")
 (define false #f)
 (define-constant _undef_ (car (with-input-from-string "(#_asdf 1 2)" read)))
 (define kar car)
@@ -581,16 +582,18 @@
      (lambda ()
        (do ((i 0 (+ i 1)))
 	   ((= i 1))
-	 ,@(map (lambda (x)
-		  (list 'values x))
-		args)))))
+	 (with-immutable (i)
+	   ,@(map (lambda (x)
+		    (list 'values x))
+		  args))))))
 
 (define-expansion (_do2_ . args)
   `(with-output-to-string
      (lambda ()
-       ,@(map (lambda (x)
-		(list 'values x))
-	      args))))
+       (with-immutable (i)
+         ,@(map (lambda (x)
+		  (list 'values x))
+		args)))))
 
 (define-expansion (_do4_ . args)
   `(do ((__var__ #f)
@@ -903,7 +906,8 @@
 			  'even? 'string-append 'char-upcase 'sqrt 'my-make-string
 			  'char-alphabetic? 'odd? 'call-with-exit 'tanh 'copy 'sinh 'make-vector
 			  'string 'char-ci=? 'caddr 'tan 'reverse 'cddr 'append 'vector? 'list? 'exp 'acos 'asin 'symbol? 'char-numeric? 'string-ci=?
-			  'char-downcase 'acosh 'vector-length 'asinh 'format 'make-list 'goto?
+			  'char-downcase 'acosh 'vector-length 'asinh 'format 
+			  'make-list 'goto?
 			  ;'sort! ; qsort_r has a memory leak if error raised by comparison function
 			  'atanh 'modulo 'make-polar 'gcd 'angle 'remainder 'quotient 'lcm
 			  'char-whitespace? 'assoc 'procedure? 'char<?
@@ -1393,10 +1397,10 @@
 		    ))
 
       (codes (vector
-;	      (list (lambda (s) (string-append "(do ((x 0.0 (+ x 0.1)) (i 0 (+ i 1))) ((>= x .1) (with-immutable (i) " s ")))"))
-;		    (lambda (s) (string-append "(let ((x 0.1) (i 1)) " s ")")))
-;	      (list (lambda (s) (string-append "(do ((x 0) (i 0 (+ i 1))) ((= i 1) x) (with-immutable (i) (set! x " s ")))"))
-;		    (lambda (s) (string-append "(let ((x 0) (i 0)) (set! x " s "))")))
+	      (list (lambda (s) (string-append "(do ((x 0.0 (+ x 0.1)) (i 0 (+ i 1))) ((>= x .1) (with-immutable (i) " s ")))"))
+		    (lambda (s) (string-append "(let ((x 0.1) (i 1)) (with-immutable (i) " s "))")))
+	      (list (lambda (s) (string-append "(do ((x 0) (i 0 (+ i 1))) ((= i 1) x) (with-immutable (i) (set! x " s ")))"))
+		    (lambda (s) (string-append "(let ((x 0) (i 0)) (with-immutable (i) (set! x " s ")))")))
 	      (list (lambda (s) (string-append "(cond (else " s "))"))
                     (lambda (s) (string-append "(case x (else " s "))")))
 	      (list (lambda (s) (string-append "(case false ((#f) " s "))"))
@@ -1700,7 +1704,8 @@
 
     (define (same-type? val1 val2 val3 val4 str str1 str2 str3 str4)
       (cond ((not (type-eqv? val1 val2 val3 val4))
-	     (unless (or (memq error-type '(out-of-range wrong-type-arg baffled!)) ; _rd3_ vs _rd4_ for example where one uses dynamic-wind which has built-in baffles
+	     (unless (or (memq error-type '(out-of-range wrong-type-arg baffled!))
+			 ;; _rd3_ vs _rd4_ for example where one uses dynamic-wind which has built-in baffles
 			 (and (number? val1)
 			      (or (nan? val1)
 				  (infinite? val1)
@@ -1715,19 +1720,17 @@
 				      (eq? val2 'error)
 				      (eq? val3 'error)
 				      (eq? val4 'error))
-				  (format #f "    from same-type type-eqv: ~S: ~S~%" error-type
+				  (format #t "    from same-type type-eqv: ~S: ~S~%" 
+					  error-type
 					  (if (pair? error-info)
-					      (tp (catch #t
-						    (lambda ()
-						      (apply #_format #f error-info))
-						    (lambda (type info)
-						      (write "same-type format-error\n" *stderr*)
-						      (write error-info *stderr*)
-						      (newline *stderr*)
-						      (write info)
-						      (newline *stderr*))))
+					      (catch #t
+						(lambda ()
+						  (tp (apply #_format #f error-info)))
+						(lambda (type info)
+						  error-info))
 					      error-info)))))
 		 (set! error-info #f)
+		 (set! error-code "")
 		 (unless (and errstr
 			      (or (not (string? errstr))
 				  (string-position "unbound" errstr)
@@ -1861,8 +1864,9 @@
 	(lambda ()
 	  (car (list (eval-string str))))
 	(lambda (type info)
-	  (set! error-type type)
-	  (set! error-info info)
+	  (set! error-type (copy type))
+	  (set! error-info (copy info))
+	  (set! error-code (copy str))
 	  (when (and last-error-type
 		     (not (eq? error-type last-error-type)))
 	    ;(format *stderr* "~S ~S~%" last-error-type error-type)
@@ -1946,6 +1950,7 @@
       ;(unless (output-port? imfo) (format *stderr* "(new) imfo ~S -> ~S~%" estr imfo) (abort)) ; with-mock-data
       (set! error-info #f)
       (set! error-type 'no-error)
+      (set! error-code "")
       (when (string-position "H_" str)
 	(if (string-position "H_1" str) (fill! H_1 #f))
 	(if (string-position "H_2" str) (fill! H_2 #f))

@@ -64950,67 +64950,23 @@ static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_sy
 	      return_false(sc, car_x);
 	    }
 
-#if 0 /* VALG TODO: tsort/teq/tbig/tari/tlist 21-22 Nov */
 	  atype = opt_arg_type(sc, cddr(car_x));
-	  if (is_some_number(sc, stype) != is_some_number(sc, atype))
-	    return_false(sc, car_x);
-
-	  if ((atype == sc->T) &&
-	      (stype == sc->is_pair_symbol) && (is_pair(cddr(car_x))) && (is_pair(caddr(car_x))) && (is_pair(cdr(caddr(car_x)))) && /* (set! p (cdr p)) where p is pair */
-	      (car(caddr(car_x)) == sc->cdr_symbol) && (target == cadr(caddr(car_x))))
-	    goto CELL_OPT_1;
-	  
-	  if (!((is_symbol(atype)) && (is_symbol(stype))))
-	    return_false(sc, car_x);
-	  if (stype == sc->is_iterator_symbol)
+	  if ((is_some_number(sc, atype)) && (!is_some_number(sc, stype)))
 	    return_false(sc, car_x);
 	  if ((stype != atype) &&
-	      (!(((stype == sc->is_null_symbol) || (stype == sc->is_pair_symbol)) && 
-		 ((atype == sc->is_pair_symbol) || (atype == sc->is_proper_list_symbol) || (atype == sc->is_list_symbol)))))
+	      (is_symbol(stype)) &&
+	      (((t_sequence_p[symbol_type(stype)]) &&
+		(stype != sc->is_null_symbol) && (stype != sc->is_pair_symbol) && 
+		(stype != sc->is_list_symbol) && (stype != sc->is_proper_list_symbol)) ||
+	       (stype == sc->is_iterator_symbol)))
 	    return_false(sc, car_x);
-
-	CELL_OPT_1:
 	  if (cell_optimize(sc, cddr(car_x)))
 	    {
-	      /* if ((OPT_DEBUG) || (OPT_PRINT)) fprintf(stderr, "  %d ok: %s: %s %s for %s\n", __LINE__, display(car_x), display(stype), display(atype), display(settee)); */
 	      opc->v[0].fp = opt_set_p_p_f;
 	      opc->v[3].o1 = sc->opts[start_pc];
 	      opc->v[4].fp = sc->opts[start_pc]->v[0].fp;
 	      return_true(sc, car_x);
 	    }}
-#else
-	  atype = opt_arg_type(sc, cddr(car_x));
-#if 0
-	  {
-	    s7_pointer p2 = caddr(car_x);
-	    if (is_symbol(p2)) {p2 = s7_slot(sc, p2); if (is_slot(p2)) p2 = slot_value(p2);}
-	  fprintf(stderr, "stype: %s, atype: %s %s, arg2: %s\n", display(stype), display(atype), display(car_x), display(p2));
-	  }
-#endif
-#if 1
-	  if ((is_some_number(sc, atype)) &&
-	      (!is_some_number(sc, stype)))
-#else
-	    if ((is_some_number(sc, stype) != is_some_number(sc, atype)) &&
-		(atype != sc->T) && 
-		((atype != sc->is_boolean_symbol) || 
-#endif
-	    return_false(sc, car_x);
-	  if (cell_optimize(sc, cddr(car_x)))
-	    {
-	      if ((stype != atype) &&
-		  (is_symbol(stype)) &&
-		  (((t_sequence_p[symbol_type(stype)]) &&
-		    (stype != sc->is_null_symbol) && (stype != sc->is_pair_symbol) && 
-		    (stype != sc->is_list_symbol) && (stype != sc->is_proper_list_symbol)) ||
-		   (stype == sc->is_iterator_symbol)))
-		return_false(sc, car_x);
-	      opc->v[0].fp = opt_set_p_p_f;
-	      opc->v[3].o1 = sc->opts[start_pc];
-	      opc->v[4].fp = sc->opts[start_pc]->v[0].fp;
-	      return_true(sc, car_x);
-	    }}
-#endif
       return_false(sc, car_x);
     }
   if ((is_pair(target)) &&
@@ -97263,53 +97219,53 @@ int main(int argc, char **argv)
  * tpeak      115    114    108    105    102    102
  * tref       691    687    463    459    464    464
  * index     1026   1016    973    967    966    966
- * tmock     1177   1165   1057   1019   1027   1027
- * tvect     2519   2464   1772   1669   1647   1647
- * timp      2637   2575   1930   1694   1709   1741 [pair_append gc]
- * texit     ----   ----   1778   1741   1765   1765
- * s7test    1873   1831   1818   1829   1846   1837  1830
- * thook     ----   ----   2590   2030   2048   2052 [pair_append]
+ * tmock     1177   1165   1057   1019   1027   1032
+ * tvect     2519   2464   1772   1669   1647   1646
+ * timp      2637   2575   1930   1694   1709   1744
+ * texit     ----   ----   1778   1741   1765   1770
+ * s7test    1873   1831   1818   1829   1846   1843
+ * thook     ----   ----   2590   2030   2048   2046
  * tauto     ----   ----   2562   2048   2046   2048
  * lt        2187   2172   2150   2185   2198   1951
- * dup       3805   3788   2492   2239   2219   2219
- * tcopy     8035   5546   2539   2375   2381   2386
- * tread     2440   2421   2419   2408   2403   2403
- * fbench    2688   2583   2460   2430   2458   2461
+ * dup       3805   3788   2492   2239   2219   2238
+ * tcopy     8035   5546   2539   2375   2381   2388
+ * tread     2440   2421   2419   2408   2403   2407
+ * fbench    2688   2583   2460   2430   2458   2478
  * trclo     2735   2574   2454   2445   2461   2462
  * titer     2865   2842   2641   2509   2465   2465
- * tload     ----   ----   3046   2404   2502   2548
- * tmat      3065   3042   2524   2578   2586   2583
- * tsort     3105   3104   2856   2804   2828   2829
- * tobj      4016   3970   3828   3577   3511   3514
- * teq       4068   4045   3536   3486   3568   3570
- * tio       3816   3752   3683   3620   3607   3607
+ * tload     ----   ----   3046   2404   2502   2566
+ * tmat      3065   3042   2524   2578   2586   2589
+ * tsort     3105   3104   2856   2804   2828   2919
+ * tobj      4016   3970   3828   3577   3511   3526
+ * teq       4068   4045   3536   3486   3568   3562
+ * tio       3816   3752   3683   3620   3607   3617
  * tmac      3950   3873   3033   3677   3685   3682
- * tcase     4960   4793   4439   4430   4436   4435
- * tclo      4787   4735   4390   4384   4445   4449
- * tlet      7775   5640   4450   4427   4452   4455
- * tfft      7820   7729   4755   4476   4512   4512
- * tstar     6139   5923   5519   4449   4560   4567  4545
- * tmap      8869   8774   4489   4541   4618   4618  4590
- * tshoot    5525   5447   5183   5055   5047   5045
- * tform     5357   5348   5307   5316   5161   5161
- * tstr      6880   6342   5488   5162   5206   5210
- * tnum      6348   6013   5433   5396   5403   5403  5434
+ * tcase     4960   4793   4439   4430   4436   4443
+ * tclo      4787   4735   4390   4384   4445   4473
+ * tlet      7775   5640   4450   4427   4452   4460
+ * tfft      7820   7729   4755   4476   4512   4515
+ * tstar     6139   5923   5519   4449   4560   4551
+ * tmap      8869   8774   4489   4541   4618   4591
+ * tshoot    5525   5447   5183   5055   5047   5013
+ * tform     5357   5348   5307   5316   5161   5170
+ * tstr      6880   6342   5488   5162   5206   5225
+ * tnum      6348   6013   5433   5396   5403   5440
  * tlamb     6423   6273   5720   5560   5620   5620
  * tmisc     8869   7612   6435   6076   6220   6231
- * tgsl      8485   7802   6373   6282   6233   6233  6220
+ * tgsl      8485   7802   6373   6282   6233   6220
  * tlist     7896   7546   6558   6240   6284   6300
- * tari      13.0   12.7   6827   6543   6490   6490  6300
- * tset      ----   ----   ----   6260   6308   6365  6379 [pair_append]
- * trec      6936   6922   6521   6588   6581   6581
- * tleft     10.4   10.2   7657   7479   7610   7610
- * tgc       11.9   11.1   8177   7857   7965   7965  7995
- * thash     11.8   11.7   9734   9479   9536   9536
- * cb        11.2   11.0   9658   9564   9611   9604  9597
+ * tari      13.0   12.7   6827   6543   6490   6300
+ * tset      ----   ----   ----   6260   6308   6373
+ * trec      6936   6922   6521   6588   6581   6583
+ * tleft     10.4   10.2   7657   7479   7610   7627
+ * tgc       11.9   11.1   8177   7857   7965   7995
+ * thash     11.8   11.7   9734   9479   9536   9541
+ * cb        11.2   11.0   9658   9564   9611   9605
  * tgen      11.2   11.4   12.0   12.1   12.1   12.2
  * tall      15.6   15.6   15.6   15.6   15.1   15.1
- * calls     36.7   37.5   37.0   37.5   37.2   37.1
- * sg        ----   ----   55.9   55.8   55.4   55.3
- * tbig     177.4  175.8  156.5  148.1  146.0  146.0
+ * calls     36.7   37.5   37.0   37.5   37.2   37.2
+ * sg        ----   ----   55.9   55.8   55.4   55.4
+ * tbig     177.4  175.8  156.5  148.1  146.0  146.2
  * ---------------------------------------------------
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
