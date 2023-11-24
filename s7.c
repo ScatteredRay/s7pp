@@ -35830,6 +35830,13 @@ static noreturn void format_error_nr(s7_scheme *sc, const char *ur_msg, s7_int m
   s7_pointer ctrl_str = (fdat->orig_str) ? fdat->orig_str : wrap_string(sc, str, safe_strlen(str));
   s7_pointer args = (is_elist(ur_args)) ? copy_proper_list(sc, ur_args) : ur_args;
   s7_pointer msg = wrap_string(sc, ur_msg, msg_len);
+#if 0
+  if (S7_DEBUGGING)
+    fprintf(stderr, "%s: ur_msg: %s, msg_len: %" ld64 ", str: %s, ur_args: %s\n  ctrl_str: %s, args: %s, msg: %s\n",
+	    __func__,
+	    ur_msg, msg_len, str, display(ur_args), 
+	    display(ctrl_str), display(args), display(msg));
+#endif
   if (fdat->loc == 0)
     {
       if (is_pair(args))
@@ -56068,9 +56075,9 @@ static s7_pointer fx_c_cac(s7_scheme *sc, s7_pointer arg)
 static s7_pointer fx_c_aa(s7_scheme *sc, s7_pointer arg)
 {
   /* check_stack_size(sc); */
-  gc_protect_via_stack(sc, fx_call(sc, cdr(arg)));
-  set_car(sc->t2_2, fx_call(sc, opt3_pair(arg))); /* cddr(arg) */
+  gc_protect_2_via_stack(sc, fx_call(sc, cdr(arg)), fx_call(sc, opt3_pair(arg))); /* opt3_pair = cddr(arg) */
   set_car(sc->t2_1, T_Ext(stack_protected1(sc)));
+  set_car(sc->t2_2, stack_protected2(sc));
   unstack_gc_protect(sc);
   return(fn_proc(arg)(sc, sc->t2_1));
 }
@@ -59147,6 +59154,7 @@ static bool i_ii_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 
       /* arg1 not integer */
       p = opt_integer_symbol(sc, arg1);
+      /* fprintf(stderr, "p: %p, arg1: %s, val: %s, arg2: %s, car_x: %s\n", p, display(arg1), (p) ? display(p) : "none", display(arg2), display(car_x)); */
       if (p)
 	{
 	  opc->v[1].p = p;
@@ -62215,6 +62223,21 @@ static s7_pointer opt_arg_type(s7_scheme *sc, s7_pointer argp)
 			    }
 			  sc->pc = start;
 			}
+		      if ((car(arg) == sc->vector_ref_symbol) && (is_pair(cdr(arg))) && (is_normal_symbol(cadr(arg)))) /* (vector-ref) -> is_pair check */
+			{
+			  s7_pointer v_slot = s7_slot(sc, cadr(arg)); /* (vector-ref not-a-var ...) -> is_slot check, not #<undefined> */
+			  if (is_slot(v_slot))
+			    {
+			      s7_pointer v = slot_value(v_slot);
+			      if (is_int_vector(v))
+				return(sc->is_integer_symbol);
+			      if (is_float_vector(v))
+				return(sc->is_float_symbol);
+			      if (is_byte_vector(v))
+				return(sc->is_byte_symbol);
+			    }
+			  /* TODO: vector (etc) typer, if (is_typed_vector(v)) is_c_function(typed_vector_typer(v)) -> c_function_symbol(...) */
+			}
 		      return(car(sig)); /* we want the function's return type in this context */
 		    }
 		  return(sc->T);
@@ -62222,7 +62245,7 @@ static s7_pointer opt_arg_type(s7_scheme *sc, s7_pointer argp)
 	      if ((is_quote(car(arg))) && (is_pair(cdr(arg))))
 		return(s7_type_of(sc, cadr(arg)));
 	    }
-	  slot = s7_slot(sc, car(arg));
+	  slot = s7_slot(sc, car(arg));  /* TODO: can we see c_func setters? */
 	  if ((is_slot(slot)) &&
 	      (is_sequence(slot_value(slot))))
 	    {
@@ -63822,17 +63845,17 @@ static bool p_pip_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 		  opc->v[3].p_pip_f = (is_typed_vector(obj)) ? typed_normal_vector_set_p_pip_direct : normal_vector_set_p_pip_direct;
 		break;
 	      case T_BYTE_VECTOR:
-		if ((checker == sc->is_vector_symbol) && ((val_type != sc->is_integer_symbol) || (val_type != sc->is_byte_symbol))) return_false(sc, car_x);
+		if ((val_type != sc->is_integer_symbol) && (val_type != sc->is_byte_symbol)) return_false(sc, car_x);
 		if (loop_end(slot2) <= vector_length(obj))
 		  opc->v[3].p_pip_f = byte_vector_set_p_pip_direct;
 		break;
 	      case T_INT_VECTOR:
-		if ((checker == sc->is_vector_symbol) && ((val_type != sc->is_integer_symbol) || (val_type != sc->is_byte_symbol))) return_false(sc, car_x);
+		if ((val_type != sc->is_integer_symbol) && (val_type != sc->is_byte_symbol)) return_false(sc, car_x);
 		if (loop_end(slot2) <= vector_length(obj))
 		  opc->v[3].p_pip_f = int_vector_set_p_pip_direct;
 		break;
 	      case T_FLOAT_VECTOR:
-		if ((checker == sc->is_vector_symbol) && ((val_type != sc->is_float_symbol) || (val_type != sc->is_real_symbol))) return_false(sc, car_x);		
+		if ((val_type != sc->is_float_symbol) && (val_type != sc->is_real_symbol)) return_false(sc, car_x);
 		if (loop_end(slot2) <= vector_length(obj))
 		  opc->v[3].p_pip_f = float_vector_set_p_pip_direct;
 		break;
@@ -64887,7 +64910,10 @@ static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_sy
 		      opc->v[6].fi = opc->v[5].o1->v[0].fi;
 		    }
 		  return_true(sc, car_x);
-		}}
+		}
+	      /* fprintf(stderr, "%d: reject %s\n", __LINE__, display(car_x)); */
+	      return_false(sc, car_x);
+	    }
 	  if (stype == sc->is_float_symbol)
 	    {
 	      if (is_t_real(caddr(car_x)))
@@ -64919,8 +64945,12 @@ static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_sy
 		      return_true(sc, car_x);
 		    }
 		  return(check_type_uncertainty(sc, target, car_x, opc, start_pc));
-		}}
+		}
+	      /* fprintf(stderr, "%d: reject %s\n", __LINE__, display(car_x)); */
+	      return_false(sc, car_x);
+	    }
 
+#if 0 /* VALG TODO: tsort/teq/tbig/tari/tlist 21-22 Nov */
 	  atype = opt_arg_type(sc, cddr(car_x));
 	  if (is_some_number(sc, stype) != is_some_number(sc, atype))
 	    return_false(sc, car_x);
@@ -64948,6 +64978,39 @@ static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_sy
 	      opc->v[4].fp = sc->opts[start_pc]->v[0].fp;
 	      return_true(sc, car_x);
 	    }}
+#else
+	  atype = opt_arg_type(sc, cddr(car_x));
+#if 0
+	  {
+	    s7_pointer p2 = caddr(car_x);
+	    if (is_symbol(p2)) {p2 = s7_slot(sc, p2); if (is_slot(p2)) p2 = slot_value(p2);}
+	  fprintf(stderr, "stype: %s, atype: %s %s, arg2: %s\n", display(stype), display(atype), display(car_x), display(p2));
+	  }
+#endif
+#if 1
+	  if ((is_some_number(sc, atype)) &&
+	      (!is_some_number(sc, stype)))
+#else
+	    if ((is_some_number(sc, stype) != is_some_number(sc, atype)) &&
+		(atype != sc->T) && 
+		((atype != sc->is_boolean_symbol) || 
+#endif
+	    return_false(sc, car_x);
+	  if (cell_optimize(sc, cddr(car_x)))
+	    {
+	      if ((stype != atype) &&
+		  (is_symbol(stype)) &&
+		  (((t_sequence_p[symbol_type(stype)]) &&
+		    (stype != sc->is_null_symbol) && (stype != sc->is_pair_symbol) && 
+		    (stype != sc->is_list_symbol) && (stype != sc->is_proper_list_symbol)) ||
+		   (stype == sc->is_iterator_symbol)))
+		return_false(sc, car_x);
+	      opc->v[0].fp = opt_set_p_p_f;
+	      opc->v[3].o1 = sc->opts[start_pc];
+	      opc->v[4].fp = sc->opts[start_pc]->v[0].fp;
+	      return_true(sc, car_x);
+	    }}
+#endif
       return_false(sc, car_x);
     }
   if ((is_pair(target)) &&
@@ -97261,4 +97324,3 @@ int main(int argc, char **argv)
  * make-macro-hygienic
  * add wasm test to test suite somehow (at least emscripten)
  */
-
