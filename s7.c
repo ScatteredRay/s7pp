@@ -53631,40 +53631,50 @@ void s7_quit(s7_scheme *sc)
   push_stack_op_let(sc, OP_EVAL_DONE);
 }
 
-static s7_pointer g_emergency_exit(s7_scheme *sc, s7_pointer args)
-{
-  #define H_emergency_exit "(emergency-exit obj) exits s7 immediately"
-  #define Q_emergency_exit s7_make_signature(sc, 2, sc->T, sc->T)
-
-  s7_pointer obj;
 #ifndef EXIT_SUCCESS
   #define EXIT_SUCCESS 0
   #define EXIT_FAILURE 1
 #endif
-  if (is_null(args))
-    _exit(EXIT_SUCCESS);          /* r7rs spec says use _exit here */
+
+static s7_pointer g_emergency_exit(s7_scheme *sc, s7_pointer args)
+{
+  #define H_emergency_exit "(emergency-exit (obj #t)) exits s7 immediately. 'obj', the value passed to _exit, can be an integer or #t=success (0) or #f=fail (1)."
+  #define Q_emergency_exit s7_make_signature(sc, 2, sc->T, sc->T)
+
+  s7_pointer obj;
+  if (is_null(args)) _exit(EXIT_SUCCESS);  /* r7rs spec says use _exit here (which does not call any functions registered with atexit or on_exit */
   obj = car(args);
-  if (obj == sc->F)
-    _exit(EXIT_FAILURE);
-  if ((obj == sc->T) || (!s7_is_integer(obj)))
-    _exit(EXIT_SUCCESS);
+  if (obj == sc->F) _exit(EXIT_FAILURE);
+  if ((obj == sc->T) || (!s7_is_integer(obj))) _exit(EXIT_SUCCESS);
   _exit((int)s7_integer_clamped_if_gmp(sc, obj));
   return(sc->F);
 }
 
 static s7_pointer g_exit(s7_scheme *sc, s7_pointer args)
 {
-  #define H_exit "(exit obj) exits s7"
+  #define H_exit "(exit obj) exits s7. 'obj', the value passed to _exit, can be an integer or #t=success (0) or #f=fail (1)."
   #define Q_exit s7_make_signature(sc, 2, sc->T, sc->T)
   /* calling s7_eval_c_string in an atexit function seems to be problematic -- it works, but args can be changed? longjmp perhaps? */
 
+  s7_pointer obj;
 #if WITH_ALLOC_COUNTERS
   report_allocs(25);
 #endif
+
+  /* r7rs.pdf: TODO: this should check the stack for dynamic-winds and run the "after" functions, if any.
+   *   scheme's exit is supposed to allow atexit functions to be called, so we need to use libc's exit, not _exit 
+   */
+
   s7_quit(sc);
   if (show_gc_stats(sc))
     s7_warn(sc, 256, "gc calls %" ld64 " total time: %f\n", sc->gc_calls, (double)(sc->gc_total_time) / ticks_per_second());
-  return(g_emergency_exit(sc, args));
+
+  if (is_null(args)) exit(EXIT_SUCCESS); /* allow atexit functions etc */
+  obj = car(args);
+  if (obj == sc->F) exit(EXIT_FAILURE);
+  if ((obj == sc->T) || (!s7_is_integer(obj))) exit(EXIT_SUCCESS);
+  exit((int)s7_integer_clamped_if_gmp(sc, obj));
+  return(sc->F); /* never reached? */
 }
 
 #if WITH_GCC
@@ -62223,21 +62233,28 @@ static s7_pointer opt_arg_type(s7_scheme *sc, s7_pointer argp)
 			    }
 			  sc->pc = start;
 			}
-		      if ((car(arg) == sc->vector_ref_symbol) && (is_pair(cdr(arg))) && (is_normal_symbol(cadr(arg)))) /* (vector-ref) -> is_pair check */
+		      if (((car(arg) == sc->vector_ref_symbol) || (car(arg) == sc->hash_table_ref_symbol)) &&
+			  (is_pair(cdr(arg))) && (is_normal_symbol(cadr(arg)))) /* (vector-ref) -> is_pair check */
 			{
 			  s7_pointer v_slot = s7_slot(sc, cadr(arg)); /* (vector-ref not-a-var ...) -> is_slot check, not #<undefined> */
 			  if (is_slot(v_slot))
 			    {
 			      s7_pointer v = slot_value(v_slot);
-			      if (is_int_vector(v))
-				return(sc->is_integer_symbol);
-			      if (is_float_vector(v))
-				return(sc->is_float_symbol);
-			      if (is_byte_vector(v))
-				return(sc->is_byte_symbol);
-			    }
-			  /* TODO: vector (etc) typer, if (is_typed_vector(v)) is_c_function(typed_vector_typer(v)) -> c_function_symbol(...) */
-			}
+			      if (car(arg) == sc->vector_ref_symbol)
+				{
+				  if (is_int_vector(v))
+				    return(sc->is_integer_symbol);
+				  if (is_float_vector(v))
+				    return(sc->is_float_symbol);
+				  if (is_byte_vector(v))
+				    return(sc->is_byte_symbol);
+				  if (is_typed_vector(v))
+				    return(typed_vector_typer_symbol(sc, v)); /* includes closure name ?? */
+				}
+			      else
+				if ((is_typed_hash_table(v)) && (is_c_function(hash_table_value_typer(v))))
+				  return(c_function_symbol(hash_table_value_typer(v)));
+			    }}
 		      return(car(sig)); /* we want the function's return type in this context */
 		    }
 		  return(sc->T);
@@ -62245,7 +62262,7 @@ static s7_pointer opt_arg_type(s7_scheme *sc, s7_pointer argp)
 	      if ((is_quote(car(arg))) && (is_pair(cdr(arg))))
 		return(s7_type_of(sc, cadr(arg)));
 	    }
-	  slot = s7_slot(sc, car(arg));  /* TODO: can we see c_func setters? */
+	  slot = s7_slot(sc, car(arg));
 	  if ((is_slot(slot)) &&
 	      (is_sequence(slot_value(slot))))
 	    {
@@ -79726,14 +79743,13 @@ static Inline bool inline_op_implicit_vector_ref_a(s7_scheme *sc) /* called once
       if ((index < vector_length(v)) && (index >= 0))
 	{
 	  sc->value = (is_float_vector(v)) ? make_real(sc, float_vector(v, index)) : vector_getter(v)(sc, v, index);
-	  /* TODO: for tnum, add int_vector case here */
 	  return(true);
 	}}
   sc->value = vector_ref_1(sc, v, set_plist_1(sc, x));
   return(true);
 }
 
-static bool op_implicit_vector_ref_aa(s7_scheme *sc) /* if Inline 70 in concordance *//* TODO: possibly implicit_float_vector_ref_aa? */
+static bool op_implicit_vector_ref_aa(s7_scheme *sc) /* if Inline 70 in concordance */
 {
   s7_pointer x, y, code;
   s7_pointer v = lookup_checked(sc, car(sc->code));
@@ -81830,7 +81846,7 @@ static inline bool op_dox_step_1(s7_scheme *sc) /* inline for 50 in concordance,
   do {                                      /* every dox case has vars (else op_do_no_vars) */
     if (slot_has_expression(slot))
       slot_set_value(slot, fx_call(sc, slot_expression(slot)));
-    /* TODO: this fx_call is often fx_add_ss et al */
+    /* TODO: this fx_call is often fx_add_ss et al, also often just 1 stepper */
     slot = next_slot(slot);
     } while (tis_slot(slot));
   sc->value = fx_call(sc, cadr(sc->code));
@@ -81879,8 +81895,7 @@ static void op_dox_no_body(s7_scheme *sc)
       ((integer(opt2_con(sc->code))) != 0))
     {
       s7_int incr = integer(opt2_con(sc->code));
-      s7_pointer istep = make_mutable_integer(sc, integer(slot_value(slot)));
-      /* TODO: can this be a wrapped value? */
+      s7_pointer istep = make_mutable_integer(sc, integer(slot_value(slot))); /* mutable integer is faster here than wrapped */
       /* this can cause unexpected, but correct behavior: (do ((x 0) (i 0 (+ i 1))) ((= i 1) x) (set! x (memq x '(0)))) -> #f
        *   because (eq? 0 x) here is false -- memv will return '(0).  tree-count is similar.
        */
@@ -81897,7 +81912,7 @@ static void op_dox_no_body(s7_scheme *sc)
       else while (testf(sc, test) == sc->F) {integer(istep) += incr;}
       if (is_small_int(integer(istep)))
 	slot_set_value(slot, small_int(integer(istep)));
-      else clear_mutable_integer(istep);
+      else clear_mutable_integer(istep); /* just clears the T_MUTABLE bit */
       sc->value = fx_call(sc, result);
     }
   else
@@ -83199,7 +83214,7 @@ static goto_t op_safe_do(s7_scheme *sc)
 	      s7_int endi = integer(let_dox2_value(sc->curlet));
 	      s7_pointer fx_p = cddr(body);
 	      s7_pointer val_slot = s7_slot(sc, cadr(body));
-	      /* TODO: var_slot undefined or immutable? */
+	      /* TODO: val_slot undefined or immutable? */
 	      s7_int step = integer(slot_value(step_slot));
 	      s7_pointer step_val = make_mutable_integer(sc, step);
 	      slot_set_value(step_slot, step_val);
@@ -97270,13 +97285,15 @@ int main(int argc, char **argv)
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * more ongoing free_cell (mark/check ref)
- *   opt_p_pi_ss_ivref_direct could be wrapped in most uses (as embedded call) -- try more like the i|fvref direct wrapped cases
- *     int|float_vector_ref_p_pi_direct_wrapped [also opt_p_call_f, opt_b_7pp_ff etc]
- *     vref in tvect [opt_i_7p_f], several in tari
- *   vector constants: use a sc->strbuf like buffer? OP_READ_FLOAT_VECTOR loop?
- *   how to track reref so free_cell can be automated?
+ * opt_p_pi_ss_ivref_direct could be wrapped in most uses (as embedded call) -- try more like the i|fvref direct wrapped cases
+ *   int|float_vector_ref_p_pi_direct_wrapped [also opt_p_call_f, opt_b_7pp_ff etc]
+ *   vref in tvect [opt_i_7p_f], several in tari
+ *   typer.scm: int type not being used yet
+ * vector constants: use a sc->strbuf like buffer? OP_READ_FLOAT_VECTOR loop?
+ * how to track reref so free_cell can be automated?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * make-macro-hygienic
  * add wasm test to test suite somehow (at least emscripten)
+ * exit + dw
  */
