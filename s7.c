@@ -53638,7 +53638,7 @@ void s7_quit(s7_scheme *sc)
 
 static s7_pointer g_emergency_exit(s7_scheme *sc, s7_pointer args)
 {
-  #define H_emergency_exit "(emergency-exit (obj #t)) exits s7 immediately. 'obj', the value passed to _exit, can be an integer or #t=success (0) or #f=fail (1)."
+  #define H_emergency_exit "(emergency-exit (obj #t)) exits s7 immediately. 'obj', the value passed to libc's _exit, can be an integer or #t=success (0) or #f=fail (1)."
   #define Q_emergency_exit s7_make_signature(sc, 2, sc->T, sc->T)
 
   s7_pointer obj;
@@ -53652,20 +53652,34 @@ static s7_pointer g_emergency_exit(s7_scheme *sc, s7_pointer args)
 
 static s7_pointer g_exit(s7_scheme *sc, s7_pointer args)
 {
-  #define H_exit "(exit obj) exits s7. 'obj', the value passed to _exit, can be an integer or #t=success (0) or #f=fail (1)."
+  #define H_exit "(exit obj) exits s7. 'obj', the value passed to libc's exit, can be an integer or #t=success (0) or #f=fail (1)."
   #define Q_exit s7_make_signature(sc, 2, sc->T, sc->T)
-  /* calling s7_eval_c_string in an atexit function seems to be problematic -- it works, but args can be changed? longjmp perhaps? */
+  /* calling s7_eval_c_string in an atexit function seems to be problematic -- it works, but args can be changed? */
 
   s7_pointer obj;
 #if WITH_ALLOC_COUNTERS
   report_allocs(25);
 #endif
 
-  /* r7rs.pdf: TODO: this should check the stack for dynamic-winds and run the "after" functions, if any.
-   *   scheme's exit is supposed to allow atexit functions to be called, so we need to use libc's exit, not _exit 
+  /* r7rs.pdf says exit checks the stack for dynamic-winds and runs the "after" functions, if any -- 
+   *   this strikes me as ridiculous -- surely they don't expect me to find all the stacks (other s7's running etc)
+   *   and search them for dynamic-winds?  The exit must happen in either the init or body sections -- how can we
+   *   guarantee the quit function makes sense if even the init hasn't run to completion yet?  Anyone who calls exit
+   *   should clean up resources themselves.  Anyway, scheme's exit is also supposed to allow atexit functions 
+   *   to be called, so we need to use libc's exit, not _exit -- there's an example C program at the end of s7test.scm.
    */
-
+  for (int64_t i = stack_top(sc) - 1; i > 0; i -= 4)
+    if (stack_op(sc->stack, i) == OP_DYNAMIC_WIND)
+      {
+	s7_pointer dwind = stack_code(sc->stack, i);
+	if (dynamic_wind_state(dwind) == DWIND_BODY) /* otherwise init func never ran? */
+	  {
+	    dynamic_wind_state(dwind) = DWIND_FINISH;
+	    if (dynamic_wind_out(dwind) != sc->F)
+	      s7_call(sc, dynamic_wind_out(dwind), sc->nil);
+	  }}
   s7_quit(sc);
+
   if (show_gc_stats(sc))
     s7_warn(sc, 256, "gc calls %" ld64 " total time: %f\n", sc->gc_calls, (double)(sc->gc_total_time) / ticks_per_second());
 
@@ -63069,6 +63083,8 @@ static bool p_p_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer c
 	      opc->v[0].fp = opt_p_call_f;
 	      opc->v[4].o1 = o1;
 	      opc->v[5].fp = o1->v[0].fp;
+	      if (opc->v[5].fp == opt_p_pi_ss_fvref_direct) opc->v[5].fp = opt_p_pi_ss_fvref_direct_wrapped;
+	      else if (opc->v[5].fp == opt_p_pi_ss_ivref_direct) opc->v[5].fp = opt_p_pi_ss_ivref_direct_wrapped;
 	      return_true(sc, car_x);
 	    }}}
   return_false(sc, car_x);
@@ -97286,7 +97302,7 @@ int main(int argc, char **argv)
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * more ongoing free_cell (mark/check ref)
  * opt_p_pi_ss_ivref_direct could be wrapped in most uses (as embedded call) -- try more like the i|fvref direct wrapped cases
- *   int|float_vector_ref_p_pi_direct_wrapped [also opt_p_call_f, opt_b_7pp_ff etc]
+ *   int|float_vector_ref_p_pi_direct_wrapped [also opt_p_call_f -- got tari case, opt_b_7pp_ff etc]
  *   vref in tvect [opt_i_7p_f], several in tari
  *   typer.scm: int type not being used yet
  * vector constants: use a sc->strbuf like buffer? OP_READ_FLOAT_VECTOR loop?
@@ -97295,5 +97311,4 @@ int main(int argc, char **argv)
  *   lots of is_global(sc->quote_symbol)
  * make-macro-hygienic
  * add wasm test to test suite somehow (at least emscripten)
- * exit + dw
  */
