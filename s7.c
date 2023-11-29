@@ -44716,9 +44716,13 @@ in the table; it is a cons, defaulting to (cons #t #t) which means any types are
 					 caller, mapper, type_name_string(sc, mapper)));
 
 		  if (!(s7_is_aritable(sc, checker, 2)))
-		    wrong_type_error_nr(sc, caller, 2, checker, wrap_string(sc, "a function of two arguments", 27));
+		    error_nr(sc, sc->wrong_type_arg_symbol,
+			     set_elist_3(sc, wrap_string(sc, "~A's equality function, ~A, (car of the second argument) should be a function of two arguments", 94),
+					 caller, checker));
 		  if (!(s7_is_aritable(sc, mapper, 1)))
-		    wrong_type_error_nr(sc, caller, 2, mapper, wrap_string(sc, "a function of one argument", 26));
+		    error_nr(sc, sc->wrong_type_arg_symbol,
+			     set_elist_3(sc, wrap_string(sc, "~A's mapping function, ~A, (cdr of the second argument) should be a function of one argument", 92),
+					 caller, mapper));
 
 		  if (is_any_c_function(checker))
 		    {
@@ -44750,7 +44754,8 @@ in the table; it is a cons, defaulting to (cons #t #t) which means any types are
 		  hash_table_set_procedures_mapper(ht, cdr(proc));
 		  return(ht);
 		}
-	      if (proc != sc->F) wrong_type_error_nr(sc, caller, 2, proc, wrap_string(sc, "a cons of two functions", 23));
+	      if (proc != sc->F)
+		  wrong_type_error_nr(sc, caller, 2, proc, wrap_string(sc, "either #f or (cons equality-func map-func)", 42));
 	      return(ht);
 	    }}}
   return(s7_make_hash_table(sc, size));
@@ -58820,8 +58825,8 @@ static s7_pointer opt_int_any_nv(s7_scheme *sc)   {sc->opts[0]->v[0].fi(sc->opts
 static s7_pointer opt_bool_any_nv(s7_scheme *sc)  {sc->opts[0]->v[0].fb(sc->opts[0]); return(NULL);}
 static s7_pointer opt_cell_any_nv(s7_scheme *sc)  {return(sc->opts[0]->v[0].fp(sc->opts[0]));} /* this is faster than returning null */
 
-static s7_pointer opt_wrap_float(s7_scheme *sc) {return(make_real(sc, sc->opts[0]->v[0].fd(sc->opts[0])));}
-static s7_pointer opt_wrap_int(s7_scheme *sc)   {return(make_integer(sc, sc->opts[0]->v[0].fi(sc->opts[0])));}
+static s7_pointer opt_make_float(s7_scheme *sc) {return(make_real(sc, sc->opts[0]->v[0].fd(sc->opts[0])));}
+static s7_pointer opt_make_int(s7_scheme *sc)   {return(make_integer(sc, sc->opts[0]->v[0].fi(sc->opts[0])));}
 static s7_pointer opt_wrap_cell(s7_scheme *sc)  {return(sc->opts[0]->v[0].fp(sc->opts[0]));}
 static s7_pointer opt_wrap_bool(s7_scheme *sc)  {return((sc->opts[0]->v[0].fb(sc->opts[0])) ? sc->T : sc->F);}
 
@@ -58967,8 +58972,8 @@ static bool i_idp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 /* -------- i_pi -------- */
 
 static s7_int opt_i_7pi_ss(opt_info *o) {return(o->v[3].i_7pi_f(o->sc, slot_value(o->v[1].p), integer(slot_value(o->v[2].p))));}
-static s7_int opt_7pi_ss_ivref(opt_info *o) {return(int_vector(slot_value(o->v[1].p), integer(slot_value(o->v[2].p))));}
-static s7_int opt_7pi_ss_bvref(opt_info *o) {return(byte_vector(slot_value(o->v[1].p), integer(slot_value(o->v[2].p))));}
+static s7_int opt_i_pi_ss_ivref(opt_info *o) {return(int_vector(slot_value(o->v[1].p), integer(slot_value(o->v[2].p))));}
+static s7_int opt_i_pi_ss_bvref(opt_info *o) {return(byte_vector(slot_value(o->v[1].p), integer(slot_value(o->v[2].p))));}
 static s7_int opt_i_7pi_sf(opt_info *o) {return(o->v[3].i_7pi_f(o->sc, slot_value(o->v[1].p), o->v[5].fi(o->v[4].o1)));}
 
 static bool i_7pi_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer car_x)
@@ -58976,7 +58981,21 @@ static bool i_7pi_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
   s7_pointer sig;
   s7_i_7pi_t pfunc = s7_i_7pi_function(s_func);
   if (!pfunc)
-    return_false(sc, car_x);
+    {
+      if ((s_func == global_value(sc->vector_ref_symbol)) && (is_global(sc->vector_ref_symbol))) /* (vector-ref <int-vector> <int>)? */
+	{
+	  s7_pointer v_slot = s7_slot(sc, cadr(car_x));
+	  if (is_slot(v_slot))
+	    {
+	      s7_pointer v = slot_value(v_slot);
+	      if ((is_int_vector(v)) || 
+		  ((is_typed_vector(v)) && (typed_vector_typer_symbol(sc, v) == sc->is_integer_symbol)))
+		{
+		  pfunc = int_vector_ref_i_7pi;
+		  if (is_int_vector(v)) s_func = global_value(sc->int_vector_ref_symbol);
+		}}}
+      if (!pfunc) return_false(sc, car_x);
+    }
   sig = c_function_signature(s_func);
   if (is_pair(sig))
     {
@@ -59006,14 +59025,14 @@ static bool i_7pi_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 	      if ((s_func == global_value(sc->int_vector_ref_symbol)) &&
 		  (loop_end_fits(opc->v[2].p, vector_length(slot_value(opc->v[1].p)))))
 		{
-		  opc->v[0].fi = opt_7pi_ss_ivref;
+		  opc->v[0].fi = opt_i_pi_ss_ivref;
 		  opc->v[3].i_7pi_f = int_vector_ref_i_7pi_direct;
 		}
 	      else
 		if ((s_func == global_value(sc->byte_vector_ref_symbol)) &&
 		    (loop_end_fits(opc->v[2].p, vector_length(slot_value(opc->v[1].p)))))
 		  {
-		    opc->v[0].fi = opt_7pi_ss_bvref;
+		    opc->v[0].fi = opt_i_pi_ss_bvref;
 		    opc->v[3].i_7pi_f = byte_vector_ref_i_7pi_direct;
 		  }
 	      return_true(sc, car_x);
@@ -59066,7 +59085,7 @@ static bool i_ii_fc_combinable(s7_scheme *sc, opt_info *opc, s7_i_ii_t func)
       (opc == sc->opts[sc->pc - 2]))
     {
       opt_info *o1 = sc->opts[sc->pc - 1];
-      if ((o1->v[0].fi == opt_i_7pi_ss) || (o1->v[0].fi == opt_7pi_ss_ivref))
+      if ((o1->v[0].fi == opt_i_7pi_ss) || (o1->v[0].fi == opt_i_pi_ss_ivref))
 	{
 	  opc->v[5].i = opc->v[2].i; /* move v2.i ("c" in fc = arg2) out of the symbols' way */
 	  opc->v[4].i_7pi_f = o1->v[3].i_7pi_f;
@@ -59824,7 +59843,7 @@ static bool i_implicit_ok(s7_scheme *sc, s7_pointer s_slot, s7_pointer car_x, in
 	      opc->v[2].p = slot;
 	      if (loop_end_fits(opc->v[2].p, vector_length(obj)))
 		opc->v[3].i_7pi_f = (int_case) ? int_vector_ref_i_7pi_direct : byte_vector_ref_i_7pi_direct;
-		  /* not opc->v[0].fi = opt_7pi_ss_ivref -- this causes a huge slowdown in dup.scm?? */
+		  /* not opc->v[0].fi = opt_i_pi_ss_ivref -- this causes a huge slowdown in dup.scm?? */
 	      return_true(sc, car_x);
 	    }
 	  opc->v[4].o1 = sc->opts[sc->pc];
@@ -67497,14 +67516,14 @@ static s7_pfunc s7_optimize_1(s7_scheme *sc, s7_pointer expr, bool nv)
   if (!no_int_opt(expr))
     {
       if (int_optimize(sc, expr))
-	return((nv) ? opt_int_any_nv : opt_wrap_int);
+	return((nv) ? opt_int_any_nv : opt_make_int);
       sc->pc = 0;
       set_no_int_opt(expr);
     }
   if (!no_float_opt(expr))
     {
       if (float_optimize(sc, expr))
-	return_success(sc, (nv) ? opt_float_any_nv : opt_wrap_float, expr);
+	return_success(sc, (nv) ? opt_float_any_nv : opt_make_float, expr);
       sc->pc = 0;
       set_no_float_opt(expr);
     }
@@ -82718,7 +82737,7 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool saf
 		if ((fi == opt_i_7pii_ssc) && (stepper == slot_value(o->v[2].p)) && (o->v[3].i_7pii_f == int_vector_set_i_7pii_direct))
 		  s7_fill(sc, set_plist_4(sc, slot_value(o->v[1].p), wrap_integer(sc, o->v[4].i), stepper, wrap_integer(sc, end)));  /* wrapped 16-Nov-23 */
 		else
-		  if ((o->v[3].i_7pii_f == int_vector_set_i_7pii_direct) && (o->v[5].fi == opt_7pi_ss_ivref) && (o->v[2].p == o->v[4].o1->v[2].p))
+		  if ((o->v[3].i_7pii_f == int_vector_set_i_7pii_direct) && (o->v[5].fi == opt_i_pi_ss_ivref) && (o->v[2].p == o->v[4].o1->v[2].p))
 		    copy_to_same_type(sc, slot_value(o->v[1].p), slot_value(o->v[4].o1->v[1].p), integer(stepper), end, integer(stepper));
 		  else
 		    for (; integer(stepper) < end; integer(stepper)++)
@@ -97301,14 +97320,10 @@ int main(int argc, char **argv)
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * more ongoing free_cell (mark/check ref)
- * opt_p_pi_ss_ivref_direct could be wrapped in most uses (as embedded call) -- try more like the i|fvref direct wrapped cases
- *   int|float_vector_ref_p_pi_direct_wrapped [also opt_p_call_f -- got tari case, opt_b_7pp_ff etc]
- *   vref in tvect [opt_i_7p_f], several in tari
- *   typer.scm: int type not being used yet
+ * typer.scm: int type not being used yet
  * vector constants: use a sc->strbuf like buffer? OP_READ_FLOAT_VECTOR loop?
  * how to track reref so free_cell can be automated?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
- * make-macro-hygienic
  * add wasm test to test suite somehow (at least emscripten)
  */
