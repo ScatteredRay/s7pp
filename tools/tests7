@@ -151,3 +151,26 @@ echo '-------- tcc --------'
 echo ' '
 tcc -o repl s7.c -I. -g3 -lm -DWITH_MAIN -ldl -rdynamic -DWITH_C_LOADER -DS7_DEBUGGING
 repl s7test.scm
+
+echo ' '
+echo '-------- fortify flags --------'
+echo ' '
+gcc -o repl s7.c -O2 -I. -g -DWITH_MAIN -Wl,-export-dynamic -lm -ldl -DWITH_C_LOADER -Wall -Wformat=2 -Wtrampolines -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 -D_GLIBCXX_ASSERTIONS -fstack-clash-protection -fstack-protector-strong -Wl,-z,noexecstack -Wl,-z,relro -Wl,-z,now -fcf-protection=full
+repl s7test.scm
+
+echo ' '
+echo '-------- main version --------'
+echo ' '
+gcc s7.c -DS7_DEBUGGING=1 -DWITH_HISTORY=1 -DGSL_DISABLE_DEPRECATED -DDISABLE_DEPRECATED -Wall -Wextra -I. -g3 -Wduplicated-cond -Wlogical-op -Wjump-misses-init -Wfatal-errors -Wformat -Wno-implicit-fallthrough -Wpointer-arith -Wduplicated-branches -Wdangling-else -Wno-unused-parameter -Wunused-function -DTRAP_SEGFAULT -DS7_ALIGNED=1 -DINITIAL_HEAP_SIZE=6400 -DNUM_SMALL_INTS=256 -DWITH_NUMBER_SEPARATOR -DWITH_IMMUTABLE_UNQUOTE=1 -Wunreachable-code -Wstrict-aliasing -Wcast-align -Wmissing-declarations -Wmissing-include-dirs -Wuninitialized -Wwrite-strings -Wdouble-promotion -DWITH_ALLOC_COUNTERS=0
+gcc -o repl repl.c -g3 -Wall s7.o -I. -lm -ldl -Wl,-export-dynamic
+repl s7test.scm
+
+echo ' '
+echo '-------- fsanitize=address --------'
+echo ' '
+gcc s7.c -c -I. -g3 -ldl -lm -Wl,-export-dynamic -fsanitize=address
+gcc -o repl repl.c -g3 -Wall s7.o -I. -lm -ldl -Wl,-export-dynamic -fsanitize=address
+repl s7test.scm
+
+# -fsanitize=leak
+# -fsanitize=undefined

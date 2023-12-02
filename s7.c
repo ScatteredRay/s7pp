@@ -7082,9 +7082,8 @@ static void mark_vector_1(s7_pointer p, s7_int top)
   set_mark(p);
   if (!tp) return;
   tend = (s7_pointer *)(tp + top);
-  tend4 = (s7_pointer *)(tend - 8);
-  while (tp <= tend4)
-    LOOP_8(gc_mark(*tp++));
+  tend4 = (s7_pointer *)(tend - 16);
+  while (tp <= tend4) {LOOP_8(gc_mark(*tp++)); LOOP_8(gc_mark(*tp++));} /* faster if large vectors in use, maybe slower otherwise? */
   while (tp < tend)
     gc_mark(*tp++);
 }
@@ -41076,17 +41075,15 @@ static s7_pointer g_vector_set(s7_scheme *sc, s7_pointer args)
   return(val);
 }
 
-static s7_pointer vector_set_p_pip(s7_scheme *sc, s7_pointer v, s7_int i, s7_pointer p) /* this may be uncallable now -- opt'd away in every case? */
+static s7_pointer vector_set_p_pip(s7_scheme *sc, s7_pointer v, s7_int i, s7_pointer p) /* almost never called -- see one case in s7test.scm[13736] */
 {
-  if ((!is_any_vector(v)) ||
-      (vector_rank(v) > 1) ||
-      (i < 0) || (i >= vector_length(v)))
+  if ((!is_any_vector(v)) || (vector_rank(v) > 1) || (i < 0) || (i >= vector_length(v)))
     return(g_vector_set(sc, set_plist_3(sc, v, make_integer(sc, i), p)));
-
-  if (is_typed_vector(v))
-    return(typed_vector_setter(sc, v, i, p));
   if (is_normal_vector(v))
-    vector_element(v, i) = p;
+    {
+      if (is_typed_vector(v)) return(typed_vector_setter(sc, v, i, p));
+      vector_element(v, i) = p;
+    }
   else vector_setter(v)(sc, v, i, p);
   return(p);
 }
@@ -53669,7 +53666,7 @@ static s7_pointer g_exit(s7_scheme *sc, s7_pointer args)
   /* r7rs.pdf says exit checks the stack for dynamic-winds and runs the "after" functions, if any -- 
    *   this strikes me as ridiculous -- surely they don't expect me to find all the stacks (other s7's running etc)
    *   and search them for dynamic-winds?  The exit must happen in either the init or body sections -- how can we
-   *   guarantee the quit function makes sense if even the init hasn't run to completion yet?  Anyone who calls exit
+   *   guarantee the quit function makes sense if even the init hasn't run to completion yet? Anyone who calls exit
    *   should clean up resources themselves.  Anyway, scheme's exit is also supposed to allow atexit functions 
    *   to be called, so we need to use libc's exit, not _exit -- there's an example C program at the end of s7test.scm.
    */
@@ -62360,18 +62357,6 @@ static s7_pointer opt_arg_type(s7_scheme *sc, s7_pointer argp)
   return(s7_type_of(sc, arg));
 }
 
-static bool opt_b_pp_ff(opt_info *o)
-{
-  s7_pointer p1 = o->v[9].fp(o->v[8].o1);
-  return(o->v[3].b_pp_f(p1, o->v[11].fp(o->v[10].o1)));
-}
-
-static bool opt_b_7pp_ff(opt_info *o)
-{
-  s7_pointer p1 = o->v[9].fp(o->v[8].o1);
-  return(o->v[3].b_7pp_f(o->sc, p1, o->v[11].fp(o->v[10].o1)));
-}
-
 static bool opt_b_pp_sf(opt_info *o)      {return(o->v[3].b_pp_f(slot_value(o->v[1].p), o->v[11].fp(o->v[10].o1)));}
 static bool opt_b_pp_fs(opt_info *o)      {return(o->v[3].b_pp_f(o->v[11].fp(o->v[10].o1), slot_value(o->v[1].p)));}
 static bool opt_b_pp_ss(opt_info *o)      {return(o->v[3].b_pp_f(slot_value(o->v[1].p), slot_value(o->v[2].p)));}
@@ -62388,8 +62373,12 @@ static bool opt_b_7pp_sfo(opt_info *o)    {return(o->v[3].b_7pp_f(o->sc, slot_va
 static bool opt_is_equal_sfo(opt_info *o) {return(s7_is_equal(o->sc, slot_value(o->v[1].p), o->v[4].p_p_f(o->sc, slot_value(o->v[2].p))));}
 static bool opt_is_equivalent_sfo(opt_info *o) {return(is_equivalent_1(o->sc, slot_value(o->v[1].p), o->v[4].p_p_f(o->sc, slot_value(o->v[2].p)), NULL));}
 static bool opt_b_pp_sf_char_eq(opt_info *o) {return(slot_value(o->v[1].p) == o->v[11].fp(o->v[10].o1));} /* lt above checks for char args */
+static bool opt_b_7pp_ff(opt_info *o)        {s7_pointer p1 = o->v[9].fp(o->v[8].o1); return(o->v[3].b_7pp_f(o->sc, p1, o->v[11].fp(o->v[10].o1)));}
+static bool opt_b_pp_ff(opt_info *o)         {s7_pointer p1 = o->v[9].fp(o->v[8].o1); return(o->v[3].b_pp_f(p1, o->v[11].fp(o->v[10].o1)));}
 static bool opt_b_pp_ff_char_eq(opt_info *o) {return(o->v[9].fp(o->v[8].o1) == o->v[11].fp(o->v[10].o1));}
 static bool opt_b_pp_fc_char_eq(opt_info *o) {return(o->v[9].fp(o->v[8].o1) == o->v[11].p);}
+static bool opt_b_pp_fc(opt_info *o)      {return(o->v[3].b_pp_f(o->v[9].fp(o->v[8].o1), o->v[11].p));}
+static bool opt_b_7pp_fc(opt_info *o)     {return(o->v[3].b_7pp_f(o->sc, o->v[9].fp(o->v[8].o1), o->v[11].p));}
 
 static bool opt_car_equal_sf(opt_info *o)
 {
@@ -62580,7 +62569,7 @@ static bool b_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	  }
 	sc->pc = cur_index;
       }
-  o1 = sc->opts[sc->pc];
+  o1 = sc->opts[sc->pc]; /* used below opc->v[8].o1 etc */
   if (cell_optimize(sc, cdr(car_x)))
     {
       opc->v[10].o1 = sc->opts[sc->pc];
@@ -62593,7 +62582,7 @@ static bool b_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	  opc->v[9].fp = o1->v[0].fp;
 	  opc->v[11].fp = opc->v[10].o1->v[0].fp;
 	  check_b_types(sc, opc, s_func, car_x, opt_b_pp_ff);
-	  
+
 	  if (opc->v[3].b_pp_f == char_eq_b_unchecked) 
 	    {
 	      if (opc->v[11].fp == opt_p_c) /* opc->v[11].fp can be opt_p_c where opc->v[10].o1->v[1].p is the char */
@@ -62603,6 +62592,12 @@ static bool b_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 		}
 	      else opc->v[0].fb = opt_b_pp_ff_char_eq;
 	    }
+	  else
+	    if (opc->v[11].fp == opt_p_c)
+	      {
+		opc->v[0].fb = (opc->v[0].fb == opt_b_pp_ff) ? opt_b_pp_fc : opt_b_7pp_fc; /* can't use bpf_case here -- check_b_types can use the other form */
+		opc->v[11].p = opc->v[10].o1->v[1].p;
+	      }
 	  return_true(sc, car_x);
 	}}
   return_false(sc, car_x);
@@ -97405,5 +97400,5 @@ int main(int argc, char **argv)
  * typer.scm: vector typers (others?), fx/opt strings?
  *   where fv direct use direct (fft etc)
  *   opt_dotimes make_integer etc
- * fsanitize in tests7? also fortified flags in motif-snd/makefile
+ *   char? for vector/hash
  */
