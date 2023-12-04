@@ -41103,12 +41103,12 @@ static s7_pointer vector_set_p_piip(s7_scheme *sc, s7_pointer v, s7_int i1, s7_i
       (i1 < 0) || (i2 < 0) ||
       (i1 >= vector_dimension(v, 0)) || (i2 >= vector_dimension(v, 1)))
     return(g_vector_set(sc, set_plist_4(sc, v, make_integer(sc, i1), make_integer_unchecked(sc, i2), p)));
-
-  if (is_typed_vector(v))
-    return(typed_vector_setter(sc, v, i2 + (i1 * vector_offset(v, 0)), p));
-
   if (is_normal_vector(v))
-    vector_element(v, i2 + (i1 * vector_offset(v, 0))) = p;
+    {
+      if (is_typed_vector(v))
+	return(typed_vector_setter(sc, v, i2 + (i1 * vector_offset(v, 0)), p));
+      vector_element(v, i2 + (i1 * vector_offset(v, 0))) = p;
+    }
   else vector_setter(v)(sc, v, i2 + (i1 * vector_offset(v, 0)), p);
   return(p);
 }
@@ -49044,8 +49044,7 @@ static s7_pointer copy_c_object_to_same_type(s7_scheme *sc, s7_pointer dest, s7_
 	  set_car(sc->t3_3, cref(sc, with_list_t2(source, mi)));
 	  integer(mj) = j;
 	  cset(sc, sc->t3_1);
-	}
-    }
+	}}
   else
     {
       s7_pointer mi = make_mutable_integer(sc, 0);
@@ -82700,9 +82699,10 @@ static /* inline */ bool op_dotimes_step_o(s7_scheme *sc) /* called once in eval
   return(false);
 }
 
-static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool safe_step)
+static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool one_expr)
 {
-  if (safe_step) /* I think safe_step means the stepper is completely unproblematic and loop_end is set (denominator) */
+  s7_pointer step_val;
+  if (one_expr)
     set_safe_stepper(sc->args);
   else set_safe_stepper(let_dox_slot1(sc->curlet));
 
@@ -82716,7 +82716,7 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool saf
 	  set_no_cell_opt(code);
 	  return(false);
 	}
-      if (safe_step)
+      if (one_expr)
 	{
 	  s7_int end = loop_end(sc->args);
 	  s7_pointer stepper = make_mutable_integer(sc, integer(slot_value(sc->args)));
@@ -82731,7 +82731,7 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool saf
 		  if ((fd == opt_d_id_sf) && /* by far the most common case in clm: (outa i ...) etc */
 		      (is_slot(o->v[1].p)) &&
 		      (stepper == slot_value(o->v[1].p)))
-		    {
+		    { /* (do ((i 0 (+ i 1))) ((= i len) (set! *output* #f) v1) (outa i (- (* i incr) 0.5))) */
 		      opt_info *o1 = sc->opts[1];
 		      s7_int end8 = end - 8;
 		      s7_d_id_t f0 = o->v[3].d_id_f;
@@ -82754,7 +82754,7 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool saf
 			  (stepper == slot_value(o->v[2].p)))
 			s7_fill(sc, set_plist_4(sc, slot_value(o->v[1].p), wrap_real(sc, o->v[3].x), stepper, wrap_integer(sc, end))); /* wrapped 16-Nov-23 */
 		      else
-			{
+			{ /* (do ((i 0 (+ i 1))) ((= i 2) fv) (float-vector-set! fv (+ i 0) (+ i 1) (* 2.0 3.0))) */
 			  s7_int end4 = end - 4;
 			  while (integer(stepper) < end4)
 			    LOOP_4(fd(o); integer(stepper)++);
@@ -82772,24 +82772,26 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool saf
 		    s7_fill(sc, set_plist_4(sc, slot_value(o->v[1].p), o->v[4].p, stepper, wrap_integer(sc, end)));  /* wrapped 16-Nov-23 */
 		  else
 		    if (fp == opt_if_bp)
-		      {
+		      { /* (do ((i 0 (+ i 1))) ((= i 3) y) (if (= (+ z 1) 2.2) (display (+ z 1)))) */
 			for (; integer(stepper) < end; integer(stepper)++)
 			  if (o->v[3].fb(o->v[2].o1)) o->v[5].fp(o->v[4].o1);
 		      }
 		    else
 		      if (fp == opt_if_nbp_fs)
-			{
+			{ /* (do ((i 0 (+ i 1))) ((= i len)) (if (not (= (list-ref lst i) i)) (display "oops"))) */
 			  for (; integer(stepper) < end; integer(stepper)++)
 			    if (!(o->v[2].b_pi_f(sc, o->v[5].fp(o->v[4].o1), integer(slot_value(o->v[3].p))))) o->v[11].fp(o->v[10].o1);
 			}
 		      else
 			if (fp == opt_unless_p_1)
-			  {
+			  { /* (do ((i 0 (+ i 1))) ((= i size)) (unless (= (hash-table-ref vct-hash (float-vector i)) i) (display "oops"))) */
 			    for (; integer(stepper) < end; integer(stepper)++)
 			      if (!(o->v[4].fb(o->v[3].o1))) o->v[5].o1->v[0].fp(o->v[5].o1);
 			  }
-			else for (; integer(stepper) < end; integer(stepper)++) fp(o);
-		}}
+			else 
+			  { /* (do ((i 0 (+ i 1))) ((= i size) (vector-ref v 0)) (vector-set! v i 2)) */
+			    for (; integer(stepper) < end; integer(stepper)++) fp(o);
+			  }}}
 	  else
 	    if (func == opt_int_any_nv)
 	      {
@@ -82801,21 +82803,24 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool saf
 		  if ((o->v[3].i_7pii_f == int_vector_set_i_7pii_direct) && (o->v[5].fi == opt_i_pi_ss_ivref) && (o->v[2].p == o->v[4].o1->v[2].p))
 		    copy_to_same_type(sc, slot_value(o->v[1].p), slot_value(o->v[4].o1->v[1].p), integer(stepper), end, integer(stepper));
 		  else
-		    for (; integer(stepper) < end; integer(stepper)++)
-		      fi(o);
-	      }
-	    else /* (((i 0 (+ i 1))) ((= i 1)) (char-alphabetic? (string-ref #u(0 1) 1))) or (logbit? i -1): kinda nutty */
+		    { /* (do ((i 0 (+ i 1))) ((= i size) (byte-vector-ref v 0)) (byte-vector-set! v i 2)) */
+		      for (; integer(stepper) < end; integer(stepper)++)
+			fi(o);
+		    }}
+	    else /* (do ((i 0 (+ i 1))) ((= i 1)) (char-alphabetic? (string-ref #u(0 1) 1))) or (logbit? i -1): kinda nutty */
 	      for (; integer(stepper) < end; integer(stepper)++)
 		func(sc);
-
 	  clear_mutable_integer(stepper);
 	}
-      else /* not safe_step */
+      else /* not one_expr so use dox_slot1 ?? maybe also has return */
 	{
 	  s7_pointer step_slot = let_dox_slot1(sc->curlet);
 	  s7_pointer end_slot = let_dox_slot2(sc->curlet);
 	  s7_int step = integer(slot_value(step_slot));
 	  s7_int stop = integer(slot_value(end_slot));
+
+	  step_val = slot_value(step_slot);
+
 	  if (func == opt_cell_any_nv)
 	    {
 	      opt_info *o = sc->opts[0];
@@ -82825,73 +82830,72 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool saf
 		  if ((step >= 0) && (stop < NUM_SMALL_INTS))
 		    {
 		      if (fp == opt_when_p_2)
-			{
-			  while (step < stop)
+			{ /* (do ((i 0 (+ i 1))) ((= i len) (list mx loc)) (when (> (abs (vect i)) mx) (set! mx (vect i)) (set! loc i))) */
+			  for (; step < stop; step++)
 			    {
 			      slot_set_value(step_slot, small_int(step));
 			      if (o->v[4].fb(o->v[3].o1))
 				{
 				  o->v[6].fp(o->v[5].o1);
 				  o->v[8].fp(o->v[7].o1);
-				}
-			      step = integer(slot_value(step_slot)) + 1;
-			    }}
+				}}}
 		      else
-			while (step < stop)
-			  {
-			    slot_set_value(step_slot, small_int(step));
-			    fp(o);
-			    step = integer(slot_value(step_slot)) + 1;
-			  }}
+			{ /* (do ((k 0 (+ k 1))) ((= k 10) sum) (do ((i 0 (+ i 1))) ((= i size/10)) (set! sum (+ sum (round (vector-ref v k i)))))) */
+			  for (; step < stop; step++)
+			    {
+			      slot_set_value(step_slot, small_int(step));
+			      fp(o);
+			    }}}
 		  else
-		    while (step < stop)
-		      {
-			slot_set_value(step_slot, make_integer(sc, step));
-			fp(o);
-			step = integer(slot_value(step_slot)) + 1;
-		      }}}
+		    { /* (do ((i 0 (+ i 1))) ((= i len) (list mx loc)) (when (> (abs (vect i)) mx) (set! mx (vect i)) (set! loc i))) */
+		      for (; step < stop; step++)
+			{
+			  slot_set_value(step_slot, make_integer(sc, step));
+			  fp(o);
+			}}}}
 	  else
 	    if ((step >= 0) && (stop < NUM_SMALL_INTS))
-	      while (step < stop)
-		{
-		  slot_set_value(step_slot, small_int(step));
-		  func(sc);
-		  step = integer(slot_value(step_slot)) + 1;
-		}
+	      {	/* (do ((i 0 (+ i 1))) ((= i 1) x) (set! x (+ (* x1 (block-ref b1 i)) (* x2 (block-ref b2 j))))) */
+		for (; step < stop; step++)
+		  {
+		    slot_set_value(step_slot, small_int(step));
+		    func(sc);
+		  }}
 	    else
 	      if (func == opt_int_any_nv)
-		{
+		{ /* (do ((i 0 (+ i 1))) ((= i size) sum) (set! sum (+ sum (floor (vector-ref v i))))) */
 		  opt_info *o = sc->opts[0];
 		  s7_int (*fi)(opt_info *o) = o->v[0].fi;
 		  while (step < stop)
 		    {
-		      slot_set_value(step_slot, make_integer(sc, step));
 		      fi(o);
-		      step = integer(slot_value(step_slot)) + 1;
+		      step = ++integer(step_val);
 		    }}
 	      else
 		if (func == opt_float_any_nv)
-		  {
+		  { /* (do ((i 1 (+ i 1))) ((= i 1000)) (set! (v i) (filter f1 0.0))) */
 		    opt_info *o = sc->opts[0];
 		    s7_double (*fd)(opt_info *o) = o->v[0].fd;
 		    while (step < stop)
 		      {
-			slot_set_value(step_slot, make_integer(sc, step));
 			fd(o);
-			step = integer(slot_value(step_slot)) + 1;
+			step = ++integer(step_val);
 		      }}
 		else
-		  while (step < stop)
-		    {
-		      slot_set_value(step_slot, make_integer(sc, step));
-		      func(sc);
-		      step = integer(slot_value(step_slot)) + 1;
-		    }}
+		  { /* TODO: remove this dead code */
+		    /* never called: we've hit all cases cell/int/float */
+		    if (S7_DEBUGGING) fprintf(stderr, "%s[%d]: other case %d: %s\n", __func__, __LINE__, is_mutable_integer(step_val), display(scc));
+		    while (step < stop)
+		      {
+			func(sc);
+			step = ++integer(step_val);
+		      }}}
       sc->value = sc->T;
       sc->code = cdadr(scc);
       return(true);
     }
-  {
+
+  { /* not is_null(cdr(code)) i.e. there's more than one thing to do in the body */
     s7_pointer p;
     s7_int body_len = s7_list_length(sc, code);
     opt_info *body[32];
@@ -82915,8 +82919,8 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool saf
 	  }
 	else
 	  {
-	    if (safe_step)
-	      {
+	    if (one_expr)
+	      { /* (do ((i start (+ i 1))) ((= i end)) (outa i (* ampa (ina i *reverb*))) (outb i (* ampb (inb i *reverb*)))) */
 		s7_int end = loop_end(sc->args);
 		s7_pointer stepper = make_mutable_integer(sc, integer(slot_value(sc->args)));
 		slot_set_value(sc->args, stepper);
@@ -82925,15 +82929,14 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool saf
 		clear_mutable_integer(stepper);
 	      }
 	    else
-	      {
+	      { /* (do ((i 0 (+ i 1))) ((= i 5)) (set! (data i) (delay dly1 impulse -0.4)) (set! impulse 0.0)) */
 		s7_pointer step_slot = let_dox_slot1(sc->curlet);
 		s7_pointer end_slot = let_dox_slot2(sc->curlet);
 		s7_int stop = integer(slot_value(end_slot));
-		for (s7_int step = integer(slot_value(step_slot)); step < stop; step = integer(slot_value(step_slot)) + 1)
-		  {
-		    slot_set_value(step_slot, make_integer(sc, step));
-		    for (int32_t i = 0; i < body_len; i++) body[i]->v[0].fd(body[i]);
-		  }}
+		step_val = slot_value(step_slot);
+		for (s7_int step = integer(step_val); step < stop; step = ++integer(step_val))
+		  for (int32_t i = 0; i < body_len; i++) body[i]->v[0].fd(body[i]);
+	      }
 	    sc->value = sc->T;
 	    sc->code = cdadr(scc);
 	    return(true);
@@ -82952,11 +82955,9 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool saf
 
     if (is_null(p))
       {
-#if S7_DEBUGGING
-	if ((safe_step) && (!has_loop_end(sc->args))) fprintf(stderr, "%s[%d]: safe_step but not has_loop_end\n", __func__, __LINE__);
-#endif
-	if ((safe_step) && (has_loop_end(sc->args))) /* has_loop_end is perhaps redundant (there is at least one more case of this) */
-	  {
+	if ((S7_DEBUGGING) && (one_expr) && (!has_loop_end(sc->args))) fprintf(stderr, "%s[%d]: one_expr but not has_loop_end\n", __func__, __LINE__);
+	if (one_expr)
+	  { /* (do ((i 0 (+ i 1))) ((= i 1) strs) (copy (vector-ref strs i) (make-string 1)) (copy (vector-ref strs i) (make-string 0))) */
 	    s7_int end = loop_end(sc->args);
 	    s7_pointer stepper = make_mutable_integer(sc, integer(slot_value(sc->args)));
 	    slot_set_value(sc->args, stepper);
@@ -82970,11 +82971,11 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool saf
 	    clear_mutable_integer(stepper);
 	  }
 	else
-	  {
+	  { /* (do ((k j (+ k 1))) ((= k len2) obj) (set! (obj n) (seq2 k)) (set! n (+ n 1))) */
 	    s7_pointer step_slot = let_dox_slot1(sc->curlet);
 	    s7_pointer end_slot = let_dox_slot2(sc->curlet);
 	    s7_int stop = integer(slot_value(end_slot));
-	    for (s7_int step = integer(slot_value(step_slot)); step < stop; step = integer(slot_value(step_slot)) + 1)
+	    for (s7_int step = integer(slot_value(step_slot)); step < stop; step++)
 	      {
 		slot_set_value(step_slot, make_integer(sc, step));
 		for (int32_t i = 0; i < body_len; i++) body[i]->v[0].fp(body[i]);
@@ -83143,15 +83144,15 @@ static bool do_let(s7_scheme *sc, s7_pointer step_slot, s7_pointer scc)
   return(true);
 }
 
-static bool dotimes(s7_scheme *sc, s7_pointer code, bool safe_case)
+static bool dotimes(s7_scheme *sc, s7_pointer code, bool one_expr)
 {
-  s7_pointer body = caddr(code);   /* here we assume one expr in body */
+  s7_pointer body = caddr(code);   /* here we assume one expr in body?? */
   if (((is_syntactic_pair(body)) ||
        (is_symbol_and_syntactic(car(body)))) &&
       ((symbol_syntax_op_checked(body) == OP_LET) ||
        (symbol_syntax_op(car(body)) == OP_LET_STAR)))
     return(do_let(sc, sc->args, code));
-  return(opt_dotimes(sc, cddr(code), code, safe_case));
+  return(opt_dotimes(sc, cddr(code), code, one_expr));
 }
 
 static goto_t op_safe_dotimes(s7_scheme *sc)
@@ -83300,7 +83301,7 @@ static goto_t op_safe_do(s7_scheme *sc)
     {
       s7_pointer old_let = sc->curlet;
       sc->temp7 = old_let;
-      if (opt_dotimes(sc, cddr(sc->code), sc->code, false))
+      if (opt_dotimes(sc, cddr(sc->code), sc->code, false)) /* iv2 -- false means not one expr in body */
 	return(goto_safe_do_end_clauses);
       set_curlet(sc, old_let);  /* apparently s7_optimize can step on sc->curlet? */
       sc->temp7 = sc->unused;
@@ -97342,14 +97343,14 @@ int main(int argc, char **argv)
  * tref       691    687    463    459    464
  * index     1026   1016    973    967    966
  * tmock     1177   1165   1057   1019   1032
- * tvect     2519   2464   1772   1669   1626  1623
+ * tvect     2519   2464   1772   1669   1626  1623  1543 [gc] 1497
  * timp      2637   2575   1930   1694   1742
  * texit     ----   ----   1778   1741   1770
  * s7test    1873   1831   1818   1829   1834
  * thook     ----   ----   2590   2030   2046
  * tauto     ----   ----   2562   2048   2048
  * lt        2187   2172   2150   2185   1951
- * dup       3805   3788   2492   2239   2227
+ * dup       3805   3788   2492   2239   2227        2124 [why?]
  * tcopy     8035   5546   2539   2375   2388
  * tread     2440   2421   2419   2408   2400
  * fbench    2688   2583   2460   2430   2478
@@ -97376,8 +97377,8 @@ int main(int argc, char **argv)
  * tmisc     8869   7612   6435   6076   6231
  * tgsl      8485   7802   6373   6282   6220
  * tlist     7896   7546   6558   6240   6300
- * tari      13.0   12.7   6827   6543   6296
- * tset      ----   ----   ----   6260   6364
+ * tari      13.0   12.7   6827   6543   6296       6285
+ * tset      ----   ----   ----   6260   6364       6325
  * trec      6936   6922   6521   6588   6583
  * tleft     10.4   10.2   7657   7479   7610
  * tgc       11.9   11.1   8177   7857   7995
@@ -97385,8 +97386,8 @@ int main(int argc, char **argv)
  * cb        11.2   11.0   9658   9564   9605
  * tgen      11.2   11.4   12.0   12.1   12.2
  * tall      15.6   15.6   15.6   15.6   15.1
- * calls     36.7   37.5   37.0   37.5   37.2
- * sg        ----   ----   55.9   55.8   55.5
+ * calls     36.7   37.5   37.0   37.5   37.1
+ * sg        ----   ----   55.9   55.8   55.4
  * tbig     177.4  175.8  156.5  148.1  146.2
  * ---------------------------------------------
  *
@@ -97399,6 +97400,6 @@ int main(int argc, char **argv)
  * add wasm test to test suite somehow (at least emscripten)
  * typer.scm: vector typers (others?), fx/opt strings?
  *   where fv direct use direct (fft etc)
- *   opt_dotimes make_integer etc
  *   char? for vector/hash
+ *   -> tmisc typers section, s7test coverage
  */
