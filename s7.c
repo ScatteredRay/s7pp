@@ -18179,7 +18179,7 @@ static s7_pointer big_expt(s7_scheme *sc, s7_pointer args)
 	    division_by_zero_error_2_nr(sc, sc->expt_symbol, x, y);
 	}
       else
-	if (is_negative(sc, real_part_p_p(sc, y))) /* handle big_complex as well as complex */
+	if (is_negative(sc, real_part_p_p(sc, y))) /* handle big_complex as well as complex, TODO: is this make_real necessary? (use s7_real_part < 0?) */
 	  division_by_zero_error_2_nr(sc, sc->expt_symbol, x, y);
 
       if ((is_rational(x)) && (is_rational(y)))
@@ -82772,26 +82772,25 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool one
 		    s7_fill(sc, set_plist_4(sc, slot_value(o->v[1].p), o->v[4].p, stepper, wrap_integer(sc, end)));  /* wrapped 16-Nov-23 */
 		  else
 		    if (fp == opt_if_bp)
-		      { /* (do ((i 0 (+ i 1))) ((= i 3) y) (if (= (+ z 1) 2.2) (display (+ z 1)))) */
+		      {      /* (do ((i 0 (+ i 1))) ((= i 3) y) (if (= (+ z 1) 2.2) (display (+ z 1)))) */
 			for (; integer(stepper) < end; integer(stepper)++)
 			  if (o->v[3].fb(o->v[2].o1)) o->v[5].fp(o->v[4].o1);
 		      }
 		    else
 		      if (fp == opt_if_nbp_fs)
-			{ /* (do ((i 0 (+ i 1))) ((= i len)) (if (not (= (list-ref lst i) i)) (display "oops"))) */
+			{    /* (do ((i 0 (+ i 1))) ((= i len)) (if (not (= (list-ref lst i) i)) (display "oops"))) */
 			  for (; integer(stepper) < end; integer(stepper)++)
 			    if (!(o->v[2].b_pi_f(sc, o->v[5].fp(o->v[4].o1), integer(slot_value(o->v[3].p))))) o->v[11].fp(o->v[10].o1);
 			}
 		      else
 			if (fp == opt_unless_p_1)
-			  { /* (do ((i 0 (+ i 1))) ((= i size)) (unless (= (hash-table-ref vct-hash (float-vector i)) i) (display "oops"))) */
+			  {  /* (do ((i 0 (+ i 1))) ((= i size)) (unless (= (hash-table-ref vct-hash (float-vector i)) i) (display "oops"))) */
 			    for (; integer(stepper) < end; integer(stepper)++)
 			      if (!(o->v[4].fb(o->v[3].o1))) o->v[5].o1->v[0].fp(o->v[5].o1);
 			  }
-			else 
-			  { /* (do ((i 0 (+ i 1))) ((= i size) (vector-ref v 0)) (vector-set! v i 2)) */
-			    for (; integer(stepper) < end; integer(stepper)++) fp(o);
-			  }}}
+			else /* (do ((i 0 (+ i 1))) ((= i size) (vector-ref v 0)) (vector-set! v i 2)) */
+			  for (; integer(stepper) < end; integer(stepper)++) fp(o);
+		}}
 	  else
 	    if (func == opt_int_any_nv)
 	      {
@@ -82802,11 +82801,10 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool one
 		else
 		  if ((o->v[3].i_7pii_f == int_vector_set_i_7pii_direct) && (o->v[5].fi == opt_i_pi_ss_ivref) && (o->v[2].p == o->v[4].o1->v[2].p))
 		    copy_to_same_type(sc, slot_value(o->v[1].p), slot_value(o->v[4].o1->v[1].p), integer(stepper), end, integer(stepper));
-		  else
-		    { /* (do ((i 0 (+ i 1))) ((= i size) (byte-vector-ref v 0)) (byte-vector-set! v i 2)) */
-		      for (; integer(stepper) < end; integer(stepper)++)
-			fi(o);
-		    }}
+		  else /* (do ((i 0 (+ i 1))) ((= i size) (byte-vector-ref v 0)) (byte-vector-set! v i 2)) */
+		    for (; integer(stepper) < end; integer(stepper)++)
+		      fi(o);
+	      }
 	    else /* (do ((i 0 (+ i 1))) ((= i 1)) (char-alphabetic? (string-ref #u(0 1) 1))) or (logbit? i -1): kinda nutty */
 	      for (; integer(stepper) < end; integer(stepper)++)
 		func(sc);
@@ -82818,9 +82816,7 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool one
 	  s7_pointer end_slot = let_dox_slot2(sc->curlet);
 	  s7_int step = integer(slot_value(step_slot));
 	  s7_int stop = integer(slot_value(end_slot));
-
 	  step_val = slot_value(step_slot);
-
 	  if (func == opt_cell_any_nv)
 	    {
 	      opt_info *o = sc->opts[0];
@@ -82839,20 +82835,18 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool one
 				  o->v[6].fp(o->v[5].o1);
 				  o->v[8].fp(o->v[7].o1);
 				}}}
-		      else
-			{ /* (do ((k 0 (+ k 1))) ((= k 10) sum) (do ((i 0 (+ i 1))) ((= i size/10)) (set! sum (+ sum (round (vector-ref v k i)))))) */
-			  for (; step < stop; step++)
-			    {
-			      slot_set_value(step_slot, small_int(step));
-			      fp(o);
-			    }}}
-		  else
-		    { /* (do ((i 0 (+ i 1))) ((= i len) (list mx loc)) (when (> (abs (vect i)) mx) (set! mx (vect i)) (set! loc i))) */
-		      for (; step < stop; step++)
-			{
-			  slot_set_value(step_slot, make_integer(sc, step));
-			  fp(o);
-			}}}}
+		      else /* (do ((k 0 (+ k 1))) ((= k 10) sum) (do ((i 0 (+ i 1))) ((= i size/10)) (set! sum (+ sum (round (vector-ref v k i)))))) */
+			for (; step < stop; step++)
+			  {
+			    slot_set_value(step_slot, small_int(step));
+			    fp(o);
+			  }}
+		  else /* (do ((i 0 (+ i 1))) ((= i len) (list mx loc)) (when (> (abs (vect i)) mx) (set! mx (vect i)) (set! loc i))) */
+		    for (; step < stop; step++)
+		      {
+			slot_set_value(step_slot, make_integer(sc, step));
+			fp(o);
+		      }}}
 	  else
 	    if ((step >= 0) && (stop < NUM_SMALL_INTS))
 	      {	/* (do ((i 0 (+ i 1))) ((= i 1) x) (set! x (+ (* x1 (block-ref b1 i)) (* x2 (block-ref b2 j))))) */
@@ -97343,14 +97337,14 @@ int main(int argc, char **argv)
  * tref       691    687    463    459    464
  * index     1026   1016    973    967    966
  * tmock     1177   1165   1057   1019   1032
- * tvect     2519   2464   1772   1669   1626  1623  1543 [gc] 1497
+ * tvect     2519   2464   1772   1669   1626  1497
  * timp      2637   2575   1930   1694   1742
  * texit     ----   ----   1778   1741   1770
  * s7test    1873   1831   1818   1829   1834
  * thook     ----   ----   2590   2030   2046
  * tauto     ----   ----   2562   2048   2048
  * lt        2187   2172   2150   2185   1951
- * dup       3805   3788   2492   2239   2227        2124 [why?]
+ * dup       3805   3788   2492   2239   2227  2119
  * tcopy     8035   5546   2539   2375   2388
  * tread     2440   2421   2419   2408   2400
  * fbench    2688   2583   2460   2430   2478
@@ -97374,11 +97368,11 @@ int main(int argc, char **argv)
  * tstr      6880   6342   5488   5162   5225
  * tnum      6348   6013   5433   5396   5440
  * tlamb     6423   6273   5720   5560   5615
- * tmisc     8869   7612   6435   6076   6231
+ * tmisc     ----   ----   ----   8488   7866
  * tgsl      8485   7802   6373   6282   6220
  * tlist     7896   7546   6558   6240   6300
- * tari      13.0   12.7   6827   6543   6296       6285
- * tset      ----   ----   ----   6260   6364       6325
+ * tari      13.0   12.7   6827   6543   6296  6285
+ * tset      ----   ----   ----   6260   6364  6325
  * trec      6936   6922   6521   6588   6583
  * tleft     10.4   10.2   7657   7479   7610
  * tgc       11.9   11.1   8177   7857   7995
@@ -97398,8 +97392,6 @@ int main(int argc, char **argv)
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * add wasm test to test suite somehow (at least emscripten)
- * typer.scm: vector typers (others?), fx/opt strings?
- *   where fv direct use direct (fft etc)
- *   char? for vector/hash
- *   -> tmisc typers section, s7test coverage
+ * op_safe_do and op_simple_do make_integer?
+ * in eq_out_x make_* defer the make to method list, use wrap in error, or just try wrap*
  */

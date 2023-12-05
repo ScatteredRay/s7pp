@@ -349,6 +349,253 @@
   
   (test 100000))
 
+;;; typer optimization tests
+
+
+(define typer-size 1000000)
+
+;; -------- int-vector
+(define (iv1) ; 77.9 -> 59.0 (no make-integer)
+  (let ((v (make-vector typer-size 1 integer?))
+	(sum 0))
+    (do ((i 0 (+ i 1)))
+	((= i typer-size))
+      (set! sum (+ sum (vector-ref v i))))
+    (unless (= sum typer-size) (format *stderr* "sum: ~D~%" sum))))
+
+(define (iv2) ; 77.9 -> 59.0 (no make-integer)
+  (let ((v (make-int-vector typer-size 1))
+	(sum 0))
+    (do ((i 0 (+ i 1)))
+	((= i typer-size))
+      (set! sum (+ sum (int-vector-ref v i)))) ; but TODO: this still makes integers (not safe stepper?! in opt_dotimes)
+    (unless (= sum typer-size) (format *stderr* "sum: ~D~%" sum))))
+
+(define (iv3) ; 201.6 -- twice as slow as h1 because mark_vector is slow, 196.2 if new mark_vector_1
+  (let ((v (make-vector typer-size 1))
+	(sum 0))
+    (do ((i 0 (+ i 1)))
+	((= i typer-size))
+      (set! sum (+ sum (vector-ref v i))))
+    (unless (= sum typer-size) (format *stderr* "sum: ~D~%" sum))))
+
+(define (ih1) ; 112.7 -- fails i_7pi_ok
+  (let ((h (make-hash-table 8 #f (cons symbol? integer?)))
+	(sum 0))
+    (hash-table-set! h 'a 1)
+    (do ((i 0 (+ i 1)))
+	((= i typer-size))
+      (set! sum (+ sum (hash-table-ref h 'a)))) ; this is independent of i...
+    (unless (= sum typer-size) (format *stderr* "sum: ~D~%" sum))))
+
+(define (iv4) ; 29.6
+  (let ((v (make-vector typer-size 1 integer?))) ; this creates an int-vector! so iv4 == iv7
+    (do ((i 0 (+ i 1)))
+	((= i typer-size))
+      (if (= (vector-ref v i) 0)
+	  (display "oops")))))
+
+(define (iv5) ; 29.6
+  (let ((v (make-int-vector typer-size 1)))
+    (do ((i 0 (+ i 1)))
+	((= i typer-size))
+      (if (= (int-vector-ref v i) 0)
+	  (display "oops")))))
+
+(define (iv6) ; 44.6
+  (let ((v (make-vector typer-size 1)))
+    (do ((i 0 (+ i 1)))
+	((= i typer-size))
+      (if (= (vector-ref v i) 0)
+	  (display "oops")))))
+
+(define (iv7) ; 29.6
+  (let ((v (make-int-vector typer-size 1)))
+    (do ((i 0 (+ i 1)))
+	((= i typer-size))
+      (if (= (vector-ref v i) 0) ; opt_i_7pi_ss + opt_b_ii_fc_eq, opt_dotimes and opt_i_pi_ss_ivref which is direct
+	  (display "oops")))))
+
+
+;; -------- float-vector
+(define (fv1) ; 113.6 -> 97.2 via d_7pi_ok -> 85.2
+  (let ((v (make-vector typer-size 1.0 float?))
+	(sum 0.0))
+    (do ((i 0 (+ i 1)))
+	((= i typer-size))
+      (set! sum (+ sum (vector-ref v i))))
+    (unless (= sum typer-size) (format *stderr* "sum: ~D~%" sum))))
+
+(define (fv2) ; 93.2 -> 85.2 opt_float_any_nv removed -> 66 (no make-integer)
+  (let ((v (make-float-vector typer-size 1.0))
+	(sum 0.0))
+    (do ((i 0 (+ i 1)))
+	((= i typer-size))
+      (set! sum (+ sum (float-vector-ref v i))))  ; float_vector_ref_d_pi_direct, but TODO: this still makes integers (not safe stepper?! in opt_dotimes)
+    (unless (= sum typer-size) (format *stderr* "sum: ~D~%" sum))))
+
+(define (fv3) ; 197.8 192.3
+  (let ((v (make-vector typer-size 1.0))
+	(sum 0.0))
+    (do ((i 0 (+ i 1)))
+	((= i typer-size))
+      (set! sum (+ sum (vector-ref v i))))
+    (unless (= sum typer-size) (format *stderr* "sum: ~D~%" sum))))
+
+(define (fh1) ; 108.9
+  (let ((h (make-hash-table 8 #f (cons symbol? float?)))
+	(sum 0.0))
+    (hash-table-set! h 'a 1.0)
+    (do ((i 0 (+ i 1)))
+	((= i typer-size))
+      (set! sum (+ sum (hash-table-ref h 'a)))) ; this is independent of i...
+    (unless (= sum typer-size) (format *stderr* "sum: ~D~%" sum))))
+
+(define (fv4) ; 77.8 -> 40.75 via d_7pi_ok
+  (let ((v (make-vector typer-size 1.0 float?))) ; this creates a float-vector! so v4 == v7
+    (do ((i 0 (+ i 1)))
+	((= i typer-size))
+      (if (= (vector-ref v i) 0.0)
+	  (display "oops")))))
+
+(define (fv5) ; 40.75
+  (let ((v (make-float-vector typer-size 1.0)))
+    (do ((i 0 (+ i 1)))
+	((= i typer-size))
+      (if (= (float-vector-ref v i) 0.0) ; opt_d_7pi_ss_fvref_direct + num_eq_b_dd
+	  (display "oops")))))
+
+(define (fv6) ; 57.75
+  (let ((v (make-vector typer-size 1.0)))
+    (do ((i 0 (+ i 1)))
+	((= i typer-size))
+      (if (= (vector-ref v i) 0.0)
+	  (display "oops")))))
+
+(define (fv7) ; 77.8 -> 40.75 via d_7pi_ok
+  (let ((v (make-float-vector typer-size 1.0)))
+    (do ((i 0 (+ i 1)))
+	((= i typer-size))
+      (if (= (vector-ref v i) 0.0)
+	  (display "oops")))))
+
+
+;; -------- byte-vector
+(define (bv1) ; 77.9 -> 58.7 (no make-integer)
+  (let ((v (make-vector typer-size 1 byte?))
+	(sum 0))
+    (do ((i 0 (+ i 1)))
+	((= i typer-size))
+      (set! sum (+ sum (vector-ref v i))))
+    (unless (= sum typer-size) (format *stderr* "sum: ~D~%" sum))))
+
+(define (bv2) ; 77.9 -> 58.7 (no make-integer)
+  (let ((v (make-byte-vector typer-size 1))
+	(sum 0))
+    (do ((i 0 (+ i 1)))
+	((= i typer-size))
+      (set! sum (+ sum (byte-vector-ref v i))))
+    (unless (= sum typer-size) (format *stderr* "sum: ~D~%" sum))))
+
+(define (bv3) ; 201.9
+  (let ((v (make-vector typer-size 1))
+	(sum 0))
+    (do ((i 0 (+ i 1)))
+	((= i typer-size))
+      (set! sum (+ sum (vector-ref v i))))
+    (unless (= sum typer-size) (format *stderr* "sum: ~D~%" sum))))
+
+(define (bh1) ; 112.9
+  (let ((h (make-hash-table 8 #f (cons symbol? byte?)))
+	(sum 0))
+    (hash-table-set! h 'a 1)
+    (do ((i 0 (+ i 1)))
+	((= i typer-size))
+      (set! sum (+ sum (hash-table-ref h 'a)))) ; this is independent of i...
+    (unless (= sum typer-size) (format *stderr* "sum: ~D~%" sum))))
+
+(define (bv4) ; 51.6 -> 29.7
+  (let ((v (make-vector typer-size 1 byte?)))
+    (do ((i 0 (+ i 1)))
+	((= i typer-size))
+      (if (= (vector-ref v i) 0)
+	  (display "oops")))))
+
+(define (bv5) ; 72.6 -> 29.7 opt_arg_type
+  (let ((v (make-byte-vector typer-size 1)))
+    (do ((i 0 (+ i 1)))
+	((= i typer-size))
+      (if (= (byte-vector-ref v i) 0)
+	  (display "oops")))))
+
+(define (bv6) ; 44.8
+  (let ((v (make-vector typer-size 1)))
+    (do ((i 0 (+ i 1)))
+	((= i typer-size))
+      (if (= (vector-ref v i) 0)
+	  (display "oops")))))
+
+(define (bv7) ; 51.6 -> 29.7
+  (let ((v (make-byte-vector typer-size 1)))
+    (do ((i 0 (+ i 1)))
+	((= i typer-size))
+      (if (= (vector-ref v i) 0)
+	  (display "oops")))))
+
+(define (bv8) ; 53.6
+  (let ((v (make-byte-vector typer-size 1))
+	(typer-size/2 (/ typer-size 2)))
+    (do ((i (- typer-size/2) (+ i 1)))
+	((= i typer-size/2))
+      (if (= (vector-ref v (+ i typer-size/2)) 0)
+	  (display "oops")))))
+
+(define (bv9) ; 68.9
+  (let ((v (make-vector typer-size 1))
+	(typer-size/2 (/ typer-size 2)))
+    (set! (vector-typer v) integer?)
+    (do ((i (- typer-size/2) (+ i 1)))
+	((= i typer-size/2))
+      (if (= (vector-ref v (+ i typer-size/2)) 0)
+	  (display "oops")))))
+
+
+;; -------- string?
+
+(define (sv1) ; 41.6 -> 31.6, opt_p_c -> opt_b_pp_fc_char_eq
+  (let ((v (make-string typer-size #\a)))
+    (do ((i 0 (+ i 1)))
+	((= i typer-size))
+      (if (char=? (string-ref v i) #\b) ; opt_b_pp_ff_char_eq + opt_p_pi_ss_sref_direct in opt_dotimes
+	  (display "oops")))))
+
+(define (sv2) ; 74.9 [uses opt_b_pp_fc_char_eq, string_ref_p_pp+string_ref_1 (typer ignored?), opt_p_pi_sc for (unchanging) vector-ref]
+  (let ((v (make-vector 1 (make-string typer-size #\a) string?)))
+    (do ((i 0 (+ i 1)))
+	((= i typer-size))
+      (if (char=? (string-ref (vector-ref v 0) i) #\b)
+	  (display "oops")))))
+
+(define (sv3) ; 58.0 via opt_b_pp_ff opt_p_pi_ss_vref_direct string_eq_b_unchecked [so it sees the typer?] -> 53.0 (fc case)
+  (let ((v (make-vector typer-size "a" string?)))
+    (do ((i 0 (+ i 1)))
+	((= i typer-size))
+      (if (string=? (vector-ref v i) "b")
+	  (display "oops")))))
+
+(define (try-all) ; 2046  1924(opt_dotimes)
+  (iv1) (iv2) (iv3) (iv4) (iv5) (iv6) (iv7)
+  (ih1)
+  (fv1) (fv2) (fv3) (fv4) (fv5) (fv6) (fv7)
+  (fh1)
+  (bv1) (bv2) (bv3) (bv4) (bv5) (bv6) (bv7) (bv8) (bv9)
+  (bh1)
+  (sv1) (sv2) (sv3)
+  )
+
+(try-all)
+
+
 
 ;;; -------- built-ins via #_ --------
 
