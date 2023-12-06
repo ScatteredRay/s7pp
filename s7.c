@@ -3964,7 +3964,7 @@ static void try_to_call_gc(s7_scheme *sc);
 #define rational_to_double(Sc, X)     s7_number_to_real(Sc, X)
 #endif
 
-static s7_pointer wrapped_integer(s7_scheme *sc)
+static s7_pointer wrapped_integer(s7_scheme *sc) /* wrap_integer without small_int possibility -- usable as a mutable integer for example */
 {
   s7_pointer p = car(sc->integer_wrappers);
   sc->integer_wrappers = cdr(sc->integer_wrappers);
@@ -23305,16 +23305,20 @@ static s7_pointer num_eq_p_pp(s7_scheme *sc, s7_pointer x, s7_pointer y) {return
 static s7_pointer num_eq_p_pi(s7_scheme *sc, s7_pointer p1, s7_int p2)
 {
   if (is_t_integer(p1))
-    return((integer(p1) == p2) ? sc->T : sc->F);
+    return(make_boolean(sc, integer(p1) == p2));
   if (is_t_real(p1))
-    return((real(p1) == p2) ? sc->T : sc->F);
+    return(make_boolean(sc, real(p1) == p2));
 #if WITH_GMP
   if (is_t_big_integer(p1))
-    return(((mpz_fits_slong_p(big_integer(p1))) && (p2 == mpz_get_si(big_integer(p1)))) ? sc->T : sc->F);
+    return(make_boolean(sc, (mpz_fits_slong_p(big_integer(p1))) && (p2 == mpz_get_si(big_integer(p1)))));
   if (is_t_big_real(p1))
-    return((mpfr_cmp_si(big_real(p1), p2) == 0) ? sc->T : sc->F);
+    return(make_boolean(sc, mpfr_cmp_si(big_real(p1), p2) == 0));
 #endif
-  return((is_number(p1)) ? sc->F : make_boolean(sc, eq_out_x(sc, p1, make_integer(sc, p2))));
+  if (is_number(p1))
+    return(sc->F); /* complex/ratio can't == int */
+  if (has_active_methods(sc, p1))
+    return(find_and_apply_method(sc, p1, sc->num_eq_symbol, set_plist_2(sc, p1, make_integer(sc, p2))));
+  wrong_type_error_nr(sc, sc->num_eq_symbol, 1, p1, a_number_string);
 }
 
 static bool num_eq_b_pi(s7_scheme *sc, s7_pointer x, s7_int y)
@@ -23329,9 +23333,8 @@ static bool num_eq_b_pi(s7_scheme *sc, s7_pointer x, s7_int y)
   if (is_t_big_real(x))
     return(mpfr_cmp_si(big_real(x), y) == 0);
 #endif
-  if (!is_number(x)) /* complex/ratio */
-    sole_arg_wrong_type_error_nr(sc, sc->num_eq_symbol, x, a_number_string);
-    /* return(eq_out_x(sc, x, make_integer(sc, y))); */ /* much slower? see thash */
+  if (!is_number(x)) /* complex/ratio can't == int */
+    wrong_type_error_nr(sc, sc->num_eq_symbol, 1, x, a_number_string);
   return(false);
 }
 
@@ -23905,7 +23908,9 @@ static bool leq_b_pi(s7_scheme *sc, s7_pointer p1, s7_int p2)
   if (is_t_big_ratio(p1))
     return(mpq_cmp_si(big_ratio(p1), p2, 1) <= 0);
 #endif
-  return(leq_out_x(sc, p1, make_integer(sc, p2)));
+  if (has_active_methods(sc, p1))
+    return(find_and_apply_method(sc, p1, sc->leq_symbol, list_2(sc, p1, make_integer(sc, p2)))); /* not plist */
+  wrong_type_error_nr(sc, sc->leq_symbol, 1, p1, sc->type_names[T_REAL]);
 }
 
 static s7_pointer leq_p_pi(s7_scheme *sc, s7_pointer p1, s7_int p2) {return(make_boolean(sc, leq_b_pi(sc, p1, p2)));}
@@ -24489,7 +24494,9 @@ static bool geq_b_pi(s7_scheme *sc, s7_pointer p1, s7_int p2)
   if (is_t_big_ratio(p1))
     return(mpq_cmp_si(big_ratio(p1), p2, 1) >= 0);
 #endif
-  return(geq_out_x(sc, p1, make_integer(sc, p2)));
+  if (!has_active_methods(sc, p1))
+    wrong_type_error_nr(sc, sc->geq_symbol, 1, p1, sc->type_names[T_REAL]);
+  return(find_and_apply_method(sc, p1, sc->geq_symbol, list_2(sc, p1, make_integer(sc, p2))));   /* not plist */
 }
 
 static s7_pointer geq_p_pi(s7_scheme *sc, s7_pointer p1, s7_int p2) {return(make_boolean(sc, geq_b_pi(sc, p1, p2)));}
@@ -79649,7 +79656,8 @@ static bool op_set1(s7_scheme *sc)
     {
       if (is_immutable_slot(lx))
 	{
-	  if (slot_value(lx) == sc->value) return(true); /* (set! pi pi) */
+	  if (s7_is_eqv(sc, slot_value(lx), sc->value)) return(true); /* (set! pi pi) -- this can be confusing! */
+	  /* eqv? needed here because 0 != 0 if one is int_zero and the other a mutable_integer from a loop, etc */
 	  immutable_object_error_nr(sc, set_elist_3(sc, immutable_error_string, sc->set_symbol, sym));
 	}
       if (slot_has_setter(lx))
@@ -82390,7 +82398,7 @@ static bool op_simple_do_1(s7_scheme *sc, s7_pointer code)
 	  opt_info *o = sc->opts[0];
 	  s7_pointer (*fp)(opt_info *o) = o->v[0].fp;
 	  if ((fp == opt_p_ppp_sss) || (fp == opt_p_ppp_sss_mul) || (fp == opt_p_ppp_sss_hset))
-	    {
+	    { /* (do ((i 0 (+ i 1))) ((= i 1) (let-ref lt 'a)) (let-set! lt sym i)) */
 	      s7_p_ppp_t fpt = o->v[4].p_ppp_f;
 	      for (i = start; i < stop; i++)  /* thash and below */
 		{
@@ -82399,7 +82407,7 @@ static bool op_simple_do_1(s7_scheme *sc, s7_pointer code)
 		}}
 	  else
 	    if (fp == opt_p_ppp_sfs)
-	      {
+	      { /* (do ((i 0 (+ i 1))) ((= i 9)) (vector-set! v4 (expt 2 i) i)) */
 		s7_p_ppp_t fpt = o->v[3].p_ppp_f;
 		for (i = start; i < stop; i++)
 		  {
@@ -82408,7 +82416,7 @@ static bool op_simple_do_1(s7_scheme *sc, s7_pointer code)
 		  }}
 	    else
 	      if ((fp == opt_p_pip_sss_vset) && (start >= 0) && (stop <= vector_length(slot_value(o->v[1].p))))
-		{
+		{ /* (do ((i 0 (+ i 1))) ((= i 10) v) (vector-set! v i i)) */
 		  s7_pointer *vels = vector_elements(slot_value(o->v[1].p)); /* better in callgrind, possibly slightly slower in time */
 		  check_free_heap_size(sc, stop - start);
 		  for (i = start; i < stop; i++)
@@ -82416,19 +82424,21 @@ static bool op_simple_do_1(s7_scheme *sc, s7_pointer code)
 		      slot_set_value(ctr_slot, make_integer_unchecked(sc, i));
 		      vels[integer(slot_value(o->v[2].p))] = slot_value(o->v[3].p);
 		    }}
-	      else
+	      else /* (do ((i 0 (+ i 1))) ((= i 1) (let-ref lt 'a)) (let-set! lt 'a i)) or (do ((i 0 (+ i 1))) ((= i 10)) (list-set! lst i i)) */
 		for (i = start; i < stop; i++)
 		  {
 		    slot_set_value(ctr_slot, make_integer(sc, i));
 		    fp(o);
 		  }}
       else
-	/* splitting out opt_float_any_nv here saves almost nothing */
+	{
+	/* splitting out opt_float_any_nv here saves almost nothing -- unhit in s7test or anywhere?? */
+	  if (S7_DEBUGGING) fprintf(stderr, "%d: %s\n", __LINE__, display(code));
 	for (i = start; i < stop; i++)
 	  {
 	    slot_set_value(ctr_slot, make_integer(sc, i));
 	    func(sc);
-	  }
+	  }}
       sc->value = sc->T;
       sc->code = cdadr(code);
       return(true);
@@ -82817,6 +82827,7 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool one
 	  s7_int step = integer(slot_value(step_slot));
 	  s7_int stop = integer(slot_value(end_slot));
 	  step_val = slot_value(step_slot);
+
 	  if (func == opt_cell_any_nv)
 	    {
 	      opt_info *o = sc->opts[0];
@@ -83265,7 +83276,6 @@ static goto_t op_safe_do(s7_scheme *sc)
       pair_set_syntax_op(form, OP_DO_UNCHECKED);
       return(goto_do_unchecked);
     }
-
   /* (let ((sum 0)) (define (hi) (do ((i 10 (+ i 1))) ((= i 10) i) (set! sum (+ sum i)))) (hi)) */
   set_curlet(sc, make_let(sc, sc->curlet));
   let_set_dox_slot1(sc->curlet, add_slot_checked(sc, sc->curlet, caaar(code), init_val)); /* define the step var -- might be needed in the end clauses */
@@ -83278,7 +83288,6 @@ static goto_t op_safe_do(s7_scheme *sc)
       sc->code = cdadr(code);
       return(goto_safe_do_end_clauses);
     }
-
   if (is_symbol(end))
     let_set_dox_slot2(sc->curlet, s7_slot(sc, end));
   else let_set_dox_slot2(sc->curlet, make_slot(sc, caaar(code), end));
@@ -83300,7 +83309,8 @@ static goto_t op_safe_do(s7_scheme *sc)
       set_curlet(sc, old_let);  /* apparently s7_optimize can step on sc->curlet? */
       sc->temp7 = sc->unused;
     }
-  if (is_null(cdddr(sc->code)))
+
+  if (is_null(cdddr(sc->code)))                     /* do body has one expr, (do ((k 0 (+ k 1))) ((= k 2)) (set! sum (+ sum 1))) */
     {
       s7_pointer body = caddr(sc->code);
       if ((car(body) == sc->set_symbol) &&
@@ -83308,18 +83318,28 @@ static goto_t op_safe_do(s7_scheme *sc)
 	  (is_symbol(cadr(body))) &&
 	  (is_pair(cddr(body))) &&
 	  (has_fx(cddr(body))) &&
-	  (is_null(cdddr(body))))
+	  (is_null(cdddr(body))))                   /* so we're (set! symbol (fxable-expr...)) */
 	{
 	  s7_pointer step_slot = let_dox_slot1(sc->curlet);
-	  if (slot_symbol(step_slot) != cadr(body))
+	  if (slot_symbol(step_slot) != cadr(body)) /* we're not setting the stepper */
 	    {
 	      s7_int endi = integer(let_dox2_value(sc->curlet));
 	      s7_pointer fx_p = cddr(body);
 	      s7_pointer val_slot = s7_slot(sc, cadr(body));
-	      /* TODO: val_slot undefined or immutable? */
+#if 0
+	      if (!is_slot(val_slot)) 
+		unbound_variable_error_nr(sc, cadr(body));
+	      if (is_immutable_slot(val_slot))
+		immutable_object_error_nr(sc, set_elist_3(sc, wrap_string(sc, "~S is immutable in ~S", 21), cadr(body), body));
+#endif
+	      if ((S7_DEBUGGING) && ((!is_slot(val_slot)) || (is_immutable_slot(val_slot))))
+		fprintf(stderr, "%s[%d]: val_slot trouble\n", __func__, __LINE__);
 	      s7_int step = integer(slot_value(step_slot));
-	      s7_pointer step_val = make_mutable_integer(sc, step);
-	      slot_set_value(step_slot, step_val);
+	      /* s7_pointer step_val = make_mutable_integer(sc, step); */
+	      s7_pointer step_val = slot_value(step_slot);
+	      if ((S7_DEBUGGING) && (!is_mutable_integer(step_val))) 
+		fprintf(stderr, "%s[%d]: %s is not a mutable integer\n", __func__, __LINE__, display(slot_symbol(step_slot)));
+	      /* slot_set_value(step_slot, step_val); */
 	      do {
 		slot_set_value(val_slot, fx_call(sc, fx_p));
 		integer(step_val) = ++step;
@@ -97392,6 +97412,6 @@ int main(int argc, char **argv)
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * add wasm test to test suite somehow (at least emscripten)
- * op_safe_do and op_simple_do make_integer?
- * in eq_out_x make_* defer the make to method list, use wrap in error, or just try wrap*
+ * op_simple_do_1 make_integer? s7tests don't hit the make/wrap-integer choice. Get examples of other cases
+ * t718 let-ref error
  */
