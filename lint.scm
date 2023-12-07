@@ -10837,6 +10837,16 @@
 		     (string? (cadr form)))
 		(lint-format "s7's help function takes a symbol or a procedure as its argument: ~A" caller (truncated-list->string form)))))
 
+#|
+	;; ---------------- immutable! ----------------
+	(hash-special 'immutable!
+	  (lambda (caller head form env)
+	    (when (and (not (var-member 'immutable! env))
+		       (len=2? form))
+	      (let ((arg (cadr form)))
+		;; here we need to distinguish arg=symbol whose value is a sequence, arg=quoted symbol is ok etc
+		))))
+|#
 
 	;; ---------------- curlet ----------------
 	(hash-special 'curlet

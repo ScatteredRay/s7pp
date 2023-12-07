@@ -6548,6 +6548,7 @@ static s7_pointer g_immutable(s7_scheme *sc, s7_pointer args)
     }
   if ((is_pair(cdr(args))) && (!is_let(cadr(args)))) /* (immutable! 1 2) */
     wrong_type_error_nr(sc, sc->immutable_symbol, 2, cadr(args), a_let_string);
+  /* perhaps if safety on and p already immutable, warn about useless call?  This for (immutable! sum) where caller meant (immutable! 'sum) */
   set_immutable(p);   /* could set_immutable save the current file/line? Then the immutable error checks for define-constant and this setting */
                       /*   T_LOCATION -> T_IMMUTABLE_LOCATION but can't do this for a pair */
   return(p);
@@ -7599,6 +7600,7 @@ static int64_t gc(s7_scheme *sc)
   mark_vector(sc->protected_setters);
   set_mark(sc->protected_setter_symbols);
   if ((is_symbol(sc->profile_prefix)) && (is_gensym(sc->profile_prefix))) set_mark(sc->profile_prefix);
+  /* what about the integer_wrappers et al?  are they protected by the tmps below? or by being always in elist/plist? */
 
   /* protect recent allocations using the free_heap cells above the current free_heap_top (if any).
    * cells above sc->free_heap_top might be malloc'd garbage (after heap reallocation), so we keep track of
@@ -7887,7 +7889,7 @@ Evaluation produces a surprising amount of garbage, so don't leave the GC off fo
 s7_pointer s7_gc_on(s7_scheme *sc, bool on)
 {
   sc->gc_off = !on;
-  return(s7_make_boolean(sc, on));
+  return(make_boolean(sc, on));
 }
 
 #if S7_DEBUGGING
@@ -18179,9 +18181,9 @@ static s7_pointer big_expt(s7_scheme *sc, s7_pointer args)
 	    division_by_zero_error_2_nr(sc, sc->expt_symbol, x, y);
 	}
       else
-	if (is_negative(sc, real_part_p_p(sc, y))) /* handle big_complex as well as complex, TODO: is this make_real necessary? (use s7_real_part < 0?) */
+	if (is_negative(sc, real_part_p_p(sc, y))) /* make_real in t_complex case, but does it matter if WITH_GMP? */
 	  division_by_zero_error_2_nr(sc, sc->expt_symbol, x, y);
-
+      
       if ((is_rational(x)) && (is_rational(y)))
 	return(int_zero);
       return(real_zero);
@@ -24698,7 +24700,7 @@ static s7_pointer g_is_bignum(s7_scheme *sc, s7_pointer args)
 {
   #define H_is_bignum "(bignum? obj) returns #t if obj is a multiprecision number."
   #define Q_is_bignum sc->pl_bt
-  return(s7_make_boolean(sc, is_big_number(car(args))));
+  return(make_boolean(sc, is_big_number(car(args))));
 }
 
 static s7_pointer g_is_integer(s7_scheme *sc, s7_pointer args)
@@ -36896,7 +36898,7 @@ static s7_pointer g_is_directory(s7_scheme *sc, s7_pointer args)
 {
   #define H_is_directory "(directory? str) returns #t if str is the name of a directory"
   #define Q_is_directory s7_make_signature(sc, 2, sc->is_boolean_symbol, sc->is_string_symbol)
-  return(s7_make_boolean(sc, is_directory_b_7p(sc, car(args))));
+  return(make_boolean(sc, is_directory_b_7p(sc, car(args))));
 }
 
 /* -------------------------------- file-exists? -------------------------------- */
@@ -36932,7 +36934,7 @@ static s7_pointer g_file_exists(s7_scheme *sc, s7_pointer args)
 {
   #define H_file_exists "(file-exists? filename) returns #t if the file exists"
   #define Q_file_exists s7_make_signature(sc, 2, sc->is_boolean_symbol, sc->is_string_symbol)
-  return(s7_make_boolean(sc, file_exists_b_7p(sc, car(args))));
+  return(make_boolean(sc, file_exists_b_7p(sc, car(args))));
 }
 
 /* -------------------------------- delete-file -------------------------------- */
@@ -50602,7 +50604,7 @@ static s7_pointer symbol_to_let(s7_scheme *sc, s7_pointer obj)
 	sc->current_value_symbol = make_symbol(sc, "current-value", 13);
       s7_varlet(sc, let, sc->current_value_symbol, val);
       s7_varlet(sc, let, sc->setter_symbol, setter_p_pp(sc, obj, sc->curlet));
-      s7_varlet(sc, let, sc->is_mutable_symbol, s7_make_boolean(sc, !is_immutable_symbol(obj)));
+      s7_varlet(sc, let, sc->is_mutable_symbol, make_boolean(sc, !is_immutable_symbol(obj)));
       if (!is_undefined(val))
 	{
 	  const char *doc = s7_documentation(sc, obj);
@@ -50642,7 +50644,7 @@ static s7_pointer vector_to_let(s7_scheme *sc, s7_pointer obj)
 		       sc->type_symbol, (is_subvector(obj)) ? cons(sc, sc->is_subvector_symbol, s7_type_of(sc, subvector_vector(obj))) : s7_type_of(sc, obj),
 		       sc->size_symbol, s7_length(sc, obj),
 		       sc->dimensions_symbol, g_vector_dimensions(sc, set_plist_1(sc, obj)),
-		       sc->is_mutable_symbol, s7_make_boolean(sc, !is_immutable_vector(obj)));
+		       sc->is_mutable_symbol, make_boolean(sc, !is_immutable_vector(obj)));
   gc_loc = gc_protect_1(sc, let);
   if (is_subvector(obj))
     {
@@ -50716,7 +50718,7 @@ static s7_pointer hash_table_to_let(s7_scheme *sc, s7_pointer obj)
 		       sc->type_symbol, sc->is_hash_table_symbol,
 		       sc->size_symbol, s7_length(sc, obj),
 		       sc->entries_symbol, make_integer(sc, hash_table_entries(obj)),
-		       sc->is_mutable_symbol, s7_make_boolean(sc, !is_immutable_hash_table(obj)));
+		       sc->is_mutable_symbol, make_boolean(sc, !is_immutable_hash_table(obj)));
   gc_loc = gc_protect_1(sc, let);
   if (is_weak_hash_table(obj))
     s7_varlet(sc, let, sc->weak_symbol, sc->T);
@@ -50751,7 +50753,7 @@ static s7_pointer iterator_to_let(s7_scheme *sc, s7_pointer obj)
     }
   let = internal_inlet(sc, 8, sc->value_symbol, obj,
 		       sc->type_symbol, sc->is_iterator_symbol,
-		       sc->at_end_symbol, s7_make_boolean(sc, iterator_is_at_end(obj)),
+		       sc->at_end_symbol, make_boolean(sc, iterator_is_at_end(obj)),
 		       sc->sequence_symbol, iterator_sequence(obj));
   gc_loc = gc_protect_1(sc, let);
   if (is_pair(seq))
@@ -50789,9 +50791,9 @@ static s7_pointer let_to_let(s7_scheme *sc, s7_pointer obj)
   let = internal_inlet(sc, 12, sc->value_symbol, obj,
 		       sc->type_symbol, sc->is_let_symbol,
 		       sc->size_symbol, s7_length(sc, obj),
-		       sc->open_symbol, s7_make_boolean(sc, is_openlet(obj)),
+		       sc->open_symbol, make_boolean(sc, is_openlet(obj)),
 		       sc->outlet_symbol, (obj == sc->rootlet) ? sc->nil : let_outlet(obj),
-		       sc->is_mutable_symbol, s7_make_boolean(sc, !is_immutable_let(obj)));
+		       sc->is_mutable_symbol, make_boolean(sc, !is_immutable_let(obj)));
   gc_loc = gc_protect_1(sc, let);
   if (obj == sc->rootlet)
     s7_varlet(sc, let, sc->alias_symbol, sc->rootlet_symbol);
@@ -50873,8 +50875,8 @@ static s7_pointer port_to_let(s7_scheme *sc, s7_pointer obj) /* note the underba
 		       /* obj as 'value means it will say "(closed)" when subsequently the let is displayed */
 		       sc->type_symbol, (is_input_port(obj)) ? sc->is_input_port_symbol : sc->is_output_port_symbol,
 		       sc->port_type_symbol, (is_string_port(obj)) ? sc->string_symbol : ((is_file_port(obj)) ? sc->file_symbol : sc->function_symbol),
-		       sc->closed_symbol, s7_make_boolean(sc, port_is_closed(obj)),
-		       sc->is_mutable_symbol, s7_make_boolean(sc, !is_immutable_port(obj)));
+		       sc->closed_symbol, make_boolean(sc, port_is_closed(obj)),
+		       sc->is_mutable_symbol, make_boolean(sc, !is_immutable_port(obj)));
   gc_loc = gc_protect_1(sc, let);
   if (is_file_port(obj))
     {
@@ -50927,7 +50929,7 @@ static s7_pointer closure_to_let(s7_scheme *sc, s7_pointer obj)
   s7_pointer let = internal_inlet(sc, 8, sc->value_symbol, obj,
 				  sc->type_symbol, (is_t_procedure(obj)) ? sc->is_procedure_symbol : sc->is_macro_symbol,
 				  sc->arity_symbol, s7_arity(sc, obj),
-				  sc->is_mutable_symbol, s7_make_boolean(sc, !is_immutable(obj)));
+				  sc->is_mutable_symbol, make_boolean(sc, !is_immutable(obj)));
   s7_int gc_loc = gc_protect_1(sc, let);
 
   if (is_pair(sig))
@@ -50981,7 +50983,7 @@ static s7_pointer c_function_to_let(s7_scheme *sc, s7_pointer obj)
   s7_pointer let = internal_inlet(sc, 8, sc->value_symbol, obj,
 				  sc->type_symbol, (is_t_procedure(obj)) ? sc->is_procedure_symbol : sc->is_macro_symbol,
 				  sc->arity_symbol, s7_arity(sc, obj),
-				  sc->is_mutable_symbol, s7_make_boolean(sc, !is_immutable(obj)));
+				  sc->is_mutable_symbol, make_boolean(sc, !is_immutable(obj)));
   s7_int gc_loc = gc_protect_1(sc, let);
 
   if (is_pair(sig))
@@ -51002,10 +51004,10 @@ static s7_pointer goto_to_let(s7_scheme *sc, s7_pointer obj)
     sc->active_symbol = make_symbol(sc, "active", 6);
   if (is_symbol(call_exit_name(obj)))
     return(internal_inlet(sc, 8, sc->value_symbol, obj, sc->type_symbol, sc->is_goto_symbol,
-			  sc->active_symbol, s7_make_boolean(sc, call_exit_active(obj)),
+			  sc->active_symbol, make_boolean(sc, call_exit_active(obj)),
 			  sc->name_symbol, call_exit_name(obj)));
   return(internal_inlet(sc, 6, sc->value_symbol, obj, sc->type_symbol, sc->is_goto_symbol,
-			sc->active_symbol, s7_make_boolean(sc, call_exit_active(obj))));
+			sc->active_symbol, make_boolean(sc, call_exit_active(obj))));
 }
 
 static s7_pointer object_to_let_p_p(s7_scheme *sc, s7_pointer obj)
@@ -51036,7 +51038,7 @@ static s7_pointer object_to_let_p_p(s7_scheme *sc, s7_pointer obj)
       return(internal_inlet(sc, 8, sc->value_symbol, obj,
 			    sc->type_symbol, sc->is_string_symbol,
 			    sc->size_symbol, str_length(sc, obj),
-			    sc->is_mutable_symbol, s7_make_boolean(sc, !is_immutable_string(obj))));
+			    sc->is_mutable_symbol, make_boolean(sc, !is_immutable_string(obj))));
     case T_PAIR:
       return(internal_inlet(sc, 6, sc->value_symbol, obj,
 			    sc->type_symbol, sc->is_pair_symbol,
@@ -82432,13 +82434,13 @@ static bool op_simple_do_1(s7_scheme *sc, s7_pointer code)
 		  }}
       else
 	{
-	/* splitting out opt_float_any_nv here saves almost nothing -- unhit in s7test or anywhere?? */
+	  /* splitting out opt_float_any_nv here saves almost nothing -- unhit in s7test or anywhere?? */
 	  if (S7_DEBUGGING) fprintf(stderr, "%d: %s\n", __LINE__, display(code));
-	for (i = start; i < stop; i++)
-	  {
-	    slot_set_value(ctr_slot, make_integer(sc, i));
-	    func(sc);
-	  }}
+	  for (i = start; i < stop; i++)
+	    {
+	      slot_set_value(ctr_slot, make_integer(sc, i));
+	      func(sc);
+	    }}
       sc->value = sc->T;
       sc->code = cdadr(code);
       return(true);
@@ -82453,19 +82455,22 @@ static bool op_simple_do_1(s7_scheme *sc, s7_pointer code)
 	{
 	  opt_info *o = sc->opts[0];
 	  if (!opt_do_copy(sc, o, stop, start + 1))
-	    {
+	    { /* (do ((i (- n 1) (- i 1))) ((< i 0) result) (vector-set! result i 0)) make_int?? */
 	      s7_pointer (*fp)(opt_info *o) = o->v[0].fp;
+	      /* if (S7_DEBUGGING) fprintf(stderr, "%d: %s\n", __LINE__, display(code)); */
 	      for (i = start; i >= stop; i--)
 		{
 		  slot_set_value(ctr_slot, make_integer(sc, i));
 		  fp(o);
 		}}}
-      else
-	for (i = start; i >= stop; i--)
-	  {
-	    slot_set_value(ctr_slot, make_integer(sc, i));
-	    func(sc);
-	  }
+      else /* (do ((i 9 (- i 1))) ((< i 0)) (set! (v i) (delay gen 0.5 i))) make-int?? */
+	{
+	  if (S7_DEBUGGING) fprintf(stderr, "%d: %s\n", __LINE__, display(code));
+	  for (i = start; i >= stop; i--)
+	    {
+	      slot_set_value(ctr_slot, make_integer(sc, i));
+	      func(sc);
+	    }}
       sc->value = sc->T;
       sc->code = cdadr(code);
       return(true);
@@ -82477,20 +82482,24 @@ static bool op_simple_do_1(s7_scheme *sc, s7_pointer code)
     {
       s7_int i, start = integer(slot_value(ctr_slot)), stop = integer(slot_value(end_slot)), incr = integer(caddr(step_expr));
       if (func == opt_cell_any_nv)
-	{
+	{ /* (do ((i 0 (+ i 2))) ((= i 20)) (display (/ i 2))) TODO: is make_integer needed? */
+	  /* (do ((i 0 (+ i 8))) ((= i 64)) (write-byte (logand (ash int (- i)) 255))) */
 	  opt_info *o = sc->opts[0];
 	  s7_pointer (*fp)(opt_info *o) = o->v[0].fp;
+	  /* if (S7_DEBUGGING) fprintf(stderr, "%d: %s\n", __LINE__, display(code)); */
 	  for (i = start; i < stop; i += incr)
 	    {
 	      slot_set_value(ctr_slot, make_integer(sc, i));
 	      fp(o);
 	    }}
       else
-	for (i = start; i < stop; i += incr)
-	  {
-	    slot_set_value(ctr_slot, make_integer(sc, i));
-	    func(sc);
-	  }
+	{
+	  if (S7_DEBUGGING) fprintf(stderr, "%d: %s\n", __LINE__, display(code));
+	  for (i = start; i < stop; i += incr)
+	    {
+	      slot_set_value(ctr_slot, make_integer(sc, i));
+	      func(sc);
+	    }}
       sc->value = sc->T;
       sc->code = cdadr(code);
       return(true);
@@ -82509,18 +82518,19 @@ static bool op_simple_do_1(s7_scheme *sc, s7_pointer code)
 	      s7_pointer (*test_fp)(opt_info *o) = o->v[4].o1->v[O_WRAP].fp;
 	      opt_info *test_o1 = o->v[4].o1;
 	      opt_info *o2 = o->v[6].o1;
+	      if (S7_DEBUGGING) fprintf(stderr, "%d: %s\n", __LINE__, display(code));
 	      for (s7_int i = start; i <= stop; i++)
 		{
 		  slot_set_value(ctr_slot, make_integer(sc, i));
 		  if (test_fp(test_o1) != sc->F) cond_value(o2);
 		}}
-	  else
+	  else /* (do ((i 0 (+ i 1))) ((> i a)) (vector-set! v i 1)) */
 	    for (s7_int i = start; i <= stop; i++)
 	      {
 		slot_set_value(ctr_slot, make_integer(sc, i));
 		fp(o);
 	      }}
-      else
+      else /*  (do ((i 0 (+ i 1))) ((> i 10)) (display i)) */
 	do {
 	  fp(o);
 	  set_car(sc->t2_1, slot_value(ctr_slot));
@@ -82530,7 +82540,7 @@ static bool op_simple_do_1(s7_scheme *sc, s7_pointer code)
 	  set_car(sc->t2_2, slot_value(end_slot));
 	} while ((sc->value = endf(sc, sc->t2_1)) == sc->F);
     }
-  else
+  else /* (do ((i 0 (+ i 1))) ((> i 3) i) (set! i (* i 10))) */
     do {
 	func(sc);
 	set_car(sc->t2_1, slot_value(ctr_slot));
@@ -82539,7 +82549,6 @@ static bool op_simple_do_1(s7_scheme *sc, s7_pointer code)
 	set_car(sc->t2_1, slot_value(ctr_slot));
 	set_car(sc->t2_2, slot_value(end_slot));
       } while ((sc->value = endf(sc, sc->t2_1)) == sc->F);
-
   sc->code = cdadr(code);
   return(true);
 }
@@ -83632,7 +83641,7 @@ static void apply_vector(s7_scheme *sc)                    /* -------- vector as
 {
   /* sc->code is the vector, sc->args is the list of indices */
   if (is_null(sc->args))                  /* (#2d((1 2) (3 4))) */
-    wrong_number_of_arguments_error_nr(sc, "vector ref: no index: (~A)", 26, sc->code);
+    wrong_number_of_arguments_error_nr(sc, "implicit vector-ref nedes an index argument: (~A)", 49, sc->code);
   if ((is_null(cdr(sc->args))) &&
       (s7_is_integer(car(sc->args))) &&
       (vector_rank(sc->code) == 1))
@@ -83650,7 +83659,7 @@ static void apply_string(s7_scheme *sc)                    /* -------- string as
 {
   if (!is_pair(sc->args))
     error_nr(sc, sc->wrong_number_of_args_symbol,
-	     set_elist_3(sc, wrap_string(sc, "string ref: no index: (~S~{~^ ~S~})", 35), sc->code, sc->args));
+	     set_elist_3(sc, wrap_string(sc, "impicit string-ref needs an index argument: (~S~{~^ ~S~})", 57), sc->code, sc->args));
   if (!is_null(cdr(sc->args)))
     error_nr(sc, sc->wrong_number_of_args_symbol,
 	     set_elist_3(sc, wrap_string(sc, "string ref: too many indices: (~S~{~^ ~S~})", 43), sc->code, sc->args));
@@ -83677,7 +83686,7 @@ static bool apply_pair(s7_scheme *sc)                       /* -------- list as 
       return(false);
     }
   if (is_null(sc->args))
-    wrong_number_of_arguments_error_nr(sc, "list ref: no index: (~S)", 24, sc->code);
+    wrong_number_of_arguments_error_nr(sc, "implicit list-ref needs an index argument: (~S)", 47, sc->code);
   sc->value = list_ref_1(sc, sc->code, car(sc->args));    /* (L 1) */
   if (!is_null(cdr(sc->args)))
     sc->value = implicit_index_checked(sc, sc->code, sc->value, sc->args);
@@ -83687,7 +83696,7 @@ static bool apply_pair(s7_scheme *sc)                       /* -------- list as 
 static void apply_hash_table(s7_scheme *sc)                /* -------- hash-table as applicable object -------- */
 {
   if (is_null(sc->args))
-    wrong_number_of_arguments_error_nr(sc, "hash-table ref: no key: (~S)", 28, sc->code);
+    wrong_number_of_arguments_error_nr(sc, "implicit hash-table-ref needs a key to lookup: (~S)", 51, sc->code);
   sc->value = s7_hash_table_ref(sc, sc->code, car(sc->args));
   if (!is_null(cdr(sc->args)))
     sc->value = implicit_index_checked(sc, sc->code, sc->value, sc->args);
@@ -83696,7 +83705,7 @@ static void apply_hash_table(s7_scheme *sc)                /* -------- hash-tabl
 static void apply_let(s7_scheme *sc)                       /* -------- environment as applicable object -------- */
 {
   if (is_null(sc->args))
-    wrong_number_of_arguments_error_nr(sc, "let ref: no field: (~S)", 23, sc->code);
+    wrong_number_of_arguments_error_nr(sc, "implicit let-ref needs a symbol to lookup: (~S)", 47, sc->code);
   sc->value = let_ref(sc, sc->code, car(sc->args));
   if (is_pair(cdr(sc->args)))
     sc->value = implicit_index_checked(sc, sc->code, sc->value, sc->args);
@@ -93876,17 +93885,17 @@ static s7_pointer s7_starlet(s7_scheme *sc, s7_int choice)
   switch (choice)
     {
     case SL_ACCEPT_ALL_KEYWORD_ARGUMENTS:  return(make_boolean(sc, sc->accept_all_keyword_arguments));
-    case SL_AUTOLOADING:                   return(s7_make_boolean(sc, sc->is_autoloading));
+    case SL_AUTOLOADING:                   return(make_boolean(sc, sc->is_autoloading));
     case SL_BIGNUM_PRECISION:              return(make_integer(sc, sc->bignum_precision));
     case SL_CATCHES:                       return(sl_active_catches(sc));
-    case SL_CPU_TIME:                      return(s7_make_real(sc, (double)clock() / (double)CLOCKS_PER_SEC)); /* cpu, not wall-clock time */
+    case SL_CPU_TIME:                      return(make_real(sc, (double)clock() / (double)CLOCKS_PER_SEC)); /* cpu, not wall-clock time */
     case SL_C_TYPES:                       return(sl_c_types(sc));
     case SL_DEBUG:                         return(make_integer(sc, sc->debug));
     case SL_DEFAULT_HASH_TABLE_LENGTH:     return(make_integer(sc, sc->default_hash_table_length));
     case SL_DEFAULT_RANDOM_STATE:          return(sc->default_random_state);
     case SL_DEFAULT_RATIONALIZE_ERROR:     return(make_real(sc, sc->default_rationalize_error));
-    case SL_EQUIVALENT_FLOAT_EPSILON:      return(s7_make_real(sc, sc->equivalent_float_epsilon));
-    case SL_EXPANSIONS:                    return(s7_make_boolean(sc, sc->is_expanding));
+    case SL_EQUIVALENT_FLOAT_EPSILON:      return(make_real(sc, sc->equivalent_float_epsilon));
+    case SL_EXPANSIONS:                    return(make_boolean(sc, sc->is_expanding));
     case SL_FILE_NAMES: case SL_FILENAMES: return(sl_file_names(sc));
     case SL_FLOAT_FORMAT_PRECISION:        return(make_integer(sc, sc->float_format_precision));
     case SL_FREE_HEAP_SIZE:                return(make_integer(sc, sc->free_heap_top - sc->free_heap));
@@ -93898,10 +93907,10 @@ static s7_pointer s7_starlet(s7_scheme *sc, s7_int choice)
     case SL_GC_STATS:                      return(make_integer(sc, sc->gc_stats));
     case SL_GC_TEMPS_SIZE:                 return(make_integer(sc, sc->gc_temps_size));
     case SL_GC_TOTAL_FREED:                return(make_integer(sc, sc->gc_total_freed));
-    case SL_HASH_TABLE_FLOAT_EPSILON:      return(s7_make_real(sc, sc->hash_table_float_epsilon));
+    case SL_HASH_TABLE_FLOAT_EPSILON:      return(make_real(sc, sc->hash_table_float_epsilon));
     case SL_HEAP_SIZE:                     return(make_integer(sc, sc->heap_size));
     case SL_HISTORY:                       return(sl_history(sc));
-    case SL_HISTORY_ENABLED:               return(s7_make_boolean(sc, s7_history_enabled(sc)));
+    case SL_HISTORY_ENABLED:               return(make_boolean(sc, s7_history_enabled(sc)));
     case SL_HISTORY_SIZE:                  return(make_integer(sc, sc->history_size));
     case SL_INITIAL_STRING_PORT_LENGTH:    return(make_integer(sc, sc->initial_string_port_length));
     case SL_MAJOR_VERSION:                 return(make_integer(sc, S7_MAJOR_VERSION));
@@ -93917,9 +93926,9 @@ static s7_pointer s7_starlet(s7_scheme *sc, s7_int choice)
     case SL_MEMORY_USAGE:                  return(memory_usage(sc));
     case SL_MOST_NEGATIVE_FIXNUM:          return(sl_int_fixup(sc, leastfix));
     case SL_MOST_POSITIVE_FIXNUM:          return(sl_int_fixup(sc, mostfix));
-    case SL_MUFFLE_WARNINGS:               return(s7_make_boolean(sc, sc->muffle_warnings));
+    case SL_MUFFLE_WARNINGS:               return(make_boolean(sc, sc->muffle_warnings));
     case SL_NUMBER_SEPARATOR:              return(chars[(int)(sc->number_separator)]);
-    case SL_OPENLETS:                      return(s7_make_boolean(sc, sc->has_openlets));
+    case SL_OPENLETS:                      return(make_boolean(sc, sc->has_openlets));
     case SL_OUTPUT_FILE_PORT_DATA_SIZE:    return(make_integer(sc, sc->output_file_port_data_size));
     case SL_PRINT_LENGTH:                  return(make_integer(sc, sc->print_length));
     case SL_PROFILE:                       return(make_integer(sc, sc->profile));
@@ -93931,8 +93940,8 @@ static s7_pointer s7_starlet(s7_scheme *sc, s7_int choice)
     case SL_STACKTRACE_DEFAULTS:           return(copy_proper_list(sc, sc->stacktrace_defaults)); /* if not copied, we can set! entries directly to garbage */
     case SL_STACK_SIZE:                    return(make_integer(sc, sc->stack_size));
     case SL_STACK_TOP:                     return(make_integer(sc, (sc->stack_end - sc->stack_start) / 4));
-    case SL_UNDEFINED_CONSTANT_WARNINGS:   return(s7_make_boolean(sc, sc->undefined_constant_warnings));
-    case SL_UNDEFINED_IDENTIFIER_WARNINGS: return(s7_make_boolean(sc, sc->undefined_identifier_warnings));
+    case SL_UNDEFINED_CONSTANT_WARNINGS:   return(make_boolean(sc, sc->undefined_constant_warnings));
+    case SL_UNDEFINED_IDENTIFIER_WARNINGS: return(make_boolean(sc, sc->undefined_identifier_warnings));
     case SL_VERSION:                       return(s7_make_string(sc, "s7 " S7_VERSION ", " S7_DATE));
     }
   return(sc->undefined);
@@ -94294,7 +94303,7 @@ static s7_pointer s7_starlet_set_1(s7_scheme *sc, s7_pointer sym, s7_pointer val
 
     case SL_HISTORY_ENABLED:       /* (set! (*s7* 'history-enabled) #f|#t) */
       if (!is_boolean(val)) s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_BOOLEAN]);
-      return(s7_make_boolean(sc, s7_set_history_enabled(sc, s7_boolean(sc, val))));
+      return(make_boolean(sc, s7_set_history_enabled(sc, s7_boolean(sc, val))));
 
     case SL_HISTORY_SIZE:
       iv = s7_integer_clamped_if_gmp(sc, sl_integer_geq_0(sc, sym, val));
@@ -97412,6 +97421,13 @@ int main(int argc, char **argv)
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * add wasm test to test suite somehow (at least emscripten)
- * op_simple_do_1 make_integer? s7tests don't hit the make/wrap-integer choice. Get examples of other cases
- * t718 let-ref error
+ * dw/catch/counter don't need to be in the heap -- separate free lists?
+ *   gc sweep, preset to unmarked??, mark all, any not marked are free -- gc_mark doesn't care about permanent/heap, maybe post clear not pre
+ *   sc->active_counters, sc->free_counters, semipermanent allocs, debugging check free list for gc-mark (in general?)
+ *   same for slot?? random_state? cc/goto? c_pointer c_object
+ *     known slot with mutable value: int/real etc
+ *   get stats on max allocated counters/catches/gotos etc between gc's [count as gc runs over heap, or use memory_usage code + max vars in sc]
+ * quote as bit?
+ * d_p_f exists [clm3xen/vct/ffitest] -- real|imag_part, magnitude, maybe need d_7p? remember gmp (float? as car(sig))
+ * check simple eval case eval_args*
  */
