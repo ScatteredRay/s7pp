@@ -2091,7 +2091,7 @@ static void init_types(void)
 #define is_free(p)                     (type(p) == T_FREE)
 #define is_free_and_clear(p)           (full_type(p) == T_FREE)
 #define is_simple(P)                   t_simple_p[type(P)]  /* eq? */
-#define has_structure(P)               ((t_structure_p[type(P)]) && ((!is_normal_vector(P)) || (!has_simple_elements(P))))
+#define has_structure(P)               ((t_structure_p[type(P)]) && ((!is_t_vector(P)) || (!has_simple_elements(P))))
 
 #define is_any_macro(P)                t_any_macro_p[type(P)]
 #define is_any_closure(P)              t_any_closure_p[type(P)]
@@ -2553,7 +2553,7 @@ static void init_types(void)
 
 #define T_TYPED_VECTOR                 T_HAS_LET_FILE
 #define is_typed_vector(p)             has_type1_bit(T_Nvc(p), T_TYPED_VECTOR)
-#define is_normal_typed_vector(p)      ((is_normal_vector(p)) && (is_typed_vector(p)))
+#define is_typed_t_vector(p)           ((is_t_vector(p)) && (is_typed_vector(p)))
 #define set_typed_vector(p)            set_type1_bit(T_Nvc(p), T_TYPED_VECTOR)
 #define clear_typed_vector(p)          clear_type1_bit(T_Nvc(p), T_TYPED_VECTOR)
 
@@ -3062,6 +3062,7 @@ static void check_set_cdr(s7_pointer p, s7_pointer Val, const char *func, int32_
 #define character_name_length(p)       (T_Chr(p))->object.chr.length
 
 #define optimize_op(P)                 (T_Ext(P))->tf.opts.opt_choice
+#define unchecked_optimize_op(P)       (P)->tf.opts.opt_choice
 #define set_optimize_op(P, Op)         (T_Ext(P))->tf.opts.opt_choice = (Op) /* not T_Pair -- needs legit cur_sc in init_chars|strings */
 #define OP_HOP_MASK                    0xfffe
 #define optimize_op_match(P, Q)        ((is_optimized(P)) && ((optimize_op(P) & OP_HOP_MASK) == (Q)))
@@ -3259,7 +3260,7 @@ static s7_int let_id(s7_pointer p) {if (p == cur_sc->rootlet) {fprintf(stderr, "
 #define eof_name_length(p)             (T_Eof(p))->object.eof.len
 
 #define is_any_vector(p)               t_vector_p[type(p)]
-#define is_normal_vector(p)            (type(p) == T_VECTOR)
+#define is_t_vector(p)                 (type(p) == T_VECTOR)
 #define vector_length(p)               (p)->object.vector.length
 #define unchecked_vector_elements(p)   (p)->object.vector.elements.objects
 #define unchecked_vector_element(p, i) ((p)->object.vector.elements.objects[i])
@@ -4872,7 +4873,7 @@ static char *describe_type_bits(s7_scheme *sc, s7_pointer obj)
 						      " ?24?"))))) : "",
 	  /* bit 25+24 */
 	  ((full_typ & T_FULL_HAS_LET_FILE) != 0) ? ((is_let(obj)) ? " has-let-file" :
-						     ((is_normal_vector(obj)) ? " typed-vector" :
+						     ((is_t_vector(obj)) ? " typed-vector" :
 						      ((is_hash_table(obj)) ? " typed-hash-table" :
 						       ((is_c_function(obj)) ? " has-bool-setter" :
 							((is_slot(obj)) ? " rest-slot" :
@@ -4910,7 +4911,7 @@ static char *describe_type_bits(s7_scheme *sc, s7_pointer obj)
 						  ((is_pair(obj)) ? " fx-treeable" :
 						   " ?31?")) : "",
 	  /* bit 32+24 */
-	  ((full_typ & T_FULL_SIMPLE_ELEMENTS) != 0) ? ((is_normal_vector(obj)) ? " simple-elements" :
+	  ((full_typ & T_FULL_SIMPLE_ELEMENTS) != 0) ? ((is_t_vector(obj)) ? " simple-elements" :
 							((is_hash_table(obj)) ? " simple-keys" :
 							 ((is_normal_symbol(obj)) ? " safe-setter" :
 							  ((is_pair(obj)) ? " float-optable" :
@@ -4939,7 +4940,9 @@ static char *describe_type_bits(s7_scheme *sc, s7_pointer obj)
 
   buf = (char *)Malloc(1024);
   snprintf(buf, 1024, "type: %s? (%d), opt_op: %d %s, flags: #x%" PRIx64 "%s",
-	   type_name(sc, obj, NO_ARTICLE), typ, optimize_op(obj), (optimize_op(obj) < NUM_OPS) ? op_names[optimize_op(obj)] : "", full_typ, str);
+	   type_name(sc, obj, NO_ARTICLE), typ, 
+	   unchecked_optimize_op(obj), (unchecked_optimize_op(obj) < NUM_OPS) ? op_names[unchecked_optimize_op(obj)] : "", full_typ, 
+	   str);
   return(buf);
 }
 
@@ -5011,7 +5014,7 @@ static bool has_odd_bits(s7_pointer obj)
       (!is_hash_table(obj)) && (!is_let(obj)) && (!is_syntax(obj)))
     return(true);
   if (((full_typ & T_FULL_HAS_LET_FILE) != 0) &&
-      (!is_let(obj)) && (!is_normal_vector(obj)) && (!is_hash_table(obj)) && (!is_c_function(obj)) &&
+      (!is_let(obj)) && (!is_t_vector(obj)) && (!is_hash_table(obj)) && (!is_c_function(obj)) &&
       (!is_slot(obj)) && (!is_pair(obj)) && (!is_closure_star(obj)))
     return(true);
   if (((full_typ & T_SAFE_STEPPER) != 0) &&
@@ -5031,7 +5034,7 @@ static bool has_odd_bits(s7_pointer obj)
       (!is_let(obj)) && (!is_symbol(obj)) && (!is_string(obj)) && (!is_hash_table(obj)) && (!is_pair(obj)) && (!is_any_vector(obj)))
     return(true);
   if (((full_typ & T_FULL_SIMPLE_ELEMENTS) != 0) &&
-      (!is_normal_vector(obj)) && (!is_hash_table(obj)) && (!is_normal_symbol(obj)) && (!is_pair(obj)) && (unchecked_type(obj) < T_C_MACRO))
+      (!is_t_vector(obj)) && (!is_hash_table(obj)) && (!is_normal_symbol(obj)) && (!is_pair(obj)) && (unchecked_type(obj) < T_C_MACRO))
     return(true);
   if (((full_typ & T_HAS_METHODS) != 0) &&
       (!is_let(obj)) && (!is_c_object(obj)) && (!is_any_closure(obj)) && (!is_any_macro(obj)) && (!is_c_pointer(obj)))
@@ -5341,11 +5344,11 @@ static void print_gc_info(s7_scheme *sc, s7_pointer obj, int32_t line)
 	s7_int free_type = full_type(obj);
 	char *bits;
 	char fline[128];
-	set_full_type(obj, obj->alloc_type);
+	full_type(obj) = obj->alloc_type; /* not set_full_type here!  it clobbers existing alloc/free info */
 	sc->printing_gc_info = true;
 	bits = describe_type_bits(sc, obj); /* this func called in type macro */
 	sc->printing_gc_info = false;
-	set_full_type(obj, free_type);
+	full_type(obj) = free_type;
 	if (obj->explicit_free_line > 0)
 	  snprintf(fline, 128, ", freed at %d, ", obj->explicit_free_line);
 	fprintf(stderr, "%s%p is free (line %d, alloc type: %s %" ld64 " #x%" PRIx64 " (%s)), alloc: %s[%d], %sgc: %s[%d]%s",
@@ -7374,11 +7377,22 @@ static void mark_output_port(s7_pointer p)
     gc_mark(port_string_or_function(p));
 }
 
+static void mark_free(s7_pointer p) 
+{
+#if S7_DEBUGGING
+  bool old_stop = cur_sc->stop_at_error;
+  cur_sc->stop_at_error = false;
+  fprintf(stderr, "GC mark free: ");
+  print_gc_info(cur_sc, p, __LINE__);
+  cur_sc->stop_at_error = old_stop;
+#endif
+}
+
 #define clear_type(p) full_type(p) = T_FREE
 
 static void init_mark_functions(void)
 {
-  mark_function[T_FREE]                = mark_noop;
+  mark_function[T_FREE]                = mark_free;
   mark_function[T_UNDEFINED]           = just_mark;
   mark_function[T_EOF]                 = mark_noop;
   mark_function[T_UNSPECIFIED]         = mark_noop;
@@ -12011,6 +12025,7 @@ static bool check_for_dynamic_winds(s7_scheme *sc, s7_pointer c)
 			dynamic_wind_state(x) = DWIND_FINISH;
 			if (dynamic_wind_out(x) != sc->F)
 			  sc->value = s7_call(sc, dynamic_wind_out(x), sc->nil);
+			/* free_cell is unsafe here and below */
 		      }}
 		else let_temp_done(sc, stack_args(sc->stack, i), T_Lid(stack_let(sc->stack, i)));
 	      }}
@@ -18181,7 +18196,7 @@ static s7_pointer big_expt(s7_scheme *sc, s7_pointer args)
 	    division_by_zero_error_2_nr(sc, sc->expt_symbol, x, y);
 	}
       else
-	if (is_negative(sc, real_part_p_p(sc, y))) /* make_real in t_complex case, but does it matter if WITH_GMP? */
+	if (s7_real_part(y) < 0.0)
 	  division_by_zero_error_2_nr(sc, sc->expt_symbol, x, y);
       
       if ((is_rational(x)) && (is_rational(y)))
@@ -32471,7 +32486,7 @@ static shared_info_t *make_shared_info(s7_scheme *sc, s7_pointer top, bool stop_
       if (no_problem) return(NULL);
     }
   else
-    if (is_normal_vector(top)) /* any other vector can't happen */
+    if (is_t_vector(top)) /* any other vector can't happen */
       {
 	stop_len = vector_length(top);
 	if ((stop_at_print_length) &&
@@ -32506,7 +32521,7 @@ static shared_info_t *make_shared_info(s7_scheme *sc, s7_pointer top, bool stop_
 	  if (no_problem) return(NULL);
 	}
 #endif
-  if ((S7_DEBUGGING) && (is_any_vector(top)) && (!is_normal_vector(top))) fprintf(stderr, "%s[%d]: got abnormal vector\n", __func__, __LINE__);
+  if ((S7_DEBUGGING) && (is_any_vector(top)) && (!is_t_vector(top))) fprintf(stderr, "%s[%d]: got abnormal vector\n", __func__, __LINE__);
 
   {
     shared_info_t *ci = new_shared_info(sc);
@@ -36298,10 +36313,9 @@ static s7_pointer format_to_port_1(s7_scheme *sc, s7_pointer port, const char *s
 		    if (is_pair(curly_arg))                    /* (format #f "~{~A ~}" #()) -> "" */
 		      {
 			char *curly_str = NULL;                /* this is the local (nested) format control string */
-			s7_pointer orig_arg, cycle_arg;
+			s7_pointer cycle_arg;
 
 			fdat->curly_arg = curly_arg;
-			orig_arg = (curly_arg != car(fdat->args)) ? curly_arg : sc->nil;
 			if (curly_len > fdat->curly_len)
 			  {
 			    if (fdat->curly_str) free(fdat->curly_str);
@@ -36339,12 +36353,7 @@ static s7_pointer format_to_port_1(s7_scheme *sc, s7_pointer port, const char *s
 			    curly_arg = new_arg;
 			  }
 			fdat->curly_arg = sc->nil;
-			while (is_pair(orig_arg)) /* free_cell below clears the type, so a circular list here is ok */
- 			  {
- 			    s7_pointer p = orig_arg;
- 			    orig_arg = cdr(orig_arg);
- 			    free_cell(sc, p);   /* if car(fdar->args) is a hash-table, we could also free_cell(car(p)), but not in any other case */
-			  }}
+		      }
 		    else
 		      if (!is_null(curly_arg))
 			format_error_nr(sc, "'{' directive argument should be a list or something we can turn into a list", 76, str, args, fdat);
@@ -40001,7 +40010,7 @@ static s7_pointer g_vector_fill_1(s7_scheme *sc, s7_pointer caller, s7_pointer a
 
   fill = cadr(args);
 
-  if ((is_normal_typed_vector(x)) &&
+  if ((is_typed_t_vector(x)) &&
       (typed_vector_typer_call(sc, x, set_plist_1(sc, fill)) == sc->F))
     {
       const char *tstr = make_type_name(sc, typed_vector_typer_name(sc, x), INDEFINITE_ARTICLE);
@@ -40034,7 +40043,7 @@ static s7_pointer g_vector_fill_1(s7_scheme *sc, s7_pointer caller, s7_pointer a
   if ((start == 0) && (end == vector_length(x)))
     s7_vector_fill(sc, x, fill);
   else
-    if (is_normal_vector(x))
+    if (is_t_vector(x))
       for (s7_int i = start; i < end; i++) vector_element(x, i) = fill;
     else
       if (is_int_vector(x))
@@ -40347,7 +40356,7 @@ static s7_pointer g_vector_to_list(s7_scheme *sc, s7_pointer args)
   check_free_heap_size(sc, end - start);
   sc->w = sc->nil;
   gc_protect_via_stack(sc, vec);
-  if (is_normal_vector(vec))
+  if (is_t_vector(vec))
     for (i = end - 1; i >= start; i--) sc->w = cons_unchecked(sc, vector_element(vec, i), sc->w);
   else for (i = end - 1; i >= start; i--) sc->w = cons_unchecked(sc, vector_getter(vec)(sc, vec, i), sc->w);
   unstack_gc_protect(sc);
@@ -40700,7 +40709,7 @@ static s7_pointer subvector(s7_scheme *sc, s7_pointer vect, s7_int skip_dims, s7
       vector_set_dimension_info(x, NULL);
       subvector_set_vector(x, vect);
     }
-  if (is_normal_vector(vect))
+  if (is_t_vector(vect))
     mark_function[T_VECTOR] = mark_vector_possibly_shared;
   else mark_function[type(vect)] = mark_int_or_float_vector_possibly_shared;
 
@@ -40711,7 +40720,7 @@ static s7_pointer subvector(s7_scheme *sc, s7_pointer vect, s7_int skip_dims, s7
     if (is_float_vector(vect))
       float_vector_floats(x) = (s7_double *)(float_vector_floats(vect) + index);
     else
-      if (is_normal_vector(vect))
+      if (is_t_vector(vect))
 	vector_elements(x) = (s7_pointer *)(vector_elements(vect) + index);
       else byte_vector_bytes(x) = (uint8_t *)(byte_vector_bytes(vect) + index);
   add_multivector(sc, x);
@@ -40818,7 +40827,7 @@ a vector that points to the same elements as the original-vector but with differ
 	      vdims_original(v) = orig;
 	    }}}
 
-  if (is_normal_vector(orig))
+  if (is_t_vector(orig))
     mark_function[T_VECTOR] = mark_vector_possibly_shared;
   else mark_function[type(orig)] = mark_int_or_float_vector_possibly_shared; /* I think this works for byte-vectors also */
 
@@ -40827,7 +40836,7 @@ a vector that points to the same elements as the original-vector but with differ
   vector_set_dimension_info(x, v);
   if (!v) subvector_set_vector(x, orig);
   vector_length(x) = new_len;                 /* might be less than original length */
-  if ((new_len == 0) && (is_normal_vector(orig))) set_has_simple_elements(x);
+  if ((new_len == 0) && (is_t_vector(orig))) set_has_simple_elements(x);
   vector_getter(x) = vector_getter(orig);
   vector_setter(x) = vector_setter(orig);
 
@@ -40837,7 +40846,7 @@ a vector that points to the same elements as the original-vector but with differ
     if (is_float_vector(orig))
       float_vector_floats(x) = (s7_double *)(float_vector_floats(orig) + offset);
     else
-      if (is_normal_vector(x))
+      if (is_t_vector(x))
 	vector_elements(x) = (s7_pointer *)(vector_elements(orig) + offset);
       else byte_vector_bytes(x) = (uint8_t *)(byte_vector_bytes(orig) + offset);
   add_multivector(sc, x);
@@ -40871,7 +40880,7 @@ static s7_pointer vector_ref_1(s7_scheme *sc, s7_pointer vect, s7_pointer indice
       if (is_not_null(x))
 	{
 	  s7_pointer nv;
-	  if (!is_normal_vector(vect))
+	  if (!is_t_vector(vect))
 	    error_nr(sc, sc->wrong_number_of_args_symbol,
 		     set_elist_3(sc, wrap_string(sc, "~S: too many indices: ~S", 24), sc->vector_ref_symbol, copy_proper_list(sc, indices)));
 	  nv = vector_element(vect, index);
@@ -40896,7 +40905,7 @@ static s7_pointer vector_ref_1(s7_scheme *sc, s7_pointer vect, s7_pointer indice
       if (is_not_null(cdr(indices)))                /* (let ((L #(#(1 2 3) #(4 5 6)))) (vector-ref L 1 2)) */
 	{
 	  s7_pointer nv;
-	  if (!is_normal_vector(vect))
+	  if (!is_t_vector(vect))
 	    error_nr(sc, sc->wrong_number_of_args_symbol,
 		     set_elist_3(sc, wrap_string(sc, "~S: too many indices: ~S", 24), sc->vector_ref_symbol, copy_proper_list(sc, indices)));
 	  nv = vector_element(vect, index);
@@ -40918,7 +40927,7 @@ static s7_pointer g_vector_ref(s7_scheme *sc, s7_pointer args)
 
 static s7_pointer vector_ref_p_pi(s7_scheme *sc, s7_pointer v, s7_int i)
 {
-  if ((!is_normal_vector(v)) ||
+  if ((!is_t_vector(v)) ||
       (vector_rank(v) > 1) ||
       (i < 0) || (i >= vector_length(v)))
     return(g_vector_ref(sc, set_plist_2(sc, v, make_integer(sc, i))));
@@ -40964,7 +40973,7 @@ static s7_pointer normal_vector_ref_p_pi_direct(s7_scheme *unused_sc, s7_pointer
 static inline s7_pointer vector_ref_p_pp(s7_scheme *sc, s7_pointer vec, s7_pointer ind)
 {
   s7_int index;
-  if ((!is_normal_vector(vec)) ||
+  if ((!is_t_vector(vec)) ||
       (vector_rank(vec) != 1) ||
       (!s7_is_integer(ind)))
     return(g_vector_ref(sc, set_plist_2(sc, vec, ind)));
@@ -41076,9 +41085,9 @@ static s7_pointer g_vector_set(s7_scheme *sc, s7_pointer args)
 	}
       val = caddr(args);
     }
-  if (is_normal_typed_vector(vec))
+  if (is_typed_t_vector(vec))
     return(typed_vector_setter(sc, vec, index, val));
-  if (is_normal_vector(vec))
+  if (is_t_vector(vec))
     vector_element(vec, index) = val;
   else vector_setter(vec)(sc, vec, index, val);
   return(val);
@@ -41088,7 +41097,7 @@ static s7_pointer vector_set_p_pip(s7_scheme *sc, s7_pointer v, s7_int i, s7_poi
 {
   if ((!is_any_vector(v)) || (vector_rank(v) > 1) || (i < 0) || (i >= vector_length(v)))
     return(g_vector_set(sc, set_plist_3(sc, v, make_integer(sc, i), p)));
-  if (is_normal_vector(v))
+  if (is_t_vector(v))
     {
       if (is_typed_vector(v)) return(typed_vector_setter(sc, v, i, p));
       vector_element(v, i) = p;
@@ -41112,7 +41121,7 @@ static s7_pointer vector_set_p_piip(s7_scheme *sc, s7_pointer v, s7_int i1, s7_i
       (i1 < 0) || (i2 < 0) ||
       (i1 >= vector_dimension(v, 0)) || (i2 >= vector_dimension(v, 1)))
     return(g_vector_set(sc, set_plist_4(sc, v, make_integer(sc, i1), make_integer_unchecked(sc, i2), p)));
-  if (is_normal_vector(v))
+  if (is_t_vector(v))
     {
       if (is_typed_vector(v))
 	return(typed_vector_setter(sc, v, i2 + (i1 * vector_offset(v, 0)), p));
@@ -41177,9 +41186,9 @@ static s7_pointer g_vector_set_3(s7_scheme *sc, s7_pointer args)
     out_of_range_error_nr(sc, sc->vector_set_symbol, int_two, wrap_integer(sc, index), (index < 0) ? it_is_negative_string : it_is_too_large_string);
 
   val = caddr(args);
-  if (is_normal_typed_vector(vec))
+  if (is_typed_t_vector(vec))
     return(typed_vector_setter(sc, vec, index, val));
-  if (is_normal_vector(vec))
+  if (is_t_vector(vec))
     vector_element(vec, index) = val;
   else vector_setter(vec)(sc, vec, index, val);
   return(val);
@@ -41189,7 +41198,7 @@ static s7_pointer vector_set_p_ppp(s7_scheme *sc, s7_pointer vec, s7_pointer ind
 {
   s7_int index;
 
-  if ((!is_normal_vector(vec)) || (vector_rank(vec) > 1))
+  if ((!is_t_vector(vec)) || (vector_rank(vec) > 1))
     return(g_vector_set(sc, set_plist_3(sc, vec, ind, val)));
   if (is_immutable_vector(vec))
     immutable_object_error_nr(sc, set_elist_3(sc, immutable_error_string, sc->vector_set_symbol, vec));
@@ -41221,9 +41230,9 @@ static s7_pointer g_vector_set_4(s7_scheme *sc, s7_pointer args)
       (i1 >= vector_dimension(v, 0)) || (i2 >= vector_dimension(v, 1)))
     return(g_vector_set(sc, args));
   val = cadddr(args);
-  if (is_normal_typed_vector(v))
+  if (is_typed_t_vector(v))
     return(typed_vector_setter(sc, v, i2 + (i1 * vector_offset(v, 0)), val));
-  if (is_normal_vector(v))
+  if (is_t_vector(v))
     vector_element(v, i2 + (i1 * vector_offset(v, 0))) = val;
   else vector_setter(v)(sc, v, i2 + (i1 * vector_offset(v, 0)), val);
   return(val);
@@ -41691,7 +41700,7 @@ static s7_pointer g_vector_typer(s7_scheme *sc, s7_pointer args)
   if (!is_any_vector(v))
     return(sole_arg_method_or_bust(sc, v, sc->vector_typer_symbol, args, sc->type_names[T_VECTOR]));
 
-  if (is_normal_typed_vector(v)) return(typed_vector_typer(v));
+  if (is_typed_t_vector(v)) return(typed_vector_typer(v));
   if (is_float_vector(v)) return(global_value(sc->is_float_symbol));
   if (is_int_vector(v)) return(global_value(sc->is_integer_symbol));
   if (is_byte_vector(v)) return(global_value(sc->is_byte_symbol));
@@ -41707,7 +41716,7 @@ static s7_pointer g_set_vector_typer(s7_scheme *sc, s7_pointer args)
   if (is_immutable_vector(v))
     immutable_object_error_nr(sc, set_elist_2(sc, wrap_string(sc, "~S is immutable so its vector-typer can't be set!", 49), v));
 
-  if (!is_normal_vector(v))
+  if (!is_t_vector(v))
     {
       if (((is_int_vector(v)) && (typer != global_value(sc->is_integer_symbol))) ||
 	  ((is_float_vector(v)) && (typer != global_value(sc->is_float_symbol))) ||
@@ -41899,7 +41908,7 @@ static Vectorized s7_pointer s7_vector_copy_1(s7_scheme *sc, s7_pointer old_vect
   s7_int len = vector_length(old_vect);
   s7_pointer new_vect;
 
-  if (is_normal_vector(old_vect))
+  if (is_t_vector(old_vect))
     {
       s7_pointer *src = (s7_pointer *)vector_elements(old_vect), *dst;
       if ((is_typed_vector(old_vect)) && (len > 0)) /* preserve the type info as well */
@@ -46406,22 +46415,23 @@ static void op_unwind_input(s7_scheme *sc)
 
 static bool op_dynamic_wind(s7_scheme *sc)
 {
-  if (SHOW_EVAL_OPS) fprintf(stderr, "  %s[%d]: %s\n", __func__, __LINE__, display_80(sc->code));
-  if (dynamic_wind_state(sc->code) == DWIND_INIT)
+  s7_pointer dwind = T_Dyn(sc->code);
+  if (SHOW_EVAL_OPS) fprintf(stderr, "  %s[%d]: %s\n", __func__, __LINE__, display_80(dwind));
+  if (dynamic_wind_state(dwind) == DWIND_INIT)
     {
-      dynamic_wind_state(sc->code) = DWIND_BODY;
-      push_stack(sc, OP_DYNAMIC_WIND, sc->nil, sc->code);
-      sc->code = dynamic_wind_body(sc->code);
+      dynamic_wind_state(dwind) = DWIND_BODY;
+      push_stack(sc, OP_DYNAMIC_WIND, sc->nil, dwind);
+      sc->code = dynamic_wind_body(dwind);
       sc->args = sc->nil;
       return(true); /* goto apply */
     }
-  if (dynamic_wind_state(sc->code) == DWIND_BODY)
+  if (dynamic_wind_state(dwind) == DWIND_BODY)
     {
-      dynamic_wind_state(sc->code) = DWIND_FINISH;
-      if (dynamic_wind_out(sc->code) != sc->F)
+      dynamic_wind_state(dwind) = DWIND_FINISH;
+      if (dynamic_wind_out(dwind) != sc->F)
 	{
-	  push_stack(sc, OP_DYNAMIC_WIND, sc->value, sc->code);
-	  sc->code = dynamic_wind_out(sc->code);
+	  push_stack(sc, OP_DYNAMIC_WIND, sc->value, dwind);
+	  sc->code = dynamic_wind_out(dwind);
 	  sc->args = sc->nil;
 	  return(true);
 	}
@@ -48168,7 +48178,7 @@ static bool iterator_equal_1(s7_scheme *sc, s7_pointer x, s7_pointer y, shared_i
 	     (iterator_position(x) == iterator_position(y)) &&
 	     (iterator_length(x) == iterator_length(y)) &&
 	     ((equivalent) ? (vector_equivalent(sc, x_seq, y_seq, ci)) :
-	      ((is_normal_vector(x_seq)) ? (vector_equal(sc, x_seq, y_seq, ci)) :
+	      ((is_t_vector(x_seq)) ? (vector_equal(sc, x_seq, y_seq, ci)) :
 	       ((is_float_vector(x_seq)) ? (float_vector_equal(sc, x_seq, y_seq, ci)) :
 		((is_int_vector(x_seq)) ? (int_vector_equal(sc, x_seq, y_seq, ci)) :
 		 (byte_vector_equal(sc, x_seq, y_seq, ci)))))));
@@ -49424,7 +49434,7 @@ static s7_pointer s7_copy_1(s7_scheme *sc, s7_pointer caller, s7_pointer args)
 		  dst[j] = character(car(p));
 		}}
 	  else
-	    if ((is_normal_vector(dest)) && (set != typed_vector_setter))
+	    if ((is_t_vector(dest)) && (set != typed_vector_setter))
 	      {
 		s7_pointer *els = vector_elements(dest);
 		for (/* i = start */ j = 0; i < end; i++, j++, p = cdr(p))
@@ -49499,7 +49509,7 @@ static s7_pointer s7_copy_1(s7_scheme *sc, s7_pointer caller, s7_pointer args)
 		for (i = start; i < end; i++, slot = next_slot(slot))
 		  s7_hash_table_set(sc, dest, slot_symbol(slot), slot_value(slot)); /* if value=#f, dest will not contain symbol */
 	      else
-		if ((is_normal_vector(dest)) && (set != typed_vector_setter))
+		if ((is_t_vector(dest)) && (set != typed_vector_setter))
 		  {
 		    s7_pointer *els = vector_elements(dest);
 		    check_free_heap_size(sc, end - start);
@@ -49617,7 +49627,7 @@ static s7_pointer s7_copy_1(s7_scheme *sc, s7_pointer caller, s7_pointer args)
       {
 	s7_double *src = float_vector_floats(source);
 	/* int-vector destination can't normally work, fractional parts get rounded away */
-	if ((is_normal_vector(dest)) && (!is_typed_vector(dest)))
+	if ((is_t_vector(dest)) && (!is_typed_vector(dest)))
 	  {
 	    s7_pointer *dst = vector_elements(dest);
 	    check_free_heap_size(sc, end - start);
@@ -49637,7 +49647,7 @@ static s7_pointer s7_copy_1(s7_scheme *sc, s7_pointer caller, s7_pointer args)
 	      dst[j] = (s7_double)(src[i]);
 	    return(dest);
 	  }
-	if ((is_normal_vector(dest)) && (!is_typed_vector(dest)))
+	if ((is_t_vector(dest)) && (!is_typed_vector(dest)))
 	  /* TODO: this could check that the typer is integer? (similarly elsewhere): (typed_vector_typer(dest) != global_value(sc->is_integer_symbol)) ? */
 	  {
 	    s7_pointer *dst = vector_elements(dest);
@@ -49669,7 +49679,7 @@ static s7_pointer s7_copy_1(s7_scheme *sc, s7_pointer caller, s7_pointer args)
       break;
 
     case T_BYTE_VECTOR:
-      if ((is_normal_vector(dest)) && (!is_typed_vector(dest)))
+      if ((is_t_vector(dest)) && (!is_typed_vector(dest)))
 	{
 	  s7_pointer *dst = vector_elements(dest);
 	  check_free_heap_size(sc, end - start);
@@ -49694,7 +49704,7 @@ static s7_pointer s7_copy_1(s7_scheme *sc, s7_pointer caller, s7_pointer args)
       break;
 
     case T_STRING:
-      if ((is_normal_vector(dest))  && (!is_typed_vector(dest)))
+      if ((is_t_vector(dest))  && (!is_typed_vector(dest)))
 	{
 	  s7_pointer *dst = vector_elements(dest);
 	  for (i = start, j = 0; i < end; i++, j++)
@@ -50283,7 +50293,7 @@ static s7_pointer vector_append(s7_scheme *sc, s7_pointer args, uint8_t typ, s7_
       s7_int n = sequence_length(sc, x);
       if (n > 0)
 	{
-	  if ((typed) && (is_normal_typed_vector(x)))
+	  if ((typed) && (is_typed_t_vector(x)))
 	    {
 	      if (!vtyper)
 		vtyper = typed_vector_typer(x);
@@ -50659,7 +50669,7 @@ static s7_pointer vector_to_let(s7_scheme *sc, s7_pointer obj)
       s7_varlet(sc, let, sc->position_symbol, make_integer(sc, pos));
       s7_varlet(sc, let, sc->original_vector_symbol, subvector_vector(obj));
     }
-  if (is_normal_typed_vector(obj))
+  if (is_typed_t_vector(obj))
     s7_varlet(sc, let, sc->signature_symbol, g_signature(sc, set_plist_1(sc, obj)));
   s7_gc_unprotect_at(sc, gc_loc);
   return(let);
@@ -53681,7 +53691,7 @@ static s7_pointer g_exit(s7_scheme *sc, s7_pointer args)
   for (int64_t i = stack_top(sc) - 1; i > 0; i -= 4)
     if (stack_op(sc->stack, i) == OP_DYNAMIC_WIND)
       {
-	s7_pointer dwind = stack_code(sc->stack, i);
+	s7_pointer dwind = T_Dyn(stack_code(sc->stack, i));
 	if (dynamic_wind_state(dwind) == DWIND_BODY) /* otherwise init func never ran? */
 	  {
 	    dynamic_wind_state(dwind) = DWIND_FINISH;
@@ -55395,13 +55405,13 @@ static s7_pointer fx_vref_s_add(s7_scheme *sc, s7_pointer arg)
 
 static inline s7_pointer fx_vref_vref_3(s7_scheme *sc, s7_pointer v1, s7_pointer p1, s7_pointer p2)
 {
-  if ((is_t_integer(p1)) && (is_t_integer(p2)) && ((is_normal_vector(v1)) && (vector_rank(v1) == 1)))
+  if ((is_t_integer(p1)) && (is_t_integer(p2)) && ((is_t_vector(v1)) && (vector_rank(v1) == 1)))
     {
       s7_int i1 = integer(p1), i2 = integer(p2);
       if ((i1 >= 0) && (i2 >= 0) && (i1 < vector_length(v1)))
 	{
 	  s7_pointer v2 = vector_element(v1, i1);
-	  if ((is_normal_vector(v2)) && (vector_rank(v2) == 1) && (i2 < vector_length(v2)))
+	  if ((is_t_vector(v2)) && (vector_rank(v2) == 1) && (i2 < vector_length(v2)))
 	    return(vector_element(v2, i2));
 	}}
   return(vector_ref_p_pp(sc, vector_ref_p_pp(sc, v1, p1), p2));
@@ -55661,7 +55671,7 @@ static s7_pointer fx_vref_p1(s7_scheme *sc, s7_pointer arg)
 {
   s7_pointer i = lookup(sc, opt3_sym(arg));
   s7_pointer v = lookup(sc, cadr(arg));
-  if ((is_t_integer(i)) && (is_normal_vector(v)) && (vector_rank(v) == 1))
+  if ((is_t_integer(i)) && (is_t_vector(v)) && (vector_rank(v) == 1))
     {
       s7_int index = integer(i) + 1;
       if ((index >= 0) && (vector_length(v) > index))
@@ -55985,7 +55995,7 @@ static s7_pointer fx_sub_vref2(s7_scheme *sc, s7_pointer arg)
   s7_pointer v1 = lookup(sc, car(a1));
   s7_pointer p1 = lookup(sc, cadr(a1));
   s7_pointer p2 = lookup(sc, opt3_sym(arg)); /* caddaddr(arg)); */
-  if ((is_t_integer(p1)) && (is_t_integer(p2)) && ((is_normal_vector(v1)) && (vector_rank(v1) == 1)))
+  if ((is_t_integer(p1)) && (is_t_integer(p2)) && ((is_t_vector(v1)) && (vector_rank(v1) == 1)))
     {
       s7_int i1 = integer(p1), i2 = integer(p2);
       if ((i1 >= 0) && (i1 <= vector_length(v1)) && (i2 >= 0) && (i2 < vector_length(v1)))
@@ -56571,7 +56581,7 @@ static s7_pointer fx_and_or_2a_vref(s7_scheme *sc, s7_pointer arg)
   s7_pointer or1 = cadr(arg);
   s7_pointer arg11 = cdadr(or1);
   s7_pointer v = lookup(sc, cadar(arg11));
-  if ((is_normal_vector(v)) && (vector_rank(v) == 1))
+  if ((is_t_vector(v)) && (vector_rank(v) == 1))
     {
       s7_pointer ip = lookup(sc, opt3_sym(or1));
       s7_pointer jp = lookup(sc, opt1_sym(or1));
@@ -60098,7 +60108,7 @@ static bool d_7pi_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 	    {
 	      s7_pointer v = slot_value(v_slot);
 	      if ((is_float_vector(v)) || 
-		  ((is_normal_typed_vector(v)) && (typed_vector_typer_symbol(sc, v) == sc->is_float_symbol)))
+		  ((is_typed_t_vector(v)) && (typed_vector_typer_symbol(sc, v) == sc->is_float_symbol)))
 		{
 		  ifunc = float_vector_ref_d_7pi;
 		  if (is_float_vector(v)) s_func = initial_value(sc->float_vector_ref_symbol);
@@ -62312,7 +62322,7 @@ static s7_pointer opt_arg_type(s7_scheme *sc, s7_pointer argp)
 				    return(sc->is_float_symbol);
 				  if (is_byte_vector(v))
 				    return(sc->is_byte_symbol);
-				  if (is_normal_typed_vector(v))
+				  if (is_typed_t_vector(v))
 				    return(typed_vector_typer_symbol(sc, v)); /* includes closure name ?? */
 				}
 			      else
@@ -63428,7 +63438,7 @@ static bool p_pi_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	      ((is_any_vector(obj)) && (checker == sc->is_vector_symbol)) ||
 	      ((is_pair(obj)) && (checker == sc->is_pair_symbol)) ||
 	      ((is_byte_vector(obj)) && (checker == sc->is_byte_vector_symbol)))
-	    opc->v[3].p_pi_f = (is_normal_vector(obj)) ? normal_vector_ref_p_pi_unchecked : s7_p_pi_unchecked_function(s_func);
+	    opc->v[3].p_pi_f = (is_t_vector(obj)) ? normal_vector_ref_p_pi_unchecked : s7_p_pi_unchecked_function(s_func);
 	}}
   slot1 = opt_integer_symbol(sc, caddr(car_x));
   if (slot1)
@@ -63910,7 +63920,7 @@ static bool p_pip_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
   if ((s7_p_pip_unchecked_function(s_func)) &&
       (checker))
     {
-      if ((is_normal_vector(obj)) && (checker == sc->is_vector_symbol))
+      if ((is_t_vector(obj)) && (checker == sc->is_vector_symbol))
 	opc->v[3].p_pip_f = (is_typed_vector(obj)) ? typed_vector_set_p_pip_unchecked : vector_set_p_pip_unchecked;
       else
 	if ((is_pair(obj)) && (checker == sc->is_pair_symbol)) /* avoid dumb mismatch in val_type and sig below, #t integer:any? and integer? integer:any? */
@@ -64047,7 +64057,7 @@ static bool p_piip_to_sx(s7_scheme *sc, opt_info *opc, s7_pointer indexp1, s7_po
 	    return_false(sc, indexp1);
 	  opc->v[11].fp = opc->v[10].o1->v[0].fp;
 	  opc->v[0].fp = opt_p_piip_sssf;
-	  if ((is_normal_vector(obj)) &&
+	  if ((is_t_vector(obj)) &&
 	      (loop_end_fits(opc->v[2].p, vector_dimension(obj, 0))) &&
 	      (loop_end_fits(opc->v[3].p, vector_dimension(obj, 1))))
 	    opc->v[0].fp = vector_set_piip_sssf_unchecked;
@@ -64129,7 +64139,7 @@ static bool p_pii_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
       obj = slot_value(slot1);
       if ((has_methods(obj)) || (is_immutable(obj)))
 	return_false(sc, car_x);
-      if ((is_normal_vector(obj)) &&
+      if ((is_t_vector(obj)) &&
 	  (vector_rank(obj) == 2))
 	{
 	  s7_pointer slot, indexp1 = cddr(car_x), indexp2 = cdddr(car_x);
@@ -64419,7 +64429,7 @@ static bool p_call_ppp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_po
 		{
 		  opc->v[1].p = slot;
 		  if ((s_func == global_value(sc->vector_ref_symbol)) &&
-		      (is_normal_vector(slot_value(slot))) && (vector_rank(slot_value(slot)) != 2))
+		      (is_t_vector(slot_value(slot))) && (vector_rank(slot_value(slot)) != 2))
 		    return_false(sc, car_x);
 		}
 	      else return_false(sc, car_x); /* no need for sc->pc = start here, I think */
@@ -64647,7 +64657,7 @@ static bool p_implicit_ok(s7_scheme *sc, s7_pointer s_slot, s7_pointer car_x, in
 	    }}} /* len==2 */
   else
     { /* len > 2 */
-      if ((is_normal_vector(obj)) && (len == 3) && (vector_rank(obj) == 2))
+      if ((is_t_vector(obj)) && (len == 3) && (vector_rank(obj) == 2))
 	{
 	  s7_pointer slot = opt_integer_symbol(sc, caddr(car_x));
 	  if (slot)
@@ -65252,7 +65262,7 @@ static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_sy
 			  if ((is_any_vector(obj)) &&
 			      (loop_end(opc->v[2].p) <= vector_length(obj)))
 			    {
-			      if (is_normal_typed_vector(obj))
+			      if (is_typed_t_vector(obj))
 				opc->v[3].p_pip_f = typed_normal_vector_set_p_pip_direct;
 			      else opc->v[3].p_pip_f = normal_vector_set_p_pip_direct;
 			    }}}
@@ -67798,6 +67808,7 @@ static Inline s7_pointer inline_make_counter(s7_scheme *sc, s7_pointer iter) /* 
   s7_pointer x;
   new_cell(sc, x, T_COUNTER);
   counter_set_result(x, sc->nil);
+  if ((S7_DEBUGGING) && (!is_iterator(iter)) && (!is_pair(iter))) fprintf(stderr, "%s[%d]: %s?\n", __func__, __LINE__, display(iter));
   counter_set_list(x, iter);     /* iterator -- here it's always either an iterator or a pair */
   counter_set_capture(x, 0);     /* will be capture_let_counter */
   counter_set_let(x, sc->nil);   /* will be the saved let */
@@ -67941,7 +67952,7 @@ static s7_pointer g_for_each_closure(s7_scheme *sc, s7_pointer f, s7_pointer seq
 		  res = sc->unspecified;
 		}
 	      else
-		if (is_normal_vector(seq))
+		if (is_t_vector(seq))
 		  {
 		    s7_pointer *vals = vector_elements(seq);
 		    s7_int i, len = vector_length(seq);
@@ -68380,7 +68391,7 @@ static Inline bool inline_op_for_each_1(s7_scheme *sc)  /* called once in eval, 
   if (iterator_is_at_end(p))
     {
       sc->value = sc->unspecified;
-      free_cell(sc, counter);
+      /* unsafe: free_cell(sc, counter); */
       return(true);
     }
   code = T_Clo(sc->code);
@@ -68409,7 +68420,7 @@ static Inline bool inline_op_for_each_2(s7_scheme *sc) /* called once in eval, l
   if (!is_pair(lst))  /* '(1 2 . 3) as arg? -- counter_list can be anything here */
     {
       sc->value = sc->unspecified;
-      free_cell(sc, c);  /* not sc->args = sc->nil; */
+      /* unsafe: free_cell(sc, c); */ /* not sc->args = sc->nil; */
       return(true);
     }
   counter_set_list(c, cdr(lst));
@@ -68419,7 +68430,7 @@ static Inline bool inline_op_for_each_2(s7_scheme *sc) /* called once in eval, l
       if (counter_result(c) == counter_list(c))
 	{
 	  sc->value = sc->unspecified;
-	  free_cell(sc, c);  /* not sc->args = sc->nil; */
+	  /* probably unsafe: */ free_cell(sc, c);  /* not sc->args = sc->nil; */
 	  return(true);
 	}
       push_stack_direct(sc, OP_FOR_EACH_2);
@@ -68519,7 +68530,7 @@ static s7_pointer g_map_closure(s7_scheme *sc, s7_pointer f, s7_pointer seq) /* 
 		  res = proper_list_reverse_in_place(sc, stack_protected3(sc));
 		}
 	      else
-		if (is_normal_vector(seq))
+		if (is_t_vector(seq))
 		  {
 		    s7_pointer *vals = vector_elements(seq);
 		    s7_int len = vector_length(seq);
@@ -76110,7 +76121,7 @@ static void op_let_a_a_new(s7_scheme *sc)
   binding = opt2_pair(sc->code);
   set_curlet(sc, inline_make_let_with_slot(sc, sc->curlet, car(binding), fx_call(sc, cdr(binding))));
   sc->value = fx_call(sc, cdr(sc->code));
-  free_cell(sc, sc->curlet); /* don't free let_slots here unless checked first (can be null after fx_call above?) */
+  /* unsafe: free_cell(sc, sc->curlet);*/ /* t101-aux-3 */ /* don't free let_slots here unless checked first (can be null after fx_call above?) */
   /* upon return, we continue, so sc->curlet should be ok */
 }
 
@@ -79939,7 +79950,7 @@ static goto_t set_implicit_vector(s7_scheme *sc, s7_pointer vect, s7_pointer ind
 
   argnum = proper_list_length(inds);
   if ((argnum > 1) &&
-      (is_normal_vector(vect)) &&
+      (is_t_vector(vect)) &&
       (argnum != vector_rank(vect)))
     {
       /* this block needs to be first to handle (eg):
@@ -80048,7 +80059,7 @@ static goto_t set_implicit_vector(s7_scheme *sc, s7_pointer vect, s7_pointer ind
 	{
 	  if (is_symbol(value))
 	    value = lookup_checked(sc, value);
-	  if (is_normal_typed_vector(vect))
+	  if (is_typed_t_vector(vect))
 	    typed_vector_setter(sc, vect, ind, value);
 	  else vector_setter(vect)(sc, vect, ind, value);
 	  sc->value = T_Ext(value);
@@ -80945,7 +80956,7 @@ static /* inline */ bool do_tree_has_definers(s7_scheme *sc, s7_pointer tree)
 	  }
 	else
 	  if ((is_applicable(pp)) &&
-	      (((is_normal_vector(pp)) && (do_vector_has_definers(pp))) ||
+	      (((is_t_vector(pp)) && (do_vector_has_definers(pp))) ||
 	       ((is_c_function(pp)) && (is_func_definer(pp))) ||
 	       ((is_syntax(pp)) && (is_syntax_definer(pp)))))
 	    return(true);
@@ -82336,7 +82347,7 @@ static bool opt_do_copy(s7_scheme *sc, opt_info *o, s7_int start, s7_int stop)
       s7_pointer caller = NULL;
       s7_pointer dest = slot_value(o->v[1].p);
       s7_pointer source = slot_value(o->v[3].p);
-      if ((is_normal_vector(dest)) &&
+      if ((is_t_vector(dest)) &&
 	  (((o->v[5].p_pip_f == vector_set_p_pip_unchecked) ||
 	    (o->v[5].p_pip_f == normal_vector_set_p_pip_direct)) &&
 	   ((o->v[6].p_pi_f == normal_vector_ref_p_pi_unchecked) ||
@@ -82433,9 +82444,10 @@ static bool op_simple_do_1(s7_scheme *sc, s7_pointer code)
 		    fp(o);
 		  }}
       else
-	{
-	  /* splitting out opt_float_any_nv here saves almost nothing -- unhit in s7test or anywhere?? */
-	  if (S7_DEBUGGING) fprintf(stderr, "%d: %s\n", __LINE__, display(code));
+	{ /* (do ((j (+ nv k -1) (- j 1))) ((< j k)) (set! (r j) (- (r j) (* (q k) (p2 (- j k)))))) */
+	  /* (do ((__i__ 0 (+ __i__ 1))) ((= __i__ 1) 32.0) (b 0)) and many more, all wrap-int safe I think */
+	  /* splitting out opt_float_any_nv here saves almost nothing */
+	  /* if (S7_DEBUGGING) fprintf(stderr, "%d: %s\n", __LINE__, display(code)); */
 	  for (i = start; i < stop; i++)
 	    {
 	      slot_set_value(ctr_slot, make_integer(sc, i));
@@ -82465,7 +82477,7 @@ static bool op_simple_do_1(s7_scheme *sc, s7_pointer code)
 		}}}
       else /* (do ((i 9 (- i 1))) ((< i 0)) (set! (v i) (delay gen 0.5 i))) make-int?? */
 	{
-	  if (S7_DEBUGGING) fprintf(stderr, "%d: %s\n", __LINE__, display(code));
+	  /* if (S7_DEBUGGING) fprintf(stderr, "%d: %s\n", __LINE__, display(code)); */
 	  for (i = start; i >= stop; i--)
 	    {
 	      slot_set_value(ctr_slot, make_integer(sc, i));
@@ -83546,7 +83558,7 @@ static goto_t op_do_end_true(s7_scheme *sc)
    * multiple-value end-test result is ok
    */
   sc->code = T_Lst(cddr(sc->args));   /* result expr (a list -- implicit begin) */
-  free_cell(sc, sc->args);
+  /* unsafe: free_cell(sc, sc->args); */ /* t101-aux-8|13 */
   sc->args = sc->nil;
   if (is_null(sc->code))
     {
@@ -88537,7 +88549,6 @@ static inline void op_map_for_each_fa(s7_scheme *sc)
     sc->value = (fn_proc_unchecked(code)) ? sc->unspecified : sc->nil;
   else
     {
-      /* fprintf(stderr, "%d -> %s\n", __LINE__, (fn_proc_unchecked(code)) ? "for-each" : "map"); */
       sc->code = opt3_pair(code); /* cdadr(code); */
       f = make_closure_gc_checked(sc, car(sc->code), cdr(sc->code), T_CLOSURE, 1); /* arity=1 checked in optimizer */
       sc->value = (fn_proc_unchecked(code)) ? g_for_each_closure(sc, f, sc->value) : g_map_closure(sc, f, sc->value);
@@ -88651,7 +88662,6 @@ static void op_safe_c_3p_1(s7_scheme *sc)
   sc->args = sc->value;                      /* possibly fx/gx? and below */
   push_stack_direct(sc, OP_SAFE_C_3P_2);
   sc->code = caddr(sc->code);
-  /* fprintf(stderr, "%s[%d]: code: %s, cur_op: %d %s\n", __func__, __LINE__, display(sc->code), (int)(optimize_op(sc->code)), op_names[optimize_op(sc->code)]); */
 }
 
 static void op_safe_c_3p_1_mv(s7_scheme *sc) /* here only if sc->value is mv */
@@ -92227,7 +92237,7 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	    }
 
 	case OP_DOX:
-	DOX:                 /* from check_do */
+	DOX:                  /* from check_do */
 	  switch (op_dox(sc)) /* lg fft exit */
 	    {
 	    case goto_do_end_clauses: goto DO_END_CLAUSES;
@@ -93599,7 +93609,7 @@ static s7_pointer memory_usage(s7_scheme *sc)
   add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "gc-total-time", 13), make_real(sc, (double)(sc->gc_total_time) / ticks_per_second()));
 
   add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "small_ints", 10),
-			     cons(sc, make_integer(sc, NUM_SMALL_INTS), kmg(sc, NUM_SMALL_INTS * sizeof(s7_cell))));
+			     cons(sc, make_integer(sc, NUM_SMALL_INTS), kmg(sc, NUM_SMALL_INTS * (sizeof(s7_pointer) + sizeof(s7_cell)))));
 
   add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "permanent-cells", 15),
 			     cons(sc, make_integer(sc, sc->semipermanent_cells), kmg(sc, sc->semipermanent_cells * sizeof(s7_cell))));
@@ -93786,7 +93796,7 @@ static s7_pointer memory_usage(s7_scheme *sc)
     sc->w = sc->unused;
     add_slot_unchecked_with_id(sc, mu_let,
 			       make_symbol(sc, "approximate-s7-size", 19),
-			       kmg(sc, ((sc->semipermanent_cells + NUM_SMALL_INTS + sc->heap_size) * sizeof(s7_cell)) +
+			       kmg(sc, ((sc->semipermanent_cells + NUM_SMALL_INTS + sc->heap_size) * (sizeof(s7_pointer) + sizeof(s7_cell))) +
 				   ((2 * sc->heap_size + SYMBOL_TABLE_SIZE + sc->stack_size) * sizeof(s7_pointer)) +
 				   len + all_len));
   }
@@ -95177,6 +95187,8 @@ static void init_opt_functions(s7_scheme *sc)
   s7_set_p_p_function(sc, global_value(sc->is_negative_symbol), is_negative_p_p);
   s7_set_p_p_function(sc, global_value(sc->real_part_symbol), real_part_p_p);
   s7_set_p_p_function(sc, global_value(sc->imag_part_symbol), imag_part_p_p);
+  s7_set_d_p_function(sc, global_value(sc->real_part_symbol), s7_real_part);
+  s7_set_d_p_function(sc, global_value(sc->imag_part_symbol), s7_imag_part);
   s7_set_b_i_function(sc, global_value(sc->is_positive_symbol), is_positive_i);
   s7_set_b_d_function(sc, global_value(sc->is_positive_symbol), is_positive_d);
   s7_set_b_i_function(sc, global_value(sc->is_negative_symbol), is_negative_i);
@@ -96971,8 +96983,9 @@ s7_scheme *s7_init(void)
                                                    (error 'syntax-error \"cond-expand: clause is not a pair, ~S\" clause))) \n\
 		                             clauses))))");
   /* cond-expand should expand into an expansion (or inline macro?) so that if there's no else clause, we can add (else (values))
-   *   r7rs says: "If none of the <feature requirement>s evaluate to #t, then if there is an else clause, its <expression>s are included. Otherwise, the cond-expand has no effect."
-   *   The code above returns #<unspecified>, but I read that prose to say that (begin 23 (cond-expand (surreals 1) (foonly 2))) should evaluate to 23.
+   *   r7rs says: "If none of the <feature requirement>s evaluate to #t, then if there is an else clause, its <expression>s are included. 
+   *   Otherwise, the cond-expand has no effect."  The code above returns #<unspecified>, but I read that prose to say that 
+   *   (begin 23 (cond-expand (surreals 1) (foonly 2))) should evaluate to 23.
    */
 #endif
 
@@ -97421,13 +97434,7 @@ int main(int argc, char **argv)
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * add wasm test to test suite somehow (at least emscripten)
- * dw/catch/counter don't need to be in the heap -- separate free lists?
- *   gc sweep, preset to unmarked??, mark all, any not marked are free -- gc_mark doesn't care about permanent/heap, maybe post clear not pre
- *   sc->active_counters, sc->free_counters, semipermanent allocs, debugging check free list for gc-mark (in general?)
- *   same for slot?? random_state? cc/goto? c_pointer c_object
- *     known slot with mutable value: int/real etc
- *   get stats on max allocated counters/catches/gotos etc between gc's [count as gc runs over heap, or use memory_usage code + max vars in sc]
  * quote as bit?
- * d_p_f exists [clm3xen/vct/ffitest] -- real|imag_part, magnitude, maybe need d_7p? remember gmp (float? as car(sig))
  * check simple eval case eval_args*
+ * heap_analyze + report holder/root for free_mark hits? [and gc_ctr?]
  */

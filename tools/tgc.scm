@@ -1,4 +1,4 @@
-(set! (*s7* 'heap-size) 128000) ; old-style
+(set! (*s7* 'heap-size) 128000) ; old-style -- makes little difference (30 in callgrind)
 (load "s7test-block.so" (sublet (curlet) (cons 'init_func 'block_init)))
 
 (define (check-cyclic p1)
@@ -10,7 +10,9 @@
       (format *stderr* "cyclic: ~S: ~S ~S ~S~%" p1 c1 c2 c3))))
 
 ;(define wait-size 20000) ; this makes the gc work much harder (especially the mark process, mark_vector linearly etc)
-(define-expansion (wait-size) 200) ; plug in the constant to avoid endless lookups (this is cheating)
+(if (defined? 'big-tgc)
+    (define-expansion (wait-size) 20000) ; plug in the constant to avoid endless lookups (this is cheating)
+    (define-expansion (wait-size) 200)) ; plug in the constant to avoid endless lookups (this is cheating)
 
 (define (tgc-cyclic tries)
   (let ((wait (make-vector (wait-size) #f)))
@@ -156,7 +158,9 @@
 	       #f))
 	 (list p1 p2 p3 v1 v2 v3 v4 s1 iv2 iv2 h1 h2 i1 in1 in2 c1 cc ex1 u1 g1 it1 b1))))))
 
-(tgc 200000)
+(if (defined? 'big-case)
+    (tgc 1000000)
+    (tgc 200000))
 ;(tgc 1000000000)
 
 (exit)
