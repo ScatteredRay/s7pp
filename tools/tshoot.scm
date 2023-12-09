@@ -243,7 +243,7 @@
 	       (positive? (remainder z 3))	  
 	       (positive? (remainder z 5))	  
 	       (positive? (remainder z 7))
-	       (do ((L increments)
+	       (do ((L increments); (cdr L))
 		    (lim (sqrt z))
 		    (divisor 11 (+ divisor (car L))))
 		   ((or (zero? (remainder z divisor))
@@ -261,7 +261,7 @@
 	   primes)
 	(if (prime? i)
 	    (set! primes (+ primes 1))))))
-  (display (count-primes 300000)) (newline)) ; 100000: 9592, 200000: 17984, 30000: 25997
+  (display (count-primes 300000)) (newline)) ; 100000: 9592, 200000: 17984, 300000: 25997
 
 ;;; --------------------------------------------------------------------------------
 ;;;
