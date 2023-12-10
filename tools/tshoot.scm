@@ -243,7 +243,7 @@
 	       (positive? (remainder z 3))	  
 	       (positive? (remainder z 5))	  
 	       (positive? (remainder z 7))
-	       (do ((L increments); (cdr L))
+	       (do ((L increments)
 		    (lim (sqrt z))
 		    (divisor 11 (+ divisor (car L))))
 		   ((or (zero? (remainder z divisor))

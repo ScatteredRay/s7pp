@@ -5351,10 +5351,10 @@ static void print_gc_info(s7_scheme *sc, s7_pointer obj, int32_t line)
 	full_type(obj) = free_type;
 	if (obj->explicit_free_line > 0)
 	  snprintf(fline, 128, ", freed at %d, ", obj->explicit_free_line);
-	fprintf(stderr, "%s%p is free (line %d, alloc type: %s %" ld64 " #x%" PRIx64 " (%s)), alloc: %s[%d], %sgc: %s[%d]%s",
+	fprintf(stderr, "%s%p is free (line %d, alloc type: %s %" ld64 " #x%" PRIx64 " (%s)), alloc: %s[%d], %sgc: %s[%d], gc: %d%s",
 		bold_text, obj, line, s7_type_names[obj->alloc_type & 0xff], obj->alloc_type, obj->alloc_type,
 		bits, obj->alloc_func, obj->alloc_line,
-		(obj->explicit_free_line > 0) ? fline : "", obj->gc_func, obj->gc_line,	unbold_text);
+		(obj->explicit_free_line > 0) ? fline : "", obj->gc_func, obj->gc_line,	obj->uses, unbold_text);
 	fprintf(stderr, "\n");
 	free(bits);
       }
@@ -48979,7 +48979,8 @@ static s7_pointer copy_vector(s7_scheme *sc, s7_pointer source)
   set_typed_vector(vec);
   typed_vector_set_typer(vec, typed_vector_typer(source));
   if (has_simple_elements(source)) set_has_simple_elements(vec);
-  s7_vector_fill(sc, vec, vector_element(source, 0));
+  for (s7_int i = 0; i < len; i++)
+    vector_element(vec, i) = vector_element(source, i);
   if (vector_rank(source) > 1)
     return(make_multivector(sc, vec, g_vector_dimensions(sc, set_plist_1(sc, source)))); /* see g_subvector to avoid g_vector_dimensions */
   add_vector(sc, vec);
@@ -60435,7 +60436,7 @@ static bool d_id_sf_combinable(s7_scheme *sc, opt_info *opc)
   return_false(sc, NULL);
 }
 
-static bool d_id_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer car_x)
+static bool d_id_ok_1(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer car_x, bool expr_case)
 {
   s7_pointer p;
   int32_t start = sc->pc;
@@ -60488,6 +60489,7 @@ static bool d_id_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	}
       sc->pc = start;
     }
+  if (!expr_case) return_false(sc, car_x);
   opc->v[8].o1 = sc->opts[sc->pc];
   if (int_optimize(sc, cdr(car_x)))
     {
@@ -60503,6 +60505,12 @@ static bool d_id_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
     }
   return_false(sc, car_x);
 }
+
+static bool d_id_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer car_x)
+{
+  return(d_id_ok_1(sc, opc, s_func, car_x, true));
+}
+
 
 /* -------- d_dd -------- */
 
@@ -60679,6 +60687,19 @@ static s7_double opt_d_7dd_ff(opt_info *o)
 {
   s7_double x1 = o->v[9].fd(o->v[8].o1);
   return(o->v[3].d_7dd_f(o->sc, x1, o->v[11].fd(o->v[10].o1)));
+}
+
+static s7_double opt_d_7dd_ff_add_fv_ref_direct(opt_info *o)
+{
+  s7_double x1 = opt_d_7pi_ss_fvref_direct(o->v[4].o1);
+  return(x1 + opt_d_7dd_ff(o->v[10].o1));
+}
+
+static s7_double opt_d_7dd_ff_add_div(opt_info *o)
+{
+  s7_double x1 = opt_d_7pi_ss_fvref_direct(o->v[4].o1);
+  s7_double x2 = opt_d_7pi_ss_fvref_direct(o->v[8].o1);
+  return(x1 + divide_d_7dd(o->sc, x2, opt_d_id_sf(o->v[10].o1)));
 }
 
 static s7_double opt_d_dd_ff_o1(opt_info *o)
@@ -60990,6 +61011,12 @@ static bool d_dd_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
     }
 
   /* arg1 = float expr or non-float */
+
+  /* first check for obvious d_id cases */
+  if (((is_t_integer(arg1)) || (opt_integer_symbol(sc, arg1))) &&
+      (s7_d_id_function(s_func)))
+    return(d_id_ok_1(sc, opc, s_func, car_x, false));
+
   o1 = sc->opts[sc->pc];
   if (float_optimize(sc, cdr(car_x)))
     {
@@ -61092,7 +61119,18 @@ static bool d_dd_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 		      opc->v[0].fd = opt_d_dd_ff_add;
 		      opc->v[10].o1 = o2;
 		      opc->v[11].fd = o2->v[0].fd;
-		    }
+
+		      if ((o1->v[0].fd == opt_d_7pi_ss_fvref_direct) && (opc->v[11].fd == opt_d_7dd_ff))
+			{
+			  opt_info *ov = opc->v[10].o1;
+			  if ((ov->v[3].d_7dd_f == divide_d_7dd) && (ov->v[11].fd == opt_d_id_sf) && (ov->v[9].fd == opt_d_7pi_ss_fvref_direct))
+			    {
+			      opc->v[8].o1 = ov->v[8].o1;
+			      opc->v[10].o1 = ov->v[10].o1;
+			      opc->v[0].fd = opt_d_7dd_ff_add_div;
+			    }
+			  else opc->v[0].fd = opt_d_7dd_ff_add_fv_ref_direct;
+			}}
 		  opc->v[4].o1 = o1;              /* sc->opts[start]; */
 		  opc->v[5].fd = o1->v[0].fd;     /* sc->opts[start]->v[0].fd; */
 		  return_true(sc, car_x);
@@ -67120,7 +67158,7 @@ static bool float_optimize_1(s7_scheme *sc, s7_pointer expr)
 {
   s7_pointer car_x = car(expr), head, s_func, s_slot = NULL;
   s7_int len;
-  if (OPT_PRINT) fprintf(stderr, "  float_optimize %s\n", display(expr));
+  if (OPT_PRINT) fprintf(stderr, "     float_optimize %s\n", display(expr));
   if (WITH_GMP) return(false);
   if (!is_pair(car_x)) /* wrap constants/symbols */
     return(opt_float_not_pair(sc, car_x));
@@ -67158,7 +67196,6 @@ static bool float_optimize_1(s7_scheme *sc, s7_pointer expr)
 	case 3:
 	  return((d_dd_ok(sc, opc, s_func, car_x)) ||
 		 (d_id_ok(sc, opc, s_func, car_x)) || 
-		 /* (d_dd_ok(sc, opc, s_func, car_x)) || */ /* wrong order until fixups */
 		 (d_vd_ok(sc, opc, s_func, car_x)) ||
 		 (d_pd_ok(sc, opc, s_func, car_x)) ||
 		 (d_ip_ok(sc, opc, s_func, car_x)) ||
@@ -67209,7 +67246,7 @@ static bool int_optimize_1(s7_scheme *sc, s7_pointer expr)
 {
   s7_pointer car_x = car(expr), head, s_func, s_slot = NULL;
   s7_int len;
-  if (OPT_PRINT) fprintf(stderr, "  int_optimize %s\n", display(expr));
+  if (OPT_PRINT) fprintf(stderr, "     int_optimize %s\n", display(expr));
   if (WITH_GMP) return(false);
   if (!is_pair(car_x)) /* wrap constants/symbols */
     return(opt_int_not_pair(sc, car_x));
@@ -67423,7 +67460,7 @@ static bool cell_optimize_1(s7_scheme *sc, s7_pointer expr)
 {
   s7_pointer car_x = car(expr), head, s_func, s_slot = NULL;
   s7_int len;
-  if (OPT_PRINT) fprintf(stderr, "  cell_optimize %s\n", display(expr));
+  if (OPT_PRINT) fprintf(stderr, "     cell_optimize %s\n", display(expr));
   if (WITH_GMP) return(false);
   if (!is_pair(car_x)) /* wrap constants/symbols */
     return(opt_cell_not_pair(sc, car_x));
@@ -67582,7 +67619,7 @@ static bool bool_optimize(s7_scheme *sc, s7_pointer expr)
 {
   int32_t start = sc->pc;
   opt_info *wrapper;
-  if (OPT_PRINT) fprintf(stderr, "  bool_optimize %s\n", display(expr));
+  if (OPT_PRINT) fprintf(stderr, "     bool_optimize %s\n", display(expr));
   if (WITH_GMP) return(false);
   if (bool_optimize_nw(sc, expr))
     return_true(sc, expr);
@@ -68985,7 +69022,7 @@ static bool op_map_2(s7_scheme *sc) /* possibly inline lg */
       if (closure_map_list(code) == counter_list(c))
 	{
 	  sc->value = proper_list_reverse_in_place(sc, counter_result(c));
-	  free_cell(sc, c);  /* not sc->args = sc->nil; */
+	  free_cell(sc, c);  /* possibly unsafe */ /* not sc->args = sc->nil; */
 	  return(true);
 	}
       push_stack_direct(sc, OP_MAP_GATHER_2);
@@ -76173,7 +76210,7 @@ static void op_let_a_na_new(s7_scheme *sc)
   set_curlet(sc, make_let_with_slot(sc, sc->curlet, car(binding), fx_call(sc, cdr(binding))));
   for (p = cdr(sc->code); is_pair(cdr(p)); p = cdr(p)) fx_call(sc, p);
   sc->value = fx_call(sc, p);
-  free_cell(sc, sc->curlet); /* see above */
+  free_cell(sc, sc->curlet); /* possibly unsafe */ /* see above */
 }
 
 /* this and others like it could easily be fx funcs, but check_let is called too late, so it's never seen as fxable */
@@ -93367,9 +93404,9 @@ void s7_heap_scan(s7_scheme *sc, int32_t typ)
 		fprintf(stderr, "%s from %s alloc: %s[%d] (%d holder%s, alloc: %s[%d])\n",
 			display_80(obj), obj->root, obj->alloc_func, obj->alloc_line,
 			obj->holders, (obj->holders != 1) ? "s" : "", obj->holder->alloc_func, obj->holder->alloc_line);
-	      else fprintf(stderr, "%s (%s, %p, alloc: %s[%d], holder%s: %d %s alloc: %s[%d])\n",
-			   display_80(obj), s7_type_names[unchecked_type(obj->holder)], obj->holder, obj->alloc_func, obj->alloc_line,
-			   (obj->holders != 1) ? "s" : "", obj->holders, display(obj->holder), obj->holder->alloc_func, obj->holder->alloc_line);
+	      else fprintf(stderr, "%s (%s, alloc: %s[%d], holder%s: %d %p %s alloc: %s[%d])\n",
+			   display_80(obj), s7_type_names[unchecked_type(obj->holder)], obj->alloc_func, obj->alloc_line,
+			   (obj->holders != 1) ? "s" : "", obj->holders, obj->holder, display(obj->holder), obj->holder->alloc_func, obj->holder->alloc_line);
 	}}
   if (!found_one)
     fprintf(stderr, "heap-scan: no %s found\n", s7_type_names[typ]);
@@ -97424,7 +97461,7 @@ int main(int argc, char **argv)
  * trclo     2735   2574   2454   2445   2449
  * titer     2865   2842   2641   2509   2465
  * tload     ----   ----   3046   2404   2566
- * tmat      3065   3042   2524   2578   2597  2649 [float|int_optimize opt_integer_symbol etc] must be d_id gc4
+ * tmat      3065   3042   2524   2578   2597
  * tsort     3105   3104   2856   2804   2858
  * tobj      4016   3970   3828   3577   3526
  * teq       4068   4045   3536   3486   3557
@@ -97433,29 +97470,29 @@ int main(int argc, char **argv)
  * tcase     4960   4793   4439   4430   4439
  * tclo      4787   4735   4390   4384   4470
  * tlet      7775   5640   4450   4427   4457
- * tfft      7820   7729   4755   4476   4536  5499 lost all the mm_* funcs ?
+ * tfft      7820   7729   4755   4476   4536
  * tstar     6139   5923   5519   4449   4550
- * tmap      8869   8774   4489   4541   4586  4593 lost opt_subtract_random_f_f
- * tshoot    5525   5447   5183   5055   5048  5159 ff_div_add etc
+ * tmap      8869   8774   4489   4541   4586
+ * tshoot    5525   5447   5183   5055   5048  5033 (one more level is available)
  * tform     5357   5348   5307   5316   5084
  * tstr      6880   6342   5488   5162   5225
- * tnum      6348   6013   5433   5396   5475  5438
+ * tnum      6348   6013   5433   5396   5475
  * tlamb     6423   6273   5720   5560   5613
- * tgsl      8485   7802   6373   6282   6216  6203 but not *_mul
+ * tgsl      8485   7802   6373   6282   6216
  * tlist     7896   7546   6558   6240   6300
  * tari      13.0   12.7   6827   6543   6278
- * tset      ----   ----   ----   6260   6299  6378??
+ * tset      ----   ----   ----   6260   6299  6378??  TODO: 6369
  * trec      6936   6922   6521   6588   6583
  * tleft     10.4   10.2   7657   7479   7610
  * tmisc     ----   ----   ----   8488   7866
  * tgc       11.9   11.1   8177   7857   8006
  * thash     11.8   11.7   9734   9479   9527
  * cb        11.2   11.0   9658   9564   9612
- * tgen      11.2   11.4   12.0   12.1   12.2  12.3 [float|int_optimize etc]
- * tall      15.6   15.6   15.6   15.6   15.1  16.1 [do_let lost]
- * calls     36.7   37.5   37.0   37.5   37.0  37.4 [do_let]
- * sg        ----   ----   55.9   55.8   55.4  55.5 [same]
- * tbig     177.4  175.8  156.5  148.1  146.2 146.4 [mm*]
+ * tgen      11.2   11.4   12.0   12.1   12.2
+ * tall      15.6   15.6   15.6   15.6   15.1
+ * calls     36.7   37.5   37.0   37.5   37.0  37.4 [do_let]  37.2 TODO: check this
+ * sg        ----   ----   55.9   55.8   55.4
+ * tbig     177.4  175.8  156.5  148.1  146.2
  * ---------------------------------------------
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
