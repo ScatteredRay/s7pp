@@ -7377,28 +7377,11 @@ static void mark_output_port(s7_pointer p)
     gc_mark(port_string_or_function(p));
 }
 
-static void mark_free(s7_pointer p) 
-{
-  /* TODO: here we need to know who the holder is -- are we missing a root once in a blue moon? */
-  /*   nearly all cases are where we explicitly resize the heap (g_list_values, make_room_for_gc_stack) */
-#if S7_DEBUGGING && (0)
-  bool old_stop = cur_sc->stop_at_error;
-  cur_sc->stop_at_error = false;
-  fprintf(stderr, "GC mark free: ");
-  print_gc_info(cur_sc, p, __LINE__);
-  cur_sc->stop_at_error = old_stop;
-#endif
-#if S7_DEBUGGING
-  if (p->explicit_free_line > 0)
-    fprintf(stderr, "mark_free: freed at %d\n", p->explicit_free_line);
-#endif
-}
-
 #define clear_type(p) full_type(p) = T_FREE
 
 static void init_mark_functions(void)
 {
-  mark_function[T_FREE]                = mark_free;
+  mark_function[T_FREE]                = mark_noop;
   mark_function[T_UNDEFINED]           = just_mark;
   mark_function[T_EOF]                 = mark_noop;
   mark_function[T_UNSPECIFIED]         = mark_noop;
@@ -49664,7 +49647,6 @@ static s7_pointer s7_copy_1(s7_scheme *sc, s7_pointer caller, s7_pointer args)
 	    return(dest);
 	  }
 	if ((is_t_vector(dest)) && (!is_typed_vector(dest)))
-	  /* TODO: this could check that the typer is integer? (similarly elsewhere): (typed_vector_typer(dest) != global_value(sc->is_integer_symbol)) ? */
 	  {
 	    s7_pointer *dst = vector_elements(dest);
 	    check_free_heap_size(sc, end - start);
@@ -82531,7 +82513,7 @@ static bool op_simple_do_1(s7_scheme *sc, s7_pointer code)
 	{
 	  opt_info *o = sc->opts[0];
 	  if (!opt_do_copy(sc, o, stop, start + 1))
-	    { /* (do ((i (- n 1) (- i 1))) ((< i 0) result) (vector-set! result i 0)) make_int?? */
+	    { /* (do ((i 9 (- i 1))) ((< i 0) v) (vector-set! v i i)) */
 	      s7_pointer (*fp)(opt_info *o) = o->v[0].fp;
 	      /* if (S7_DEBUGGING) fprintf(stderr, "%d: %s\n", __LINE__, display(code)); */
 	      for (i = start; i >= stop; i--)
@@ -82539,7 +82521,7 @@ static bool op_simple_do_1(s7_scheme *sc, s7_pointer code)
 		  slot_set_value(ctr_slot, make_integer(sc, i));
 		  fp(o);
 		}}}
-      else /* (do ((i 9 (- i 1))) ((< i 0)) (set! (v i) (delay gen 0.5 i))) make-int?? */
+      else /* (do ((i 9 (- i 1))) ((< i 0)) (set! (v i) (delay gen 0.5 i))) */
 	{
 	  /* if (S7_DEBUGGING) fprintf(stderr, "%d: %s\n", __LINE__, display(code)); */
 	  for (i = start; i >= stop; i--)
@@ -82590,11 +82572,11 @@ static bool op_simple_do_1(s7_scheme *sc, s7_pointer code)
 	  s7_int start = integer(slot_value(ctr_slot));
 	  s7_int stop = integer(slot_value(end_slot));
 	  if (fp == opt_cond_1b)
-	    {
+	    { /*  (do ((i 0 (+ i 1))) ((> i a)) (cond (i i))) ! */
 	      s7_pointer (*test_fp)(opt_info *o) = o->v[4].o1->v[O_WRAP].fp;
 	      opt_info *test_o1 = o->v[4].o1;
 	      opt_info *o2 = o->v[6].o1;
-	      if (S7_DEBUGGING) fprintf(stderr, "%d: %s\n", __LINE__, display(code));
+	      /* if (S7_DEBUGGING) fprintf(stderr, "%d: %s\n", __LINE__, display(code)); */
 	      for (s7_int i = start; i <= stop; i++)
 		{
 		  slot_set_value(ctr_slot, make_integer(sc, i));
@@ -89241,7 +89223,6 @@ static /* inline */ bool eval_args_last_arg(s7_scheme *sc) /* inline: no diff tm
   else sc->code = car_code;
   /* get the current arg, which is not a list */
   sc->args = proper_list_reverse_in_place(sc, cons_unchecked(sc, sc->code, cons(sc, sc->value, sc->args)));
-  /* TODO: this is reverse!(args) + value + code?  can that be used directly? */
   sc->code = pop_op_stack(sc);
   return(false);
 }
@@ -97473,7 +97454,7 @@ int main(int argc, char **argv)
  * tfft      7820   7729   4755   4476   4536
  * tstar     6139   5923   5519   4449   4550
  * tmap      8869   8774   4489   4541   4586
- * tshoot    5525   5447   5183   5055   5048  5033 (one more level is available)
+ * tshoot    5525   5447   5183   5055   5048  5033
  * tform     5357   5348   5307   5316   5084
  * tstr      6880   6342   5488   5162   5225
  * tnum      6348   6013   5433   5396   5475
@@ -97496,12 +97477,9 @@ int main(int argc, char **argv)
  * ---------------------------------------------
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
- * more ongoing free_cell (mark/check ref)
  * vector constants: use a sc->strbuf like buffer? OP_READ_FLOAT_VECTOR loop?
- * how to track reref so free_cell can be automated? should t725 hits be removed?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * add wasm test to test suite somehow (at least emscripten)
- * quote as bit?
- * check simple eval case eval_args*
+ * subtract_p_pp is_t_integer(y) if x etc (t670) and why funchecked?
  */

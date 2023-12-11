@@ -6783,6 +6783,8 @@ s7-postlude.scm can be empty.  My version of s7-prelude.scm is:
 (define (jiffies-per-second) 1000)
 (define (current-jiffy) (round (* (jiffies-per-second) (*s7* 'cpu-time))))
 (define (current-second) (floor (*s7* 'cpu-time)))
+(define make-bytevector make-byte-vector)
+(define bytevector-u8-set! byte-vector-set!)
 </pre>
 <p>
 If you want to run gcbench, add the define-record-type macro from r7rs.scm.
@@ -6855,7 +6857,7 @@ ack: 6.6, array1: 6.4, browse: 11.2, bv2string: 4.1, cat: 0.4,
 compiler: 16.9, conform: 30.0, cpstak: 42.8, ctak: 16.6, deriv: 9.7,
 destruc: 8.6, diviter: 3.7, divrec: 4.6, dynamic: 12.6, earley: 25.5,
 equal: 0.3, fft: 12.5, fib: 6.1, fibc: 8.6, fibfp: 1.1, gcbench: 12.9,
-grahps: 72.5, lattice: 63.4, matrix: 21.0, maze: 11.4, mazefun: 9.8,
+graphs: 72.5, lattice: 63.4, matrix: 21.0, maze: 11.4, mazefun: 9.8,
 mbrot: 12.6, mbrotZ: 8.0, mperm: 18.9, nboyer: 20.1, nqueens: 27.0,
 ntakl: 8.0, nucleic: 8.3, paraffins: 4.4, parsing: 20.7, peval: 15.2,
 pnpoly: 9.8, primes: 10.2, puzzle: 10.2, quicksort: 40.0, ray: 8.3,

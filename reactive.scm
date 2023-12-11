@@ -337,23 +337,4 @@
 ;;; but where to place the setter in either case -- on 'a and save the location, but then how to erase if reset?
 ;;;   and how to ignore if xyzzy arg not the same?
 ;;; insist that (f) f be a thunk/dilambda, and in the (set! (f)...) case, put the setter on the setter? (set! (setter (setter f)) ...)
-
-
-<p>Here's the standard example of following the mouse (assuming you're using Snd and glistener):
-</p>
-<pre class="indented">
-(let ((*mouse-x* 0) (*mouse-y* 0)
-      (x 0) (y 0))
-
-  (reactive-set! x (let ((val (round *mouse-x*))) 
-		     (format *stderr* "mouse: ~A ~A~%" x y) 
-		     val))
-  (reactive-set! y (round *mouse-y*))
-
-  (g_signal_connect (G_OBJECT (listener-text-widget *listener*)) "motion_notify_event" 
-		    (lambda (w e d) 
-		      (let ((mxy (cdr (gdk_event_get_coords (GDK_EVENT e)))))
-			(set! *mouse-x* (car mxy))
-			(set! *mouse-y* (cadr mxy))))))
-</pre>
 |#
