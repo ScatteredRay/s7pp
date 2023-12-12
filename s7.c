@@ -56139,6 +56139,22 @@ static s7_pointer fx_c_ac(s7_scheme *sc, s7_pointer arg)
 }
 
 static s7_pointer fx_c_ac_direct(s7_scheme *sc, s7_pointer arg) {return(((s7_p_pp_t)opt3_direct(cdr(arg)))(sc, fx_call(sc, cdr(arg)), opt3_con(arg)));}
+static s7_pointer fx_c_ai_direct(s7_scheme *sc, s7_pointer arg) {return(((s7_p_pi_t)opt3_direct(cdr(arg)))(sc, fx_call(sc, cdr(arg)), integer(opt3_con(arg))));}
+static s7_pointer fx_sub_a1(s7_scheme *sc, s7_pointer arg) 
+{
+  s7_pointer p = fx_call(sc, cdr(arg));
+  if (is_t_integer(p)) return(subtract_if_overflow_to_real_or_big_integer(sc, integer(p), 1));
+  if (is_t_real(p)) return(make_real(sc, real(p) - 1.0));
+  return(subtract_p_pp(sc, p, int_one));
+}
+
+static s7_pointer fx_add_a1(s7_scheme *sc, s7_pointer arg) 
+{
+  s7_pointer p = fx_call(sc, cdr(arg));
+  if (is_t_integer(p)) return(add_if_overflow_to_real_or_big_integer(sc, integer(p), 1));
+  if (is_t_real(p)) return(make_real(sc, real(p) + 1.0));
+  return(add_p_pp(sc, p, int_one));
+}
 
 static s7_pointer fx_is_eq_ac(s7_scheme *sc, s7_pointer arg)
 {
@@ -56760,20 +56776,17 @@ static s7_pointer fx_safe_closure_s_to_sc(s7_scheme *sc, s7_pointer arg)
 }
 
 static s7_pointer fx_safe_closure_s_to_vref(s7_scheme *sc, s7_pointer arg) {return(vector_ref_p_pp(sc, lookup(sc, opt2_sym(arg)), opt3_con(cdr(arg))));}
-
 static s7_pointer fx_safe_closure_s_to_sub1(s7_scheme *sc, s7_pointer arg)
 {
   s7_pointer p = lookup(sc, opt2_sym(arg));
-  if ((!WITH_GMP) && (is_t_integer(p)))
-    return(make_integer(sc, integer(p) - 1));
+  if ((!WITH_GMP) && (is_t_integer(p))) return(make_integer(sc, integer(p) - 1));
   return(minus_c1(sc, p));
 }
 
 static s7_pointer fx_safe_closure_s_to_add1(s7_scheme *sc, s7_pointer arg)
 {
   s7_pointer p = lookup(sc, opt2_sym(arg));
-  if ((!WITH_GMP) && (is_t_integer(p)))
-    return(make_integer(sc, integer(p) + 1));
+  if ((!WITH_GMP) && (is_t_integer(p))) return(make_integer(sc, integer(p) + 1));
   return(g_add_x1_1(sc, p, 1));
 }
 
@@ -57579,6 +57592,18 @@ static s7_function fx_choose(s7_scheme *sc, s7_pointer holder, s7_pointer cur_en
 		    else
 		      if (fn_proc(arg) == g_memq_4)
 			set_opt3_direct(cdr(arg), memq_4_p_pp); /* this does not parallel 2 and 3 above (sigh) */
+		}
+	      if ((is_t_integer(opt3_con(arg))) && (s7_p_pi_function(global_value(car(arg)))))
+		{
+		  set_opt3_direct(cdr(arg), (s7_pointer)(s7_p_pi_function(global_value(car(arg)))));
+		  if (integer(opt3_con(arg)) == 1)
+		    {
+		      if (opt3_direct(cdr(arg)) == (s7_pointer)g_sub_xi)
+			return(fx_sub_a1);
+		      if (opt3_direct(cdr(arg)) == (s7_pointer)add_p_pi)
+			return(fx_add_a1);
+		    }
+		  return(fx_c_ai_direct);
 		}
 	      return(fx_c_ac_direct);
 	    }
@@ -97429,20 +97454,20 @@ int main(int argc, char **argv)
  * index     1026   1016    973    967    972
  * tmock     1177   1165   1057   1019   1032
  * tvect     2519   2464   1772   1669   1497
- * timp      2637   2575   1930   1694   1742
+ * timp      2637   2575   1930   1694   1742  1736
  * texit     ----   ----   1778   1741   1770
  * s7test    1873   1831   1818   1829   1830
  * lt        2187   2172   2150   2185   1951
  * thook     ----   ----   2590   2030   2046
  * tauto     ----   ----   2562   2048   2034
- * dup       3805   3788   2492   2239   2139
+ * dup       3805   3788   2492   2239   2139  2124
  * tcopy     8035   5546   2539   2375   2386
  * tread     2440   2421   2419   2408   2405
  * fbench    2688   2583   2460   2430   2478
  * trclo     2735   2574   2454   2445   2449
  * titer     2865   2842   2641   2509   2465
  * tload     ----   ----   3046   2404   2566
- * tmat      3065   3042   2524   2578   2597
+ * tmat      3065   3042   2524   2578   2597  2591
  * tsort     3105   3104   2856   2804   2858
  * tobj      4016   3970   3828   3577   3526
  * teq       4068   4045   3536   3486   3557
@@ -97456,22 +97481,22 @@ int main(int argc, char **argv)
  * tmap      8869   8774   4489   4541   4586
  * tshoot    5525   5447   5183   5055   5048  5033
  * tform     5357   5348   5307   5316   5084
- * tstr      6880   6342   5488   5162   5225
- * tnum      6348   6013   5433   5396   5475
+ * tstr      6880   6342   5488   5162   5225  5219
+ * tnum      6348   6013   5433   5396   5475  5434
  * tlamb     6423   6273   5720   5560   5613
- * tgsl      8485   7802   6373   6282   6216
+ * tgsl      8485   7802   6373   6282   6216  6208
  * tlist     7896   7546   6558   6240   6300
  * tari      13.0   12.7   6827   6543   6278
- * tset      ----   ----   ----   6260   6299  6378??  TODO: 6369
+ * tset      ----   ----   ----   6260   6299  6369
  * trec      6936   6922   6521   6588   6583
- * tleft     10.4   10.2   7657   7479   7610
+ * tleft     10.4   10.2   7657   7479   7610  7629
  * tmisc     ----   ----   ----   8488   7866
  * tgc       11.9   11.1   8177   7857   8006
  * thash     11.8   11.7   9734   9479   9527
  * cb        11.2   11.0   9658   9564   9612
  * tgen      11.2   11.4   12.0   12.1   12.2
  * tall      15.6   15.6   15.6   15.6   15.1
- * calls     36.7   37.5   37.0   37.5   37.0  37.4 [do_let]  37.2 TODO: check this
+ * calls     36.7   37.5   37.0   37.5   37.3
  * sg        ----   ----   55.9   55.8   55.4
  * tbig     177.4  175.8  156.5  148.1  146.2
  * ---------------------------------------------
@@ -97481,5 +97506,4 @@ int main(int argc, char **argv)
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * add wasm test to test suite somehow (at least emscripten)
- * subtract_p_pp is_t_integer(y) if x etc (t670) and why funchecked?
  */
