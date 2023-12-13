@@ -33549,6 +33549,8 @@ static void simple_list_readable_display(s7_scheme *sc, s7_pointer lst, s7_int t
     }
 }
 
+#define S7_REWRITE 0
+
 static void pair_to_port(s7_scheme *sc, s7_pointer lst, s7_pointer port, use_write_t use_write, shared_info_t *ci)
 {
   s7_pointer x;
@@ -33558,9 +33560,8 @@ static void pair_to_port(s7_scheme *sc, s7_pointer lst, s7_pointer port, use_wri
   if (true_len < 0)                    /* a dotted list -- handle cars, then final cdr */
     len = (-true_len + 1);
   else len = (true_len == 0) ? circular_list_entries(lst) : true_len; /* circular list (nil is handled by unique_to_port) */
-
-  if ((use_write == P_READABLE) &&
-      (ci))
+  
+  if ((use_write == P_READABLE) && (ci))
     {
       int32_t href = peek_shared_ref(ci, lst);
       if (href != 0)
@@ -33573,9 +33574,13 @@ static void pair_to_port(s7_scheme *sc, s7_pointer lst, s7_pointer port, use_wri
 	      port_write_string(port)(sc, buf, plen, port);
 	      return;
 	    }}}
-
   if ((use_write != P_READABLE) &&
+#if S7_REWRITE
+      /* TODO: symbol is needed here (t718) so fixup below */
+      ((car(lst) == sc->quote_function) || (car(lst) == sc->quote_symbol)) &&
+#else
       (car(lst) == sc->quote_function) &&
+#endif
       (true_len == 2))
     {
       /* len == 1 is important, otherwise (list 'quote 1 2) -> '1 2 which looks weird
@@ -33583,7 +33588,19 @@ static void pair_to_port(s7_scheme *sc, s7_pointer lst, s7_pointer port, use_wri
        * so (quote x) = 'x but (quote x y z) should be left alone (if evaluated, it's an error)
        * :readable is tricky because the list might be something like (list 'quote (lambda () #f)) which needs to be evalable back to its original
        */
-      port_write_character(port)(sc, '\'', port);
+      port_write_character(port)(sc, '\'', port); /* TODO: if sc->quote_symbol above, use "quote" */
+#if S7_REWRITE
+      if ((!ci) && (is_pair(cadr(lst))))
+	{
+	  ci = make_shared_info(sc, cadr(lst), false);
+	  /* TODO: need is_cyclic from collect_shared?? */
+	  if (ci)
+	    {
+	      object_to_port_with_circle_check(sc, cadr(lst), port, P_WRITE, ci);
+	      new_shared_info(sc); /* ?? is this needed? have we messed up the incoming ci?? */
+	      return;
+	    }}
+#endif
       object_to_port_with_circle_check(sc, cadr(lst), port, P_WRITE, ci);
       return;
     }
@@ -34434,7 +34451,7 @@ static void collect_symbol(s7_scheme *sc, s7_pointer sym, s7_pointer e, s7_point
 
 static void collect_locals(s7_scheme *sc, s7_pointer body, s7_pointer e, s7_pointer args, s7_int gc_loc) /* currently called only in write_closure_readably */
 {
-  if (is_pair(body))
+  if (is_unquoted_pair(body))
     {
       collect_locals(sc, car(body), e, args, gc_loc);
       collect_locals(sc, cdr(body), e, args, gc_loc);
@@ -35412,8 +35429,7 @@ static void object_out_1(s7_scheme *sc, s7_pointer obj, s7_pointer strport, use_
 
 static inline s7_pointer object_out(s7_scheme *sc, s7_pointer obj, s7_pointer strport, use_write_t choice)
 {
-  if ((has_structure(obj)) &&
-      (obj != sc->rootlet))
+  if ((has_structure(obj)) && (obj != sc->rootlet))
     object_out_1(sc, obj, strport, choice);
   else object_to_port(sc, obj, strport, choice, NULL);
   return(obj);
@@ -54485,11 +54501,12 @@ static s7_pointer fx_vector_ref_tc(s7_scheme *sc, s7_pointer arg) {return(vector
 
 static s7_pointer fx_memq_sc(s7_scheme *sc, s7_pointer arg)   {return(memq_p_pp(sc, lookup(sc, cadr(arg)), opt2_con(cdr(arg))));}
 static s7_pointer fx_memq_sc_3(s7_scheme *sc, s7_pointer arg) {return(memq_3_p_pp(sc, lookup(sc, cadr(arg)), opt2_con(cdr(arg))));}
-static s7_pointer fx_memq_tc(s7_scheme *sc, s7_pointer arg) {return(memq_p_pp(sc, t_lookup(sc, cadr(arg), arg), opt2_con(cdr(arg))));}
-static s7_pointer fx_leq_sc(s7_scheme *sc, s7_pointer arg)  {return(leq_p_pp(sc, lookup(sc, cadr(arg)), opt2_con(cdr(arg))));}
-static s7_pointer fx_lt_sc(s7_scheme *sc, s7_pointer arg)   {return(lt_p_pp(sc, lookup(sc, cadr(arg)), opt2_con(cdr(arg))));}
-static s7_pointer fx_gt_sc(s7_scheme *sc, s7_pointer arg)   {return(gt_p_pp(sc, lookup(sc, cadr(arg)), opt2_con(cdr(arg))));}
-static s7_pointer fx_geq_sc(s7_scheme *sc, s7_pointer arg)  {return(geq_p_pp(sc, lookup(sc, cadr(arg)), opt2_con(cdr(arg))));}
+static s7_pointer fx_memq_tc(s7_scheme *sc, s7_pointer arg)   {return(memq_p_pp(sc, t_lookup(sc, cadr(arg), arg), opt2_con(cdr(arg))));}
+static s7_pointer fx_leq_sc(s7_scheme *sc, s7_pointer arg)    {return(leq_p_pp(sc, lookup(sc, cadr(arg)), opt2_con(cdr(arg))));}
+static s7_pointer fx_lt_sc(s7_scheme *sc, s7_pointer arg)     {return(lt_p_pp(sc, lookup(sc, cadr(arg)), opt2_con(cdr(arg))));}
+static s7_pointer fx_gt_sc(s7_scheme *sc, s7_pointer arg)     {return(gt_p_pp(sc, lookup(sc, cadr(arg)), opt2_con(cdr(arg))));}
+static s7_pointer fx_geq_sc(s7_scheme *sc, s7_pointer arg)    {return(geq_p_pp(sc, lookup(sc, cadr(arg)), opt2_con(cdr(arg))));}
+static s7_pointer fx_list_sc(s7_scheme *sc, s7_pointer arg)   {return(list_2(sc, lookup(sc, cadr(arg)), opt2_con(cdr(arg))));}
 
 #define fx_char_eq_sc_any(Name, Lookup) \
   static s7_pointer Name(s7_scheme *sc, s7_pointer arg) \
@@ -56140,6 +56157,7 @@ static s7_pointer fx_c_ac(s7_scheme *sc, s7_pointer arg)
 
 static s7_pointer fx_c_ac_direct(s7_scheme *sc, s7_pointer arg) {return(((s7_p_pp_t)opt3_direct(cdr(arg)))(sc, fx_call(sc, cdr(arg)), opt3_con(arg)));}
 static s7_pointer fx_c_ai_direct(s7_scheme *sc, s7_pointer arg) {return(((s7_p_pi_t)opt3_direct(cdr(arg)))(sc, fx_call(sc, cdr(arg)), integer(opt3_con(arg))));}
+
 static s7_pointer fx_sub_a1(s7_scheme *sc, s7_pointer arg) 
 {
   s7_pointer p = fx_call(sc, cdr(arg));
@@ -56154,6 +56172,14 @@ static s7_pointer fx_add_a1(s7_scheme *sc, s7_pointer arg)
   if (is_t_integer(p)) return(add_if_overflow_to_real_or_big_integer(sc, integer(p), 1));
   if (is_t_real(p)) return(make_real(sc, real(p) + 1.0));
   return(add_p_pp(sc, p, int_one));
+}
+
+static s7_pointer fx_lt_ad(s7_scheme *sc, s7_pointer arg)
+{
+  s7_pointer p = fx_call(sc, cdr(arg));
+  if (is_t_real(p)) return(make_boolean(sc, real(p) < real(opt3_con(arg))));
+  if (is_t_integer(p)) return(make_boolean(sc, integer(p) < real(opt3_con(arg))));
+  return(make_boolean(sc, lt_b_7pp(sc, p, opt3_con(arg))));
 }
 
 static s7_pointer fx_is_eq_ac(s7_scheme *sc, s7_pointer arg)
@@ -57350,6 +57376,7 @@ static s7_function fx_choose(s7_scheme *sc, s7_pointer holder, s7_pointer cur_en
 		  if (car(arg) == sc->leq_symbol) return(fx_leq_sc);
 		  if (car(arg) == sc->gt_symbol)  return(fx_gt_sc);
 		  if (car(arg) == sc->geq_symbol) return(fx_geq_sc);
+		  if (car(arg) == sc->list_symbol) return(fx_list_sc);
 		  set_opt3_direct(cdr(arg), (s7_pointer)(s7_p_pp_function(global_value(car(arg)))));
 		  return(fx_c_sc_direct);
 		}}
@@ -57593,6 +57620,9 @@ static s7_function fx_choose(s7_scheme *sc, s7_pointer holder, s7_pointer cur_en
 		      if (fn_proc(arg) == g_memq_4)
 			set_opt3_direct(cdr(arg), memq_4_p_pp); /* this does not parallel 2 and 3 above (sigh) */
 		}
+	      else 
+		if ((is_t_real(opt3_con(arg))) && (opt3_direct(cdr(arg)) == (s7_pointer)lt_p_pp))
+		  return(fx_lt_ad);
 	      if ((is_t_integer(opt3_con(arg))) && (s7_p_pi_function(global_value(car(arg)))))
 		{
 		  set_opt3_direct(cdr(arg), (s7_pointer)(s7_p_pi_function(global_value(car(arg)))));
@@ -97471,10 +97501,10 @@ int main(int argc, char **argv)
  * tsort     3105   3104   2856   2804   2858
  * tobj      4016   3970   3828   3577   3526
  * teq       4068   4045   3536   3486   3557
- * tio       3816   3752   3683   3620   3617
+ * tio       3816   3752   3683   3620   3617  3597
  * tmac      3950   3873   3033   3677   3677
  * tcase     4960   4793   4439   4430   4439
- * tclo      4787   4735   4390   4384   4470
+ * tclo      4787   4735   4390   4384   4470  4460
  * tlet      7775   5640   4450   4427   4457
  * tfft      7820   7729   4755   4476   4536
  * tstar     6139   5923   5519   4449   4550
@@ -97482,7 +97512,7 @@ int main(int argc, char **argv)
  * tshoot    5525   5447   5183   5055   5048  5033
  * tform     5357   5348   5307   5316   5084
  * tstr      6880   6342   5488   5162   5225  5219
- * tnum      6348   6013   5433   5396   5475  5434
+ * tnum      6348   6013   5433   5396   5475  5434 5419
  * tlamb     6423   6273   5720   5560   5613
  * tgsl      8485   7802   6373   6282   6216  6208
  * tlist     7896   7546   6558   6240   6300
@@ -97506,4 +97536,7 @@ int main(int argc, char **argv)
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * add wasm test to test suite somehow (at least emscripten)
+ * t718 -> 33582 primarily, also unquoted_pair in locals?
+ *   no need to gc_protect after first in pair_to_port
+ * combine lets?
  */

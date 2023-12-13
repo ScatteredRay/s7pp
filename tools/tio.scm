@@ -6,11 +6,11 @@
 (define (wis)
   (with-input-from-string "asdf"
     (lambda ()
-      (unless (eqv? (read-char) #\a)
+      (unless (char=? (read-char) #\a)
 	(format *stderr* "read-char trouble\n"))
-      (unless (eqv? (read-char) #\s)
+      (unless (char=? (read-char) #\s)
 	(format *stderr* "read-char trouble\n"))
-      (unless (eqv? (read-char (current-input-port)) #\d)
+      (unless (char=? (read-char (current-input-port)) #\d)
 	(format *stderr* "current-input-port trouble\n")))))
 
 (define (call-wis) 
@@ -26,9 +26,9 @@
 	(lambda (p)
 	  (if (port-closed? p)
 	      (format *stderr* "cwis port closed\n"))
-	  (unless (eqv? (read-byte p) a)
+	  (unless (= (read-byte p) a)
 	    (format *stderr* "call read-char trouble\n"))
-	  (unless (eqv? (read-byte p) s)
+	  (unless (= (read-byte p) s)
 	    (format *stderr* "call read-char trouble\n"))
 	  (unless (= (port-position p) 2)
 	    (format *stderr* "cwis position: ~A~%" (port-position p))))))))
@@ -229,11 +229,7 @@
 
 ;(call-funcs)
 
-;(gc) (gc)
-;(set! (*s7* 'print-length) 123123123)
-;(display (*s7* 'memory-usage)) (newline)
 ;(when (> (*s7* 'profile) 0) (show-profile 200))
-
 (exit)
 
 ;; this is dominated by fopen, fwrite, and fclose -- mallocs everywhere!, so I multiplied the string ports by 5
