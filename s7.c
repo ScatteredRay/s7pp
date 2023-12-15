@@ -1441,17 +1441,14 @@ static s7_pointer wrap_string(s7_scheme *sc, const char *str, s7_int len);
   #define DISABLE_FILE_OUTPUT 0
 #endif
 
-#if S7_DEBUGGING || POINTER_32 || WITH_WARNINGS || DISABLE_FILE_OUTPUT
-  static s7_scheme *cur_sc = NULL; /* intended for gdb (see gdbinit), but also used elsewhere unfortunately */
-#endif
+static s7_scheme *cur_sc = NULL; /* intended for gdb (see gdbinit), but also used elsewhere unfortunately */
+static s7_pointer set_elist_1(s7_scheme *sc, s7_pointer x1);
 
 #if DISABLE_FILE_OUTPUT
 static FILE *old_fopen(const char *pathname, const char *mode) {return(fopen(pathname, mode));}
 
 #define fwrite local_fwrite
 #define fopen local_fopen   /* open only used for file_probe (O_RDONLY), creat and write not used */
-
-static s7_pointer set_elist_1(s7_scheme *sc, s7_pointer x1);
 
 static size_t local_fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream)
 {
@@ -1470,9 +1467,6 @@ static FILE *local_fopen(const char *pathname, const char *mode)
 
 
 #if POINTER_32
-#if (!DISABLE_FILE_OUTPUT)
-  static s7_pointer set_elist_1(s7_scheme *sc, s7_pointer x1);
-#endif
 static void *Malloc(size_t bytes)
 {
   void *p = malloc(bytes);
@@ -6575,7 +6569,8 @@ static s7_int gc_protect_2(s7_scheme *sc, s7_pointer x, int32_t line)
   if ((sc->safety > NO_SAFETY) && (!already_warned) && (loc > 8192))
     {
       already_warned = true;
-      fprintf(stderr, "s7_gc_protect has protected more than 8192 values? (line: %d, code: %s)\n", line, string_value(s7_object_to_string(sc, current_code(sc), false)));
+      fprintf(stderr, "s7_gc_protect has protected more than 8192 values? (line: %d, code: %s, loc: %" ld64 ")\n", 
+	      line, string_value(s7_object_to_string(sc, current_code(sc), false)), loc);
     }
   return(loc);
 }
@@ -9627,7 +9622,7 @@ static void append_let(s7_scheme *sc, s7_pointer new_e, s7_pointer old_e)
     if (old_e == sc->s7_starlet)
       {
 	s7_pointer iter = s7_make_iterator(sc, sc->s7_starlet);
-	s7_int gc_loc = s7_gc_protect(sc, iter);
+	s7_int gc_loc = gc_protect_1(sc, iter);
 	iterator_current(iter) = cons_unchecked(sc, sc->F, sc->F);
 	set_mark_seq(iter); /* so carrier is GC protected by mark_iterator */
 	while (true)
@@ -10081,9 +10076,28 @@ static s7_pointer inlet_chooser(s7_scheme *sc, s7_pointer f, int32_t args, s7_po
 /* -------------------------------- let->list -------------------------------- */
 static s7_pointer proper_list_reverse_in_place(s7_scheme *sc, s7_pointer list);
 
+#if CYCLE_DEBUGGING
+static char *base = NULL, *min_char = NULL;
+#endif
+
 s7_pointer s7_let_to_list(s7_scheme *sc, s7_pointer let)
 {
   s7_pointer x;
+#if CYCLE_DEBUGGING
+  char xx;
+  if (!base) base = &xx; 
+  else 
+    if (&xx > base) base = &xx; 
+    else 
+      if ((!min_char) || (&xx < min_char))
+	{
+	  min_char = &xx;
+	  if ((base - min_char) > 100000)
+	    {
+	      fprintf(stderr, "infinite recursion?\n");
+	      abort();
+	    }}
+#endif
   sc->temp3 = sc->w;
   sc->w = sc->nil;
   if (let == sc->rootlet)
@@ -10113,7 +10127,7 @@ s7_pointer s7_let_to_list(s7_scheme *sc, s7_pointer let)
 	if (let == sc->s7_starlet) /* (let->list *s7*) via s7_starlet_make_iterator */
 	  {
 	    iter = s7_make_iterator(sc, let);
-	    gc_loc = s7_gc_protect(sc, iter);
+	    gc_loc = gc_protect_1(sc, iter);
 	  }
 	else iter = sc->nil;
 
@@ -24546,6 +24560,12 @@ s7_double s7_real_part(s7_pointer x)
   return(0.0);
 }
 
+static s7_double real_part_d_p(s7_pointer x)
+{
+  if (is_number(x)) return(s7_real_part(x));
+  sole_arg_wrong_type_error_nr(cur_sc, cur_sc->real_part_symbol, x, a_number_string);
+}
+
 static s7_pointer real_part_p_p(s7_scheme *sc, s7_pointer p)
 {
   if (is_t_complex(p)) return(make_real(sc, real_part(p)));
@@ -24589,6 +24609,12 @@ s7_double s7_imag_part(s7_pointer x)
     return((s7_double)mpfr_get_d(mpc_imagref(big_complex(x)), MPFR_RNDN));
 #endif
   return(0.0);
+}
+
+static s7_double imag_part_d_p(s7_pointer x)
+{
+  if (is_number(x)) return(s7_imag_part(x));
+  sole_arg_wrong_type_error_nr(cur_sc, cur_sc->imag_part_symbol, x, a_number_string);
 }
 
 static s7_pointer imag_part_p_p(s7_scheme *sc, s7_pointer p)
@@ -32408,7 +32434,7 @@ static bool collect_shared_info(s7_scheme *sc, shared_info_t *ci, s7_pointer top
   return(top_cyclic);
 }
 
-static shared_info_t *init_circle_info(s7_scheme *sc)
+static shared_info_t *make_shared_info(s7_scheme *sc)
 {
   shared_info_t *ci = (shared_info_t *)Calloc(1, sizeof(shared_info_t));
   ci->size = INITIAL_SHARED_INFO_SIZE;
@@ -32421,9 +32447,19 @@ static shared_info_t *init_circle_info(s7_scheme *sc)
   return(ci);
 }
 
-static inline shared_info_t *new_shared_info(s7_scheme *sc)
+static void free_shared_info(shared_info_t *ci)
 {
-  shared_info_t *ci = sc->circle_info;
+  if (ci)
+    {
+      free(ci->objs);
+      free(ci->refs);
+      free(ci->defined);
+      free(ci);
+    }
+}
+
+static inline shared_info_t *clear_shared_info(shared_info_t *ci)
+{
   if (ci->top > 0)
     {
       memclr((void *)(ci->refs), ci->top * sizeof(int32_t));
@@ -32438,7 +32474,7 @@ static inline shared_info_t *new_shared_info(s7_scheme *sc)
   return(ci);
 }
 
-static shared_info_t *make_shared_info(s7_scheme *sc, s7_pointer top, bool stop_at_print_length)
+static shared_info_t *load_shared_info(s7_scheme *sc, s7_pointer top, bool stop_at_print_length, shared_info_t *ci)
 {
   /* for the printer, here only if is_structure(top) and top is not sc->rootlet */
   bool no_problem = true;
@@ -32513,7 +32549,7 @@ static shared_info_t *make_shared_info(s7_scheme *sc, s7_pointer top, bool stop_
   if ((S7_DEBUGGING) && (is_any_vector(top)) && (!is_t_vector(top))) fprintf(stderr, "%s[%d]: got abnormal vector\n", __func__, __LINE__);
 
   {
-    shared_info_t *ci = new_shared_info(sc);
+    clear_shared_info(ci);
     /* collect all pointers associated with top */
     bool cyclic = collect_shared_info(sc, ci, top, stop_at_print_length);
     s7_pointer *ci_objs = ci->objs;
@@ -32555,7 +32591,7 @@ static s7_pointer cyclic_sequences_p_p(s7_scheme *sc, s7_pointer obj)
 {
   if (has_structure(obj))
     {
-      shared_info_t *ci = (sc->object_out_locked) ? sc->circle_info : make_shared_info(sc, obj, false); /* false=don't stop at print length (vectors etc) */
+      shared_info_t *ci = (sc->object_out_locked) ? sc->circle_info : load_shared_info(sc, obj, false, sc->circle_info); /* false=don't stop at print length (vectors etc) */
       if (ci)
 	{
 	  s7_pointer lst;
@@ -33549,7 +33585,7 @@ static void simple_list_readable_display(s7_scheme *sc, s7_pointer lst, s7_int t
     }
 }
 
-#define S7_REWRITE 0
+#define WITH_CI 1
 
 static void pair_to_port(s7_scheme *sc, s7_pointer lst, s7_pointer port, use_write_t use_write, shared_info_t *ci)
 {
@@ -33575,33 +33611,40 @@ static void pair_to_port(s7_scheme *sc, s7_pointer lst, s7_pointer port, use_wri
 	      return;
 	    }}}
   if ((use_write != P_READABLE) &&
-#if S7_REWRITE
-      /* TODO: symbol is needed here (t718) so fixup below */
       ((car(lst) == sc->quote_function) || (car(lst) == sc->quote_symbol)) &&
-#else
-      (car(lst) == sc->quote_function) &&
-#endif
       (true_len == 2))
     {
-      /* len == 1 is important, otherwise (list 'quote 1 2) -> '1 2 which looks weird
+      bool need_new_ci = ((!ci) && (is_pair(cadr(lst))));
+      shared_info_t *new_ci = NULL;
+      bool old_locked = sc->object_out_locked;
+      /* true_len == 2 is important, otherwise (list 'quote 1 2) -> '1 2 which looks weird
        *   or (object->string (apply . `''1)) -> "'quote 1"
        * so (quote x) = 'x but (quote x y z) should be left alone (if evaluated, it's an error)
        * :readable is tricky because the list might be something like (list 'quote (lambda () #f)) which needs to be evalable back to its original
        */
-      port_write_character(port)(sc, '\'', port); /* TODO: if sc->quote_symbol above, use "quote" */
-#if S7_REWRITE
-      if ((!ci) && (is_pair(cadr(lst))))
+      if (car(lst) == sc->quote_symbol)
+	port_write_string(port)(sc, "(quote ", 7, port);
+      else port_write_character(port)(sc, '\'', port);
+#if WITH_CI
+      if (need_new_ci)
 	{
-	  ci = make_shared_info(sc, cadr(lst), false);
-	  /* TODO: need is_cyclic from collect_shared?? */
-	  if (ci)
-	    {
-	      object_to_port_with_circle_check(sc, cadr(lst), port, P_WRITE, ci);
-	      new_shared_info(sc); /* ?? is this needed? have we messed up the incoming ci?? */
-	      return;
-	    }}
-#endif
+	  new_ci = make_shared_info(sc);
+	  clear_shared_info(new_ci);
+	  new_ci = load_shared_info(sc, cadr(lst), false, new_ci); /* do we need cyclic check?? restore old? */
+	}
+      else new_ci = ci;
+      if (need_new_ci) sc->object_out_locked = true;
+      object_to_port_with_circle_check(sc, cadr(lst), port, P_WRITE, new_ci);
+      if (need_new_ci) sc->object_out_locked = old_locked;
+#else
       object_to_port_with_circle_check(sc, cadr(lst), port, P_WRITE, ci);
+#endif
+#if WITH_CI
+      if (need_new_ci)
+	free_shared_info(new_ci);
+#endif
+      if (car(lst) == sc->quote_symbol)
+	port_write_character(port)(sc, ')', port);
       return;
     }
 #if WITH_IMMUTABLE_UNQUOTE
@@ -33617,16 +33660,12 @@ static void pair_to_port(s7_scheme *sc, s7_pointer lst, s7_pointer port, use_wri
     port_write_string(port)(sc, "(values ", 8, port);
   else port_write_character(port)(sc, '(', port);
 
-  check_stack_size(sc);
-  gc_protect_via_stack(sc, lst);
-
   if (use_write == P_READABLE)
     {
       if (!is_cyclic(lst))
 	{
 	  /* here (and in the cyclic case) we need to handle immutable pairs -- this requires using cons rather than list etc */
 	  simple_list_readable_display(sc, lst, true_len, len, port, ci, immutable);
-	  unstack_gc_protect(sc);
 	  return;
 	}
       if (ci)
@@ -33660,7 +33699,6 @@ static void pair_to_port(s7_scheme *sc, s7_pointer lst, s7_pointer port, use_wri
 		  else
 		    {
 		      simple_list_readable_display(sc, lst, true_len, len, port, ci, immutable);
-		      unstack_gc_protect(sc);
 		      return;
 		    }}}
 	  else
@@ -33755,7 +33793,6 @@ static void pair_to_port(s7_scheme *sc, s7_pointer lst, s7_pointer port, use_wri
       if (plen <= 0)
 	{
 	  port_write_string(port)(sc, "(...))", 6, port); /* open paren above about 150 lines, "list" here is wrong if it's a cons */
-	  unstack_gc_protect(sc);
 	  return;
 	}
       if (ci)
@@ -33766,7 +33803,6 @@ static void pair_to_port(s7_scheme *sc, s7_pointer lst, s7_pointer port, use_wri
 	      if (ci->ctr > sc->print_length)
 		{
 		  port_write_string(port)(sc, " ...)", 5, port);
-		  unstack_gc_protect(sc);
 		  return;
 		}
 	      object_to_port_with_circle_check(sc, car(x), port, NOT_P_DISPLAY(use_write), ci);
@@ -33796,10 +33832,7 @@ static void pair_to_port(s7_scheme *sc, s7_pointer lst, s7_pointer port, use_wri
 		{
 		  object_to_port(sc, car(x), port, NOT_P_DISPLAY(use_write), ci);
 		  if (port_position(port) >= sc->objstr_max_len)
-		    {
-		      unstack_gc_protect(sc);
-		      return;
-		    }
+		    return;
 		  if (port_position(port) >= port_data_size(port))
 		    resize_port_data(sc, port, port_data_size(port) * 2);
 		  port_data(port)[port_position(port)++] = (uint8_t)' ';
@@ -33826,7 +33859,6 @@ static void pair_to_port(s7_scheme *sc, s7_pointer lst, s7_pointer port, use_wri
 		}}
 	  port_write_character(port)(sc, ')', port);
 	}}
-  unstack_gc_protect(sc);
 }
 
 static s7_pointer find_closure(s7_scheme *sc, s7_pointer closure, s7_pointer current_let);
@@ -33932,6 +33964,22 @@ static void hash_table_to_port(s7_scheme *sc, s7_pointer hash, s7_pointer port, 
   bool too_long = false, hash_cyclic = false, copied = false, immut = false, letd = false;
   s7_pointer iterator, p;
   int32_t href = -1;
+
+#if CYCLE_DEBUGGING
+  char xx;
+  if (!base) base = &xx; 
+  else 
+    if (&xx > base) base = &xx; 
+    else 
+      if ((!min_char) || (&xx < min_char))
+	{
+	  min_char = &xx;
+	  if ((base - min_char) > 100000)
+	    {
+	      fprintf(stderr, "infinite recursion?\n");
+	      abort();
+	    }}
+#endif
 
   if (len == 0)
     {
@@ -34640,9 +34688,9 @@ static void write_closure_readably(s7_scheme *sc, s7_pointer obj, s7_pointer por
 	  return;
 	}
       /* perhaps: if any sequence in the closure_body is cyclic, complain, but how to check without clobbering ci?
-       *   perhaps pass ci, and use make_shared_info if ci=null else continue_shared_info?
+       *   perhaps pass ci, and use load_shared_info if ci=null else continue_shared_info?
        *   this can happen only if (apply lambda ... cyclic-seq ...) I think
-       *   long-term we need to include closure_body(obj) in the top object_out make_shared_info
+       *   long-term we need to include closure_body(obj) in the top object_out load_shared_info
        */
     }
   if (is_symbol(arglist)) arglist = set_dlist_1(sc, arglist);
@@ -35414,7 +35462,7 @@ static void object_out_1(s7_scheme *sc, s7_pointer obj, s7_pointer strport, use_
     object_to_port_with_circle_check(sc, T_Pos(obj), strport, choice, sc->circle_info);
   else
     {
-      shared_info_t *ci = make_shared_info(sc, T_Pos(obj), choice != P_READABLE);
+      shared_info_t *ci = load_shared_info(sc, T_Pos(obj), choice != P_READABLE, sc->circle_info);
       if (ci)
 	{
 	  sc->object_out_locked = true;
@@ -47565,13 +47613,13 @@ static bool c_pointer_equivalent(s7_scheme *sc, s7_pointer x, s7_pointer y, shar
   if (c_pointer(x) != c_pointer(y)) return(false);
   if (c_pointer_type(x) != c_pointer_type(y))
     {
-      if (!nci) nci = new_shared_info(sc);
+      if (!nci) nci = clear_shared_info(sc->circle_info);
       if (!is_equivalent_1(sc, c_pointer_type(x), c_pointer_type(y), nci))
 	return(false);
     }
   if (c_pointer_info(x) != c_pointer_info(y))
     {
-      if (!nci) nci = new_shared_info(sc);
+      if (!nci) nci = clear_shared_info(sc->circle_info);
       if (!is_equivalent_1(sc, c_pointer_info(x), c_pointer_info(y), nci))
 	return(false);
     }
@@ -47586,13 +47634,13 @@ static bool c_pointer_equal(s7_scheme *sc, s7_pointer x, s7_pointer y, shared_in
   if (c_pointer(x) != c_pointer(y)) return(false);
   if (c_pointer_type(x) != c_pointer_type(y))
     {
-      if (!nci) nci = new_shared_info(sc);
+      if (!nci) nci = clear_shared_info(sc->circle_info);
       if (!is_equal_1(sc, c_pointer_type(x), c_pointer_type(y), nci))
 	return(false);
     }
   if (c_pointer_info(x) != c_pointer_info(y))
     {
-      if (!nci) nci = new_shared_info(sc);
+      if (!nci) nci = clear_shared_info(sc->circle_info);
       if (!is_equal_1(sc, c_pointer_info(x), c_pointer_info(y), nci))
 	return(false);
     }
@@ -47704,7 +47752,7 @@ static bool c_objects_are_equal(s7_scheme *sc, s7_pointer a, s7_pointer b, share
     {
       if (equal_ref(sc, a, b, ci)) return(true); /* and nci == ci above */
     }
-  else nci = new_shared_info(sc);
+  else nci = clear_shared_info(sc->circle_info);
 
   for (pa = to_list(sc, set_plist_1(sc, a)), pb = to_list(sc, set_plist_1(sc, b)); is_pair(pa) && (is_pair(pb)); pa = cdr(pa), pb = cdr(pb))
     if (!(is_equal_1(sc, car(pa), car(pb), nci)))
@@ -47762,7 +47810,7 @@ static bool hash_table_equal_1(s7_scheme *sc, s7_pointer x, s7_pointer y, shared
 
   len = hash_table_mask(x) + 1;
   lists = hash_table_elements(x);
-  if (!nci) nci = new_shared_info(sc);
+  if (!nci) nci = clear_shared_info(sc->circle_info);
   eqf = (equivalent) ? is_equivalent_1 : is_equal_1;
 
   hf = hash_table_checker(y);
@@ -47863,7 +47911,7 @@ static bool let_equal_1(s7_scheme *sc, s7_pointer x, s7_pointer y, shared_info_t
   if (x_len != y_len)                                        /* symbol in x, not in y */
     return(false);
 
-  if (!nci) nci = new_shared_info(sc);
+  if (!nci) nci = clear_shared_info(sc->circle_info);
 
   for (ex = x; is_let(T_Lid(ex)); ex = let_outlet(ex))
     for (px = let_slots(ex); tis_slot(px); px = next_slot(px))
@@ -47934,7 +47982,7 @@ static bool pair_equal(s7_scheme *sc, s7_pointer x, s7_pointer y, shared_info_t 
   if (!is_pair(y))
     return(false);
   if (!ci)
-    ci = new_shared_info(sc);
+    ci = clear_shared_info(sc->circle_info);
   else
     if (inline_equal_ref(sc, x, y, ci))
       return(true);
@@ -47959,7 +48007,7 @@ static bool pair_equivalent(s7_scheme *sc, s7_pointer x, s7_pointer y, shared_in
       return(false);
     }
   if (!ci)
-    ci = new_shared_info(sc);
+    ci = clear_shared_info(sc->circle_info);
   else
     if (inline_equal_ref(sc, x, y, ci))
       return(true);
@@ -48058,7 +48106,7 @@ static bool vector_equal(s7_scheme *sc, s7_pointer x, s7_pointer y, shared_info_
 	{
 	  if (equal_ref(sc, x, y, ci)) return(true);
 	}
-      else nci = new_shared_info(sc);
+      else nci = clear_shared_info(sc->circle_info);
     }
   for (s7_int i = 0; i < len; i++)
     if (!(is_equal_1(sc, vector_element(x, i), vector_element(y, i), nci)))
@@ -48161,7 +48209,7 @@ static bool vector_equivalent(s7_scheme *sc, s7_pointer x, s7_pointer y, shared_
 	{
 	  if (equal_ref(sc, x, y, ci)) return(true);
 	}
-      else nci = new_shared_info(sc);
+      else nci = clear_shared_info(sc->circle_info);
     }
   for (i = 0; i < len; i++)
     if (!(is_equivalent_1(sc, vector_element(x, i), vector_element(y, i), nci)))
@@ -49465,7 +49513,7 @@ static s7_pointer s7_copy_1(s7_scheme *sc, s7_pointer caller, s7_pointer args)
       if (source == sc->s7_starlet) /* *s7* */
 	{
 	  s7_pointer iter = s7_make_iterator(sc, sc->s7_starlet);
-	  s7_int gc_loc = s7_gc_protect(sc, iter);
+	  s7_int gc_loc = gc_protect_1(sc, iter);
 	  for (i = 0; i < start; i++)
 	    {
 	      s7_iterate(sc, iter);
@@ -50840,7 +50888,7 @@ static s7_pointer let_to_let(s7_scheme *sc, s7_pointer obj)
 	if (obj == sc->s7_starlet)
 	  {
 	    s7_pointer iter = s7_make_iterator(sc, obj);
-	    s7_int gc_loc1 = s7_gc_protect(sc, iter);
+	    s7_int gc_loc1 = gc_protect_1(sc, iter);
 	    while (true)
 	      {
 		s7_pointer x = s7_iterate(sc, iter);
@@ -95291,8 +95339,8 @@ static void init_opt_functions(s7_scheme *sc)
   s7_set_p_p_function(sc, global_value(sc->is_negative_symbol), is_negative_p_p);
   s7_set_p_p_function(sc, global_value(sc->real_part_symbol), real_part_p_p);
   s7_set_p_p_function(sc, global_value(sc->imag_part_symbol), imag_part_p_p);
-  s7_set_d_p_function(sc, global_value(sc->real_part_symbol), s7_real_part);
-  s7_set_d_p_function(sc, global_value(sc->imag_part_symbol), s7_imag_part);
+  s7_set_d_p_function(sc, global_value(sc->real_part_symbol), real_part_d_p);
+  s7_set_d_p_function(sc, global_value(sc->imag_part_symbol), imag_part_d_p);
   s7_set_b_i_function(sc, global_value(sc->is_positive_symbol), is_positive_i);
   s7_set_b_d_function(sc, global_value(sc->is_positive_symbol), is_positive_d);
   s7_set_b_i_function(sc, global_value(sc->is_negative_symbol), is_negative_i);
@@ -96568,9 +96616,7 @@ s7_scheme *s7_init(void)
   pthread_mutex_unlock(&init_lock);
 #endif
   sc = (s7_scheme *)Calloc(1, sizeof(s7_scheme)); /* not malloc! */
-#if S7_DEBUGGING || POINTER_32 || WITH_WARNINGS || DISABLE_FILE_OUTPUT
   cur_sc = sc;                                    /* for gdb/debugging */
-#endif
   sc->gc_off = true;                              /* sc->args and so on are not set yet, so a gc during init -> segfault */
   sc->gc_in_progress = false;
   sc->gc_stats = 0;
@@ -96865,7 +96911,7 @@ s7_scheme *s7_init(void)
   sc->size_symbol = make_symbol(sc, "size", 4);
   sc->is_mutable_symbol = make_symbol(sc, "mutable?", 8);
   sc->file__symbol = make_symbol(sc, "FILE*", 5);
-  sc->circle_info = init_circle_info(sc);
+  sc->circle_info = make_shared_info(sc);
   sc->fdats = (format_data_t **)Calloc(8, sizeof(format_data_t *));
   sc->num_fdats = 8;
   sc->mlist_1 = semipermanent_list(sc, 1);
@@ -97278,10 +97324,7 @@ void s7_free(s7_scheme *sc)
   free(sc->protected_objects_free_list);
   if (sc->read_line_buf) free(sc->read_line_buf);
   free(sc->strbuf);
-  free(sc->circle_info->objs);
-  free(sc->circle_info->refs);
-  free(sc->circle_info->defined);
-  free(sc->circle_info);
+  free_shared_info(sc->circle_info);
   if (sc->file_names) free(sc->file_names);
   free(sc->unentry);
   free(sc->input_port_stack);
@@ -97364,7 +97407,7 @@ void s7_repl(s7_scheme *sc)
    */
   bool repl_loaded = false;
   s7_pointer e = s7_inlet(sc, set_clist_2(sc, make_symbol(sc, "init_func", 9), make_symbol(sc, "libc_s7_init", 12)));
-  s7_int gc_loc = s7_gc_protect(sc, e);
+  s7_int gc_loc = gc_protect_1(sc, e);
   s7_pointer old_e = s7_set_curlet(sc, e);   /* e is now (curlet) so loaded names from libc will be placed there, not in (rootlet) */
   s7_pointer val = s7_load_with_environment(sc, "libc_s7.so", e);
   if (val)
@@ -97500,7 +97543,7 @@ int main(int argc, char **argv)
  * tmat      3065   3042   2524   2578   2597  2591
  * tsort     3105   3104   2856   2804   2858
  * tobj      4016   3970   3828   3577   3526
- * teq       4068   4045   3536   3486   3557
+ * teq       4068   4045   3536   3486   3557  3550
  * tio       3816   3752   3683   3620   3617  3597
  * tmac      3950   3873   3033   3677   3677
  * tcase     4960   4793   4439   4430   4439
@@ -97536,7 +97579,10 @@ int main(int argc, char **argv)
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * add wasm test to test suite somehow (at least emscripten)
- * t718 -> 33582 primarily, also unquoted_pair in locals?
- *   no need to gc_protect after first in pair_to_port
  * combine lets?
+ * check other gc_protects (pair_to_port etc)
+ *   gc_protect_1 iter? gc_protect_1|2 -> stack? 50894 should use stack if possible
+ * s7test map rootlet (or let->list) at start? does this work now at the end?
+ * fix the 9x15 case in snd-motif.scm
+ * widget-size (pane equal) 
  */
