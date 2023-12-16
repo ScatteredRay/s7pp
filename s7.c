@@ -4934,8 +4934,8 @@ static char *describe_type_bits(s7_scheme *sc, s7_pointer obj)
 
   buf = (char *)Malloc(1024);
   snprintf(buf, 1024, "type: %s? (%d), opt_op: %d %s, flags: #x%" PRIx64 "%s",
-	   type_name(sc, obj, NO_ARTICLE), typ, 
-	   unchecked_optimize_op(obj), (unchecked_optimize_op(obj) < NUM_OPS) ? op_names[unchecked_optimize_op(obj)] : "", full_typ, 
+	   type_name(sc, obj, NO_ARTICLE), typ,
+	   unchecked_optimize_op(obj), (unchecked_optimize_op(obj) < NUM_OPS) ? op_names[unchecked_optimize_op(obj)] : "", full_typ,
 	   str);
   return(buf);
 }
@@ -6569,7 +6569,7 @@ static s7_int gc_protect_2(s7_scheme *sc, s7_pointer x, int32_t line)
   if ((sc->safety > NO_SAFETY) && (!already_warned) && (loc > 8192))
     {
       already_warned = true;
-      fprintf(stderr, "s7_gc_protect has protected more than 8192 values? (line: %d, code: %s, loc: %" ld64 ")\n", 
+      fprintf(stderr, "s7_gc_protect has protected more than 8192 values? (line: %d, code: %s, loc: %" ld64 ")\n",
 	      line, string_value(s7_object_to_string(sc, current_code(sc), false)), loc);
     }
   return(loc);
@@ -8379,7 +8379,7 @@ static uint32_t resize_stack_unchecked(s7_scheme *sc)
 
 void s7_show_stack(s7_scheme *sc)
 {
-  if (sc->stack_end >= sc->stack_resize_trigger) 
+  if (sc->stack_end >= sc->stack_resize_trigger)
     resize_stack_unchecked(sc);
   fprintf(stderr, "stack:\n");
   for (s7_int i = stack_top(sc) - 1, j = 0; (i >= 3) && (j < sc->show_stack_limit); i -= 4, j++) /* s7_int (or uint64_t?) is correct -- not uint32_t */
@@ -10085,10 +10085,10 @@ s7_pointer s7_let_to_list(s7_scheme *sc, s7_pointer let)
   s7_pointer x;
 #if CYCLE_DEBUGGING
   char xx;
-  if (!base) base = &xx; 
-  else 
-    if (&xx > base) base = &xx; 
-    else 
+  if (!base) base = &xx;
+  else
+    if (&xx > base) base = &xx;
+    else
       if ((!min_char) || (&xx < min_char))
 	{
 	  min_char = &xx;
@@ -18201,7 +18201,7 @@ static s7_pointer big_expt(s7_scheme *sc, s7_pointer args)
       else
 	if (s7_real_part(y) < 0.0)
 	  division_by_zero_error_2_nr(sc, sc->expt_symbol, x, y);
-      
+
       if ((is_rational(x)) && (is_rational(y)))
 	return(int_zero);
       return(real_zero);
@@ -29396,11 +29396,10 @@ static s7_pointer read_file(s7_scheme *sc, FILE *fp, const char *name, s7_int ma
 #if (!MS_WINDOWS)
   s7_int size;
 #endif
-  s7_int port_loc;
   block_t *b = mallocate_port(sc);
 
   new_cell(sc, port, T_INPUT_PORT);
-  port_loc = gc_protect_1(sc, port);
+  gc_protect_via_stack(sc, port);
   port_block(port) = b;
   port_port(port) = (port_t *)block_data(b);
   port_set_closed(port, false);
@@ -29474,7 +29473,7 @@ static s7_pointer read_file(s7_scheme *sc, FILE *fp, const char *name, s7_int ma
   port_position(port) = 0;
   port_port(port)->pf = &input_file_functions;
 #endif
-  s7_gc_unprotect_at(sc, port_loc);
+  unstack_gc_protect(sc);
   return(port);
 }
 
@@ -33585,8 +33584,6 @@ static void simple_list_readable_display(s7_scheme *sc, s7_pointer lst, s7_int t
     }
 }
 
-#define WITH_CI 1
-
 static void pair_to_port(s7_scheme *sc, s7_pointer lst, s7_pointer port, use_write_t use_write, shared_info_t *ci)
 {
   s7_pointer x;
@@ -33596,7 +33593,7 @@ static void pair_to_port(s7_scheme *sc, s7_pointer lst, s7_pointer port, use_wri
   if (true_len < 0)                    /* a dotted list -- handle cars, then final cdr */
     len = (-true_len + 1);
   else len = (true_len == 0) ? circular_list_entries(lst) : true_len; /* circular list (nil is handled by unique_to_port) */
-  
+
   if ((use_write == P_READABLE) && (ci))
     {
       int32_t href = peek_shared_ref(ci, lst);
@@ -33615,7 +33612,7 @@ static void pair_to_port(s7_scheme *sc, s7_pointer lst, s7_pointer port, use_wri
       (true_len == 2))
     {
       bool need_new_ci = ((!ci) && (is_pair(cadr(lst))));
-      shared_info_t *new_ci = NULL;
+      shared_info_t *new_ci = NULL, *temp_ci = NULL;
       bool old_locked = sc->object_out_locked;
       /* true_len == 2 is important, otherwise (list 'quote 1 2) -> '1 2 which looks weird
        *   or (object->string (apply . `''1)) -> "'quote 1"
@@ -33625,24 +33622,20 @@ static void pair_to_port(s7_scheme *sc, s7_pointer lst, s7_pointer port, use_wri
       if (car(lst) == sc->quote_symbol)
 	port_write_string(port)(sc, "(quote ", 7, port);
       else port_write_character(port)(sc, '\'', port);
-#if WITH_CI
       if (need_new_ci)
 	{
 	  new_ci = make_shared_info(sc);
 	  clear_shared_info(new_ci);
-	  new_ci = load_shared_info(sc, cadr(lst), false, new_ci); /* do we need cyclic check?? restore old? */
+	  temp_ci = load_shared_info(sc, cadr(lst), false, new_ci); /* temp_ci can be NULL! */
 	}
-      else new_ci = ci;
+      else temp_ci = ci;
       if (need_new_ci) sc->object_out_locked = true;
-      object_to_port_with_circle_check(sc, cadr(lst), port, P_WRITE, new_ci);
-      if (need_new_ci) sc->object_out_locked = old_locked;
-#else
-      object_to_port_with_circle_check(sc, cadr(lst), port, P_WRITE, ci);
-#endif
-#if WITH_CI
-      if (need_new_ci)
-	free_shared_info(new_ci);
-#endif
+      object_to_port_with_circle_check(sc, cadr(lst), port, P_WRITE, temp_ci);
+      if (need_new_ci) 
+	{
+	  sc->object_out_locked = old_locked;
+	  free_shared_info(new_ci);
+	}
       if (car(lst) == sc->quote_symbol)
 	port_write_character(port)(sc, ')', port);
       return;
@@ -33967,10 +33960,10 @@ static void hash_table_to_port(s7_scheme *sc, s7_pointer hash, s7_pointer port, 
 
 #if CYCLE_DEBUGGING
   char xx;
-  if (!base) base = &xx; 
-  else 
-    if (&xx > base) base = &xx; 
-    else 
+  if (!base) base = &xx;
+  else
+    if (&xx > base) base = &xx;
+    else
       if ((!min_char) || (&xx < min_char))
 	{
 	  min_char = &xx;
@@ -34686,13 +34679,7 @@ static void write_closure_readably(s7_scheme *sc, s7_pointer obj, s7_pointer por
 	{
 	  port_write_string(port)(sc, "#<write_closure: body is cyclic>", 32, port); /* not s7_error here! */
 	  return;
-	}
-      /* perhaps: if any sequence in the closure_body is cyclic, complain, but how to check without clobbering ci?
-       *   perhaps pass ci, and use load_shared_info if ci=null else continue_shared_info?
-       *   this can happen only if (apply lambda ... cyclic-seq ...) I think
-       *   long-term we need to include closure_body(obj) in the top object_out load_shared_info
-       */
-    }
+	}}
   if (is_symbol(arglist)) arglist = set_dlist_1(sc, arglist);
   pe = closure_let(obj);
 
@@ -35911,7 +35898,7 @@ static noreturn void format_error_nr(s7_scheme *sc, const char *ur_msg, s7_int m
   if (S7_DEBUGGING)
     fprintf(stderr, "%s: ur_msg: %s, msg_len: %" ld64 ", str: %s, ur_args: %s\n  ctrl_str: %s, args: %s, msg: %s\n",
 	    __func__,
-	    ur_msg, msg_len, str, display(ur_args), 
+	    ur_msg, msg_len, str, display(ur_args),
 	    display(ctrl_str), display(args), display(msg));
 #endif
   if (fdat->loc == 0)
@@ -45550,7 +45537,7 @@ static s7_pointer hash_table_reverse(s7_scheme *sc, s7_pointer old_hash)
   s7_int len = hash_table_mask(old_hash) + 1;
   hash_entry_t **old_lists = hash_table_elements(old_hash);
   s7_pointer new_hash = s7_make_hash_table(sc, len);
-  s7_int gc_loc = gc_protect_1(sc, new_hash);
+  gc_protect_via_stack(sc, new_hash);
 
   /* old_hash checker/mapper functions don't always make sense reversed, although the key/value typers might be ok */
   for (s7_int i = 0; i < len; i++)
@@ -45562,7 +45549,7 @@ static s7_pointer hash_table_reverse(s7_scheme *sc, s7_pointer old_hash)
       set_weak_hash_table(new_hash);
       weak_hash_iters(new_hash) = 0;
     }
-  s7_gc_unprotect_at(sc, gc_loc);
+  unstack_gc_protect(sc);
   return(new_hash);
 }
 
@@ -48991,7 +48978,7 @@ static s7_pointer hash_table_setter(s7_scheme *sc, s7_pointer e, s7_int loc, s7_
 static s7_pointer copy_hash_table(s7_scheme *sc, s7_pointer source)
 {
   s7_pointer new_hash = s7_make_hash_table(sc, hash_table_mask(source) + 1);
-  s7_int gc_loc = gc_protect_1(sc, new_hash);
+  gc_protect_via_stack(sc, new_hash);
   hash_table_checker(new_hash) = hash_table_checker(source);
   if (hash_chosen(source)) hash_set_chosen(new_hash);
   hash_table_mapper(new_hash) = hash_table_mapper(source);
@@ -49010,7 +48997,7 @@ static s7_pointer copy_hash_table(s7_scheme *sc, s7_pointer source)
       set_weak_hash_table(new_hash);
       weak_hash_iters(new_hash) = 0;
     }
-  s7_gc_unprotect_at(sc, gc_loc);
+  unstack_gc_protect(sc);
   return(new_hash);
 }
 
@@ -49113,7 +49100,7 @@ static s7_pointer copy_c_object_to_same_type(s7_scheme *sc, s7_pointer dest, s7_
 {
   s7_pointer (*cref)(s7_scheme *sc, s7_pointer args) = c_object_ref(sc, source);
   s7_pointer (*cset)(s7_scheme *sc, s7_pointer args) = c_object_set(sc, dest);
-  if ((is_safe_c_function(c_object_getf(sc, source))) && 
+  if ((is_safe_c_function(c_object_getf(sc, source))) &&
       (is_safe_c_function(c_object_setf(sc, dest)))) /* maybe not worth the extra code */
     {
       s7_pointer mi = wrapped_integer(sc);
@@ -50708,8 +50695,6 @@ static s7_pointer random_state_to_let(s7_scheme *sc, s7_pointer obj)
 static s7_pointer vector_to_let(s7_scheme *sc, s7_pointer obj)
 {
   s7_pointer let;
-  s7_int gc_loc;
-
   if (!sc->dimensions_symbol) sc->dimensions_symbol = make_symbol(sc, "dimensions", 10);
   if (!sc->original_vector_symbol) sc->original_vector_symbol = make_symbol(sc, "original-vector", 15);
   let = internal_inlet(sc, 10, sc->value_symbol, obj,
@@ -50717,7 +50702,7 @@ static s7_pointer vector_to_let(s7_scheme *sc, s7_pointer obj)
 		       sc->size_symbol, s7_length(sc, obj),
 		       sc->dimensions_symbol, g_vector_dimensions(sc, set_plist_1(sc, obj)),
 		       sc->is_mutable_symbol, make_boolean(sc, !is_immutable_vector(obj)));
-  gc_loc = gc_protect_1(sc, let);
+  gc_protect_via_stack(sc, let);
   if (is_subvector(obj))
     {
       s7_int pos = 0;
@@ -50733,7 +50718,7 @@ static s7_pointer vector_to_let(s7_scheme *sc, s7_pointer obj)
     }
   if (is_typed_t_vector(obj))
     s7_varlet(sc, let, sc->signature_symbol, g_signature(sc, set_plist_1(sc, obj)));
-  s7_gc_unprotect_at(sc, gc_loc);
+  unstack_gc_protect(sc);
   return(let);
 }
 
@@ -50817,7 +50802,6 @@ static s7_pointer hash_table_to_let(s7_scheme *sc, s7_pointer obj)
 static s7_pointer iterator_to_let(s7_scheme *sc, s7_pointer obj)
 {
   s7_pointer let, seq = iterator_sequence(obj);
-  s7_int gc_loc;
   if (!sc->at_end_symbol)
     {
       sc->at_end_symbol = make_symbol(sc, "at-end", 6);
@@ -50827,7 +50811,7 @@ static s7_pointer iterator_to_let(s7_scheme *sc, s7_pointer obj)
 		       sc->type_symbol, sc->is_iterator_symbol,
 		       sc->at_end_symbol, make_boolean(sc, iterator_is_at_end(obj)),
 		       sc->sequence_symbol, iterator_sequence(obj));
-  gc_loc = gc_protect_1(sc, let);
+  gc_protect_via_stack(sc, let);
   if (is_pair(seq))
     s7_varlet(sc, let, sc->size_symbol, s7_length(sc, seq));
   else
@@ -50843,7 +50827,7 @@ static s7_pointer iterator_to_let(s7_scheme *sc, s7_pointer obj)
   else
     if (is_pair(seq))
       s7_varlet(sc, let, sc->position_symbol, iterator_current(obj));
-  s7_gc_unprotect_at(sc, gc_loc);
+  unstack_gc_protect(sc);
   return(let);
 }
 
@@ -51002,8 +50986,7 @@ static s7_pointer closure_to_let(s7_scheme *sc, s7_pointer obj)
 				  sc->type_symbol, (is_t_procedure(obj)) ? sc->is_procedure_symbol : sc->is_macro_symbol,
 				  sc->arity_symbol, s7_arity(sc, obj),
 				  sc->is_mutable_symbol, make_boolean(sc, !is_immutable(obj)));
-  s7_int gc_loc = gc_protect_1(sc, let);
-
+  gc_protect_via_stack(sc, let);
   if (is_pair(sig))
     s7_varlet(sc, let, sc->local_signature_symbol, sig);
   if (doc)
@@ -51028,7 +51011,7 @@ static s7_pointer closure_to_let(s7_scheme *sc, s7_pointer obj)
   s7_varlet(sc, let, sc->source_symbol,
 	    append_in_place(sc, list_2(sc, procedure_type_to_symbol(sc, type(obj)), closure_args(obj)),
 			    closure_body(obj)));
-  s7_gc_unprotect_at(sc, gc_loc);
+  unstack_gc_protect(sc);
   return(let);
 }
 
@@ -51056,8 +51039,7 @@ static s7_pointer c_function_to_let(s7_scheme *sc, s7_pointer obj)
 				  sc->type_symbol, (is_t_procedure(obj)) ? sc->is_procedure_symbol : sc->is_macro_symbol,
 				  sc->arity_symbol, s7_arity(sc, obj),
 				  sc->is_mutable_symbol, make_boolean(sc, !is_immutable(obj)));
-  s7_int gc_loc = gc_protect_1(sc, let);
-
+  gc_protect_via_stack(sc, let);
   if (is_pair(sig))
     s7_varlet(sc, let, sc->local_signature_symbol, sig);
   if (doc)
@@ -51065,7 +51047,7 @@ static s7_pointer c_function_to_let(s7_scheme *sc, s7_pointer obj)
 
   if (c_function_setter(obj) != sc->F) /* c_macro_setter is the same underlying field */
     s7_varlet(sc, let, sc->local_setter_symbol, c_function_setter(obj));
-  s7_gc_unprotect_at(sc, gc_loc);
+  unstack_gc_protect(sc);
   return(let);
 }
 
@@ -51987,13 +51969,12 @@ It has the additional local variables: error-type, error-data, error-code, error
   /* if owlet is not copied, (define e (owlet)), e changes as owlet does! */
 
   s7_pointer e;
-  s7_int gc_loc;
   bool old_gc = sc->gc_off;
 #if WITH_HISTORY
   slot_set_value(sc->error_history, cull_history(sc, slot_value(sc->error_history)));
 #endif
   e = let_copy(sc, sc->owlet);
-  gc_loc = gc_protect_1(sc, e);
+  gc_protect_via_stack(sc, e);
 
   /* make sure the pairs/reals/strings/integers are copied: should be error-data, error-code, and error-history */
   sc->gc_off = true;
@@ -52024,7 +52005,7 @@ It has the additional local variables: error-type, error-data, error-code, error
 		set_car(p, make_string_with_length(sc, string_value(val), string_length(val)));
 	  }}
   sc->gc_off = old_gc;
-  s7_gc_unprotect_at(sc, gc_loc);
+  unstack_gc_protect(sc);
   return(e);
 }
 
@@ -53743,11 +53724,11 @@ static s7_pointer g_exit(s7_scheme *sc, s7_pointer args)
   report_allocs(25);
 #endif
 
-  /* r7rs.pdf says exit checks the stack for dynamic-winds and runs the "after" functions, if any -- 
+  /* r7rs.pdf says exit checks the stack for dynamic-winds and runs the "after" functions, if any --
    *   this strikes me as ridiculous -- surely they don't expect me to find all the stacks (other s7's running etc)
    *   and search them for dynamic-winds?  The exit must happen in either the init or body sections -- how can we
    *   guarantee the quit function makes sense if even the init hasn't run to completion yet? Anyone who calls exit
-   *   should clean up resources themselves.  Anyway, scheme's exit is also supposed to allow atexit functions 
+   *   should clean up resources themselves.  Anyway, scheme's exit is also supposed to allow atexit functions
    *   to be called, so we need to use libc's exit, not _exit -- there's an example C program at the end of s7test.scm.
    */
   for (int64_t i = stack_top(sc) - 1; i > 0; i -= 4)
@@ -56206,7 +56187,7 @@ static s7_pointer fx_c_ac(s7_scheme *sc, s7_pointer arg)
 static s7_pointer fx_c_ac_direct(s7_scheme *sc, s7_pointer arg) {return(((s7_p_pp_t)opt3_direct(cdr(arg)))(sc, fx_call(sc, cdr(arg)), opt3_con(arg)));}
 static s7_pointer fx_c_ai_direct(s7_scheme *sc, s7_pointer arg) {return(((s7_p_pi_t)opt3_direct(cdr(arg)))(sc, fx_call(sc, cdr(arg)), integer(opt3_con(arg))));}
 
-static s7_pointer fx_sub_a1(s7_scheme *sc, s7_pointer arg) 
+static s7_pointer fx_sub_a1(s7_scheme *sc, s7_pointer arg)
 {
   s7_pointer p = fx_call(sc, cdr(arg));
   if (is_t_integer(p)) return(subtract_if_overflow_to_real_or_big_integer(sc, integer(p), 1));
@@ -56214,7 +56195,7 @@ static s7_pointer fx_sub_a1(s7_scheme *sc, s7_pointer arg)
   return(subtract_p_pp(sc, p, int_one));
 }
 
-static s7_pointer fx_add_a1(s7_scheme *sc, s7_pointer arg) 
+static s7_pointer fx_add_a1(s7_scheme *sc, s7_pointer arg)
 {
   s7_pointer p = fx_call(sc, cdr(arg));
   if (is_t_integer(p)) return(add_if_overflow_to_real_or_big_integer(sc, integer(p), 1));
@@ -57668,7 +57649,7 @@ static s7_function fx_choose(s7_scheme *sc, s7_pointer holder, s7_pointer cur_en
 		      if (fn_proc(arg) == g_memq_4)
 			set_opt3_direct(cdr(arg), memq_4_p_pp); /* this does not parallel 2 and 3 above (sigh) */
 		}
-	      else 
+	      else
 		if ((is_t_real(opt3_con(arg))) && (opt3_direct(cdr(arg)) == (s7_pointer)lt_p_pp))
 		  return(fx_lt_ad);
 	      if ((is_t_integer(opt3_con(arg))) && (s7_p_pi_function(global_value(car(arg)))))
@@ -60208,7 +60189,7 @@ static bool d_7pi_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 	  if (is_slot(v_slot))
 	    {
 	      s7_pointer v = slot_value(v_slot);
-	      if ((is_float_vector(v)) || 
+	      if ((is_float_vector(v)) ||
 		  ((is_typed_t_vector(v)) && (typed_vector_typer_symbol(sc, v) == sc->is_float_symbol)))
 		{
 		  ifunc = float_vector_ref_d_7pi;
@@ -62753,7 +62734,7 @@ static bool b_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	  opc->v[11].fp = opc->v[10].o1->v[0].fp;
 	  check_b_types(sc, opc, s_func, car_x, opt_b_pp_ff);
 
-	  if (opc->v[3].b_pp_f == char_eq_b_unchecked) 
+	  if (opc->v[3].b_pp_f == char_eq_b_unchecked)
 	    {
 	      if (opc->v[11].fp == opt_p_c) /* opc->v[11].fp can be opt_p_c where opc->v[10].o1->v[1].p is the char */
 		{
@@ -65234,7 +65215,7 @@ static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_sy
 	  if ((stype != atype) &&
 	      (is_symbol(stype)) &&
 	      (((t_sequence_p[symbol_type(stype)]) &&
-		(stype != sc->is_null_symbol) && (stype != sc->is_pair_symbol) && 
+		(stype != sc->is_null_symbol) && (stype != sc->is_pair_symbol) &&
 		(stype != sc->is_list_symbol) && (stype != sc->is_proper_list_symbol)) ||
 	       (stype == sc->is_iterator_symbol)))
 	    return_false(sc, car_x);
@@ -67280,7 +67261,7 @@ static bool float_optimize_1(s7_scheme *sc, s7_pointer expr)
 
 	case 3:
 	  return((d_dd_ok(sc, opc, s_func, car_x)) ||
-		 (d_id_ok(sc, opc, s_func, car_x)) || 
+		 (d_id_ok(sc, opc, s_func, car_x)) ||
 		 (d_vd_ok(sc, opc, s_func, car_x)) ||
 		 (d_pd_ok(sc, opc, s_func, car_x)) ||
 		 (d_ip_ok(sc, opc, s_func, car_x)) ||
@@ -82643,7 +82624,7 @@ static bool op_simple_do_1(s7_scheme *sc, s7_pointer code)
     {
       s7_int i, start = integer(slot_value(ctr_slot)), stop = integer(slot_value(end_slot)), incr = integer(caddr(step_expr));
       if (func == opt_cell_any_nv)
-	{ /* (do ((i 0 (+ i 2))) ((= i 20)) (display (/ i 2))) TODO: is make_integer needed? */
+	{ /* (do ((i 0 (+ i 2))) ((= i 20)) (display (/ i 2))) */
 	  /* (do ((i 0 (+ i 8))) ((= i 64)) (write-byte (logand (ash int (- i)) 255))) */
 	  opt_info *o = sc->opts[0];
 	  s7_pointer (*fp)(opt_info *o) = o->v[0].fp;
@@ -82925,7 +82906,7 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool one
 			}}
 		  else
 		    if ((o->v[0].fd == opt_d_7pid_ss_ss) && (o->v[4].d_7pid_f == float_vector_set_d_7pid_direct) &&
-			((o->v[3].d_7pi_f == float_vector_ref_d_7pi) || (o->v[3].d_7pi_f == float_vector_ref_d_7pi_direct)) && 
+			((o->v[3].d_7pi_f == float_vector_ref_d_7pi) || (o->v[3].d_7pi_f == float_vector_ref_d_7pi_direct)) &&
 			(o->v[2].p == o->v[6].p))
 		      copy_to_same_type(sc, slot_value(o->v[1].p), slot_value(o->v[5].p), integer(stepper), end, integer(stepper));
 		    else
@@ -83497,7 +83478,7 @@ static goto_t op_safe_do(s7_scheme *sc)
 	      s7_pointer fx_p = cddr(body);
 	      s7_pointer val_slot = s7_slot(sc, cadr(body));
 #if 0
-	      if (!is_slot(val_slot)) 
+	      if (!is_slot(val_slot))
 		unbound_variable_error_nr(sc, cadr(body));
 	      if (is_immutable_slot(val_slot))
 		immutable_object_error_nr(sc, set_elist_3(sc, wrap_string(sc, "~S is immutable in ~S", 21), cadr(body), body));
@@ -83507,7 +83488,7 @@ static goto_t op_safe_do(s7_scheme *sc)
 	      s7_int step = integer(slot_value(step_slot));
 	      /* s7_pointer step_val = make_mutable_integer(sc, step); */
 	      s7_pointer step_val = slot_value(step_slot);
-	      if ((S7_DEBUGGING) && (!is_mutable_integer(step_val))) 
+	      if ((S7_DEBUGGING) && (!is_mutable_integer(step_val)))
 		fprintf(stderr, "%s[%d]: %s is not a mutable integer\n", __func__, __LINE__, display(slot_symbol(step_slot)));
 	      /* slot_set_value(step_slot, step_val); */
 	      do {
@@ -90631,7 +90612,7 @@ static bool op_unknown_s(s7_scheme *sc)
 
     case T_BACRO: case T_MACRO:
       return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_D, f)));
-    case T_BACRO_STAR: case T_MACRO_STAR: 
+    case T_BACRO_STAR: case T_MACRO_STAR:
       return(fixup_unknown_op(sc, code, f, fixup_macro_d(sc, OP_MACRO_STAR_D, f)));
 
     default: break;
@@ -97133,8 +97114,8 @@ s7_scheme *s7_init(void)
                                                    (error 'syntax-error \"cond-expand: clause is not a pair, ~S\" clause))) \n\
 		                             clauses))))");
   /* cond-expand should expand into an expansion (or inline macro?) so that if there's no else clause, we can add (else (values))
-   *   r7rs says: "If none of the <feature requirement>s evaluate to #t, then if there is an else clause, its <expression>s are included. 
-   *   Otherwise, the cond-expand has no effect."  The code above returns #<unspecified>, but I read that prose to say that 
+   *   r7rs says: "If none of the <feature requirement>s evaluate to #t, then if there is an else clause, its <expression>s are included.
+   *   Otherwise, the cond-expand has no effect."  The code above returns #<unspecified>, but I read that prose to say that
    *   (begin 23 (cond-expand (surreals 1) (foonly 2))) should evaluate to 23.
    */
 #endif
@@ -97527,62 +97508,58 @@ int main(int argc, char **argv)
  * index     1026   1016    973    967    972
  * tmock     1177   1165   1057   1019   1032
  * tvect     2519   2464   1772   1669   1497
- * timp      2637   2575   1930   1694   1742  1736
+ * timp      2637   2575   1930   1694   1742
  * texit     ----   ----   1778   1741   1770
  * s7test    1873   1831   1818   1829   1830
  * lt        2187   2172   2150   2185   1951
  * thook     ----   ----   2590   2030   2046
  * tauto     ----   ----   2562   2048   2034
- * dup       3805   3788   2492   2239   2139  2124
+ * dup       3805   3788   2492   2239   2174
  * tcopy     8035   5546   2539   2375   2386
  * tread     2440   2421   2419   2408   2405
- * fbench    2688   2583   2460   2430   2478
  * trclo     2735   2574   2454   2445   2449
  * titer     2865   2842   2641   2509   2465
+ * fbench    2688   2583   2460   2430   2478
  * tload     ----   ----   3046   2404   2566
- * tmat      3065   3042   2524   2578   2597  2591
+ * tmat      3065   3042   2524   2578   2585
  * tsort     3105   3104   2856   2804   2858
- * tobj      4016   3970   3828   3577   3526
- * teq       4068   4045   3536   3486   3557  3550
- * tio       3816   3752   3683   3620   3617  3597
+ * tobj      4016   3970   3828   3577   3520
+ * teq       4068   4045   3536   3486   3550
+ * tio       3816   3752   3683   3620   3583
  * tmac      3950   3873   3033   3677   3677
  * tcase     4960   4793   4439   4430   4439
- * tclo      4787   4735   4390   4384   4470  4460
+ * tclo      4787   4735   4390   4384   4465
  * tlet      7775   5640   4450   4427   4457
  * tfft      7820   7729   4755   4476   4536
  * tstar     6139   5923   5519   4449   4550
  * tmap      8869   8774   4489   4541   4586
- * tshoot    5525   5447   5183   5055   5048  5033
+ * tshoot    5525   5447   5183   5055   5034
  * tform     5357   5348   5307   5316   5084
- * tstr      6880   6342   5488   5162   5225  5219
- * tnum      6348   6013   5433   5396   5475  5434 5419
+ * tstr      6880   6342   5488   5162   5180
+ * tnum      6348   6013   5433   5396   5418
  * tlamb     6423   6273   5720   5560   5613
- * tgsl      8485   7802   6373   6282   6216  6208
+ * tgsl      8485   7802   6373   6282   6208
  * tlist     7896   7546   6558   6240   6300
  * tari      13.0   12.7   6827   6543   6278
- * tset      ----   ----   ----   6260   6299  6369
+ * tset      ----   ----   ----   6260   6369
  * trec      6936   6922   6521   6588   6583
- * tleft     10.4   10.2   7657   7479   7610  7629
+ * tleft     10.4   10.2   7657   7479   7644
  * tmisc     ----   ----   ----   8488   7866
- * tgc       11.9   11.1   8177   7857   8006
+ * tgc       11.9   11.1   8177   7857   7996
  * thash     11.8   11.7   9734   9479   9527
  * cb        11.2   11.0   9658   9564   9612
  * tgen      11.2   11.4   12.0   12.1   12.2
  * tall      15.6   15.6   15.6   15.6   15.1
- * calls     36.7   37.5   37.0   37.5   37.3
+ * calls     36.7   37.5   37.0   37.5   37.1
  * sg        ----   ----   55.9   55.8   55.4
  * tbig     177.4  175.8  156.5  148.1  146.2
  * ---------------------------------------------
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
- * vector constants: use a sc->strbuf like buffer? OP_READ_FLOAT_VECTOR loop?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * add wasm test to test suite somehow (at least emscripten)
  * combine lets?
- * check other gc_protects (pair_to_port etc)
- *   gc_protect_1 iter? gc_protect_1|2 -> stack? 50894 should use stack if possible
- * s7test map rootlet (or let->list) at start? does this work now at the end?
- * fix the 9x15 case in snd-motif.scm
- * widget-size (pane equal) 
+ * widget-size (pane equal)
+ * t670->timing?
  */
