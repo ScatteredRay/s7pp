@@ -6514,9 +6514,18 @@ static s7_pointer g_is_immutable(s7_scheme *sc, s7_pointer args)
 
 
 /* -------------------------------- immutable! -------------------------------- */
-s7_pointer s7_immutable(s7_pointer p)  /* TODO: mimic g_immutable or merge both */
+s7_pointer s7_immutable(s7_pointer p)
 {
-  set_immutable(p);
+  if (is_symbol(p)) /* trying to mimic g_immutable */
+    {
+      s7_pointer slot;
+      if (is_keyword(p)) return(p);
+      slot = s7_slot(cur_sc, p);  /* ouch! we need the s7_scheme* argument */
+      if (is_slot(slot))
+	set_immutable_slot(slot);
+      /* symbol is not set immutable (as below) */
+    }
+  else set_immutable(p);
   return(p);
 }
 
@@ -9328,6 +9337,12 @@ static void slot_set_value_with_hook_1(s7_scheme *sc, s7_pointer slot, s7_pointe
       (value != slot_value(slot)))
     s7_call(sc, sc->rootlet_redefinition_hook, set_plist_2(sc, symbol, value));
   slot_set_value(slot, value);
+
+  if ((S7_DEBUGGING) && (is_pair(value)) && (car(value) == slot_symbol(slot)) && (symbol == make_symbol(sc, "x", 1)))
+    {
+      fprintf(stderr, "x set to (x...), estr: %s\n", display(s7_name_to_value(sc, "estr")));
+      if (sc->stop_at_error) abort();
+    }
 }
 
 static void remove_function_from_heap(s7_scheme *sc, s7_pointer value); /* calls remove_let_from_heap */
@@ -9739,10 +9754,6 @@ to the let target-let, and returns target-let.  (varlet (curlet) 'a 1) adds 'a t
 	  s7_pointer gslot = global_slot(sym);
 	  if (is_slot(gslot))
 	    {
-#if 0
-	      if (is_syntax(slot_value(gslot)))
-		wrong_type_error_nr(sc, sc->varlet_symbol, position_of(x, args), p, wrap_string(sc, "a non-syntactic symbol", 22));
-#endif
 	      if (is_immutable(gslot)) /* (immutable! 'abs) (varlet (rootlet) 'abs 1) */
 		immutable_object_error_nr(sc, set_elist_5(sc, wrap_string(sc, "~S is immutable in (varlet ~S '~S ~S)", 37), sym, car(args), p, val));
 	      slot_set_value_with_hook(global_slot(sym), val);
@@ -10076,28 +10087,9 @@ static s7_pointer inlet_chooser(s7_scheme *sc, s7_pointer f, int32_t args, s7_po
 /* -------------------------------- let->list -------------------------------- */
 static s7_pointer proper_list_reverse_in_place(s7_scheme *sc, s7_pointer list);
 
-#if CYCLE_DEBUGGING
-static char *base = NULL, *min_char = NULL;
-#endif
-
 s7_pointer s7_let_to_list(s7_scheme *sc, s7_pointer let)
 {
   s7_pointer x;
-#if CYCLE_DEBUGGING
-  char xx;
-  if (!base) base = &xx;
-  else
-    if (&xx > base) base = &xx;
-    else
-      if ((!min_char) || (&xx < min_char))
-	{
-	  min_char = &xx;
-	  if ((base - min_char) > 100000)
-	    {
-	      fprintf(stderr, "infinite recursion?\n");
-	      abort();
-	    }}
-#endif
   sc->temp3 = sc->w;
   sc->w = sc->nil;
   if (let == sc->rootlet)
@@ -23339,6 +23331,9 @@ static s7_pointer num_eq_p_pi(s7_scheme *sc, s7_pointer p1, s7_int p2)
   if (has_active_methods(sc, p1))
     return(find_and_apply_method(sc, p1, sc->num_eq_symbol, set_plist_2(sc, p1, make_integer(sc, p2))));
   wrong_type_error_nr(sc, sc->num_eq_symbol, 1, p1, a_number_string);
+#ifdef __TINYC__
+  return(sc->F);
+#endif
 }
 
 static bool num_eq_b_pi(s7_scheme *sc, s7_pointer x, s7_int y)
@@ -23931,6 +23926,9 @@ static bool leq_b_pi(s7_scheme *sc, s7_pointer p1, s7_int p2)
   if (has_active_methods(sc, p1))
     return(find_and_apply_method(sc, p1, sc->leq_symbol, list_2(sc, p1, make_integer(sc, p2)))); /* not plist */
   wrong_type_error_nr(sc, sc->leq_symbol, 1, p1, sc->type_names[T_REAL]);
+#ifdef __TINYC__
+  return(false);
+#endif
 }
 
 static s7_pointer leq_p_pi(s7_scheme *sc, s7_pointer p1, s7_int p2) {return(make_boolean(sc, leq_b_pi(sc, p1, p2)));}
@@ -24564,6 +24562,9 @@ static s7_double real_part_d_p(s7_pointer x)
 {
   if (is_number(x)) return(s7_real_part(x));
   sole_arg_wrong_type_error_nr(cur_sc, cur_sc->real_part_symbol, x, a_number_string);
+#ifdef __TINYC__
+  return(0.0);
+#endif
 }
 
 static s7_pointer real_part_p_p(s7_scheme *sc, s7_pointer p)
@@ -24615,6 +24616,9 @@ static s7_double imag_part_d_p(s7_pointer x)
 {
   if (is_number(x)) return(s7_imag_part(x));
   sole_arg_wrong_type_error_nr(cur_sc, cur_sc->imag_part_symbol, x, a_number_string);
+#ifdef __TINYC__
+  return(0.0);
+#endif
 }
 
 static s7_pointer imag_part_p_p(s7_scheme *sc, s7_pointer p)
@@ -30113,7 +30117,6 @@ static inline void push_input_port(s7_scheme *sc, s7_pointer new_port)
       sc->input_port_stack = (s7_pointer *)Realloc(sc->input_port_stack, sc->input_port_stack_size * sizeof(s7_pointer));
     }
   sc->input_port_stack[sc->input_port_stack_loc++] = current_input_port(sc);
-  /* fprintf(stderr, "%d ", sc->input_port_stack_loc); */
   set_current_input_port(sc, new_port);
 }
 
@@ -32546,9 +32549,8 @@ static shared_info_t *load_shared_info(s7_scheme *sc, s7_pointer top, bool stop_
 	}
 #endif
   if ((S7_DEBUGGING) && (is_any_vector(top)) && (!is_t_vector(top))) fprintf(stderr, "%s[%d]: got abnormal vector\n", __func__, __LINE__);
-
+  clear_shared_info(ci);
   {
-    clear_shared_info(ci);
     /* collect all pointers associated with top */
     bool cyclic = collect_shared_info(sc, ci, top, stop_at_print_length);
     s7_pointer *ci_objs = ci->objs;
@@ -33957,23 +33959,6 @@ static void hash_table_to_port(s7_scheme *sc, s7_pointer hash, s7_pointer port, 
   bool too_long = false, hash_cyclic = false, copied = false, immut = false, letd = false;
   s7_pointer iterator, p;
   int32_t href = -1;
-
-#if CYCLE_DEBUGGING
-  char xx;
-  if (!base) base = &xx;
-  else
-    if (&xx > base) base = &xx;
-    else
-      if ((!min_char) || (&xx < min_char))
-	{
-	  min_char = &xx;
-	  if ((base - min_char) > 100000)
-	    {
-	      fprintf(stderr, "infinite recursion?\n");
-	      abort();
-	    }}
-#endif
-
   if (len == 0)
     {
       if (use_write == P_READABLE)
@@ -35894,13 +35879,6 @@ static noreturn void format_error_nr(s7_scheme *sc, const char *ur_msg, s7_int m
   s7_pointer ctrl_str = (fdat->orig_str) ? fdat->orig_str : wrap_string(sc, str, safe_strlen(str));
   s7_pointer args = (is_elist(ur_args)) ? copy_proper_list(sc, ur_args) : ur_args;
   s7_pointer msg = wrap_string(sc, ur_msg, msg_len);
-#if 0
-  if (S7_DEBUGGING)
-    fprintf(stderr, "%s: ur_msg: %s, msg_len: %" ld64 ", str: %s, ur_args: %s\n  ctrl_str: %s, args: %s, msg: %s\n",
-	    __func__,
-	    ur_msg, msg_len, str, display(ur_args),
-	    display(ctrl_str), display(args), display(msg));
-#endif
   if (fdat->loc == 0)
     {
       if (is_pair(args))
@@ -37448,7 +37426,6 @@ static bool tree_set_memq_b_7pp(s7_scheme *sc, s7_pointer syms, s7_pointer tree)
   if /* ((!is_quote(car(tree))) && */ (pair_set_memq(sc, tree)) return(true);
 
   if (non_symbols)
-    /* brute force for the moment, TODO: optimize non-symbol tree-set-memq case */
     for (s7_pointer p = syms; is_pair(p); p = cdr(p))
       if ((!is_symbol(car(p))) &&
 	  (s7_tree_memq(sc, car(p), tree)))
@@ -45223,8 +45200,7 @@ s7_pointer s7_hash_table_set(s7_scheme *sc, s7_pointer table, s7_pointer key, s7
   if (value == sc->F)
     return(remove_from_hash_table(sc, table, (*hash_table_checker(table))(sc, table, key)));
 
-  if ((is_typed_hash_table(table)) &&
-      (sc->safety >= NO_SAFETY))
+  if ((is_typed_hash_table(table)) && (sc->safety >= NO_SAFETY)) /* this order is faster */
     check_hash_types(sc, table, key, value);
 
   x = (*hash_table_checker(table))(sc, table, key);
@@ -47203,7 +47179,6 @@ static s7_pointer symbol_setter(s7_scheme *sc, s7_pointer sym, s7_pointer e)
       set_curlet(sc, old_e);
     }
   if ((!is_slot(slot)) || (!slot_has_setter(slot))) return(sc->F);
-  /* fprintf(stderr, "setter %s %s %d\n", display(slot), display(slot->object.slt.pending_value), slot_has_pending_value(slot)); */
   setter = slot_setter(slot);
   if ((is_any_procedure(setter)) && (is_bool_function(setter))) return(c_function_setter(setter));
   return(setter);
@@ -47641,7 +47616,6 @@ static bool string_equal(s7_scheme *sc, s7_pointer x, s7_pointer y, shared_info_
 
 static bool syntax_equal(s7_scheme *sc, s7_pointer x, s7_pointer y, shared_info_t *ci)
 {
-  /* fprintf(stderr, "%s %s %d %s %s\n", display(x), display(y), is_syntax(y), display(syntax_symbol(x)), (is_syntax(y)) ? display(syntax_symbol(y)) : ""); */
   return((is_syntax(y)) && (syntax_symbol(x) == syntax_symbol(y)));
 }
 
@@ -59300,7 +59274,6 @@ static bool i_ii_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 
       /* arg1 not integer */
       p = opt_integer_symbol(sc, arg1);
-      /* fprintf(stderr, "p: %p, arg1: %s, val: %s, arg2: %s, car_x: %s\n", p, display(arg1), (p) ? display(p) : "none", display(arg2), display(car_x)); */
       if (p)
 	{
 	  opc->v[1].p = p;
@@ -62423,7 +62396,7 @@ static s7_pointer opt_arg_type(s7_scheme *sc, s7_pointer argp)
 			return(sc->is_float_symbol);
 		      if ((car(sig) == sc->is_byte_symbol) ||
 			  ((is_pair(car(sig))) && (direct_memq(sc->is_byte_symbol, car(sig)))))
-			return(sc->is_integer_symbol);  /* TODO: or byte?? */
+			return(sc->is_integer_symbol);  /* or '(integer? byte)? */
 		      if ((car(sig) == sc->is_real_symbol) ||
 			  (car(sig) == sc->is_number_symbol))
 			{
@@ -63135,7 +63108,7 @@ static s7_pointer opt_p_pi_ss_ivref_direct(opt_info *o);
 static s7_pointer opt_p_pi_ss_fvref_direct_wrapped(opt_info *o);
 static s7_pointer opt_p_pi_ss_ivref_direct_wrapped(opt_info *o);
 static s7_pointer opt_p_p_fvref(opt_info *o) {return(o->v[2].p_p_f(o->sc, opt_p_pi_ss_fvref_direct_wrapped(o->v[3].o1)));} /* unwrap to fvref is not faster */
-static s7_pointer opt_p_p_ivref(opt_info *o) {return(o->v[2].p_p_f(o->sc, opt_p_pi_ss_ivref_direct_wrapped(o->v[3].o1)));} /* unwrap to fvref is not faster */
+static s7_pointer opt_p_p_ivref(opt_info *o) {return(o->v[2].p_p_f(o->sc, opt_p_pi_ss_ivref_direct_wrapped(o->v[3].o1)));} /* unwrap to ivref is not faster */
 static s7_pointer opt_p_p_vref(opt_info *o) {return(o->v[2].p_p_f(o->sc, opt_p_pi_ss_vref_direct(o->v[3].o1)));}
 
 static bool p_p_f_combinable(s7_scheme *sc, opt_info *opc)
@@ -64002,7 +63975,6 @@ static bool p_pip_ssf_combinable(s7_scheme *sc, opt_info *opc, int32_t start)
 	  opc->v[4].p = o1->v[2].p;
 	  opc->v[0].fp = opt_p_pip_sso;
 	  backup_pc(sc);
-	  /* TODO: check wrapper and below */
 	  return_true(sc, NULL);
 	}
       if (o1->v[0].fp == opt_p_p_c)
@@ -64942,24 +64914,6 @@ static s7_pointer opt_set_p_d_f_mm_subtract(opt_info *o)
   return(slot_value(o->v[1].p));
 }
 
-#if 0
-static s7_pointer opt_set_p_d_f_mm_add_direct(opt_info *o)
-{
-  s7_double x1 = float_vector(slot_value(o->v[4].p), integer(slot_value(o->v[5].p))) * real(slot_value(o->v[3].p));
-  s7_double x2 = float_vector(slot_value(o->v[10].p), integer(slot_value(o->v[11].p))) * real(slot_value(o->v[9].p));
-  slot_set_value(o->v[1].p, make_real(o->sc, x1 + x2));
-  return(slot_value(o->v[1].p)); /* TODO: return null? */
-}
-
-static s7_pointer opt_set_p_d_f_mm_subtract_direct(opt_info *o)
-{
-  s7_double x1 = float_vector(slot_value(o->v[4].p), integer(slot_value(o->v[5].p))) * real(slot_value(o->v[3].p));
-  s7_double x2 = float_vector(slot_value(o->v[10].p), integer(slot_value(o->v[11].p))) * real(slot_value(o->v[9].p));
-  slot_set_value(o->v[1].p, make_real(o->sc, x1 - x2));
-  return(slot_value(o->v[1].p));
-}
-#endif
-
 static s7_pointer opt_set_p_c(opt_info *o)
 {
   slot_set_value(o->v[1].p, o->v[2].p);
@@ -65044,11 +64998,6 @@ static bool set_p_d_f_combinable(s7_scheme *sc, opt_info *opc)
 	  opc->v[9].p = o1->v[1].p;
 	  opc->v[10].p = o1->v[2].p;
 	  opc->v[11].p = o1->v[3].p;
-#if 0
-	  if ((o1->v[5].d_7pi_f == float_vector_ref_d_7pi_direct) &&
-	      (o2->v[5].d_7pi_f == float_vector_ref_d_7pi_direct))
-	    opc->v[0].fp = (opc->v[0].fp == opt_set_p_d_f_mm_add) ? opt_set_p_d_f_mm_add_direct : opt_set_p_d_f_mm_subtract_direct;
-#endif
 	  sc->pc -= 3;
 	  return_true(sc, NULL);
 	}}
@@ -65170,7 +65119,6 @@ static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_sy
 		    }
 		  return_true(sc, car_x);
 		}
-	      /* fprintf(stderr, "%d: reject %s\n", __LINE__, display(car_x)); */
 	      return_false(sc, car_x);
 	    }
 	  if (stype == sc->is_float_symbol)
@@ -65205,7 +65153,6 @@ static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_sy
 		    }
 		  return(check_type_uncertainty(sc, target, car_x, opc, start_pc));
 		}
-	      /* fprintf(stderr, "%d: reject %s\n", __LINE__, display(car_x)); */
 	      return_false(sc, car_x);
 	    }
 
@@ -66375,7 +66322,6 @@ static s7_pointer opt_do_step_i(opt_info *o)
   end = integer(slot_value(ostart->v[2].p));
   incr = ostep->v[2].i;
   si = make_mutable_integer(sc, integer(slot_value(ostart->v[1].p)));
-  /* TODO: wrapper? can the body involve opt_do_step_i? */
   if (stepper) slot_set_value(stepper, si);
   while (integer(si) != end)
     {
@@ -66505,7 +66451,7 @@ static s7_pointer opt_do_n(opt_info *o)
 	  fp[i] = os[i]->v[0].fp;
 	}
       if (len == 7)
-	while (!ostart->v[0].fb(ostart)) /* tfft teq */ /* TODO: this can probably be improved (fft code) */
+	while (!ostart->v[0].fb(ostart)) /* tfft teq */ /* this is probably fft code */
 	  {
 	    fp[0](os[0]); fp[1](os[1]); fp[2](os[2]); fp[3](os[3]); fp[4](os[4]); fp[5](os[5]); fp[6](os[6]);
 	    slot_set_value(vp, ostep->v[0].fp(ostep));
@@ -69496,11 +69442,12 @@ bool s7_is_multiple_value(s7_pointer obj) {return(is_multiple_value(obj));}
 
 
 /* -------------------------------- list-values -------------------------------- */
-static s7_pointer splice_out_values(s7_scheme *sc, s7_pointer args) /* TODO: check for list_1 case */
-{
+static s7_pointer splice_out_values(s7_scheme *sc, s7_pointer args)
+{ /* (list-values ... (values) ... ) removes the (values) */
   s7_pointer tp;
   while (car(args) == sc->no_value) {args = cdr(args); if (is_null(args)) return(sc->nil);}
   tp = list_1(sc, car(args));
+  if (is_null(cdr(args))) return(tp);
   sc->temp8 = tp;
   for (s7_pointer p = cdr(args), np = tp; is_pair(p); p = cdr(p))
     if (car(p) != sc->no_value)
@@ -74935,17 +74882,6 @@ static bool check_tc(s7_scheme *sc, s7_pointer name, int32_t vars, s7_pointer ar
 		    }}}}}
 
   /* let */
-  /* fprintf(stderr, "%s %d", display(body), is_proper_list_3(sc, body)); */
-#if 0
-  if (is_proper_list_3(sc, body))
-    {
-      fprintf(stderr, " %d %d", (car(body) == sc->let_symbol), (is_proper_list_1(sc, cadr(body))));
-      if ((car(body) == sc->let_symbol) &&
-	  (is_proper_list_1(sc, cadr(body))))
-	{
-	  fprintf(stderr, " %d %d\n", (is_fxable(sc, cadr(caadr(body)))), (is_pair(caddr(body))));
-	  }}
-#endif
   if ((is_proper_list_3(sc, body)) &&
       (car(body) == sc->let_symbol) &&
       (is_proper_list_1(sc, cadr(body))) &&
@@ -78060,8 +77996,8 @@ static void check_define(s7_scheme *sc)
 	    s7_warn(sc, 256, "%s: syntactic keywords tend to behave badly if redefined: %s\n", display(func), display_80(sc->code));
 	  set_local(func);
 	}
-      /* TODO: move this elsewhere? */
-      if ((is_global(func)) && (is_slot(global_slot(func))) && (is_immutable(global_slot(func))) && (is_slot(initial_slot(func)))) /* (define (abs x) 1) after (immutable! abs) */
+      if ((is_global(func)) && (is_slot(global_slot(func))) && 
+	  (is_immutable(global_slot(func))) && (is_slot(initial_slot(func))))     /* (define (abs x) 1) after (immutable! abs) */
 	immutable_object_error_nr(sc, set_elist_3(sc, wrap_string(sc, "can't ~A ~S: it is immutable", 28), caller, func));
       if (starred)
 	set_cdar(code, check_lambda_star_args(sc, cdar(code), cdr(code), sc->code));
@@ -80533,7 +80469,6 @@ static goto_t set_implicit_c_function(s7_scheme *sc, s7_pointer fnc)  /* (let ((
 static goto_t set_implicit_closure(s7_scheme *sc, s7_pointer fnc)
 {
   s7_pointer setter = closure_setter(fnc);  /* (set! (fnc ind...) val), sc->code = ((fnc ind...) val) */
-  /* fprintf(stderr, "%s[%d]: %s %s\n", __func__, __LINE__, display(fnc), display(sc->code)); */
   if ((setter == sc->F) && (!closure_no_setter(fnc))) /* maybe closure_setter hasn't been set yet: see fset3 in s7test.scm */
     setter = setter_p_pp(sc, fnc, sc->curlet);
   if (!is_t_procedure(setter))
@@ -82092,11 +82027,23 @@ static inline bool op_dox_step_1(s7_scheme *sc) /* inline for 50 in concordance,
 {
   s7_pointer slot = let_slots(sc->curlet);
   do {                                      /* every dox case has vars (else op_do_no_vars) */
-    if (slot_has_expression(slot))
+    if (slot_has_expression(slot))          /* splitting out 1-slot has_expr case is not faster (not enough hits) */
       slot_set_value(slot, fx_call(sc, slot_expression(slot)));
-    /* TODO: this fx_call is often fx_add_ss et al, also often just 1 stepper */
     slot = next_slot(slot);
     } while (tis_slot(slot));
+  sc->value = fx_call(sc, cadr(sc->code));
+  if (is_true(sc, sc->value))
+    {
+      sc->code = cdadr(sc->code);
+      return(true);
+    }
+  return(false);
+}
+
+static inline bool op_dox_step_2(s7_scheme *sc)
+{
+  s7_pointer slot = let_slots(sc->curlet);
+  slot_set_value(slot, fx_call(sc, slot_expression(slot)));
   sc->value = fx_call(sc, cadr(sc->code));
   if (is_true(sc, sc->value))
     {
@@ -83038,14 +82985,10 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool one
 			step = ++integer(step_val);
 		      }}
 		else
-		  { /* TODO: remove this dead code */
-		    /* never called: we've hit all cases cell/int/float */
+		  { /* TODO: remove this dead code (we've hit all cases cell/int/float) */
 		    if (S7_DEBUGGING) fprintf(stderr, "%s[%d]: other case %d: %s\n", __func__, __LINE__, is_mutable_integer(step_val), display(scc));
-		    while (step < stop)
-		      {
-			func(sc);
-			step = ++integer(step_val);
-		      }}}
+		    while (step < stop) {func(sc); step = ++integer(step_val);}
+		  }}
       sc->value = sc->T;
       sc->code = cdadr(scc);
       return(true);
@@ -83477,20 +83420,8 @@ static goto_t op_safe_do(s7_scheme *sc)
 	      s7_int endi = integer(let_dox2_value(sc->curlet));
 	      s7_pointer fx_p = cddr(body);
 	      s7_pointer val_slot = s7_slot(sc, cadr(body));
-#if 0
-	      if (!is_slot(val_slot))
-		unbound_variable_error_nr(sc, cadr(body));
-	      if (is_immutable_slot(val_slot))
-		immutable_object_error_nr(sc, set_elist_3(sc, wrap_string(sc, "~S is immutable in ~S", 21), cadr(body), body));
-#endif
-	      if ((S7_DEBUGGING) && ((!is_slot(val_slot)) || (is_immutable_slot(val_slot))))
-		fprintf(stderr, "%s[%d]: val_slot trouble\n", __func__, __LINE__);
 	      s7_int step = integer(slot_value(step_slot));
-	      /* s7_pointer step_val = make_mutable_integer(sc, step); */
 	      s7_pointer step_val = slot_value(step_slot);
-	      if ((S7_DEBUGGING) && (!is_mutable_integer(step_val)))
-		fprintf(stderr, "%s[%d]: %s is not a mutable integer\n", __func__, __LINE__, display(slot_symbol(step_slot)));
-	      /* slot_set_value(step_slot, step_val); */
 	      do {
 		slot_set_value(val_slot, fx_call(sc, fx_p));
 		integer(step_val) = ++step;
@@ -89170,7 +89101,7 @@ static void op_eval_set3(s7_scheme *sc)
 
 static void op_eval_set3_no_mv(s7_scheme *sc)
 {
-  sc->args = pair_append(sc, sc->args, list_1(sc, sc->value)); /* TODO: is there a way to tell copy is not needed, and perhaps not even the list? */
+  sc->args = pair_append(sc, sc->args, list_1(sc, sc->value));
   sc->code = pop_op_stack(sc);    /* args = (ind... val), code = setter */
 }
 
@@ -92995,7 +92926,6 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	READ_LIST:
 	case OP_READ_LIST:        /* sc->args is sc->nil at first */
 	  sc->args = cons(sc, sc->value, sc->args);
-	  /* TODO: if reading a vector constant, can we do it directly and store the vector? (i.e. no list etc) */
 
 	READ_NEXT:
 	case OP_READ_NEXT:       /* this is 75% of the token calls, so expanding it saves lots of time */
@@ -97514,7 +97444,7 @@ int main(int argc, char **argv)
  * lt        2187   2172   2150   2185   1951
  * thook     ----   ----   2590   2030   2046
  * tauto     ----   ----   2562   2048   2034
- * dup       3805   3788   2492   2239   2174
+ * dup       3805   3788   2492   2239   2104
  * tcopy     8035   5546   2539   2375   2386
  * tread     2440   2421   2419   2408   2405
  * trclo     2735   2574   2454   2445   2449
@@ -97561,5 +97491,4 @@ int main(int argc, char **argv)
  * add wasm test to test suite somehow (at least emscripten)
  * combine lets?
  * widget-size (pane equal)
- * t670->timing?
  */

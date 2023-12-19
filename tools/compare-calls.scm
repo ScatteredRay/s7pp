@@ -230,7 +230,7 @@
 		     "v-fb"
 		     "v-rclo"
 		     "v-case"
-		     "v-b"
+		     ;"v-b"
 		     "v-io"
 		     "v-gc"
 		     "v-num"
@@ -331,7 +331,7 @@
 		     ("fbench.scm" . "/home/bil/motif-snd/v-fb85")
 		     ("trclo.scm" . "/home/bil/motif-snd/v-rclo85")
 		     ("tcase.scm" . "/home/bil/motif-snd/v-case85")
-		     ("test-all.scm" . "/home/bil/motif-snd/v-b85")
+		     ;("test-all.scm" . "/home/bil/motif-snd/v-b85")
 		     ("tio.scm" . "/home/bil/motif-snd/v-io85")
 		     ("tgc.scm" . "/home/bil/motif-snd/v-gc85")
 		     ("tnum.scm" . "/home/bil/motif-snd/v-num85")
