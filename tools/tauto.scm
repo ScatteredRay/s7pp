@@ -7,6 +7,26 @@
   (format *stderr* "this won't work in Snd!~%")
   (exit))
 
+(define baddies '(exit emergency-exit abort autotest s7-optimize dynamic-unwind
+		  all delete-file system set-cdr! stacktrace test-sym
+		  cutlet varlet gc cond-expand reader-cond
+		  openlet coverlet eval vector list cons values hash-table
+		  symbol-table load throw error
+		  make-rectangular macro macro* bacro bacro*
+		  copy fill! hash-table-set! vector-set! let-set! list-values apply-values immutable!
+		  *unbound-variable-hook* *load-hook* *rootlet-redefinition-hook* *missing-close-paren-hook* *read-error-hook*
+		  tree-count ; signature is kinda silly here
+		  c-define-1 apropos map-values trace-in profile-in
+		  define-expansion
+		  heap-scan heap-analyze heap-holders heap-holder
+		  check check-funcs type-ok
+		  show-stack trace-in profile-in apply call-with-exit
+		  define-expansion call-with-current-continuation 
+		  vector-append append ; append gets uninteresting type conversion complaints
+		  call/cc call-with-output-string open-input-function open-output-function
+		  set-current-input-port ;set-current-output-port 
+		  set-current-error-port))
+
 (let ((max-args 3))
   (define-constant one 1)
   
@@ -134,20 +154,7 @@
 		    (symbol->value (car lst))
 		    (and (pair? (car lst))
 			 (apply lambda '(x) (list (list 'or (list (caar lst) 'x) (list (cadar lst) 'x)))))))))
-  
-  (define baddies '(exit emergency-exit abort autotest s7-optimize dynamic-unwind
-			 all delete-file system set-cdr! stacktrace test-sym
-			 cutlet varlet gc cond-expand reader-cond
-			 openlet coverlet eval vector list cons values
-			 symbol-table load throw error
-			 make-rectangular macro macro* bacro bacro*
-			 copy fill! hash-table-set! vector-set! let-set! list-values apply-values immutable!
-			 *unbound-variable-hook* *load-hook* *rootlet-redefinition-hook* *missing-close-paren-hook* *read-error-hook*
-			 tree-count ; signature is kinda silly here
-			 c-define-1 apropos map-values trace-in profile-in
-			 define-expansion
-			 heap-scan heap-analyze heap-holders heap-holder))
-  
+
   (define (test-sym sym)
     (when (and (not (memq sym baddies))
 	       (defined? sym))
@@ -204,17 +211,17 @@
 	 (or (memq (car types) '(#t values))
 	     ((symbol->value (car types)) probe)
 	     (type-ok probe (cdr types)))))
-  
+
   (define (check sym)
     (let ((func (symbol->value sym)))
-      (unless (or (not (procedure? func))
-		  (memq sym baddies))
+      (when (and (procedure? func)
+		 (not (memq sym baddies)))
 	(let ((ari (arity func))
 	      (sig (signature func))
 	      (doc (documentation func)))
 	  (unless (or (string=? doc "")
 		      (string-position (symbol->string sym) doc))
-	      (format *stderr* "~A documentation does not mention it: ~S~%" sym doc))
+	    (format *stderr* "~A documentation does not mention it: ~S~%" sym doc))
 	  (when (pair? sig)
 	    (let ((res-types (if (pair? (car sig)) (car sig) (list (car sig)))))
 	      
@@ -321,23 +328,7 @@
 				      (not (memq sym '(apply call-with-exit))))
 			     (format *stderr* "(~S ~S) -> arg num error but arity: ~S~%" sym probe1 ari))))))
 		 probes))))))))
-  
-  (define baddies '(exit emergency-exit abort s7-optimize dynamic-unwind 
-		    delete-file system set-cdr! stacktrace check check-funcs type-ok
-		    cutlet varlet gc cond-expand reader-cond
-		    openlet coverlet eval ;vector list cons values hash-table
-		    symbol-table load throw error show-stack
-		    make-rectangular macro macro* bacro bacro*
-		    copy fill! hash-table-set! vector-set! let-set! list-values apply-values immutable!
-		    *unbound-variable-hook* *load-hook* *rootlet-redefinition-hook* *missing-close-paren-hook* *read-error-hook*
-		    tree-count ; signature is kinda silly here
-		    trace-in profile-in apply call-with-exit
-		    define-expansion call-with-current-continuation vector-append append ; append gets uninteresting type conversion complaints
-		    call/cc call-with-output-string open-input-function open-output-function
-		    set-current-input-port set-current-output-port set-current-error-port
-		    heap-scan heap-analyze heap-holders heap-holder
-		    ))
-  
+
   (define (check-funcs)
     (let ((syms (symbol-table)))
       (for-each check syms)))

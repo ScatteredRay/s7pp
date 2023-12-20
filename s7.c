@@ -82040,19 +82040,6 @@ static inline bool op_dox_step_1(s7_scheme *sc) /* inline for 50 in concordance,
   return(false);
 }
 
-static inline bool op_dox_step_2(s7_scheme *sc)
-{
-  s7_pointer slot = let_slots(sc->curlet);
-  slot_set_value(slot, fx_call(sc, slot_expression(slot)));
-  sc->value = fx_call(sc, cadr(sc->code));
-  if (is_true(sc, sc->value))
-    {
-      sc->code = cdadr(sc->code);
-      return(true);
-    }
-  return(false);
-}
-
 static void op_dox_step(s7_scheme *sc)
 {
   push_stack_no_args_direct(sc, OP_DOX_STEP);
@@ -96311,7 +96298,7 @@ static void init_rootlet(s7_scheme *sc)
   set_func_is_definer(sc->eval_symbol);
   sc->eval_string_symbol =           semisafe_defun("eval-string", eval_string,		1, 1, false);
   set_func_is_definer(sc->eval_string_symbol);
-  sc->apply_symbol =                 unsafe_defun("apply",    apply,			1, 0, true); /* not semisafe (note that type is reset below) */
+  sc->apply_symbol =                 unsafe_defun("apply",    apply,			1, 0, true); /* not semisafe */
   set_func_is_definer(sc->apply_symbol);
   /* yow... (apply (inlet) (f)) in do body where (f) returns '(define...) -- see s7test.scm under apply
    *   perhaps better: if closure returns a definer in some way set its name as a definer? even this is not fool-proof
@@ -96337,7 +96324,7 @@ static void init_rootlet(s7_scheme *sc)
 #else
   sc->unquote_symbol =               make_symbol(sc, "unquote", 7);
 #endif
-  sc->qq_append_symbol =             defun("<list*>",          qq_append,		2, 0, false); /* occurs via quasiquote only as #_<list*> */
+  sc->qq_append_symbol =             defun("<list*>",           qq_append,		2, 0, false); /* occurs via quasiquote only as #_<list*> */
 #if (!DISABLE_DEPRECATED)
   defun("[list*]", qq_append, 2, 0, false);
 #endif
@@ -97443,8 +97430,8 @@ int main(int argc, char **argv)
  * s7test    1873   1831   1818   1829   1830
  * lt        2187   2172   2150   2185   1951
  * thook     ----   ----   2590   2030   2046
- * tauto     ----   ----   2562   2048   2034
- * dup       3805   3788   2492   2239   2104
+ * tauto     ----   ----   2562   2048   2034  1730
+ * dup       3805   3788   2492   2239   2100
  * tcopy     8035   5546   2539   2375   2386
  * tread     2440   2421   2419   2408   2405
  * trclo     2735   2574   2454   2445   2449
@@ -97491,4 +97478,5 @@ int main(int argc, char **argv)
  * add wasm test to test suite somehow (at least emscripten)
  * combine lets?
  * widget-size (pane equal)
+ * t670?
  */
