@@ -178,7 +178,8 @@
   
   (define (all)
     (let ((st (symbol-table)))
-      (for-each test-sym st)))
+      ;(do ((i 0 (+ i 1))) ((= i 10))
+      (for-each test-sym st)));)
 					;(do ((i 0 (+ i 1)) (len (length st))) ((= i 1000)) (test-sym (st (random len))))
 					;(test-sym 'object->string)
 					;(test-sym 'for-each)

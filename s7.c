@@ -781,12 +781,12 @@ typedef struct s7_cell {
     uint64_t flag;                /* type info */
     int64_t signed_flag;
     uint8_t type_field;
-    uint16_t sflag;
     struct {
-      uint32_t unused_low_flag;
-      uint16_t opt_choice;
-      uint16_t high_flag;
-    } opts;
+      uint16_t low_bits;          /* 8 bits for type (type_field above, pair?/string? etc, 6 bits in use), 8 flag bits */
+      uint16_t mid_bits;          /* 16 more flag bits */
+      uint16_t opt_bits;          /* 16 bits for opcode_t (eval choice), 10 in use) */
+      uint16_t high_bits;         /* 16 more flag bits */
+    } bits;
   } tf;
   union {
 
@@ -1913,7 +1913,7 @@ static void init_types(void)
 #endif
 
 #define full_type(p)  ((p)->tf.flag)
-#define typesflag(p) ((p)->tf.sflag)
+#define low_type_bits(p) ((p)->tf.bits.low_bits)
 #define TYPE_MASK    0xff
 
 #if S7_DEBUGGING
@@ -2108,97 +2108,104 @@ static void init_types(void)
 #define clear_type_bit(p, b)           full_type(p) &= (~(b))
 #define has_type_bit(p, b)             ((full_type(p) & (b)) != 0)
 
-#define set_type0_bit(p, b)            typesflag(p) |= (b)      /* I don't think these type0's matter -- *_type_bit is the same speed */
-#define clear_type0_bit(p, b)          typesflag(p) &= (~(b))
-#define has_type0_bit(p, b)            ((typesflag(p) & (b)) != 0)
+#define set_low_type_bit(p, b)         low_type_bits(p) |= (b)
+#define clear_low_type_bit(p, b)       low_type_bits(p) &= (~(b))
+#define has_low_type_bit(p, b)         ((low_type_bits(p) & (b)) != 0)
 
-#define set_type1_bit(p, b)            (p)->tf.opts.high_flag |= (b)
-#define clear_type1_bit(p, b)          (p)->tf.opts.high_flag &= (~(b))
-#define has_type1_bit(p, b)            (((p)->tf.opts.high_flag & (b)) != 0)
+#define set_mid_type_bit(p, b)         (p)->tf.bits.mid_bits |= (b)
+#define clear_mid_type_bit(p, b)       (p)->tf.bits.mid_bits &= (~(b))
+#define has_mid_type_bit(p, b)         (((p)->tf.bits.mid_bits & (b)) != 0)
 
+#define set_high_type_bit(p, b)        (p)->tf.bits.high_bits |= (b)
+#define clear_high_type_bit(p, b)      (p)->tf.bits.high_bits &= (~(b))
+#define has_high_type_bit(p, b)        (((p)->tf.bits.high_bits & (b)) != 0)
+
+/* -------- low type bits -------- */
 #define T_SYNTACTIC                    (1 << (TYPE_BITS + 1))
-#define is_symbol_and_syntactic(p)     (typesflag(T_Ext(p)) == (uint16_t)(T_SYMBOL | T_SYNTACTIC))
-#define is_syntactic_symbol(p)         has_type0_bit(T_Sym(p), T_SYNTACTIC)
-#define is_syntactic_pair(p)           has_type0_bit(T_Pair(p), T_SYNTACTIC)
-#define clear_syntactic(p)             clear_type0_bit(T_Pair(p), T_SYNTACTIC)
+#define is_symbol_and_syntactic(p)     (low_type_bits(T_Ext(p)) == (uint16_t)(T_SYMBOL | T_SYNTACTIC))
+#define is_syntactic_symbol(p)         has_low_type_bit(T_Sym(p), T_SYNTACTIC)
+#define is_syntactic_pair(p)           has_low_type_bit(T_Pair(p), T_SYNTACTIC)
+#define clear_syntactic(p)             clear_low_type_bit(T_Pair(p), T_SYNTACTIC)
 #define set_syntactic_pair(p)          full_type(T_Pair(p)) = (T_PAIR | T_SYNTACTIC | (full_type(p) & (0xffffffffffff0000 & ~T_OPTIMIZED))) /* used only in pair_set_syntax_op */
 /* this marks symbols that represent syntax objects, it should be in the second byte */
 
 #define T_SIMPLE_ARG_DEFAULTS          (1 << (TYPE_BITS + 2))
-#define lambda_has_simple_defaults(p)  has_type0_bit(T_Pair(closure_body(p)), T_SIMPLE_ARG_DEFAULTS)
-#define lambda_set_simple_defaults(p)  set_type0_bit(T_Pair(p), T_SIMPLE_ARG_DEFAULTS)
+#define lambda_has_simple_defaults(p)  has_low_type_bit(T_Pair(closure_body(p)), T_SIMPLE_ARG_DEFAULTS)
+#define lambda_set_simple_defaults(p)  set_low_type_bit(T_Pair(p), T_SIMPLE_ARG_DEFAULTS)
 /* are all lambda* default values simple? This is set on closure_body, so it doesn't mess up closure_is_ok_1 */
 
 #define T_LIST_IN_USE                  T_SIMPLE_ARG_DEFAULTS
-#define list_is_in_use(p)              has_type0_bit(T_Pair(p), T_LIST_IN_USE)
-#define set_list_in_use(p)             set_type0_bit(T_Pair(p), T_LIST_IN_USE)
-#define clear_list_in_use(p)           do {clear_type0_bit(T_Pair(p), T_LIST_IN_USE); sc->current_safe_list = 0;} while (0)
+#define list_is_in_use(p)              has_low_type_bit(T_Pair(p), T_LIST_IN_USE)
+#define set_list_in_use(p)             set_low_type_bit(T_Pair(p), T_LIST_IN_USE)
+#define clear_list_in_use(p)           do {clear_low_type_bit(T_Pair(p), T_LIST_IN_USE); sc->current_safe_list = 0;} while (0)
 /* since the safe lists are not in the heap, if the list_in_use bit is off, the list won't be GC-protected even if
  *   it is gc_marked explicitly.  This happens, for example, in copy_proper_list where we try to protect the original list
  *   by sc->temp5 = lst; then in the GC, gc_mark(sc->temp5); but the safe_list probably is already marked, so its contents are not protected.
  */
 
 #define T_ONE_FORM                     T_SIMPLE_ARG_DEFAULTS
-#define set_closure_has_one_form(p)    set_type0_bit(T_Clo(p), T_ONE_FORM)
+#define set_closure_has_one_form(p)    set_low_type_bit(T_Clo(p), T_ONE_FORM)
 #define T_MULTIFORM                    (1 << (TYPE_BITS + 0))
-#define set_closure_has_multiform(p)   set_type0_bit(T_Clo(p), T_MULTIFORM)
+#define set_closure_has_multiform(p)   set_low_type_bit(T_Clo(p), T_MULTIFORM)
 #define T_ONE_FORM_FX_ARG              (T_ONE_FORM | T_MULTIFORM)
-#define set_closure_one_form_fx_arg(p) set_type0_bit(T_Clo(p), T_ONE_FORM_FX_ARG)
-/* can't use T_HAS_FX here because closure_is_ok wants to examine typesflag */
+#define set_closure_one_form_fx_arg(p) set_low_type_bit(T_Clo(p), T_ONE_FORM_FX_ARG)
+/* can't use T_HAS_FX here because closure_is_ok wants to examine low_type_bits */
 
 #define T_OPTIMIZED                    (1 << (TYPE_BITS + 3))
-#define set_optimized(p)               set_type0_bit(T_Pair(p), T_OPTIMIZED)
-#define clear_optimized(p)             clear_type0_bit(T_Pair(p), T_OPTIMIZED | T_SYNTACTIC | T_HAS_FX | T_HAS_FN)
-#define is_optimized(p)                (typesflag(T_Ext(p)) == (uint16_t)(T_PAIR | T_OPTIMIZED))
+#define set_optimized(p)               set_low_type_bit(T_Pair(p), T_OPTIMIZED)
+#define clear_optimized(p)             clear_low_type_bit(T_Pair(p), T_OPTIMIZED | T_SYNTACTIC | T_HAS_FX | T_HAS_FN)
+#define is_optimized(p)                (low_type_bits(T_Ext(p)) == (uint16_t)(T_PAIR | T_OPTIMIZED))
 /* optimizer flag for an expression that has optimization info, it should be in the second byte */
 
 #define T_SCOPE_SAFE                   T_OPTIMIZED
-#define is_scope_safe(p)               has_type0_bit(T_Fnc(p), T_SCOPE_SAFE)
-#define set_scope_safe(p)              set_type0_bit(T_Fnc(p), T_SCOPE_SAFE)
+#define is_scope_safe(p)               has_low_type_bit(T_Fnc(p), T_SCOPE_SAFE)
+#define set_scope_safe(p)              set_low_type_bit(T_Fnc(p), T_SCOPE_SAFE)
 
 #define T_SAFE_CLOSURE                 (1 << (TYPE_BITS + 4))
-#define is_safe_closure(p)             has_type0_bit(T_Clo(p), T_SAFE_CLOSURE)
-#define set_safe_closure(p)            set_type0_bit(T_Clo(p), T_SAFE_CLOSURE)
-#define is_safe_closure_body(p)        has_type0_bit(T_Pair(p), T_SAFE_CLOSURE)
-#define set_safe_closure_body(p)       set_type0_bit(T_Pair(p), T_SAFE_CLOSURE)
-#define clear_safe_closure_body(p)     clear_type0_bit(T_Pair(p), T_SAFE_CLOSURE)
+#define is_safe_closure(p)             has_low_type_bit(T_Clo(p), T_SAFE_CLOSURE)
+#define set_safe_closure(p)            set_low_type_bit(T_Clo(p), T_SAFE_CLOSURE)
+#define is_safe_closure_body(p)        has_low_type_bit(T_Pair(p), T_SAFE_CLOSURE)
+#define set_safe_closure_body(p)       set_low_type_bit(T_Pair(p), T_SAFE_CLOSURE)
+#define clear_safe_closure_body(p)     clear_low_type_bit(T_Pair(p), T_SAFE_CLOSURE)
 
 /* optimizer flag for a closure body that is completely simple (every expression is safe)
  *   set_safe_closure happens in define_funchcecked letrec_setup_closures etc, clear only in procedure_source, bits only here
- *   this has to be separate from T_SAFE_PROCEDURE, and should be in the second byte (closure_is_ok_1 checks typesflag).
+ *   this has to be separate from T_SAFE_PROCEDURE, and should be in the second byte (closure_is_ok_1 checks low_type_bits).
  * define -> optimize_lambda sets safe -> define_funchecked -> make_funclet for the let
  *   similarly, named let -> optimize_lambda, then let creates the let if safe
  *   thereafter, optimizer uses OP_SAFE_CLOSURE* which calls update_let*
  */
 
 #define T_DONT_EVAL_ARGS               (1 << (TYPE_BITS + 5))
-#define dont_eval_args(p)              has_type0_bit(T_Ext(p), T_DONT_EVAL_ARGS)
+#define dont_eval_args(p)              has_low_type_bit(T_Ext(p), T_DONT_EVAL_ARGS)
 /* this marks things that don't evaluate their arguments */
 
 #define T_EXPANSION                    (1 << (TYPE_BITS + 6))
-#define is_expansion(p)                has_type0_bit(T_Ext(p), T_EXPANSION)
-#define clear_expansion(p)             clear_type0_bit(T_Sym(p), T_EXPANSION)
+#define is_expansion(p)                has_low_type_bit(T_Ext(p), T_EXPANSION)
+#define clear_expansion(p)             clear_low_type_bit(T_Sym(p), T_EXPANSION)
 /* this marks the symbol and its run-time macro value, distinguishing it from an ordinary macro */
 
 #define T_MULTIPLE_VALUE               (1 << (TYPE_BITS + 7))
-#define is_multiple_value(p)           has_type0_bit(T_Exs(p), T_MULTIPLE_VALUE) /* not T_Ext -- can be a slot */
+#define is_multiple_value(p)           has_low_type_bit(T_Exs(p), T_MULTIPLE_VALUE) /* not T_Ext -- can be a slot */
 #if S7_DEBUGGING
-#define set_multiple_value(p)          do {if (!in_heap(p)) {fprintf(stderr, "%s[%d]: mv\n", __func__, __LINE__); abort();} set_type0_bit(T_Pair(p), T_MULTIPLE_VALUE);} while (0)
+#define set_multiple_value(p)          do {if (!in_heap(p)) {fprintf(stderr, "%s[%d]: mv\n", __func__, __LINE__); abort();} set_low_type_bit(T_Pair(p), T_MULTIPLE_VALUE);} while (0)
 #else
-#define set_multiple_value(p)          set_type0_bit(T_Pair(p), T_MULTIPLE_VALUE)
+#define set_multiple_value(p)          set_low_type_bit(T_Pair(p), T_MULTIPLE_VALUE)
 #endif
-#define clear_multiple_value(p)        clear_type0_bit(T_Pair(p), T_MULTIPLE_VALUE)
+#define clear_multiple_value(p)        clear_low_type_bit(T_Pair(p), T_MULTIPLE_VALUE)
 #define multiple_value(p)              p
 /* this bit marks a list (from "values") that is waiting for a chance to be spliced into its caller's argument list */
 
 #define T_MATCHED                      T_MULTIPLE_VALUE
-#define is_matched_pair(p)             has_type0_bit(T_Pair(p), T_MATCHED)
-#define clear_match_pair(p)            clear_type0_bit(T_Pair(p), T_MATCHED)
-#define set_match_pair(p)              set_type0_bit(T_Pair(p), T_MATCHED)
-#define set_match_symbol(p)            set_type0_bit(T_Sym(p), T_MATCHED)
-#define is_matched_symbol(p)           has_type0_bit(T_Sym(p), T_MATCHED)
-#define clear_match_symbol(p)          clear_type0_bit(T_Sym(p), T_MATCHED)
+#define is_matched_pair(p)             has_low_type_bit(T_Pair(p), T_MATCHED)
+#define clear_match_pair(p)            clear_low_type_bit(T_Pair(p), T_MATCHED)
+#define set_match_pair(p)              set_low_type_bit(T_Pair(p), T_MATCHED)
+#define set_match_symbol(p)            set_low_type_bit(T_Sym(p), T_MATCHED)
+#define is_matched_symbol(p)           has_low_type_bit(T_Sym(p), T_MATCHED)
+#define clear_match_symbol(p)          clear_low_type_bit(T_Sym(p), T_MATCHED)
 
+
+/* -------- mid type bits -------- */
 #define T_GLOBAL                       (1 << (TYPE_BITS + 8))
 #define T_LOCAL                        (1 << (TYPE_BITS + 12))
 #define is_global(p)                   has_type_bit(T_Sym(p), T_GLOBAL)
@@ -2512,206 +2519,207 @@ static void init_types(void)
 #define T_SYMBOL_FROM_SYMBOL           T_ITER_OK
 #define is_symbol_from_symbol(p)       has_type_bit(T_Sym(p), T_SYMBOL_FROM_SYMBOL)
 #define set_is_symbol_from_symbol(p)   set_type_bit(T_Sym(p), T_SYMBOL_FROM_SYMBOL)
-#define clear_symbol_from_symbol(p)    clear_type1_bit(T_Sym(p), T_SYMBOL_FROM_SYMBOL)
+#define clear_symbol_from_symbol(p)    clear_type_bit(T_Sym(p), T_SYMBOL_FROM_SYMBOL) /* was type1?? 20-Dec-23 */
+/* TODO: is this bit actually working? What did clear_high_type_bit here do?? high_type_bit should protest against >= 16 if s7_debugging (also 0 etc) */
 
-/* it's faster here to use the high_flag bits rather than typeflag bits */
-#define BIT_ROOM                       16
-#define T_FULL_SYMCONS                 (1LL << (TYPE_BITS + BIT_ROOM + 24))
+/* -------- high type bits -------- */
+/* it's faster here to use the high_bits bits rather than typeflag bits */
+#define T_FULL_SYMCONS                 (1LL << (48 + 0))
 #define T_SYMCONS                      (1 << 0)
-#define is_possibly_constant(p)        has_type1_bit(T_Sym(p), T_SYMCONS)
-#define set_possibly_constant(p)       set_type1_bit(T_Sym(p), T_SYMCONS)
+#define is_possibly_constant(p)        has_high_type_bit(T_Sym(p), T_SYMCONS)
+#define set_possibly_constant(p)       set_high_type_bit(T_Sym(p), T_SYMCONS)
 #define is_probably_constant(p)        has_type_bit(T_Sym(p), (T_FULL_SYMCONS | T_IMMUTABLE))
 
 #define T_HAS_LET_ARG                  T_SYMCONS
-#define has_let_arg(p)                 has_type1_bit(T_Prc(p), T_HAS_LET_ARG)
-#define set_has_let_arg(p)             set_type1_bit(T_Prc(p), T_HAS_LET_ARG)
+#define has_let_arg(p)                 has_high_type_bit(T_Prc(p), T_HAS_LET_ARG)
+#define set_has_let_arg(p)             set_high_type_bit(T_Prc(p), T_HAS_LET_ARG)
 /* p is a setter procedure, "let arg" refers to the setter's optional third (let) argument */
 
 #define T_HASH_VALUE_TYPE              T_SYMCONS
-#define has_hash_value_type(p)         has_type1_bit(T_Hsh(p), T_HASH_VALUE_TYPE)
-#define set_has_hash_value_type(p)     set_type1_bit(T_Hsh(p), T_HASH_VALUE_TYPE)
+#define has_hash_value_type(p)         has_high_type_bit(T_Hsh(p), T_HASH_VALUE_TYPE)
+#define set_has_hash_value_type(p)     set_high_type_bit(T_Hsh(p), T_HASH_VALUE_TYPE)
 
 #define T_INT_OPTABLE                  T_SYMCONS
-#define is_int_optable(p)              has_type1_bit(T_Pair(p), T_INT_OPTABLE)
-#define set_is_int_optable(p)          set_type1_bit(T_Pair(p), T_INT_OPTABLE)
+#define is_int_optable(p)              has_high_type_bit(T_Pair(p), T_INT_OPTABLE)
+#define set_is_int_optable(p)          set_high_type_bit(T_Pair(p), T_INT_OPTABLE)
 
 #define T_UNLET                        T_SYMCONS
-#define is_unlet(p)                    has_type1_bit(T_Lsd(p), T_UNLET)
-#define set_is_unlet(p)                set_type1_bit(T_Lsd(p), T_UNLET)
+#define is_unlet(p)                    has_high_type_bit(T_Lsd(p), T_UNLET)
+#define set_is_unlet(p)                set_high_type_bit(T_Lsd(p), T_UNLET)
 
-#define T_FULL_HAS_LET_FILE            (1LL << (TYPE_BITS + BIT_ROOM + 25))
+#define T_FULL_HAS_LET_FILE            (1LL << (48 + 1))
 #define T_HAS_LET_FILE                 (1 << 1)
-#define has_let_file(p)                has_type1_bit(T_Lsd(p), T_HAS_LET_FILE)
-#define set_has_let_file(p)            set_type1_bit(T_Lsd(p), T_HAS_LET_FILE)
-#define clear_has_let_file(p)          clear_type1_bit(T_Lsd(p), T_HAS_LET_FILE)
+#define has_let_file(p)                has_high_type_bit(T_Lsd(p), T_HAS_LET_FILE)
+#define set_has_let_file(p)            set_high_type_bit(T_Lsd(p), T_HAS_LET_FILE)
+#define clear_has_let_file(p)          clear_high_type_bit(T_Lsd(p), T_HAS_LET_FILE)
 
 #define T_TYPED_VECTOR                 T_HAS_LET_FILE
-#define is_typed_vector(p)             has_type1_bit(T_Nvc(p), T_TYPED_VECTOR)
+#define is_typed_vector(p)             has_high_type_bit(T_Nvc(p), T_TYPED_VECTOR)
 #define is_typed_t_vector(p)           ((is_t_vector(p)) && (is_typed_vector(p)))
-#define set_typed_vector(p)            set_type1_bit(T_Nvc(p), T_TYPED_VECTOR)
-#define clear_typed_vector(p)          clear_type1_bit(T_Nvc(p), T_TYPED_VECTOR)
+#define set_typed_vector(p)            set_high_type_bit(T_Nvc(p), T_TYPED_VECTOR)
+#define clear_typed_vector(p)          clear_high_type_bit(T_Nvc(p), T_TYPED_VECTOR)
 
 #define T_TYPED_HASH_TABLE             T_HAS_LET_FILE
-#define is_typed_hash_table(p)         has_type1_bit(T_Hsh(p), T_TYPED_HASH_TABLE)
-#define set_is_typed_hash_table(p)     set_type1_bit(T_Hsh(p), T_TYPED_HASH_TABLE)
-#define clear_is_typed_hash_table(p)   clear_type1_bit(T_Hsh(p), T_TYPED_HASH_TABLE)
+#define is_typed_hash_table(p)         has_high_type_bit(T_Hsh(p), T_TYPED_HASH_TABLE)
+#define set_is_typed_hash_table(p)     set_high_type_bit(T_Hsh(p), T_TYPED_HASH_TABLE)
+#define clear_is_typed_hash_table(p)   clear_high_type_bit(T_Hsh(p), T_TYPED_HASH_TABLE)
 
 #define T_BOOL_SETTER                  T_HAS_LET_FILE
-#define c_function_has_bool_setter(p)  has_type1_bit(T_Fnc(p), T_BOOL_SETTER)
-#define c_function_set_has_bool_setter(p) set_type1_bit(T_Fnc(p), T_BOOL_SETTER)
+#define c_function_has_bool_setter(p)  has_high_type_bit(T_Fnc(p), T_BOOL_SETTER)
+#define c_function_set_has_bool_setter(p) set_high_type_bit(T_Fnc(p), T_BOOL_SETTER)
 
 #define T_REST_SLOT                    T_HAS_LET_FILE
-#define is_rest_slot(p)                has_type1_bit(T_Slt(p), T_REST_SLOT)
-#define set_is_rest_slot(p)            set_type1_bit(T_Slt(p), T_REST_SLOT)
+#define is_rest_slot(p)                has_high_type_bit(T_Slt(p), T_REST_SLOT)
+#define set_is_rest_slot(p)            set_high_type_bit(T_Slt(p), T_REST_SLOT)
 
 #define T_NO_DEFAULTS                  T_HAS_LET_FILE
 #define T_FULL_NO_DEFAULTS             T_FULL_HAS_LET_FILE
-#define has_no_defaults(p)             has_type1_bit(T_Pcs(p), T_NO_DEFAULTS)
-#define set_has_no_defaults(p)         set_type1_bit(T_Pcs(p), T_NO_DEFAULTS)
+#define has_no_defaults(p)             has_high_type_bit(T_Pcs(p), T_NO_DEFAULTS)
+#define set_has_no_defaults(p)         set_high_type_bit(T_Pcs(p), T_NO_DEFAULTS)
 /* pair=closure* body, transferred to closure* */
 
-#define T_FULL_DEFINER                 (1LL << (TYPE_BITS + BIT_ROOM + 26))
+#define T_FULL_DEFINER                 (1LL << (48 + 2))
 #define T_DEFINER                      (1 << 2)
-#define is_definer(p)                  has_type1_bit(T_Sym(p), T_DEFINER)
-#define set_is_definer(p)              set_type1_bit(T_Sym(p), T_DEFINER)
-#define is_func_definer(p)             has_type1_bit(T_Fnc(p), T_DEFINER)
-#define set_func_is_definer(p)         do {set_type1_bit(T_Fnc(initial_value(p)), T_DEFINER); set_type1_bit(T_Sym(p), T_DEFINER);} while (0)
-#define is_syntax_definer(p)           has_type1_bit(T_Syn(p), T_DEFINER)
-#define set_syntax_is_definer(p)       do {set_type1_bit(T_Syn(initial_value(p)), T_DEFINER); set_type1_bit(T_Sym(p), T_DEFINER);} while (0)
+#define is_definer(p)                  has_high_type_bit(T_Sym(p), T_DEFINER)
+#define set_is_definer(p)              set_high_type_bit(T_Sym(p), T_DEFINER)
+#define is_func_definer(p)             has_high_type_bit(T_Fnc(p), T_DEFINER)
+#define set_func_is_definer(p)         do {set_high_type_bit(T_Fnc(initial_value(p)), T_DEFINER); set_high_type_bit(T_Sym(p), T_DEFINER);} while (0)
+#define is_syntax_definer(p)           has_high_type_bit(T_Syn(p), T_DEFINER)
+#define set_syntax_is_definer(p)       do {set_high_type_bit(T_Syn(initial_value(p)), T_DEFINER); set_high_type_bit(T_Sym(p), T_DEFINER);} while (0)
 /* this marks "definers" like define and define-macro */
 
 #define T_MACLET                       T_DEFINER
-#define is_maclet(p)                   has_type1_bit(T_Lsd(p), T_MACLET)
-#define set_maclet(p)                  set_type1_bit(T_Lsd(p), T_MACLET)
+#define is_maclet(p)                   has_high_type_bit(T_Lsd(p), T_MACLET)
+#define set_maclet(p)                  set_high_type_bit(T_Lsd(p), T_MACLET)
 /* this marks a maclet */
 
 #define T_HAS_FX                       T_DEFINER
-#define set_has_fx(p)                  set_type1_bit(T_Pair(p), T_HAS_FX)
-#define has_fx(p)                      has_type1_bit(T_Pair(p), T_HAS_FX)
-#define clear_has_fx(p)                clear_type1_bit(T_Pair(p), T_HAS_FX)
+#define set_has_fx(p)                  set_high_type_bit(T_Pair(p), T_HAS_FX)
+#define has_fx(p)                      has_high_type_bit(T_Pair(p), T_HAS_FX)
+#define clear_has_fx(p)                clear_high_type_bit(T_Pair(p), T_HAS_FX)
 
 #define T_SLOT_DEFAULTS                T_DEFINER
-#define slot_defaults(p)               has_type1_bit(T_Slt(p), T_SLOT_DEFAULTS)
-#define set_slot_defaults(p)           set_type1_bit(T_Slt(p), T_SLOT_DEFAULTS)
+#define slot_defaults(p)               has_high_type_bit(T_Slt(p), T_SLOT_DEFAULTS)
+#define set_slot_defaults(p)           set_high_type_bit(T_Slt(p), T_SLOT_DEFAULTS)
 
 #define T_WEAK_HASH_ITERATOR           T_DEFINER
-#define is_weak_hash_iterator(p)       has_type1_bit(T_Itr(p), T_WEAK_HASH_ITERATOR)
-#define set_weak_hash_iterator(p)      set_type1_bit(T_Itr(p), T_WEAK_HASH_ITERATOR)
-#define clear_weak_hash_iterator(p)    clear_type1_bit(T_Itr(p), T_WEAK_HASH_ITERATOR)
+#define is_weak_hash_iterator(p)       has_high_type_bit(T_Itr(p), T_WEAK_HASH_ITERATOR)
+#define set_weak_hash_iterator(p)      set_high_type_bit(T_Itr(p), T_WEAK_HASH_ITERATOR)
+#define clear_weak_hash_iterator(p)    clear_high_type_bit(T_Itr(p), T_WEAK_HASH_ITERATOR)
 
 #define T_HASH_KEY_TYPE                T_DEFINER
-#define has_hash_key_type(p)           has_type1_bit(T_Hsh(p), T_HASH_KEY_TYPE)
-#define set_has_hash_key_type(p)       set_type1_bit(T_Hsh(p), T_HASH_KEY_TYPE)
+#define has_hash_key_type(p)           has_high_type_bit(T_Hsh(p), T_HASH_KEY_TYPE)
+#define set_has_hash_key_type(p)       set_high_type_bit(T_Hsh(p), T_HASH_KEY_TYPE)
 
-#define T_FULL_BINDER                  (1LL << (TYPE_BITS + BIT_ROOM + 27))
+#define T_FULL_BINDER                  (1LL << (48 + 3))
 #define T_BINDER                       (1 << 3)
-#define set_syntax_is_binder(p)        do {set_type1_bit(T_Syn(initial_value(p)), T_BINDER); set_type1_bit(T_Sym(p), T_BINDER);} while (0)
-#define is_definer_or_binder(p)        has_type1_bit(T_Sym(p), T_DEFINER | T_BINDER)
+#define set_syntax_is_binder(p)        do {set_high_type_bit(T_Syn(initial_value(p)), T_BINDER); set_high_type_bit(T_Sym(p), T_BINDER);} while (0)
+#define is_definer_or_binder(p)        has_high_type_bit(T_Sym(p), T_DEFINER | T_BINDER)
 /* this marks "binders" like let */
 
 #define T_SEMISAFE                     T_BINDER
-#define is_semisafe(p)                 has_type1_bit(T_Fnc(p), T_SEMISAFE)
-#define set_is_semisafe(p)             set_type1_bit(T_Fnc(p), T_SEMISAFE)
+#define is_semisafe(p)                 has_high_type_bit(T_Fnc(p), T_SEMISAFE)
+#define set_is_semisafe(p)             set_high_type_bit(T_Fnc(p), T_SEMISAFE)
 
 /* #define T_TREE_COLLECTED            T_FULL_BINDER */
 #define T_SHORT_TREE_COLLECTED         T_BINDER
-#define tree_is_collected(p)           has_type1_bit(T_Pair(p), T_SHORT_TREE_COLLECTED)
-#define tree_set_collected(p)          set_type1_bit(T_Pair(p), T_SHORT_TREE_COLLECTED)
-#define tree_clear_collected(p)        clear_type1_bit(T_Pair(p), T_SHORT_TREE_COLLECTED)
+#define tree_is_collected(p)           has_high_type_bit(T_Pair(p), T_SHORT_TREE_COLLECTED)
+#define tree_set_collected(p)          set_high_type_bit(T_Pair(p), T_SHORT_TREE_COLLECTED)
+#define tree_clear_collected(p)        clear_high_type_bit(T_Pair(p), T_SHORT_TREE_COLLECTED)
 
 #define T_SIMPLE_VALUES                T_BINDER
-#define has_simple_values(p)           has_type1_bit(T_Hsh(p), T_SIMPLE_VALUES)
-#define set_has_simple_values(p)       set_type1_bit(T_Hsh(p), T_SIMPLE_VALUES)
-#define clear_has_simple_values(p)     clear_type1_bit(T_Hsh(p), T_SIMPLE_VALUES)
+#define has_simple_values(p)           has_high_type_bit(T_Hsh(p), T_SIMPLE_VALUES)
+#define set_has_simple_values(p)       set_high_type_bit(T_Hsh(p), T_SIMPLE_VALUES)
+#define clear_has_simple_values(p)     clear_high_type_bit(T_Hsh(p), T_SIMPLE_VALUES)
 
-#define T_VERY_SAFE_CLOSURE            (1LL << (TYPE_BITS + BIT_ROOM + 28))
+#define T_VERY_SAFE_CLOSURE            (1LL << (48 + 4))
 #define T_SHORT_VERY_SAFE_CLOSURE      (1 << 4)
-#define is_very_safe_closure(p)        has_type1_bit(T_Clo(p), T_SHORT_VERY_SAFE_CLOSURE)
-#define set_very_safe_closure(p)       set_type1_bit(T_Clo(p), T_SHORT_VERY_SAFE_CLOSURE)
+#define is_very_safe_closure(p)        has_high_type_bit(T_Clo(p), T_SHORT_VERY_SAFE_CLOSURE)
+#define set_very_safe_closure(p)       set_high_type_bit(T_Clo(p), T_SHORT_VERY_SAFE_CLOSURE)
 #define closure_bits(p)                (full_type(T_Pair(p)) & (T_SAFE_CLOSURE | T_VERY_SAFE_CLOSURE | T_FULL_NO_DEFAULTS))
-#define is_very_safe_closure_body(p)   has_type1_bit(T_Pair(p), T_SHORT_VERY_SAFE_CLOSURE)
-#define set_very_safe_closure_body(p)  set_type1_bit(T_Pair(p), T_SHORT_VERY_SAFE_CLOSURE)
+#define is_very_safe_closure_body(p)   has_high_type_bit(T_Pair(p), T_SHORT_VERY_SAFE_CLOSURE)
+#define set_very_safe_closure_body(p)  set_high_type_bit(T_Pair(p), T_SHORT_VERY_SAFE_CLOSURE)
 
 #define T_BAFFLE_LET                   T_SHORT_VERY_SAFE_CLOSURE
-#define is_baffle_let(p)               has_type1_bit(T_Lsd(p), T_BAFFLE_LET)
-#define set_baffle_let(p)              set_type1_bit(T_Lsd(p), T_BAFFLE_LET)
+#define is_baffle_let(p)               has_high_type_bit(T_Lsd(p), T_BAFFLE_LET)
+#define set_baffle_let(p)              set_high_type_bit(T_Lsd(p), T_BAFFLE_LET)
 
-#define T_CYCLIC                       (1LL << (TYPE_BITS + BIT_ROOM + 29))
+#define T_CYCLIC                       (1LL << (48 + 5))
 #define T_SHORT_CYCLIC                 (1 << 5)
-#define is_cyclic(p)                   has_type1_bit(T_Seq(p), T_SHORT_CYCLIC)
-#define set_cyclic(p)                  set_type1_bit(T_Seq(p), T_SHORT_CYCLIC)
+#define is_cyclic(p)                   has_high_type_bit(T_Seq(p), T_SHORT_CYCLIC)
+#define set_cyclic(p)                  set_high_type_bit(T_Seq(p), T_SHORT_CYCLIC)
 
-#define T_CYCLIC_SET                   (1LL << (TYPE_BITS + BIT_ROOM + 30))
+#define T_CYCLIC_SET                   (1LL << (48 + 6))
 #define T_SHORT_CYCLIC_SET             (1 << 6)
-#define is_cyclic_set(p)               has_type1_bit(T_Seq(p), T_SHORT_CYCLIC_SET)
-#define set_cyclic_set(p)              set_type1_bit(T_Seq(p), T_SHORT_CYCLIC_SET)
+#define is_cyclic_set(p)               has_high_type_bit(T_Seq(p), T_SHORT_CYCLIC_SET)
+#define set_cyclic_set(p)              set_high_type_bit(T_Seq(p), T_SHORT_CYCLIC_SET)
 #define clear_cyclic_bits(p)           clear_type_bit(p, T_COLLECTED | T_SHARED | T_CYCLIC | T_CYCLIC_SET)
 
-#define T_KEYWORD                      (1LL << (TYPE_BITS + BIT_ROOM + 31))
+#define T_KEYWORD                      (1LL << (48 + 7))
 #define T_SHORT_KEYWORD                (1 << 7)
-#define is_keyword(p)                  has_type1_bit(T_Sym(p), T_SHORT_KEYWORD)
+#define is_keyword(p)                  has_high_type_bit(T_Sym(p), T_SHORT_KEYWORD)
 #define is_symbol_and_keyword(p)       ((is_symbol(p)) && (is_keyword(p)))
 /* this bit distinguishes a symbol from a symbol that is also a keyword */
 
 #define T_FX_TREEABLE                  T_SHORT_KEYWORD
-#define is_fx_treeable(p)              has_type1_bit(T_Pair(p), T_FX_TREEABLE)
-#define set_is_fx_treeable(p)          set_type1_bit(T_Pair(p), T_FX_TREEABLE)
+#define is_fx_treeable(p)              has_high_type_bit(T_Pair(p), T_FX_TREEABLE)
+#define set_is_fx_treeable(p)          set_high_type_bit(T_Pair(p), T_FX_TREEABLE)
 
-#define T_FULL_SIMPLE_ELEMENTS         (1LL << (TYPE_BITS + BIT_ROOM + 32))
+#define T_FULL_SIMPLE_ELEMENTS         (1LL << (48 + 8))
 #define T_SIMPLE_ELEMENTS              (1 << 8)
-#define has_simple_elements(p)         has_type1_bit(T_Nvc(p), T_SIMPLE_ELEMENTS)
-#define set_has_simple_elements(p)     set_type1_bit(T_Nvc(p), T_SIMPLE_ELEMENTS)
-#define clear_has_simple_elements(p)   clear_type1_bit(T_Nvc(p), T_SIMPLE_ELEMENTS)
-#define c_function_has_simple_elements(p)     has_type1_bit(T_Fnc(p), T_SIMPLE_ELEMENTS)
-#define c_function_set_has_simple_elements(p) set_type1_bit(T_Fnc(p), T_SIMPLE_ELEMENTS)
+#define has_simple_elements(p)         has_high_type_bit(T_Nvc(p), T_SIMPLE_ELEMENTS)
+#define set_has_simple_elements(p)     set_high_type_bit(T_Nvc(p), T_SIMPLE_ELEMENTS)
+#define clear_has_simple_elements(p)   clear_high_type_bit(T_Nvc(p), T_SIMPLE_ELEMENTS)
+#define c_function_has_simple_elements(p)     has_high_type_bit(T_Fnc(p), T_SIMPLE_ELEMENTS)
+#define c_function_set_has_simple_elements(p) set_high_type_bit(T_Fnc(p), T_SIMPLE_ELEMENTS)
 /* c_func case here refers to boolean? et al -- structure element type declaration that ensures a simple object */
 
 #define T_SIMPLE_KEYS                  T_SIMPLE_ELEMENTS
-#define has_simple_keys(p)             has_type1_bit(T_Hsh(p), T_SIMPLE_KEYS)
-#define set_has_simple_keys(p)         set_type1_bit(T_Hsh(p), T_SIMPLE_KEYS)
-#define clear_has_simple_keys(p)       clear_type1_bit(T_Hsh(p), T_SIMPLE_KEYS)
+#define has_simple_keys(p)             has_high_type_bit(T_Hsh(p), T_SIMPLE_KEYS)
+#define set_has_simple_keys(p)         set_high_type_bit(T_Hsh(p), T_SIMPLE_KEYS)
+#define clear_has_simple_keys(p)       clear_high_type_bit(T_Hsh(p), T_SIMPLE_KEYS)
 
 #define T_SAFE_SETTER                  T_SIMPLE_ELEMENTS
-#define is_safe_setter(p)              has_type1_bit(T_Sym(p), T_SAFE_SETTER)
-#define set_is_safe_setter(p)          set_type1_bit(T_Sym(p), T_SAFE_SETTER)
+#define is_safe_setter(p)              has_high_type_bit(T_Sym(p), T_SAFE_SETTER)
+#define set_is_safe_setter(p)          set_high_type_bit(T_Sym(p), T_SAFE_SETTER)
 
 #define T_FLOAT_OPTABLE                T_SIMPLE_ELEMENTS
-#define is_float_optable(p)            has_type1_bit(T_Pair(p), T_FLOAT_OPTABLE)
-#define set_is_float_optable(p)        set_type1_bit(T_Pair(p), T_FLOAT_OPTABLE)
+#define is_float_optable(p)            has_high_type_bit(T_Pair(p), T_FLOAT_OPTABLE)
+#define set_is_float_optable(p)        set_high_type_bit(T_Pair(p), T_FLOAT_OPTABLE)
 
-#define T_FULL_CASE_KEY                (1LL << (TYPE_BITS + BIT_ROOM + 33))
+#define T_FULL_CASE_KEY                (1LL << (48 + 9))
 #define T_CASE_KEY                     (1 << 9)
-#define is_case_key(p)                 has_type1_bit(T_Ext(p), T_CASE_KEY)
-#define set_case_key(p)                set_type1_bit(T_Sym(p), T_CASE_KEY)
+#define is_case_key(p)                 has_high_type_bit(T_Ext(p), T_CASE_KEY)
+#define set_case_key(p)                set_high_type_bit(T_Sym(p), T_CASE_KEY)
 
 #define T_OPT1_FUNC_LISTED             T_CASE_KEY
-#define opt1_func_listed(p)            has_type1_bit(T_Pair(p), T_OPT1_FUNC_LISTED)
-#define set_opt1_func_listed(p)        set_type1_bit(T_Pair(p), T_OPT1_FUNC_LISTED)
+#define opt1_func_listed(p)            has_high_type_bit(T_Pair(p), T_OPT1_FUNC_LISTED)
+#define set_opt1_func_listed(p)        set_high_type_bit(T_Pair(p), T_OPT1_FUNC_LISTED)
 
-#define T_FULL_HAS_GX                  (1LL << (TYPE_BITS + BIT_ROOM + 34))
+#define T_FULL_HAS_GX                  (1LL << (48 + 10))
 #define T_HAS_GX                       (1 << 10)
-#define has_gx(p)                      has_type1_bit(T_Pair(p), T_HAS_GX)
-#define set_has_gx(p)                  set_type1_bit(T_Pair(p), T_HAS_GX)
+#define has_gx(p)                      has_high_type_bit(T_Pair(p), T_HAS_GX)
+#define set_has_gx(p)                  set_high_type_bit(T_Pair(p), T_HAS_GX)
 
-#define T_FULL_UNKNOPT                 (1LL << (TYPE_BITS + BIT_ROOM + 35))
+#define T_FULL_UNKNOPT                 (1LL << (48 + 11))
 #define T_UNKNOPT                      (1 << 11)
-#define is_unknopt(p)                  has_type1_bit(T_Pair(p), T_UNKNOPT)
-#define set_is_unknopt(p)              set_type1_bit(T_Pair(p), T_UNKNOPT)
+#define is_unknopt(p)                  has_high_type_bit(T_Pair(p), T_UNKNOPT)
+#define set_is_unknopt(p)              set_high_type_bit(T_Pair(p), T_UNKNOPT)
 
 #define T_MAC_OK                       T_UNKNOPT
-#define mac_is_ok(p)                   has_type1_bit(T_Pair(p), T_MAC_OK)
-#define set_mac_is_ok(p)               set_type1_bit(T_Pair(p), T_MAC_OK)
+#define mac_is_ok(p)                   has_high_type_bit(T_Pair(p), T_MAC_OK)
+#define set_mac_is_ok(p)               set_high_type_bit(T_Pair(p), T_MAC_OK)
 /* marks a macro (via (macro...)) that has been checked -- easier (and slower) than making 4 or 5 more ops, op_macro_unchecked and so on */
 
-#define T_FULL_SAFETY_CHECKED          (1LL << (TYPE_BITS + BIT_ROOM + 36))
+#define T_FULL_SAFETY_CHECKED          (1LL << (48 + 12))
 #define T_SAFETY_CHECKED               (1 << 12)
-#define is_safety_checked(p)           has_type1_bit(T_Pair(p), T_SAFETY_CHECKED)
-#define set_safety_checked(p)          do {if (in_heap(p)) set_type1_bit(T_Pair(p), T_SAFETY_CHECKED);} while (0)
+#define is_safety_checked(p)           has_high_type_bit(T_Pair(p), T_SAFETY_CHECKED)
+#define set_safety_checked(p)          do {if (in_heap(p)) set_high_type_bit(T_Pair(p), T_SAFETY_CHECKED);} while (0)
 
-#define T_FULL_HAS_FN                  (1LL << (TYPE_BITS + BIT_ROOM + 37))
+#define T_FULL_HAS_FN                  (1LL << (48 + 13))
 #define T_HAS_FN                       (1 << 13)
-#define set_has_fn(p)                  set_type1_bit(T_Pair(p), T_HAS_FN)
-#define has_fn(p)                      has_type1_bit(T_Pair(p), T_HAS_FN)
+#define set_has_fn(p)                  set_high_type_bit(T_Pair(p), T_HAS_FN)
+#define has_fn(p)                      has_high_type_bit(T_Pair(p), T_HAS_FN)
 
 #define T_GC_MARK                      0x8000000000000000
 #define is_marked(p)                   has_type_bit(p, T_GC_MARK)
@@ -2721,8 +2729,8 @@ static void init_types(void)
 
 #define T_UNHEAP                       0x4000000000000000
 #define T_SHORT_UNHEAP                 (1 << 14)
-#define in_heap(p)                     (((T_Pos(p))->tf.opts.high_flag & T_SHORT_UNHEAP) == 0) /* can be slot, make_s7_starlet let_set_slot */
-#define unheap(sc, p)                  set_type1_bit(T_Ext(p), T_SHORT_UNHEAP)
+#define in_heap(p)                     (((T_Pos(p))->tf.bits.high_bits & T_SHORT_UNHEAP) == 0) /* can be slot, make_s7_starlet let_set_slot */
+#define unheap(sc, p)                  set_high_type_bit(T_Ext(p), T_SHORT_UNHEAP)
 
 #define is_eof(p)                      ((T_Ext(p)) == eof_object)
 #define is_true(Sc, p)                 ((T_Ext(p)) != Sc->F)
@@ -3055,9 +3063,9 @@ static void check_set_cdr(s7_pointer p, s7_pointer Val, const char *func, int32_
 #define character_name(p)              (T_Chr(p))->object.chr.c_name
 #define character_name_length(p)       (T_Chr(p))->object.chr.length
 
-#define optimize_op(P)                 (T_Ext(P))->tf.opts.opt_choice
-#define unchecked_optimize_op(P)       (P)->tf.opts.opt_choice
-#define set_optimize_op(P, Op)         (T_Ext(P))->tf.opts.opt_choice = (Op) /* not T_Pair -- needs legit cur_sc in init_chars|strings */
+#define optimize_op(P)                 (T_Ext(P))->tf.bits.opt_bits
+#define unchecked_optimize_op(P)       (P)->tf.bits.opt_bits
+#define set_optimize_op(P, Op)         (T_Ext(P))->tf.bits.opt_bits = (Op) /* not T_Pair -- needs legit cur_sc in init_chars|strings */
 #define OP_HOP_MASK                    0xfffe
 #define optimize_op_match(P, Q)        ((is_optimized(P)) && ((optimize_op(P) & OP_HOP_MASK) == (Q)))
 #define op_no_hop(P)                   (optimize_op(P) & OP_HOP_MASK)
@@ -85548,7 +85556,7 @@ static bool check_closure_sym(s7_scheme *sc, int32_t args)
       s7_pointer f = lookup_unexamined(sc, car(sc->code));
       if ((f != opt1_lambda_unchecked(sc->code)) &&
 	  ((!f) ||
-	   ((typesflag(f) & (TYPE_MASK | T_SAFE_CLOSURE)) != T_CLOSURE) ||
+	   ((low_type_bits(f) & (TYPE_MASK | T_SAFE_CLOSURE)) != T_CLOSURE) ||
 	   (((args == 1) && (!is_symbol(closure_args(f)))) ||
 	    ((args == 2) && ((!is_pair(closure_args(f))) || (!is_symbol(cdr(closure_args(f)))))))))
 	{
@@ -91167,7 +91175,7 @@ static /* inline */ bool closure_is_ok_1(s7_scheme *sc, s7_pointer code, uint16_
   s7_pointer f = lookup_unexamined(sc, car(code));
   if ((f == opt1_lambda_unchecked(code)) ||
       ((f) && /* this fixup check does save time (e.g. cb) */
-       (typesflag(f) == type) &&
+       (low_type_bits(f) == type) &&
        ((closure_arity(f) == args) || (closure_arity_to_int(sc, f) == args)) && /* 3 type bits to replace this but not hit enough to warrant them */
        (set_opt1_lambda(code, f))))
     return(true);
@@ -91180,7 +91188,7 @@ static /* inline */ bool closure_is_fine_1(s7_scheme *sc, s7_pointer code, uint1
   s7_pointer f = lookup_unexamined(sc, car(code));
   if ((f == opt1_lambda_unchecked(code)) ||
       ((f) &&
-       ((typesflag(f) & (TYPE_MASK | T_SAFE_CLOSURE)) == type) &&
+       ((low_type_bits(f) & (TYPE_MASK | T_SAFE_CLOSURE)) == type) &&
        ((closure_arity(f) == args) || (closure_arity_to_int(sc, f) == args)) &&
        (set_opt1_lambda(code, f))))
     return(true);
@@ -91222,7 +91230,7 @@ static bool closure_star_is_fine_1(s7_scheme *sc, s7_pointer code, uint16_t type
   s7_pointer val = lookup_unexamined(sc, car(code));
   if ((val == opt1_lambda_unchecked(code)) ||
       ((val) &&
-       ((typesflag(val) & (T_SAFE_CLOSURE | TYPE_MASK)) == type) &&
+       ((low_type_bits(val) & (T_SAFE_CLOSURE | TYPE_MASK)) == type) &&
        (star_arity_is_ok(sc, val, args)) &&
        (set_opt1_lambda(code, val))))
     return(true);
@@ -91277,7 +91285,7 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
       sc->code = car(sc->code);
 
     EVAL:
-      sc->cur_op = optimize_op(sc->code); /* sc->code can be anything, optimize_op examines a type field (opt_choice) */
+      sc->cur_op = optimize_op(sc->code); /* sc->code can be anything, optimize_op examines a type field (opt_bits) */
 
     TOP_NO_POP:
       if (SHOW_EVAL_OPS) safe_print(fprintf(stderr, "  %s (%d), code: %s\n", op_names[sc->cur_op], (int)(sc->cur_op), display_80(sc->code)));
@@ -96912,7 +96920,7 @@ s7_scheme *s7_init(void)
   s7_set_history_enabled(sc, true);
 
   s7_eval_c_string(sc, "(define make-hook                                                                 \n\
-                          (let ((+documentation+ \"(make-hook . pars) returns a new hook (a function) that passes the parameters to its function list.\")) \n\
+                          (let ((+documentation+ \"(make-hook . pars) returns a new hook (a function) that passes the parameters to each function in its function list.\")) \n\
                             (lambda hook-args                                                             \n\
                               (let ((body ()))                                                            \n\
                                 (apply lambda* hook-args                                                  \n\
@@ -97418,7 +97426,7 @@ int main(int argc, char **argv)
 #endif
 
 /* ---------------------------------------------
- *            20.9   21.0   22.0   23.0   24.0
+ *            20.9   21.0   22.0   23.0   24.0    type2 as 32|16+16
  * ---------------------------------------------
  * tpeak      115    114    108    105    102
  * tref       691    687    463    459    464
@@ -97435,17 +97443,17 @@ int main(int argc, char **argv)
  * tcopy     8035   5546   2539   2375   2386
  * tread     2440   2421   2419   2408   2405
  * trclo     2735   2574   2454   2445   2449
- * titer     2865   2842   2641   2509   2465
+ * titer     2865   2842   2641   2509   2465   2457 s7.c:opt_b_7p_s_iter_at_end !  2449
  * fbench    2688   2583   2460   2430   2478
  * tload     ----   ----   3046   2404   2566
  * tmat      3065   3042   2524   2578   2585
  * tsort     3105   3104   2856   2804   2858
- * tobj      4016   3970   3828   3577   3520
- * teq       4068   4045   3536   3486   3550
+ * tobj      4016   3970   3828   3577   3520   3509 s7.c:s7_is_immutable  3508
+ * teq       4068   4045   3536   3486   3550   3544 s7.c:collect_shared_info'2 3544
  * tio       3816   3752   3683   3620   3583
  * tmac      3950   3873   3033   3677   3677
  * tcase     4960   4793   4439   4430   4439
- * tclo      4787   4735   4390   4384   4465
+ * tclo      4787   4735   4390   4384   4465   4451 s7.c:apply_safe_closure_star_1 4474?
  * tlet      7775   5640   4450   4427   4457
  * tfft      7820   7729   4755   4476   4536
  * tstar     6139   5923   5519   4449   4550
@@ -97453,18 +97461,18 @@ int main(int argc, char **argv)
  * tshoot    5525   5447   5183   5055   5034
  * tform     5357   5348   5307   5316   5084
  * tstr      6880   6342   5488   5162   5180
- * tnum      6348   6013   5433   5396   5418
+ * tnum      6348   6013   5433   5396   5418    5411?
  * tlamb     6423   6273   5720   5560   5613
  * tgsl      8485   7802   6373   6282   6208
  * tlist     7896   7546   6558   6240   6300
  * tari      13.0   12.7   6827   6543   6278
- * tset      ----   ----   ----   6260   6369
+ * tset      ----   ----   ----   6260   6369    6363?
  * trec      6936   6922   6521   6588   6583
- * tleft     10.4   10.2   7657   7479   7644
- * tmisc     ----   ----   ----   8488   7866
- * tgc       11.9   11.1   8177   7857   7996
+ * tleft     10.4   10.2   7657   7479   7644   7625 eval?  7622
+ * tmisc     ----   ----   ----   8488   7866   7861?
+ * tgc       11.9   11.1   8177   7857   7996   7986?
  * thash     11.8   11.7   9734   9479   9527
- * cb        11.2   11.0   9658   9564   9612
+ * cb        11.2   11.0   9658   9564   9612   9603?
  * tgen      11.2   11.4   12.0   12.1   12.2
  * tall      15.6   15.6   15.6   15.6   15.1
  * calls     36.7   37.5   37.0   37.5   37.1
