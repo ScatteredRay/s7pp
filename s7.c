@@ -778,8 +778,8 @@ typedef intptr_t opcode_t;
 
 typedef struct s7_cell {
   union {
-    uint64_t flag;                /* type info */
-    int64_t signed_flag;
+    uint64_t u64_type;            /* type info */
+    int64_t s64_type;
     uint8_t type_field;
     struct {
       uint16_t low_bits;          /* 8 bits for type (type_field above, pair?/string? etc, 6 bits in use), 8 flag bits */
@@ -1912,7 +1912,7 @@ static void init_types(void)
 #define mark_current_code(Sc)          gc_mark(Sc->cur_code)
 #endif
 
-#define full_type(p)  ((p)->tf.flag)
+#define full_type(p)  ((p)->tf.u64_type)
 #define low_type_bits(p) ((p)->tf.bits.low_bits)
 #define TYPE_MASK    0xff
 
@@ -2064,7 +2064,7 @@ static void init_types(void)
   #define type(p)                      ((p)->tf.type_field)
   #define set_full_type(p, f)          full_type(p) = f
 #endif
-#define signed_type(p)                 (p)->tf.signed_flag
+#define signed_type(p)                 (p)->tf.s64_type
 
 #define is_number(P)                   t_number_p[type(P)]
 #define is_small_real(P)               t_small_real_p[type(P)]
@@ -2102,7 +2102,6 @@ static void init_types(void)
 #define is_t_procedure(p)              (t_procedure_p[type(p)])
 
 /* the layout of these bits does matter in several cases -- don't shadow SYNTACTIC_PAIR and OPTIMIZED_PAIR */
-#define TYPE_BITS                      8
 
 #define set_type_bit(p, b)             full_type(p) |= (b)
 #define clear_type_bit(p, b)           full_type(p) &= (~(b))
@@ -2121,7 +2120,7 @@ static void init_types(void)
 #define has_high_type_bit(p, b)        (((p)->tf.bits.high_bits & (b)) != 0)
 
 /* -------- low type bits -------- */
-#define T_SYNTACTIC                    (1 << (TYPE_BITS + 1))
+#define T_SYNTACTIC                    (1 << (8 + 1))
 #define is_symbol_and_syntactic(p)     (low_type_bits(T_Ext(p)) == (uint16_t)(T_SYMBOL | T_SYNTACTIC))
 #define is_syntactic_symbol(p)         has_low_type_bit(T_Sym(p), T_SYNTACTIC)
 #define is_syntactic_pair(p)           has_low_type_bit(T_Pair(p), T_SYNTACTIC)
@@ -2129,7 +2128,7 @@ static void init_types(void)
 #define set_syntactic_pair(p)          full_type(T_Pair(p)) = (T_PAIR | T_SYNTACTIC | (full_type(p) & (0xffffffffffff0000 & ~T_OPTIMIZED))) /* used only in pair_set_syntax_op */
 /* this marks symbols that represent syntax objects, it should be in the second byte */
 
-#define T_SIMPLE_ARG_DEFAULTS          (1 << (TYPE_BITS + 2))
+#define T_SIMPLE_ARG_DEFAULTS          (1 << (8 + 2))
 #define lambda_has_simple_defaults(p)  has_low_type_bit(T_Pair(closure_body(p)), T_SIMPLE_ARG_DEFAULTS)
 #define lambda_set_simple_defaults(p)  set_low_type_bit(T_Pair(p), T_SIMPLE_ARG_DEFAULTS)
 /* are all lambda* default values simple? This is set on closure_body, so it doesn't mess up closure_is_ok_1 */
@@ -2145,13 +2144,13 @@ static void init_types(void)
 
 #define T_ONE_FORM                     T_SIMPLE_ARG_DEFAULTS
 #define set_closure_has_one_form(p)    set_low_type_bit(T_Clo(p), T_ONE_FORM)
-#define T_MULTIFORM                    (1 << (TYPE_BITS + 0))
+#define T_MULTIFORM                    (1 << (8 + 0))
 #define set_closure_has_multiform(p)   set_low_type_bit(T_Clo(p), T_MULTIFORM)
 #define T_ONE_FORM_FX_ARG              (T_ONE_FORM | T_MULTIFORM)
 #define set_closure_one_form_fx_arg(p) set_low_type_bit(T_Clo(p), T_ONE_FORM_FX_ARG)
 /* can't use T_HAS_FX here because closure_is_ok wants to examine low_type_bits */
 
-#define T_OPTIMIZED                    (1 << (TYPE_BITS + 3))
+#define T_OPTIMIZED                    (1 << (8 + 3))
 #define set_optimized(p)               set_low_type_bit(T_Pair(p), T_OPTIMIZED)
 #define clear_optimized(p)             clear_low_type_bit(T_Pair(p), T_OPTIMIZED | T_SYNTACTIC | T_HAS_FX | T_HAS_FN)
 #define is_optimized(p)                (low_type_bits(T_Ext(p)) == (uint16_t)(T_PAIR | T_OPTIMIZED))
@@ -2161,7 +2160,7 @@ static void init_types(void)
 #define is_scope_safe(p)               has_low_type_bit(T_Fnc(p), T_SCOPE_SAFE)
 #define set_scope_safe(p)              set_low_type_bit(T_Fnc(p), T_SCOPE_SAFE)
 
-#define T_SAFE_CLOSURE                 (1 << (TYPE_BITS + 4))
+#define T_SAFE_CLOSURE                 (1 << (8 + 4))
 #define is_safe_closure(p)             has_low_type_bit(T_Clo(p), T_SAFE_CLOSURE)
 #define set_safe_closure(p)            set_low_type_bit(T_Clo(p), T_SAFE_CLOSURE)
 #define is_safe_closure_body(p)        has_low_type_bit(T_Pair(p), T_SAFE_CLOSURE)
@@ -2176,16 +2175,16 @@ static void init_types(void)
  *   thereafter, optimizer uses OP_SAFE_CLOSURE* which calls update_let*
  */
 
-#define T_DONT_EVAL_ARGS               (1 << (TYPE_BITS + 5))
+#define T_DONT_EVAL_ARGS               (1 << (8 + 5))
 #define dont_eval_args(p)              has_low_type_bit(T_Ext(p), T_DONT_EVAL_ARGS)
 /* this marks things that don't evaluate their arguments */
 
-#define T_EXPANSION                    (1 << (TYPE_BITS + 6))
+#define T_EXPANSION                    (1 << (8 + 6))
 #define is_expansion(p)                has_low_type_bit(T_Ext(p), T_EXPANSION)
 #define clear_expansion(p)             clear_low_type_bit(T_Sym(p), T_EXPANSION)
 /* this marks the symbol and its run-time macro value, distinguishing it from an ordinary macro */
 
-#define T_MULTIPLE_VALUE               (1 << (TYPE_BITS + 7))
+#define T_MULTIPLE_VALUE               (1 << (8 + 7))
 #define is_multiple_value(p)           has_low_type_bit(T_Exs(p), T_MULTIPLE_VALUE) /* not T_Ext -- can be a slot */
 #if S7_DEBUGGING
 #define set_multiple_value(p)          do {if (!in_heap(p)) {fprintf(stderr, "%s[%d]: mv\n", __func__, __LINE__); abort();} set_low_type_bit(T_Pair(p), T_MULTIPLE_VALUE);} while (0)
@@ -2206,10 +2205,12 @@ static void init_types(void)
 
 
 /* -------- mid type bits -------- */
-#define T_GLOBAL                       (1 << (TYPE_BITS + 8))
-#define T_LOCAL                        (1 << (TYPE_BITS + 12))
-#define is_global(p)                   has_type_bit(T_Sym(p), T_GLOBAL)
-#define set_global(p)                  do {if ((full_type(T_Sym(p)) & T_LOCAL) == 0) full_type(p) |= T_GLOBAL;} while (0)
+#define T_GLOBAL                       (1 << (16 + 0))
+#define T_MID_GLOBAL                   (1 << 0)
+#define T_LOCAL                        (1 << (16 + 4))
+#define T_MID_LOCAL                    (1 << 4)
+#define is_global(p)                   has_mid_type_bit(T_Sym(p), T_MID_GLOBAL)
+#define set_global(p)                  do {if (!has_mid_type_bit(T_Sym(p), T_MID_LOCAL)) set_mid_type_bit(p, T_MID_GLOBAL);} while (0)
 /* T_LOCAL marks a symbol that has been used locally */
 /* T_GLOBAL marks something defined (bound) at the top-level, and never defined locally */
 
@@ -2222,305 +2223,326 @@ static void init_types(void)
   #define set_local(p)                 full_type(T_Sym(p)) = ((full_type(p) | T_LOCAL) & ~(T_DONT_EVAL_ARGS | T_GLOBAL | T_SYNTACTIC))
 #endif
 
-#define T_LOW_COUNT                    T_LOCAL
-#define has_low_count(p)               has_type_bit(T_Pair(p), T_LOW_COUNT)
-#define set_has_low_count(p)           set_type_bit(T_Pair(p), T_LOW_COUNT)
+#define T_LOW_COUNT                    T_MID_LOCAL
+#define has_low_count(p)               has_mid_type_bit(T_Pair(p), T_LOW_COUNT)
+#define set_has_low_count(p)           set_mid_type_bit(T_Pair(p), T_LOW_COUNT)
 
-#define T_TC                           T_LOCAL
-#define has_tc(p)                      has_type_bit(T_Pair(p), T_TC)
-#define set_has_tc(p)                  set_type_bit(T_Pair(p), T_TC)
+#define T_TC                           T_MID_LOCAL
+#define has_tc(p)                      has_mid_type_bit(T_Pair(p), T_TC)
+#define set_has_tc(p)                  set_mid_type_bit(T_Pair(p), T_TC)
 
-#define T_UNSAFE_DO                    T_GLOBAL
-#define is_unsafe_do(p)                has_type_bit(T_Pair(p), T_UNSAFE_DO)
-#define set_unsafe_do(p)               set_type_bit(T_Pair(p), T_UNSAFE_DO)
+#define T_UNSAFE_DO                    T_MID_GLOBAL
+#define is_unsafe_do(p)                has_mid_type_bit(T_Pair(p), T_UNSAFE_DO)
+#define set_unsafe_do(p)               set_mid_type_bit(T_Pair(p), T_UNSAFE_DO)
 /* marks do-loops that resist optimization */
 
-#define T_DOX_SLOT1                    T_GLOBAL
-#define has_dox_slot1(p)               has_type_bit(T_Lsd(p), T_DOX_SLOT1)
-#define set_has_dox_slot1(p)           set_type_bit(T_Lsd(p), T_DOX_SLOT1)
+#define T_DOX_SLOT1                    T_MID_GLOBAL
+#define has_dox_slot1(p)               has_mid_type_bit(T_Lsd(p), T_DOX_SLOT1)
+#define set_has_dox_slot1(p)           set_mid_type_bit(T_Lsd(p), T_DOX_SLOT1)
 /* marks a let that includes the dox_slot1 */
 
-#define T_COLLECTED                    (1 << (TYPE_BITS + 9))
-#define is_collected(p)                has_type_bit(T_Seq(p), T_COLLECTED)
-#define is_collected_unchecked(p)      has_type_bit(p, T_COLLECTED)
-#define set_collected(p)               set_type_bit(T_Seq(p), T_COLLECTED)
-/* #define clear_collected(p)          clear_type_bit(T_Seq(p), T_COLLECTED) */
+#define T_COLLECTED                    (1 << (16 + 1))
+#define T_MID_COLLECTED                (1 << 1)
+#define is_collected(p)                has_mid_type_bit(T_Seq(p), T_MID_COLLECTED)
+#define is_collected_unchecked(p)      has_mid_type_bit(p, T_MID_COLLECTED)
+#define set_collected(p)               set_mid_type_bit(T_Seq(p), T_MID_COLLECTED)
+/* #define clear_collected(p)          clear_mid_type_bit(T_Seq(p), T_MID_COLLECTED) */
 /* this is a transient flag used by the printer to catch cycles.  It affects only objects that have structure.
  *   We can't use a low bit (bit 7 for example), because collect_shared_info inspects the object's type.
  */
 
-#define T_LOCATION                     (1 << (TYPE_BITS + 10))
-#define has_location(p)                has_type_bit(T_Pair(p), T_LOCATION)
-#define set_has_location(p)            set_type_bit(T_Pair(p), T_LOCATION)
+#define T_LOCATION                     (1 << (16 + 2))
+#define T_MID_LOCATION                 (1 << 2)
+#define has_location(p)                has_mid_type_bit(T_Pair(p), T_MID_LOCATION)
+#define set_has_location(p)            set_mid_type_bit(T_Pair(p), T_MID_LOCATION)
 /* pair in question has line/file/position info added during read, or the environment has function placement info
  *   this bit should not be in the first byte -- SYNTACTIC_PAIR ignores it.
  */
 
-#define T_LOADER_PORT                  T_LOCATION
-#define is_loader_port(p)              has_type_bit(T_Pri(p), T_LOADER_PORT)
-#define set_loader_port(p)             set_type_bit(T_Pri(p), T_LOADER_PORT)
-#define clear_loader_port(p)           clear_type_bit(T_Pri(p), T_LOADER_PORT)
+#define T_LOADER_PORT                  T_MID_LOCATION
+#define is_loader_port(p)              has_mid_type_bit(T_Pri(p), T_LOADER_PORT)
+#define set_loader_port(p)             set_mid_type_bit(T_Pri(p), T_LOADER_PORT)
+#define clear_loader_port(p)           clear_mid_type_bit(T_Pri(p), T_LOADER_PORT)
 /* this bit marks a port used by the loader so that random load-time reads do not screw up the load process */
 
-#define T_HAS_SETTER                   T_LOCATION
-#define slot_has_setter(p)             has_type_bit(T_Slt(p), T_HAS_SETTER)
-#define slot_set_has_setter(p)         set_type_bit(T_Slt(p), T_HAS_SETTER)
+#define T_HAS_SETTER                   T_MID_LOCATION
+#define slot_has_setter(p)             has_mid_type_bit(T_Slt(p), T_HAS_SETTER)
+#define slot_set_has_setter(p)         set_mid_type_bit(T_Slt(p), T_HAS_SETTER)
 /* marks a slot that has a setter or symbol that might have a setter */
 
-#define T_WITH_LET_LET                 T_LOCATION
-#define is_with_let_let(p)             has_type_bit(T_Lsd(p), T_WITH_LET_LET)
-#define set_with_let_let(p)            set_type_bit(T_Lsd(p), T_WITH_LET_LET)
+#define T_WITH_LET_LET                 T_MID_LOCATION
+#define is_with_let_let(p)             has_mid_type_bit(T_Lsd(p), T_WITH_LET_LET)
+#define set_with_let_let(p)            set_mid_type_bit(T_Lsd(p), T_WITH_LET_LET)
 /* marks a let that is the argument to with-let (but not rootlet in its uses) */
 
-#define T_SIMPLE_DEFAULTS              T_LOCATION
-#define c_func_has_simple_defaults(p)  has_type_bit(T_Fst(p), T_SIMPLE_DEFAULTS)
-#define c_func_set_simple_defaults(p)  set_type_bit(T_Fst(p), T_SIMPLE_DEFAULTS)
-#define c_func_clear_simple_defaults(p) clear_type_bit(T_Fst(p), T_SIMPLE_DEFAULTS)
+#define T_SIMPLE_DEFAULTS              T_MID_LOCATION
+#define c_func_has_simple_defaults(p)  has_mid_type_bit(T_Fst(p), T_SIMPLE_DEFAULTS)
+#define c_func_set_simple_defaults(p)  set_mid_type_bit(T_Fst(p), T_SIMPLE_DEFAULTS)
+#define c_func_clear_simple_defaults(p) clear_mid_type_bit(T_Fst(p), T_SIMPLE_DEFAULTS)
 /* flag c_func_star arg defaults that need GC protection */
 
-#define T_NO_SETTER                    T_LOCATION
-#define closure_no_setter(p)           has_type_bit(T_Clo(p), T_NO_SETTER)
-#define closure_set_no_setter(p)       set_type_bit(T_Clo(p), T_NO_SETTER)
+#define T_NO_SETTER                    T_MID_LOCATION
+#define closure_no_setter(p)           has_mid_type_bit(T_Clo(p), T_NO_SETTER)
+#define closure_set_no_setter(p)       set_mid_type_bit(T_Clo(p), T_NO_SETTER)
 
-#define T_SHARED                       (1 << (TYPE_BITS + 11))
-#define is_shared(p)                   has_type_bit(T_Seq(p), T_SHARED)
-#define set_shared(p)                  set_type_bit(T_Seq(p), T_SHARED)
-#define is_collected_or_shared(p)      has_type_bit(p, T_COLLECTED | T_SHARED)
-#define clear_collected_and_shared(p)  clear_type_bit(p, T_COLLECTED | T_SHARED) /* this can clear free cells = calloc */
-/* T_LOCAL is bit 12 */
+#define T_SHARED                       (1 << (16 + 3))
+#define T_MID_SHARED                   (1 << 3)
+#define is_shared(p)                   has_mid_type_bit(T_Seq(p), T_MID_SHARED)
+#define set_shared(p)                  set_mid_type_bit(T_Seq(p), T_MID_SHARED)
+#define is_collected_or_shared(p)      has_mid_type_bit(p, T_MID_COLLECTED | T_MID_SHARED)
+#define clear_collected_and_shared(p)  clear_mid_type_bit(p, T_MID_COLLECTED | T_MID_SHARED) /* this can clear free cells = calloc */
+/* T_LOCAL is bit 4 mid-wise) */
 
-#define T_SAFE_PROCEDURE               (1 << (TYPE_BITS + 13))
-#define is_safe_procedure(p)           has_type_bit(T_App(p), T_SAFE_PROCEDURE)
-#define is_safe_or_scope_safe_procedure(p) ((full_type(T_Fnc(p)) & (T_SCOPE_SAFE | T_SAFE_PROCEDURE)) != 0)
+#define T_SAFE_PROCEDURE               (1 << (16 + 5))
+#define T_MID_SAFE_PROCEDURE           (1 << 5)
+#define is_safe_procedure(p)           has_mid_type_bit(T_App(p), T_MID_SAFE_PROCEDURE)
+#define is_safe_or_scope_safe_procedure(p) ((full_type(T_Fnc(p)) & (T_SCOPE_SAFE | T_SAFE_PROCEDURE)) != 0) /* T_SCOPE_SAFE is a low_type bit */
 /* applicable objects that do not return or modify their arg list directly (no :rest arg in particular),
  *    and that can't call themselves either directly or via s7_call, and that don't mess with the stack.
  */
 
-#define T_CHECKED                      (1 << (TYPE_BITS + 14))
-#define set_checked(p)                 set_type_bit(T_Pair(p), T_CHECKED)
-#define is_checked(p)                  has_type_bit(T_Pair(p), T_CHECKED)
-#define clear_checked(p)               clear_type_bit(T_Pair(p), T_CHECKED)
-#define set_checked_slot(p)            set_type_bit(T_Slt(p), T_CHECKED)
-#define is_checked_slot(p)             has_type_bit(T_Slt(p), T_CHECKED)
-#define clear_checked_slot(p)          clear_type_bit(T_Slt(p), T_CHECKED)
+#define T_CHECKED                      (1 << (16 + 6))
+#define T_MID_CHECKED                  (1 << 6)
+#define set_checked(p)                 set_mid_type_bit(T_Pair(p), T_MID_CHECKED)
+#define is_checked(p)                  has_mid_type_bit(T_Pair(p), T_MID_CHECKED)
+#define clear_checked(p)               clear_mid_type_bit(T_Pair(p), T_MID_CHECKED)
+#define set_checked_slot(p)            set_mid_type_bit(T_Slt(p), T_MID_CHECKED)
+#define is_checked_slot(p)             has_mid_type_bit(T_Slt(p), T_MID_CHECKED)
+#define clear_checked_slot(p)          clear_mid_type_bit(T_Slt(p), T_MID_CHECKED)
 
-#define T_ALL_INTEGER                  T_CHECKED
-#define is_all_integer(p)              has_type_bit(T_Sym(p), T_ALL_INTEGER)
-#define set_all_integer(p)             set_type_bit(T_Sym(p), T_ALL_INTEGER)
+#define T_ALL_INTEGER                  T_MID_CHECKED
+#define is_all_integer(p)              has_mid_type_bit(T_Sym(p), T_ALL_INTEGER)
+#define set_all_integer(p)             set_mid_type_bit(T_Sym(p), T_ALL_INTEGER)
 
-#define T_UNSAFE                       (1 << (TYPE_BITS + 15))
-#define set_unsafe(p)                  set_type_bit(T_Pair(p), T_UNSAFE)
-#define set_unsafely_optimized(p)      full_type(T_Pair(p)) = (full_type(p) | T_UNSAFE | T_OPTIMIZED)
-#define is_unsafe(p)                   has_type_bit(T_Pair(p), T_UNSAFE)
-#define clear_unsafe(p)                clear_type_bit(T_Pair(p), T_UNSAFE)
+#define T_UNSAFE                       (1 << (16 + 7))
+#define T_MID_UNSAFE                   (1 << 7)
+#define set_unsafe(p)                  set_mid_type_bit(T_Pair(p), T_MID_UNSAFE)
+#define set_unsafely_optimized(p)      full_type(T_Pair(p)) = (full_type(p) | T_UNSAFE | T_OPTIMIZED) /* T_OPTIMIZED is a low_type bit */
+#define is_unsafe(p)                   has_mid_type_bit(T_Pair(p), T_MID_UNSAFE)
+#define clear_unsafe(p)                clear_mid_type_bit(T_Pair(p), T_MID_UNSAFE)
 #define is_safely_optimized(p)         ((full_type(T_Pair(p)) & (T_OPTIMIZED | T_UNSAFE)) == T_OPTIMIZED)
 /* optimizer flag saying "this expression is not completely self-contained.  It might involve the stack, etc" */
 
-#define T_CLEAN_SYMBOL                 T_UNSAFE
-#define is_clean_symbol(p)             has_type_bit(T_Sym(p), T_CLEAN_SYMBOL)
-#define set_clean_symbol(p)            set_type_bit(T_Sym(p), T_CLEAN_SYMBOL)
+#define T_CLEAN_SYMBOL                 T_MID_UNSAFE
+#define is_clean_symbol(p)             has_mid_type_bit(T_Sym(p), T_CLEAN_SYMBOL)
+#define set_clean_symbol(p)            set_mid_type_bit(T_Sym(p), T_CLEAN_SYMBOL)
 /* set if we know the symbol name can be printed without quotes (slashification) */
 
-#define T_HAS_STEPPER                  T_UNSAFE
-#define has_stepper(p)                 has_type_bit(T_Slt(p), T_HAS_STEPPER)
-#define set_has_stepper(p)             set_type_bit(T_Slt(p), T_HAS_STEPPER)
+#define T_HAS_STEPPER                  T_MID_UNSAFE
+#define has_stepper(p)                 has_mid_type_bit(T_Slt(p), T_HAS_STEPPER)
+#define set_has_stepper(p)             set_mid_type_bit(T_Slt(p), T_HAS_STEPPER)
 
-#define T_DOX_SLOT2                    T_UNSAFE
-#define has_dox_slot2(p)               has_type_bit(T_Lsd(p), T_DOX_SLOT2)
-#define set_has_dox_slot2(p)           set_type_bit(T_Lsd(p), T_DOX_SLOT2)
+#define T_DOX_SLOT2                    T_MID_UNSAFE
+#define has_dox_slot2(p)               has_mid_type_bit(T_Lsd(p), T_DOX_SLOT2)
+#define set_has_dox_slot2(p)           set_mid_type_bit(T_Lsd(p), T_DOX_SLOT2)
 /* marks a let that includes the dox_slot2 */
 
-#define T_IMMUTABLE                    (1 << (TYPE_BITS + 16))
-#define is_immutable(p)                has_type_bit(T_Exs(p), T_IMMUTABLE)
-#define set_immutable(p)               set_type_bit(T_Exs(p), T_IMMUTABLE) /* can be a slot, so not T_Ext */
-#define set_immutable_let(p)           set_type_bit(T_Lsd(p), T_IMMUTABLE)
-#define set_immutable_slot(p)          set_type_bit(T_Slt(p), T_IMMUTABLE)
-#define is_immutable_port(p)           has_type_bit(T_Prt(p), T_IMMUTABLE)
-#define is_immutable_symbol(p)         has_type_bit(T_Sym(p), T_IMMUTABLE)
-#define is_immutable_slot(p)           has_type_bit(T_Slt(p), T_IMMUTABLE)
-#define is_immutable_pair(p)           has_type_bit(T_Pair(p), T_IMMUTABLE)
-#define is_immutable_vector(p)         has_type_bit(T_Vec(p), T_IMMUTABLE)
-#define is_immutable_string(p)         has_type_bit(T_Str(p), T_IMMUTABLE)
-#define is_immutable_hash_table(p)     has_type_bit(T_Hsh(p), T_IMMUTABLE)
-#define is_immutable_let(p)            has_type_bit(T_Let(p), T_IMMUTABLE)
+#define T_IMMUTABLE                    (1 << (16 + 8))
+#define T_MID_IMMUTABLE                (1 << 8)
+#define is_immutable(p)                has_mid_type_bit(T_Exs(p), T_MID_IMMUTABLE)
+#define set_immutable(p)               set_mid_type_bit(T_Exs(p), T_MID_IMMUTABLE) /* can be a slot, so not T_Ext */
+#define set_immutable_let(p)           set_mid_type_bit(T_Lsd(p), T_MID_IMMUTABLE)
+#define set_immutable_slot(p)          set_mid_type_bit(T_Slt(p), T_MID_IMMUTABLE)
+#define is_immutable_port(p)           has_mid_type_bit(T_Prt(p), T_MID_IMMUTABLE)
+#define is_immutable_symbol(p)         has_mid_type_bit(T_Sym(p), T_MID_IMMUTABLE)
+#define is_immutable_slot(p)           has_mid_type_bit(T_Slt(p), T_MID_IMMUTABLE)
+#define is_immutable_pair(p)           has_mid_type_bit(T_Pair(p), T_MID_IMMUTABLE)
+#define is_immutable_vector(p)         has_mid_type_bit(T_Vec(p), T_MID_IMMUTABLE)
+#define is_immutable_string(p)         has_mid_type_bit(T_Str(p), T_MID_IMMUTABLE)
+#define is_immutable_hash_table(p)     has_mid_type_bit(T_Hsh(p), T_MID_IMMUTABLE)
+#define is_immutable_let(p)            has_mid_type_bit(T_Let(p), T_MID_IMMUTABLE)
 /* T_IMMUTABLE is compatible with T_MUTABLE -- the latter is an internal bit for locally mutable numbers */
 
-#define T_SETTER                       (1 << (TYPE_BITS + 17))
-#define set_is_setter(p)               set_type_bit(T_Sym(p), T_SETTER)
-#define is_setter(p)                   has_type_bit(T_Sym(p), T_SETTER)
+#define T_SETTER                       (1 << (16 + 9))
+#define T_MID_SETTER                   (1 << 9)
+#define set_is_setter(p)               set_mid_type_bit(T_Sym(p), T_MID_SETTER)
+#define is_setter(p)                   has_mid_type_bit(T_Sym(p), T_MID_SETTER)
 /* optimizer flag for a procedure that sets some variable (set-car! for example) */
 
-#define T_ALLOW_OTHER_KEYS             T_SETTER
-#define set_allow_other_keys(p)        set_type_bit(T_Pair(p), T_ALLOW_OTHER_KEYS)
-#define allows_other_keys(p)           has_type_bit(T_Pair(p), T_ALLOW_OTHER_KEYS)
-#define c_function_set_allow_other_keys(p) set_type_bit(T_Fst(p), T_ALLOW_OTHER_KEYS)
-#define c_function_allows_other_keys(p)    has_type_bit(T_Fst(p), T_ALLOW_OTHER_KEYS)
+#define T_ALLOW_OTHER_KEYS             T_MID_SETTER
+#define set_allow_other_keys(p)        set_mid_type_bit(T_Pair(p), T_ALLOW_OTHER_KEYS)
+#define allows_other_keys(p)           has_mid_type_bit(T_Pair(p), T_ALLOW_OTHER_KEYS)
+#define c_function_set_allow_other_keys(p) set_mid_type_bit(T_Fst(p), T_ALLOW_OTHER_KEYS)
+#define c_function_allows_other_keys(p)    has_mid_type_bit(T_Fst(p), T_ALLOW_OTHER_KEYS)
 /* marks arglist (or c_function*) that allows keyword args other than those in the parameter list;
  *   we can't allow (define* (f :allow-other-keys)...) because there's only one nil, and besides, it does say "other".
  */
 
-#define T_LET_REMOVED                  T_SETTER
-#define let_set_removed(p)             set_type_bit(T_Lsd(p), T_LET_REMOVED)
-#define let_removed(p)                 has_type_bit(T_Lsd(p), T_LET_REMOVED)
+#define T_LET_REMOVED                  T_MID_SETTER
+#define let_set_removed(p)             set_mid_type_bit(T_Lsd(p), T_LET_REMOVED)
+#define let_removed(p)                 has_mid_type_bit(T_Lsd(p), T_LET_REMOVED)
 /* mark lets that have been removed from the heap or checked for that possibility */
 
-#define T_HAS_EXPRESSION               T_SETTER
-#define slot_set_has_expression(p)     set_type_bit(T_Slt(p), T_HAS_EXPRESSION)
-#define slot_has_expression(p)         has_type_bit(T_Slt(p), T_HAS_EXPRESSION)
+#define T_HAS_EXPRESSION               T_MID_SETTER
+#define slot_set_has_expression(p)     set_mid_type_bit(T_Slt(p), T_HAS_EXPRESSION)
+#define slot_has_expression(p)         has_mid_type_bit(T_Slt(p), T_HAS_EXPRESSION)
 
-#define T_MUTABLE                      (1 << (TYPE_BITS + 18))
-#define is_mutable_number(p)           has_type_bit(T_Num(p), T_MUTABLE)
-#define is_mutable_integer(p)          has_type_bit(T_Int(p), T_MUTABLE)
-#define clear_mutable_number(p)        clear_type_bit(T_Num(p), T_MUTABLE)
-#define clear_mutable_integer(p)       clear_type_bit(T_Int(p), T_MUTABLE)
+#define T_MUTABLE                      (1 << (16 + 10))
+#define T_MID_MUTABLE                  (1 << 10)
+#define is_mutable_number(p)           has_mid_type_bit(T_Num(p), T_MID_MUTABLE)
+#define is_mutable_integer(p)          has_mid_type_bit(T_Int(p), T_MID_MUTABLE)
+#define clear_mutable_number(p)        clear_mid_type_bit(T_Num(p), T_MID_MUTABLE)
+#define clear_mutable_integer(p)       clear_mid_type_bit(T_Int(p), T_MID_MUTABLE)
 /* used for mutable numbers, can occur with T_IMMUTABLE (outside view vs inside) */
 
-#define T_HAS_KEYWORD                  T_MUTABLE
-#define has_keyword(p)                 has_type_bit(T_Sym(p), T_HAS_KEYWORD)
-#define set_has_keyword(p)             set_type_bit(T_Sym(p), T_HAS_KEYWORD)
+#define T_HAS_KEYWORD                  T_MID_MUTABLE
+#define has_keyword(p)                 has_mid_type_bit(T_Sym(p), T_HAS_KEYWORD)
+#define set_has_keyword(p)             set_mid_type_bit(T_Sym(p), T_HAS_KEYWORD)
 
-#define T_MARK_SEQ                     T_MUTABLE
-#define is_mark_seq(p)                 has_type_bit(T_Itr(p), T_MARK_SEQ)
-#define set_mark_seq(p)                set_type_bit(T_Itr(p), T_MARK_SEQ)
+#define T_MARK_SEQ                     T_MID_MUTABLE
+#define is_mark_seq(p)                 has_mid_type_bit(T_Itr(p), T_MARK_SEQ)
+#define set_mark_seq(p)                set_mid_type_bit(T_Itr(p), T_MARK_SEQ)
 /* used in iterators for GC mark of sequence */
 
-#define T_HAS_LOOP_END                 T_MUTABLE
-#define has_loop_end(p)                has_type_bit(T_Slt(p), T_HAS_LOOP_END)
+#define T_HAS_LOOP_END                 T_MID_MUTABLE
+#define has_loop_end(p)                has_mid_type_bit(T_Slt(p), T_HAS_LOOP_END)
 #define loop_end_fits(Slot, Len)       ((has_loop_end(Slot)) && (denominator(slot_value(Slot)) <= Len))
-#define set_has_loop_end(p)            set_type_bit(T_Slt(p), T_HAS_LOOP_END)
+#define set_has_loop_end(p)            set_mid_type_bit(T_Slt(p), T_HAS_LOOP_END)
 /* marks a slot that holds a do-loop's step-or-end variable, numerator=current, denominator=end */
 
-#define T_NO_CELL_OPT                  T_MUTABLE
-#define set_no_cell_opt(p)             set_type_bit(T_Pair(p), T_NO_CELL_OPT)
-#define no_cell_opt(p)                 has_type_bit(T_Pair(p), T_NO_CELL_OPT)
+#define T_NO_CELL_OPT                  T_MID_MUTABLE
+#define set_no_cell_opt(p)             set_mid_type_bit(T_Pair(p), T_NO_CELL_OPT)
+#define no_cell_opt(p)                 has_mid_type_bit(T_Pair(p), T_NO_CELL_OPT)
 
 #define T_IS_ELIST                     T_MUTABLE
-#define set_is_elist(p)                set_type_bit(T_Lst(p), T_IS_ELIST)
-#define is_elist(p)                    has_type_bit(T_Lst(p), T_IS_ELIST)
+#define T_MID_IS_ELIST                 T_MID_MUTABLE
+#define set_is_elist(p)                set_mid_type_bit(T_Lst(p), T_MID_IS_ELIST)
+#define is_elist(p)                    has_mid_type_bit(T_Lst(p), T_MID_IS_ELIST)
 
-#define T_NO_INT_OPT                   T_SETTER
-#define set_no_int_opt(p)              set_type_bit(T_Pair(p), T_NO_INT_OPT)
-#define no_int_opt(p)                  has_type_bit(T_Pair(p), T_NO_INT_OPT)
+#define T_NO_INT_OPT                   T_MID_SETTER
+#define set_no_int_opt(p)              set_mid_type_bit(T_Pair(p), T_NO_INT_OPT)
+#define no_int_opt(p)                  has_mid_type_bit(T_Pair(p), T_NO_INT_OPT)
 
-#define T_NO_FLOAT_OPT                 T_UNSAFE
-#define set_no_float_opt(p)            set_type_bit(T_Pair(p), T_NO_FLOAT_OPT)
-#define no_float_opt(p)                has_type_bit(T_Pair(p), T_NO_FLOAT_OPT)
+#define T_NO_FLOAT_OPT                 T_MID_UNSAFE
+#define set_no_float_opt(p)            set_mid_type_bit(T_Pair(p), T_NO_FLOAT_OPT)
+#define no_float_opt(p)                has_mid_type_bit(T_Pair(p), T_NO_FLOAT_OPT)
 
-#define T_NO_BOOL_OPT                  T_SAFE_STEPPER
-#define set_no_bool_opt(p)             set_type_bit(T_Pair(p), T_NO_BOOL_OPT)
-#define no_bool_opt(p)                 has_type_bit(T_Pair(p), T_NO_BOOL_OPT)
+#define T_INTEGER_KEYS                 T_MID_SETTER
+#define set_has_integer_keys(p)        set_mid_type_bit(T_Pair(p), T_INTEGER_KEYS)
+#define has_integer_keys(p)            has_mid_type_bit(T_Pair(p), T_INTEGER_KEYS)
 
-#define T_INTEGER_KEYS                 T_SETTER
-#define set_has_integer_keys(p)        set_type_bit(T_Pair(p), T_INTEGER_KEYS)
-#define has_integer_keys(p)            has_type_bit(T_Pair(p), T_INTEGER_KEYS)
+#define T_SAFE_STEPPER                 (1 << (16 + 11))
+#define T_MID_SAFE_STEPPER             (1 << 11)
+#define is_safe_stepper(p)             has_mid_type_bit(T_Slt(p), T_MID_SAFE_STEPPER)
+#define set_safe_stepper(p)            set_mid_type_bit(T_Slt(p), T_MID_SAFE_STEPPER)
+#define clear_safe_stepper(p)          clear_mid_type_bit(T_Slt(p), T_MID_SAFE_STEPPER)
+#define is_safe_stepper_expr(p)        has_mid_type_bit(T_Pair(p), T_MID_SAFE_STEPPER)
+#define set_safe_stepper_expr(p)       set_mid_type_bit(T_Pair(p), T_MID_SAFE_STEPPER)
 
-#define T_SAFE_STEPPER                 (1 << (TYPE_BITS + 19))
-#define is_safe_stepper(p)             has_type_bit(T_Slt(p), T_SAFE_STEPPER)
-#define set_safe_stepper(p)            set_type_bit(T_Slt(p), T_SAFE_STEPPER)
-#define clear_safe_stepper(p)          clear_type_bit(T_Slt(p), T_SAFE_STEPPER)
-#define is_safe_stepper_expr(p)        has_type_bit(T_Pair(p), T_SAFE_STEPPER)
-#define set_safe_stepper_expr(p)       set_type_bit(T_Pair(p), T_SAFE_STEPPER)
+#define T_NO_BOOL_OPT                  T_MID_SAFE_STEPPER
+#define set_no_bool_opt(p)             set_mid_type_bit(T_Pair(p), T_NO_BOOL_OPT)
+#define no_bool_opt(p)                 has_mid_type_bit(T_Pair(p), T_NO_BOOL_OPT)
 
-#define T_NUMBER_NAME                  T_SAFE_STEPPER
-#define has_number_name(p)             has_type_bit(T_Num(p), T_NUMBER_NAME)
-#define set_has_number_name(p)         set_type_bit(T_Num(p), T_NUMBER_NAME)
+#define T_NUMBER_NAME                  T_MID_SAFE_STEPPER
+#define has_number_name(p)             has_mid_type_bit(T_Num(p), T_NUMBER_NAME)
+#define set_has_number_name(p)         set_mid_type_bit(T_Num(p), T_NUMBER_NAME)
 /* marks numbers that have a saved version of their string representation; this only matters in teq.scm, maybe tread.scm */
 
-#define T_MAYBE_SAFE                   T_SAFE_STEPPER
-#define is_maybe_safe(p)               has_type_bit(T_Fnc(p), T_MAYBE_SAFE)
-#define set_maybe_safe(p)              set_type_bit(T_Fnc(p), T_MAYBE_SAFE)
+#define T_MAYBE_SAFE                   T_MID_SAFE_STEPPER
+#define is_maybe_safe(p)               has_mid_type_bit(T_Fnc(p), T_MAYBE_SAFE)
+#define set_maybe_safe(p)              set_mid_type_bit(T_Fnc(p), T_MAYBE_SAFE)
 
-#define T_PAIR_MACRO                   T_SAFE_STEPPER
-#define has_pair_macro(p)              has_type_bit(T_Mac(p), T_PAIR_MACRO)
-#define set_has_pair_macro(p)          set_type_bit(T_Mac(p), T_PAIR_MACRO)
+#define T_PAIR_MACRO                   T_MID_SAFE_STEPPER
+#define has_pair_macro(p)              has_mid_type_bit(T_Mac(p), T_PAIR_MACRO)
+#define set_has_pair_macro(p)          set_mid_type_bit(T_Mac(p), T_PAIR_MACRO)
 
-#define T_HAS_LET_SET_FALLBACK         T_SAFE_STEPPER
-#define T_HAS_LET_REF_FALLBACK         T_MUTABLE
-#define has_let_ref_fallback(p)        ((full_type(T_Lsd(p)) & (T_HAS_LET_REF_FALLBACK | T_HAS_METHODS)) == (T_HAS_LET_REF_FALLBACK | T_HAS_METHODS))
-#define has_let_set_fallback(p)        ((full_type(T_Lsd(p)) & (T_HAS_LET_SET_FALLBACK | T_HAS_METHODS)) == (T_HAS_LET_SET_FALLBACK | T_HAS_METHODS))
-#define set_has_let_ref_fallback(p)    set_type_bit(T_Lsd(p), T_HAS_LET_REF_FALLBACK)
-#define set_has_let_set_fallback(p)    set_type_bit(T_Lsd(p), T_HAS_LET_SET_FALLBACK)
-#define has_let_fallback(p)            has_type_bit(T_Lsd(p), (T_HAS_LET_REF_FALLBACK | T_HAS_LET_SET_FALLBACK))
-#define set_all_methods(p, e)          full_type(T_Lsd(p)) |= (full_type(e) & (T_HAS_METHODS | T_HAS_LET_REF_FALLBACK | T_HAS_LET_SET_FALLBACK))
+#define T_WEAK_HASH                    T_MID_SAFE_STEPPER
+#define set_weak_hash_table(p)         set_mid_type_bit(T_Hsh(p), T_WEAK_HASH)
+#define is_weak_hash_table(p)          has_mid_type_bit(T_Hsh(p), T_WEAK_HASH)
 
-#define T_WEAK_HASH                    T_SAFE_STEPPER
-#define set_weak_hash_table(p)         set_type_bit(T_Hsh(p), T_WEAK_HASH)
-#define is_weak_hash_table(p)          has_type_bit(T_Hsh(p), T_WEAK_HASH)
+#define T_ALL_FLOAT                    T_MID_SAFE_STEPPER
+#define is_all_float(p)                has_mid_type_bit(T_Sym(p), T_ALL_FLOAT)
+#define set_all_float(p)               set_mid_type_bit(T_Sym(p), T_ALL_FLOAT)
+#define set_all_integer_and_float(p)   set_mid_type_bit(T_Sym(p), (T_ALL_INTEGER | T_ALL_FLOAT))
 
-#define T_ALL_FLOAT                    T_SAFE_STEPPER
-#define is_all_float(p)                has_type_bit(T_Sym(p), T_ALL_FLOAT)
-#define set_all_float(p)               set_type_bit(T_Sym(p), T_ALL_FLOAT)
-#define set_all_integer_and_float(p)   set_type_bit(T_Sym(p), (T_ALL_INTEGER | T_ALL_FLOAT))
-
-#define T_COPY_ARGS                    (1 << (TYPE_BITS + 20))
-#define needs_copied_args(p)           has_type_bit(T_Ext(p), T_COPY_ARGS) /* set via explicit T_COPY_ARGS, on T_Pos see s7_apply_function */
-#define set_needs_copied_args(p)       set_type_bit(T_Pair(p), T_COPY_ARGS)
-#define clear_needs_copied_args(p)     clear_type_bit(T_Pair(p), T_COPY_ARGS)
+#define T_COPY_ARGS                    (1 << (16 + 12))
+#define T_MID_COPY_ARGS                (1 << 12)
+#define needs_copied_args(p)           has_mid_type_bit(T_Ext(p), T_MID_COPY_ARGS) /* set via explicit T_COPY_ARGS, on T_Pos see s7_apply_function */
+#define set_needs_copied_args(p)       set_mid_type_bit(T_Pair(p), T_MID_COPY_ARGS)
+#define clear_needs_copied_args(p)     clear_mid_type_bit(T_Pair(p), T_MID_COPY_ARGS)
 /* this marks something that might mess with its argument list, it should not be in the second byte */
 
-#define T_GENSYM                       (1 << (TYPE_BITS + 21))
-#define is_gensym(p)                   has_type_bit(T_Sym(p), T_GENSYM)
+#define T_GENSYM                       (1 << (16 + 13))
+#define T_MID_GENSYM                   (1 << 13)
+#define is_gensym(p)                   has_mid_type_bit(T_Sym(p), T_MID_GENSYM)
 /* symbol is from gensym (GC-able etc) */
 
 #define T_FUNCLET                      T_GENSYM
-#define is_funclet(p)                  has_type_bit(T_Lsd(p), T_FUNCLET)
-#define set_funclet(p)                 set_type_bit(T_Lsd(p), T_FUNCLET)
+#define T_MID_FUNCLET                  T_MID_GENSYM
+#define is_funclet(p)                  has_mid_type_bit(T_Lsd(p), T_MID_FUNCLET)
+#define set_funclet(p)                 set_mid_type_bit(T_Lsd(p), T_MID_FUNCLET)
 /* this marks a funclet */
 
-#define T_HASH_CHOSEN                  T_GENSYM
-#define hash_chosen(p)                 has_type_bit(T_Hsh(p), T_HASH_CHOSEN)
-#define hash_set_chosen(p)             set_type_bit(T_Hsh(p), T_HASH_CHOSEN)
-#define hash_clear_chosen(p)           clear_type_bit(T_Hsh(p), T_HASH_CHOSEN)
+#define T_HASH_CHOSEN                  T_MID_GENSYM
+#define hash_chosen(p)                 has_mid_type_bit(T_Hsh(p), T_HASH_CHOSEN)
+#define hash_set_chosen(p)             set_mid_type_bit(T_Hsh(p), T_HASH_CHOSEN)
+#define hash_clear_chosen(p)           clear_mid_type_bit(T_Hsh(p), T_HASH_CHOSEN)
 
-#define T_DOCUMENTED                   T_GENSYM
-#define is_documented(p)               has_type_bit(T_Str(p), T_DOCUMENTED)
-#define set_documented(p)              set_type_bit(T_Str(p), T_DOCUMENTED)
+#define T_DOCUMENTED                   T_MID_GENSYM
+#define is_documented(p)               has_mid_type_bit(T_Str(p), T_DOCUMENTED)
+#define set_documented(p)              set_mid_type_bit(T_Str(p), T_DOCUMENTED)
 /* this marks a symbol that has documentation (bit is set on name cell) */
 
-#define T_FX_TREED                     T_GENSYM
-#define is_fx_treed(p)                 has_type_bit(T_Pair(p), T_FX_TREED)
-#define set_fx_treed(p)                set_type_bit(T_Pair(p), T_FX_TREED)
+#define T_FX_TREED                     T_MID_GENSYM
+#define is_fx_treed(p)                 has_mid_type_bit(T_Pair(p), T_FX_TREED)
+#define set_fx_treed(p)                set_mid_type_bit(T_Pair(p), T_FX_TREED)
 
 #define T_SUBVECTOR                    T_GENSYM
-#define is_subvector(p)                has_type_bit(T_Vec(p), T_SUBVECTOR)
+#define T_MID_SUBVECTOR                T_MID_GENSYM
+#define is_subvector(p)                has_mid_type_bit(T_Vec(p), T_MID_SUBVECTOR)
 
-#define T_HAS_PENDING_VALUE            T_GENSYM
-#define slot_set_has_pending_value(p)  set_type_bit(T_Slt(p), T_HAS_PENDING_VALUE)
-#define slot_has_pending_value(p)      has_type_bit(T_Slt(p), T_HAS_PENDING_VALUE)
-#define slot_clear_has_pending_value(p) do {clear_type_bit(T_Slt(p), T_HAS_PENDING_VALUE); slot_set_pending_value(p, sc->F);} while (0)
-#define slot_has_setter_or_pending_value(p) has_type_bit(p, T_HAS_SETTER | T_HAS_PENDING_VALUE)
+#define T_HAS_PENDING_VALUE            T_MID_GENSYM
+#define slot_set_has_pending_value(p)  set_mid_type_bit(T_Slt(p), T_HAS_PENDING_VALUE)
+#define slot_has_pending_value(p)      has_mid_type_bit(T_Slt(p), T_HAS_PENDING_VALUE)
+#define slot_clear_has_pending_value(p) do {clear_mid_type_bit(T_Slt(p), T_HAS_PENDING_VALUE); slot_set_pending_value(p, sc->F);} while (0)
+#define slot_has_setter_or_pending_value(p) has_mid_type_bit(p, T_HAS_SETTER | T_HAS_PENDING_VALUE)
 
-#define T_HAS_METHODS                  (1 << (TYPE_BITS + 22))
-#define has_methods(p)                 has_type_bit(T_Exs(p), T_HAS_METHODS) /* display slot hits T_Ext here */
-#define is_openlet(p)                  has_type_bit(T_Let(p), T_HAS_METHODS)
-#define has_active_methods(sc, p)      ((has_type_bit(T_Ext(p), T_HAS_METHODS)) && (sc->has_openlets)) /* g_char #<eof> */
-#define set_has_methods(p)             set_type_bit(T_Met(p), T_HAS_METHODS)
-#define clear_has_methods(p)           clear_type_bit(T_Met(p), T_HAS_METHODS)
+#define T_HAS_METHODS                  (1 << (16 + 14))
+#define T_MID_HAS_METHODS              (1 << 14)
+#define has_methods(p)                 has_mid_type_bit(T_Exs(p), T_MID_HAS_METHODS) /* display slot hits T_Ext here */
+#define is_openlet(p)                  has_mid_type_bit(T_Let(p), T_MID_HAS_METHODS)
+#define has_active_methods(sc, p)      ((has_mid_type_bit(T_Ext(p), T_MID_HAS_METHODS)) && (sc->has_openlets)) /* g_char #<eof> */
+#define set_has_methods(p)             set_mid_type_bit(T_Met(p), T_MID_HAS_METHODS)
+#define clear_has_methods(p)           clear_mid_type_bit(T_Met(p), T_MID_HAS_METHODS)
 /* this marks an environment or closure that is "open" for generic functions etc, don't reuse this bit */
 
 /* T_HAS_METHODS: pair (and other types like symbol) are available here */
 
-#define T_ITER_OK                      (1LL << (TYPE_BITS + 23))
-#define iter_ok(p)                     has_type_bit(T_Itr(p), T_ITER_OK)
-#define clear_iter_ok(p)               clear_type_bit(T_Itr(p), T_ITER_OK)
+#define mid_type(p)                    (p)->tf.bits.mid_bits
+#define T_HAS_LET_SET_FALLBACK         T_SAFE_STEPPER
+#define T_MID_HAS_LET_SET_FALLBACK     T_MID_SAFE_STEPPER
+#define T_HAS_LET_REF_FALLBACK         T_MUTABLE
+#define T_MID_HAS_LET_REF_FALLBACK     T_MID_MUTABLE
+#define has_let_ref_fallback(p)        ((mid_type(T_Lsd(p)) & (T_MID_HAS_LET_REF_FALLBACK | T_MID_HAS_METHODS)) == (T_MID_HAS_LET_REF_FALLBACK | T_MID_HAS_METHODS))
+#define has_let_set_fallback(p)        ((mid_type(T_Lsd(p)) & (T_MID_HAS_LET_SET_FALLBACK | T_MID_HAS_METHODS)) == (T_MID_HAS_LET_SET_FALLBACK | T_MID_HAS_METHODS))
+#define set_has_let_ref_fallback(p)    set_mid_type_bit(T_Lsd(p), T_MID_HAS_LET_REF_FALLBACK)
+#define set_has_let_set_fallback(p)    set_mid_type_bit(T_Lsd(p), T_MID_HAS_LET_SET_FALLBACK)
+#define has_let_fallback(p)            has_mid_type_bit(T_Lsd(p), (T_MID_HAS_LET_REF_FALLBACK | T_MID_HAS_LET_SET_FALLBACK))
+#define set_all_methods(p, e)          mid_type(T_Lsd(p)) |= (mid_type(e) & (T_MID_HAS_METHODS | T_MID_HAS_LET_REF_FALLBACK | T_MID_HAS_LET_SET_FALLBACK))
 
-#define T_LOOP_END_POSSIBLE            T_ITER_OK
-#define loop_end_possible(p)           has_type_bit(T_Pair(p), T_LOOP_END_POSSIBLE)
-#define set_loop_end_possible(p)       set_type_bit(T_Pair(p), T_LOOP_END_POSSIBLE)
+#define T_ITER_OK                      (1LL << (16 + 15))
+#define T_MID_ITER_OK                  (1 << 15)
+#define iter_ok(p)                     has_mid_type_bit(T_Itr(p), T_MID_ITER_OK)
+#define clear_iter_ok(p)               clear_mid_type_bit(T_Itr(p), T_MID_ITER_OK)
 
-#define T_IN_ROOTLET                   T_ITER_OK
-#define in_rootlet(p)                  has_type_bit(T_Slt(p), T_IN_ROOTLET)
-#define set_in_rootlet(p)              set_type_bit(T_Slt(p), T_IN_ROOTLET)
+#define T_LOOP_END_POSSIBLE            T_MID_ITER_OK
+#define loop_end_possible(p)           has_mid_type_bit(T_Pair(p), T_LOOP_END_POSSIBLE)
+#define set_loop_end_possible(p)       set_mid_type_bit(T_Pair(p), T_LOOP_END_POSSIBLE)
 
-#define T_BOOL_FUNCTION                T_ITER_OK
-#define is_bool_function(p)            has_type_bit(T_Prc(p), T_BOOL_FUNCTION)
-#define set_is_bool_function(p)        set_type_bit(T_Fnc(p), T_BOOL_FUNCTION)
+#define T_IN_ROOTLET                   T_MID_ITER_OK
+#define in_rootlet(p)                  has_mid_type_bit(T_Slt(p), T_IN_ROOTLET)
+#define set_in_rootlet(p)              set_mid_type_bit(T_Slt(p), T_IN_ROOTLET)
 
-#define T_SYMBOL_FROM_SYMBOL           T_ITER_OK
-#define is_symbol_from_symbol(p)       has_type_bit(T_Sym(p), T_SYMBOL_FROM_SYMBOL)
-#define set_is_symbol_from_symbol(p)   set_type_bit(T_Sym(p), T_SYMBOL_FROM_SYMBOL)
-#define clear_symbol_from_symbol(p)    clear_type_bit(T_Sym(p), T_SYMBOL_FROM_SYMBOL) /* was type1?? 20-Dec-23 */
+#define T_BOOL_FUNCTION                T_MID_ITER_OK
+#define is_bool_function(p)            has_mid_type_bit(T_Prc(p), T_BOOL_FUNCTION)
+#define set_is_bool_function(p)        set_mid_type_bit(T_Fnc(p), T_BOOL_FUNCTION)
+
+#define T_SYMBOL_FROM_SYMBOL           T_MID_ITER_OK
+#define is_symbol_from_symbol(p)       has_mid_type_bit(T_Sym(p), T_SYMBOL_FROM_SYMBOL)
+#define set_is_symbol_from_symbol(p)   set_mid_type_bit(T_Sym(p), T_SYMBOL_FROM_SYMBOL)
+#define clear_symbol_from_symbol(p)    clear_mid_type_bit(T_Sym(p), T_SYMBOL_FROM_SYMBOL) /* was type1?? 20-Dec-23 */
 /* TODO: is this bit actually working? What did clear_high_type_bit here do?? high_type_bit should protest against >= 16 if s7_debugging (also 0 etc) */
+
 
 /* -------- high type bits -------- */
 /* it's faster here to use the high_bits bits rather than typeflag bits */
@@ -3800,12 +3822,8 @@ static void init_small_ints(void)
     do {set_full_type(Ptr, T_INTEGER | T_IMMUTABLE | T_UNHEAP); set_integer(Ptr, Num); set_number_name(Ptr, Name, Name_Len);} while (0)
   #define init_integer_no_name(Ptr, Num) \
     do {set_full_type(Ptr, T_INTEGER | T_IMMUTABLE | T_UNHEAP); set_integer(Ptr, Num);} while (0)
-
   #define init_real(Ptr, Num, Name, Name_Len) \
     do {set_full_type(Ptr, T_REAL | T_IMMUTABLE | T_UNHEAP); set_real(Ptr, Num); set_number_name(Ptr, Name, Name_Len);} while (0)
-  #define init_real_no_name(Ptr, Num) \
-    do {set_full_type(Ptr, T_REAL | T_IMMUTABLE | T_UNHEAP); set_real(Ptr, Num);} while (0)
-
   #define init_complex(Ptr, Real, Imag, Name, Name_Len) \
     do {set_full_type(Ptr, T_COMPLEX | T_IMMUTABLE | T_UNHEAP); set_real_part(Ptr, Real); set_imag_part(Ptr, Imag); set_number_name(Ptr, Name, Name_Len);} while (0)
 
@@ -11387,7 +11405,7 @@ void s7_define(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7_pointer valu
   s7_pointer x;
   if ((let == sc->nil) || (let == sc->rootlet))
     let = sc->shadow_rootlet;
-  x = symbol_to_local_slot(sc, symbol, let);
+  x = symbol_to_local_slot(sc, symbol, let); /* x can be #<undefined> */
   if (is_slot(x))
     slot_set_value_with_hook(x, value);
   else
@@ -26859,7 +26877,7 @@ s7_pointer s7_make_permanent_string(s7_scheme *sc, const char *str) /* keep s7_s
 static void init_strings(void)
 {
   nil_string = make_permanent_string("");
-  nil_string->tf.flag = T_STRING | T_UNHEAP; /* turn off T_IMMUTABLE?? */
+  nil_string->tf.u64_type = T_STRING | T_UNHEAP; /* turn off T_IMMUTABLE?? */
   set_optimize_op(nil_string, OP_CONSTANT);
 
   car_a_list_string = make_permanent_string("a pair whose car is also a pair");
@@ -69096,8 +69114,8 @@ static Inline void inline_op_map_gather(s7_scheme *sc) /* called thrice in eval,
 /* -------------------------------- multiple-values -------------------------------- */
 #define stack_top4_op(Sc)             ((opcode_t)T_Op(Sc->stack_end[-5])) /* top4 == top - 4 */
 #define stack_top4_args(Sc)           (Sc->stack_end[-6])
-#define stack_top4_let(Sc)            (Sc->stack_end[-7])
-#define stack_top4_code(Sc)           (Sc->stack_end[-8])
+/* #define stack_top4_let(Sc)         (Sc->stack_end[-7]) */
+/* #define stack_top4_code(Sc)        (Sc->stack_end[-8]) */
 
 static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 {
@@ -69559,11 +69577,9 @@ static s7_pointer g_apply_values(s7_scheme *sc, s7_pointer args)
 /* (apply values ...) replaces (unquote_splicing ...)
  *   (define-macro (hi a) `(+ 1 ,a) == (list '+ 1 a)
  *   (define-macro (hi a) `(+ 1 ,@a) == (list '+ 1 (apply values a))
- *
  * this is not the same as CL's quasiquote; for example:
  *   [1]> (let ((a 1) (b 2)) `(,a ,@b)) -> '(1 . 2) but in s7 this is an error.
  * also in CL the target of ,@ can apparently be a circular list
- * one surprising twist: write/display return their first argument directly, so (apply-values (write `(+ x 1))) is the same as (apply-values `(+ x 1))
  */
 
 
@@ -97426,34 +97442,34 @@ int main(int argc, char **argv)
 #endif
 
 /* ---------------------------------------------
- *            20.9   21.0   22.0   23.0   24.0    type2 as 32|16+16
+ *            20.9   21.0   22.0   23.0   24.0
  * ---------------------------------------------
  * tpeak      115    114    108    105    102
  * tref       691    687    463    459    464
  * index     1026   1016    973    967    972
  * tmock     1177   1165   1057   1019   1032
  * tvect     2519   2464   1772   1669   1497
- * timp      2637   2575   1930   1694   1742
+ * timp      2637   2575   1930   1694   1740
  * texit     ----   ----   1778   1741   1770
  * s7test    1873   1831   1818   1829   1830
- * lt        2187   2172   2150   2185   1951
+ * lt        2187   2172   2150   2185   1950
+ * tauto     ----   ----   2562   2048   1729
  * thook     ----   ----   2590   2030   2046
- * tauto     ----   ----   2562   2048   2034  1730
- * dup       3805   3788   2492   2239   2100
+ * dup       3805   3788   2492   2239   2097
  * tcopy     8035   5546   2539   2375   2386
  * tread     2440   2421   2419   2408   2405
  * trclo     2735   2574   2454   2445   2449
- * titer     2865   2842   2641   2509   2465   2457 s7.c:opt_b_7p_s_iter_at_end !  2449
+ * titer     2865   2842   2641   2509   2449
  * fbench    2688   2583   2460   2430   2478
  * tload     ----   ----   3046   2404   2566
- * tmat      3065   3042   2524   2578   2585
+ * tmat      3065   3042   2524   2578   2590
  * tsort     3105   3104   2856   2804   2858
- * tobj      4016   3970   3828   3577   3520   3509 s7.c:s7_is_immutable  3508
- * teq       4068   4045   3536   3486   3550   3544 s7.c:collect_shared_info'2 3544
+ * tobj      4016   3970   3828   3577   3508
+ * teq       4068   4045   3536   3486   3544
  * tio       3816   3752   3683   3620   3583
  * tmac      3950   3873   3033   3677   3677
  * tcase     4960   4793   4439   4430   4439
- * tclo      4787   4735   4390   4384   4465   4451 s7.c:apply_safe_closure_star_1 4474?
+ * tclo      4787   4735   4390   4384   4474
  * tlet      7775   5640   4450   4427   4457
  * tfft      7820   7729   4755   4476   4536
  * tstar     6139   5923   5519   4449   4550
@@ -97461,18 +97477,18 @@ int main(int argc, char **argv)
  * tshoot    5525   5447   5183   5055   5034
  * tform     5357   5348   5307   5316   5084
  * tstr      6880   6342   5488   5162   5180
- * tnum      6348   6013   5433   5396   5418    5411?
- * tlamb     6423   6273   5720   5560   5613
+ * tnum      6348   6013   5433   5396   5409
+ * tlamb     6423   6273   5720   5560   5620
  * tgsl      8485   7802   6373   6282   6208
  * tlist     7896   7546   6558   6240   6300
  * tari      13.0   12.7   6827   6543   6278
- * tset      ----   ----   ----   6260   6369    6363?
+ * tset      ----   ----   ----   6260   6364
  * trec      6936   6922   6521   6588   6583
- * tleft     10.4   10.2   7657   7479   7644   7625 eval?  7622
- * tmisc     ----   ----   ----   8488   7866   7861?
- * tgc       11.9   11.1   8177   7857   7996   7986?
- * thash     11.8   11.7   9734   9479   9527
- * cb        11.2   11.0   9658   9564   9612   9603?
+ * tleft     10.4   10.2   7657   7479   7627
+ * tmisc     ----   ----   ----   8488   7862
+ * tgc       11.9   11.1   8177   7857   7986
+ * thash     11.8   11.7   9734   9479   9526
+ * cb        11.2   11.0   9658   9564   9609
  * tgen      11.2   11.4   12.0   12.1   12.2
  * tall      15.6   15.6   15.6   15.6   15.1
  * calls     36.7   37.5   37.0   37.5   37.1
