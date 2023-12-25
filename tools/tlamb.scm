@@ -294,4 +294,64 @@
 
 (unless (= (dof20) (/ (* size (+ size 1)) 2)) (format *stderr* "dof20: ~S~%" (dof20)))
 
+
+;;; --------------------------------
+(define (f31 x)
+  (define (f32 y) (+ y 1))
+  (- (f32 x) 1))
+
+(define (g31)
+  (let loop ((z size))
+    (if (positive? (f31 z))
+	(loop (- z 1)))))
+
+(g31) ; 760
+
+
+(define (f33 x)
+  (let ((f34 (lambda (y) (+ y 1))))
+    (- (f34 x) 1)))
+
+(define (g32)
+  (let loop ((z size))
+    (if (positive? (f33 z))
+	(loop (- z 1)))))
+
+(g32) ; 667
+
+
+(define-constant (f36 y) (+ y 1))
+(define-constant (f35 x) (- (f36 x) 1))
+
+(define (g33)
+  (let loop ((z size))
+    (if (positive? (f35 z))
+	(loop (- z 1)))))
+
+(g33) ; 255 -> 242 g_sub_xi -> 225 fx_sub_a1
+
+
+(define (f38 y) (+ y 1))
+(define (f37 x) (- (f38 x) 1))
+
+(define (g34)
+  (let loop ((z size))
+    (if (positive? (f37 z))
+	(loop (- z 1)))))
+
+(g34) ; 348
+
+
+(define-constant (f310 y) (- y 1))
+(define-constant (f39 x) (+ (f310 x) 1))
+
+(define (g35)
+  (let loop ((z (- size)))
+    (if (negative? (f39 z))
+	(loop (+ z 1)))))
+
+(g35) ; 229 [fx_add_a1]
+
+
+
 (exit)
