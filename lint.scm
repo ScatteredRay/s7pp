@@ -1815,7 +1815,7 @@
 	    (let* ((rest-name (if (symbol? arglist)
 				  arglist
 				  (list-tail arglist (abs (length arglist)))))
-		   (rest-refs (lint-tree-count rest-name body 3)))
+		   (rest-refs (tree-count rest-name body 3)))
 
 	      (when (= rest-refs 2) ; more refs for added optargs got few hits (and they were riddled with mistakes)
 		(let ((var1 (caadr body))
@@ -9385,8 +9385,8 @@
 						      (let ((last-arg (last-ref args)))
 							(if (and (pair? last-arg)
 								 (memq (car last-arg) '(apply-values #_apply-values))
-								 (or (= (lint-tree-count 'apply-values args 2) 1)
-								     (= (lint-tree-count #_apply-values args 2) 1)))
+								 (or (= (tree-count 'apply-values args 2) 1)
+								     (= (tree-count #_apply-values args 2) 1)))
 							    (lint-format "perhaps ~A" caller
 									 (lists->string form
 											`(apply ,f
@@ -12212,7 +12212,7 @@
 						(code-constant? a)))
 					  (cdr first))
 			     (or (code-constant? (var-initial-value local-var))
-				 (= (lint-tree-count vname first 2) 1))
+				 (= (tree-count vname first 2) 1))
 			     (lint-every? (lambda (a)
 					    (and (pair? a)
 						 (or (equal? first a)
@@ -13178,7 +13178,7 @@
 	      (when (and (symbol? fname)
 			 (proper-list? fargs)
 			 (proper-list? body)
-			 (= (lint-tree-count fname (cdr body) 2) 1)
+			 (= (tree-count fname (cdr body) 2) 1)
 			 (not (any-keywords? fargs)))
 		(let ((call (find-call fname (cdr body))))
 		  (when (pair? call)
@@ -13202,7 +13202,7 @@
 		      ;; (... (define* (f1 a b) (+ a b)) (f1 :c 1)) -> (... (let ((a :c) (b 1)) (+ a b)))
 		      (lint-format "perhaps ~A" caller
 				   (lists->string (cons '... body)
-						  (if (= (lint-tree-count fname body 3) 2)
+						  (if (= (tree-count fname body 3) 2)
 						      (if (null? fargs)
 							  (if (null? (cdr fbody))
 							      (cons '... (tree-subst (car fbody) call (cdr body)))
@@ -13262,7 +13262,7 @@
 				  (eqv? (length (cdadr n-1)) (length (cdr n)))) ; not values -> let!
 			     (and (< (lint-tree-leaves n-1) 12)
 				  (tree-car-member (caadr n-1) (cdr n))         ; skip car -- see preceding
-				  (= (lint-tree-count (caadr n-1) n 2) 1))))
+				  (= (tree-count (caadr n-1) n 2) 1))))
 		(let ((outer-form (cond ((var-member :let env) => var-initial-value) (else #f)))
 		      (new-var (caadr n-1)))
 		  (when (and (pair? outer-form)
@@ -13832,7 +13832,7 @@
 				prev-f f
 				`(set! ,settee (append ,settee ,@(cddr arg1) ,@(cddr arg2)))))
 
-		  ((and (= (lint-tree-count settee arg2 2) 1)   ; (set! x y) (set! x (+ x 1)) -> (set! x (+ y 1))
+		  ((and (= (tree-count settee arg2 2) 1)   ; (set! x y) (set! x (+ x 1)) -> (set! x (+ y 1))
 			(or (not (pair? arg1))
 			    (< (lint-tree-leaves arg1) 5)))
 		   (lint-format "perhaps ~A ~A ->~%~NC~A" caller
@@ -15336,7 +15336,7 @@
 		    (when (and (eq? (car body) 'lambda)     ; let/rec body is lambda calling var
 			       (proper-list? (cadr body))   ; rest args are a headache
 			       (pair? (caddr body))    ; (lambda (...) (...) where car is letrec func name
-			       (= (lint-tree-count (car var) body 2) 1)) ; if more than 1 call, a named-let won't suffice
+			       (= (tree-count (car var) body 2) 1)) ; if more than 1 call, a named-let won't suffice
 		      (if (eq? (caaddr body) (car var))
 			  (lint-format "perhaps ~A" caller
 				       (lists->string form
@@ -19351,7 +19351,7 @@
 				 (< (lint-tree-leaves vbody) 16))
 			(do ((pp (var-arglist v) (cdr pp)))
 			    ((or (null? pp)
-				 (> (lint-tree-count (car pp) vbody 3) 1))
+				 (> (tree-count (car pp) vbody 3) 1))
 			     (when (null? pp)
 			       (let ((new-body (copy vbody)))
 				 (for-each (lambda (par arg)
@@ -19944,7 +19944,7 @@
 			   (just-len>1? (cadar body)))
 		  (let ((inits (map cadr (cadar body))))
 		    (when (lint-every? (lambda (v)
-					 (and (= (lint-tree-count (car v) (car body) 2) 1)
+					 (and (= (tree-count (car v) (car body) 2) 1)
 					      (lint-tree-memq (car v) inits)))
 				       varlist)
 		      (let ((new-cadr (copy (cadar body))))
@@ -20127,7 +20127,7 @@
 							  (cons 'let
 								(cons (map list (cadr lform) (cdr body))
 								      (cddr lform))))))
-			  (if (= (lint-tree-count sym body 2) 1)
+			  (if (= (tree-count sym body 2) 1)
 			      (let ((call (find-call sym body)))
 				(when (pair? call)
 				  (let ((new-call (cons 'let
@@ -20492,14 +20492,14 @@
 
 			;; (let ((x (assq a y))) (set! z (if x (cadr x) 0))) -> (set! z (cond ((assq a y) => cadr) (else 0)))
 			(when (and (not (memq (car p) '(if cond))) ; handled separately below
-				   (= (lint-tree-count vname p 3) 2))
+				   (= (tree-count vname p 3) 2))
 			  (do ((i 0 (+ i 1))
 			       (bp pargs (cdr bp)))
 			      ((or (not (pair? bp))
 				   (let ((b (car bp)))
 				     (and (len>2? b)
 					  (eq? (car b) 'if)
-					  (= (lint-tree-count vname b 3) 2)
+					  (= (tree-count vname b 3) 2)
 					  (eq? vname (cadr b))
 					  (len=2? (caddr b))
 					  (eq? vname (cadr (caddr b))))))
@@ -20664,13 +20664,13 @@
 			     (when (and (pair? pargs)
 					(pair? first-arg)
 					(eq? vname (car first-arg))
-					(= (lint-tree-count vname body 2) 1))
+					(= (tree-count vname body 2) 1))
 			       (lint-format "perhaps ~A" caller
 					    (lists->string form
 							   (wrap-new-form header `(cond (,vvalue ,@(cdr first-arg)) ,@next-args) trailer)))))
 			    ((when unless)
 			     (if (and (eq? first-arg vname)
-				      (= (lint-tree-count vname body 2) 1)) ; 2 if we can use cond => (remember cdr)
+				      (= (tree-count vname body 2) 1)) ; 2 if we can use cond => (remember cdr)
 				 (lint-format "perhaps ~A" caller
 					      (lists->string form
 							     (wrap-new-form header (tree-subst vvalue vname p) trailer)))))
@@ -21411,7 +21411,7 @@
 						    (assq a varlist)))
 					      (cdadr nxt-var)))
 			     (and (pair? (cadr nxt-var))
-				  (= (lint-tree-count (car cur-var) (cadr nxt-var) 2) 1))
+				  (= (tree-count (car cur-var) (cadr nxt-var) 2) 1))
 			     (not (lint-tree-memq (car cur-var) (cddr v)))
 			     (not (lint-tree-memq (car cur-var) body)))
 		    (set! gone-vars (cons cur-var gone-vars))
@@ -21683,7 +21683,7 @@
 						  ,(map list (cadr lform) (cdr body))
 						  ,@(cddr lform)))))
 			(if (and (not (eq? caller 'define))
-				 (= (lint-tree-count sym body 2) 1))
+				 (= (tree-count sym body 2) 1))
 			    (let ((call (find-call sym body)))
 			      (when (pair? call)
 				(let ((new-call `(let ,sym
@@ -21753,7 +21753,7 @@
 		       (eq? (caaddr form) 'lambda)
 		       (pair? (caadr form))
 		       (tree-car-member (caaadr form) (cddr form))
-		       (= (lint-tree-count (caaadr form) (cddr form) 2) 1)) ; this alone can give (caaadr form) passed as a function arg
+		       (= (tree-count (caaadr form) (cddr form) 2) 1)) ; this alone can give (caaadr form) passed as a function arg
 	      (let ((lr-lambda (cadr (caadr form))))
 		(when (and (pair? lr-lambda)
 			   (eq? 'lambda (car lr-lambda)))
@@ -21766,7 +21766,6 @@
 						 (cdr tree)
 						 (or (search (car tree))
 						     (search (cdr tree))))))))
-
 			(call-with-exit
 			 (lambda (quit)
 			   (let ((vs (car (out-vars lr-name pars (cddr lr-lambda)))))

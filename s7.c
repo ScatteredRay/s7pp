@@ -1341,7 +1341,7 @@ struct s7_scheme {
              weak_hash_table_symbol, with_input_from_file_symbol, with_input_from_string_symbol, with_output_to_file_symbol, with_output_to_string_symbol,
              write_byte_symbol, write_char_symbol, write_string_symbol, write_symbol,
              local_documentation_symbol, local_signature_symbol, local_setter_symbol, local_iterator_symbol;
-  s7_pointer hash_code_symbol, dummy_equal_hash_table;
+  s7_pointer hash_code_symbol, dummy_equal_hash_table, features_setter;
 #if (!WITH_PURE_S7)
   s7_pointer is_char_ready_symbol, char_ci_leq_symbol, char_ci_lt_symbol, char_ci_eq_symbol, char_ci_geq_symbol, char_ci_gt_symbol,
              let_to_list_symbol, integer_length_symbol, string_ci_leq_symbol, string_ci_lt_symbol, string_ci_eq_symbol,
@@ -31252,11 +31252,11 @@ static s7_pointer c_provide(s7_scheme *sc, s7_pointer sym)
   /* this has to be relative to the curlet: (load file env)
    *   the things loaded are only present in env, and go away with it, so should not be in the global *features* list
    */
-  s7_pointer p;
+  s7_pointer p = sc->undefined;
   if (!is_symbol(sym))
     return(method_or_bust_p(sc, sym, sc->provide_symbol, sc->type_names[T_SYMBOL]));
 
-  if ((S7_DEBUGGING) && (sc->curlet == sc->rootlet)) fprintf(stderr, "%s[%d]: curlet==rootlet!\n", __func__, __LINE__);
+  /* sc->curlet can also be (for example) the repl top-level */
   if ((sc->curlet == sc->nil) || (sc->curlet == sc->shadow_rootlet))
     p = global_slot(sc->features_symbol);
   else p = symbol_to_local_slot(sc, sc->features_symbol, sc->curlet); /* if sc->curlet is nil, this returns the global slot, else local slot */
@@ -31266,7 +31266,12 @@ static s7_pointer c_provide(s7_scheme *sc, s7_pointer sym)
     {
       s7_pointer lst = slot_value(s7_slot(sc, sc->features_symbol)); /* in either case, we want the current *features* list */
       if (p == sc->undefined)
-	add_slot_checked_with_id(sc, sc->curlet, sc->features_symbol, cons(sc, sym, lst));
+	{
+	  /* (setter symbol) follows local lets, so we need to make sure this one is set */
+	  s7_pointer slot = add_slot_checked_with_id(sc, sc->curlet, sc->features_symbol, cons(sc, sym, lst));
+	  slot_set_setter(slot, sc->features_setter);
+	  slot_set_has_setter(slot);
+	}
       else
 	if ((!is_memq(sym, lst)) && (!is_memq(sym, slot_value(p))))
 	  slot_set_value(p, cons(sc, sym, slot_value(p)));
@@ -96438,7 +96443,7 @@ static void init_rootlet(s7_scheme *sc)
 
   /* -------- *features* -------- */
   sc->features_symbol = s7_define_variable_with_documentation(sc, "*features*", sc->nil, "list of currently available features ('complex-numbers, etc)");
-  s7_set_setter(sc, sc->features_symbol, s7_make_safe_function(sc, "#<set-*features*>", g_features_set, 2, 0, false, "*features* setter"));
+  s7_set_setter(sc, sc->features_symbol, sc->features_setter = s7_make_safe_function(sc, "#<set-*features*>", g_features_set, 2, 0, false, "*features* setter"));
 
   /* -------- *load-path* -------- */
   sc->load_path_symbol = s7_define_variable_with_documentation(sc, "*load-path*", list_1(sc, make_string_with_length(sc, ".", 1)), /* not plist! */
