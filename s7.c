@@ -31252,12 +31252,10 @@ static s7_pointer c_provide(s7_scheme *sc, s7_pointer sym)
   /* this has to be relative to the curlet: (load file env)
    *   the things loaded are only present in env, and go away with it, so should not be in the global *features* list
    */
-  s7_pointer p = sc->undefined;
+  s7_pointer p;
   if (!is_symbol(sym))
     return(method_or_bust_p(sc, sym, sc->provide_symbol, sc->type_names[T_SYMBOL]));
-
-  /* sc->curlet can also be (for example) the repl top-level */
-  if ((sc->curlet == sc->nil) || (sc->curlet == sc->shadow_rootlet))
+  if ((sc->curlet == sc->nil) || (sc->curlet == sc->shadow_rootlet)) /* sc->curlet can also be (for example) the repl top-level */
     p = global_slot(sc->features_symbol);
   else p = symbol_to_local_slot(sc, sc->features_symbol, sc->curlet); /* if sc->curlet is nil, this returns the global slot, else local slot */
   if ((is_slot(p)) && (is_immutable_slot(p)))
@@ -31310,8 +31308,7 @@ static s7_pointer g_features_set(s7_scheme *sc, s7_pointer args) /* *features* s
 static s7_pointer g_libraries_set(s7_scheme *sc, s7_pointer args) /* *libraries* setter */
 {
   s7_pointer nf = cadr(args);
-  if (is_null(nf))
-    return(sc->nil);
+  if (is_null(nf)) return(nf);
   if ((!is_pair(nf)) ||
       (s7_list_length(sc, nf) <= 0))
     error_nr(sc, sc->wrong_type_arg_symbol, set_elist_2(sc, wrap_string(sc, "can't set *libraries* to ~S", 27), nf));
@@ -41459,7 +41456,8 @@ static s7_pointer g_make_vector(s7_scheme *sc, s7_pointer args)
   #define H_make_vector "(make-vector len (value #<unspecified>) type) returns a vector of len elements initialized to value. \
 To create a multidimensional vector, put the dimension bounds in a list (this is to avoid ambiguities such as \
 (make-vector 1 2) where it's not clear whether the '2' is an initial value or a dimension size).  (make-vector '(2 3) 1.0) \
-returns a 2 dimensional vector of 6 total elements, all initialized to 1.0."
+returns a 2 dimensional vector of 6 total elements, all initialized to 1.0. The 'type argument can set the element type. \
+It is a function that checks the new value, returning #f if the value is not acceptable: (make-vector 8 1/2 rational?)."
   #define Q_make_vector s7_make_signature(sc, 4, sc->is_vector_symbol, \
 					  s7_make_signature(sc, 2, sc->is_integer_symbol, sc->is_pair_symbol), sc->T, \
 					  s7_make_signature(sc, 2, sc->is_procedure_symbol, sc->is_boolean_symbol))
@@ -49350,6 +49348,7 @@ static s7_pointer s7_copy_1(s7_scheme *sc, s7_pointer caller, s7_pointer args)
 	      }
 	    else
 	      /* this copies reversing the order -- if shadowing, this unshadows, tmp has in-order copy code, but it's too much effort */
+	      /*   it also ignores possible slot setters */
 	      for (slot = let_slots(source); tis_slot(slot); slot = next_slot(slot))
 		add_slot_checked_with_id(sc, dest, slot_symbol(slot), slot_value(slot));
 	  return(dest);
@@ -49549,7 +49548,7 @@ static s7_pointer s7_copy_1(s7_scheme *sc, s7_pointer caller, s7_pointer args)
 		set_car(p, cons_unchecked(sc, slot_symbol(slot), slot_value(slot)));
 	    }
 	  else
-	    if (is_let(dest))
+	    if (is_let(dest)) /* this ignores slot setters */
 	      {
 		if ((has_let_fallback(source)) &&
 		    (has_let_fallback(dest)))
@@ -50195,7 +50194,7 @@ static s7_pointer pair_fill(s7_scheme *sc, s7_pointer args) /* args=(list tree-t
     if (is_immutable_pair(obj))
 #endif
     immutable_object_error_nr(sc, set_elist_3(sc, immutable_error_string, sc->fill_symbol, obj));
-  if (obj == global_value(sc->features_symbol))
+  if (obj == global_value(sc->features_symbol)) /* (let_id(sc->curlet) == symbol_id(sc->features_symbol)) && (obj == local_value(sc->features_symbol))) */
     error_nr(sc, sc->out_of_range_symbol, set_elist_1(sc, wrap_string(sc, "can't fill! *features*", 22)));
   if (obj == global_value(sc->libraries_symbol))
     error_nr(sc, sc->out_of_range_symbol, set_elist_1(sc, wrap_string(sc, "can't fill! *libraries*", 23)));
@@ -50243,6 +50242,11 @@ s7_pointer s7_fill(s7_scheme *sc, s7_pointer args)
   #define H_fill "(fill! obj val (start 0) end) fills obj with val"
   #define Q_fill s7_make_circular_signature(sc, 3, 4, sc->T, sc->is_sequence_symbol, sc->T, sc->is_integer_symbol)
 
+  /* individual functions below check for immutable objects (rather than checking once for all here) because
+   *   they are used elsewhere, and there are complications (the history lists in pair_fill for example).
+   * However, obj might have a setter which disallows val -- I guess we'll run that setter using val,
+   *   to get the fill value to use (or raise an error).  But here we have the value not the symbol/slot!
+   */
   s7_pointer p = car(args);
   switch (type(p))
     {
@@ -97511,4 +97515,5 @@ int main(int argc, char **argv)
  * add wasm test to test suite somehow (at least emscripten)
  * combine lets?
  * widget-size (pane equal)
+ * copy/fill!/reverse!/sort! + setter/features/let is a mess
  */
