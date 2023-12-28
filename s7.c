@@ -6118,7 +6118,7 @@ static s7_pointer find_let(s7_scheme *sc, s7_pointer obj)
     case T_MACRO:   case T_MACRO_STAR:
     case T_BACRO:   case T_BACRO_STAR:
     case T_CLOSURE: case T_CLOSURE_STAR:
-      return(closure_let(obj));
+      return(closure_let(obj)); /* TODO: this can be ()==rootlet which is ambiguous since we return () as no-let-found below, but we assume this can't ever be rootlet in other places! 9418 -- this is a false comment, maybe always check curlet=() and use rootlet? or fix this ambiguity! */
     case T_C_OBJECT:
       return(c_object_let(obj));
     case T_C_POINTER:
@@ -10771,6 +10771,8 @@ symbol sym in the given let: (let ((x 32)) (symbol->value 'x)) -> 32"
   s7_pointer sym = car(args);
   if (!is_symbol(sym))
     return(method_or_bust(sc, sym, sc->symbol_to_value_symbol, args, sc->type_names[T_SYMBOL], 1));
+  if (is_keyword(sym))
+    return(sym); /* TODO: need to see if local_let is clearly wrong and raise an error */
 
   if (is_not_null(cdr(args)))
     {
@@ -10781,7 +10783,7 @@ symbol sym in the given let: (let ((x 32)) (symbol->value 'x)) -> 32"
       if (!is_let(local_let))
 	{
 	  local_let = find_let(sc, local_let);
-	  if (!is_let(local_let))
+	  if (!is_let(local_let)) /* TODO: find_let can return () from a closure at top-level! */
 	    return(method_or_bust(sc, cadr(args), sc->symbol_to_value_symbol, args, a_let_string, 2)); /* not local_let */
 	}
       if (local_let == sc->s7_starlet)
@@ -79347,7 +79349,7 @@ static void op_set_safe(s7_scheme *sc) /* name is misleading -- we need to check
       slot_set_value(slot, sc->value);
     }
   else
-    if (has_let_set_fallback(sc->curlet))
+    if ((is_let(sc->curlet)) && (has_let_set_fallback(sc->curlet)))
       sc->value = call_let_set_fallback(sc, sc->curlet, sc->code, sc->value);
     else unbound_variable_error_nr(sc, sc->code);
 }
@@ -79800,7 +79802,8 @@ static bool op_set1(s7_scheme *sc)
       symbol_increment_ctr(sym);        /* see define setfib example in s7test.scm -- I'm having second thoughts about this... */
       return(true); /* continue */
     }
-  if (!has_let_set_fallback(sc->curlet))                /* (with-let (mock-hash-table 'b 2) (set! b 3)) */
+  if ((!is_let(sc->curlet)) ||              /* (with-let (rootlet) (set! undef 3)) */
+      (!has_let_set_fallback(sc->curlet)))  /* (with-let (mock-hash-table 'b 2) (set! b 3)) */
     error_nr(sc, sc->unbound_variable_symbol, set_elist_4(sc, wrap_string(sc, "~S is unbound in (set! ~S ~S)", 29), sym, sym, sc->value));
   sc->value = call_let_set_fallback(sc, sc->curlet, sym, sc->value);
   return(true);
@@ -96728,11 +96731,11 @@ s7_scheme *s7_init(void)
   sc->gc_temps_size = GC_TEMPS_SIZE;
   sc->gc_resize_heap_fraction = GC_RESIZE_HEAP_FRACTION;
   sc->gc_resize_heap_by_4_fraction = GC_RESIZE_HEAP_BY_4_FRACTION;
-  sc->max_heap_size = (1LL << 62);
+  sc->max_heap_size = (1LL << 45);
   sc->gc_calls = 0;
   sc->gc_total_time = 0;
 
-  sc->max_port_data_size = (1LL << 62);
+  sc->max_port_data_size = (1LL << 45);
 #ifndef OUTPUT_FILE_PORT_DATA_SIZE
   #define OUTPUT_FILE_PORT_DATA_SIZE 2048
 #endif
@@ -97515,5 +97518,10 @@ int main(int argc, char **argv)
  * add wasm test to test suite somehow (at least emscripten)
  * combine lets?
  * widget-size (pane equal)
- * copy/fill!/reverse!/sort! + setter/features/let is a mess
+ * copy/fill!/reverse! + setter/features/let is a mess
+ * could someone set curlet|rootlet|unlet's setter and wreak havoc?
+ *     (set! (setter curlet) (lambda (v) (set! curlet rootlet))) (set! (curlet) 123) (curlet)->rootlet !
+ *  or (set! (setter curlet) (lambda (v) (set! curlet v))) (set! (curlet) 123)  (curlet)->attempt to apply an integer 123 in (123)?
+ * either in t725 or safety>0? check func sig against actual call/returned value, same for typers/actual values
+ * t718 ()->rootlet where we assume () means no let (find_let etc)
  */
