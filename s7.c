@@ -31151,11 +31151,26 @@ static s7_pointer g_autoloader(s7_scheme *sc, s7_pointer args) /* the *autoload*
 
 
 /* ---------------- require ---------------- */
-static bool is_memq(const s7_pointer sym, s7_pointer lst)
+static bool is_a_feature(const s7_pointer sym, s7_pointer lst) /* used only with *features* which (sigh) can be circular: (set-cdr! *features* *features*) */
 {
+#if 1
+  s7_pointer x = lst, slow = lst;
+  while (true)
+    {
+      if (!is_pair(x)) return(false);
+      if (sym == car(x)) return(true);
+      x = cdr(x);
+      if (!is_pair(x)) return(false);
+      if (sym == car(x)) return(true);
+      x = cdr(x);
+      slow = cdr(slow);
+      if (x == slow) return(false);
+    }
+#else
   for (s7_pointer x = lst; is_pair(x); x = cdr(x))
     if (sym == car(x))
       return(true);
+#endif
   return(false);
 }
 
@@ -31181,7 +31196,7 @@ The symbols refer to the argument to \"provide\".  (require lint.scm)"
 	    error_nr(sc, sc->wrong_type_arg_symbol,
 		     set_elist_2(sc, wrap_string(sc, "require: ~S is not a symbol", 27), car(p)));
 	  }
-      if ((!is_memq(sym, s7_symbol_value(sc, sc->features_symbol))) &&
+      if ((!is_a_feature(sym, s7_symbol_value(sc, sc->features_symbol))) &&
 	  (sc->is_autoloading))
 	{
 	  s7_pointer f = g_autoloader(sc, set_plist_1(sc, sym));
@@ -31220,7 +31235,7 @@ static s7_pointer g_is_provided(s7_scheme *sc, s7_pointer args)
    *   top-level at least.
    */
   topf = global_value(sc->features_symbol);
-  if (is_memq(sym, topf))
+  if (is_a_feature(sym, topf)) /* TODO: somehow *features* can be cyclic?? */
     return(sc->T);
 
   if (is_global(sc->features_symbol))
@@ -31230,21 +31245,21 @@ static s7_pointer g_is_provided(s7_scheme *sc, s7_pointer args)
     for (s7_pointer y = let_slots(x); tis_slot(y); y = next_slot(y))
       if ((slot_symbol(y) == sc->features_symbol) &&
 	  (slot_value(y) != topf) &&
-	  (is_memq(sym, slot_value(y))))
+	  (is_a_feature(sym, slot_value(y))))
 	return(sc->T);
   return(sc->F);
 }
 
 bool s7_is_provided(s7_scheme *sc, const char *feature)
 {
-  return(is_memq(make_symbol_with_strlen(sc, feature), s7_symbol_value(sc, sc->features_symbol))); /* this goes from local outward */
+  return(is_a_feature(make_symbol_with_strlen(sc, feature), s7_symbol_value(sc, sc->features_symbol))); /* this goes from local outward */
 }
 
 static bool is_provided_b_7p(s7_scheme *sc, s7_pointer sym)
 {
   if (!is_symbol(sym))
     return(method_or_bust_p(sc, sym, sc->is_provided_symbol, sc->type_names[T_SYMBOL]) != sc->F);
-  return(is_memq(sym, s7_symbol_value(sc, sc->features_symbol)));
+  return(is_a_feature(sym, s7_symbol_value(sc, sc->features_symbol)));
 }
 
 
@@ -31273,7 +31288,7 @@ static s7_pointer c_provide(s7_scheme *sc, s7_pointer sym)
 	  slot_set_has_setter(slot);
 	}
       else
-	if ((!is_memq(sym, lst)) && (!is_memq(sym, slot_value(p))))
+	if ((!is_a_feature(sym, lst)) && (!is_a_feature(sym, slot_value(p))))
 	  slot_set_value(p, cons(sc, sym, slot_value(p)));
     }
   return(sym);
@@ -31298,9 +31313,10 @@ static s7_pointer g_features_set(s7_scheme *sc, s7_pointer args) /* *features* s
   s7_pointer nf = cadr(args);
   if (is_null(nf))
     return(sc->nil);
-  if ((!is_pair(nf)) ||
-      (s7_list_length(sc, nf) <= 0))
-    error_nr(sc, sc->wrong_type_arg_symbol, set_elist_2(sc, wrap_string(sc, "can't set *features* to ~S", 26), nf));
+  if (!is_pair(nf))
+    error_nr(sc, sc->wrong_type_arg_symbol, set_elist_2(sc, wrap_string(sc, "can't set *features* to ~S (*features* must be a list)", 54), nf));
+  if (s7_list_length(sc, nf) <= 0)
+    error_nr(sc, sc->wrong_type_arg_symbol, set_elist_2(sc, wrap_string(sc, "can't set *features* to an improper or circular list ~S", 55), nf));
   for (s7_pointer p = nf; is_pair(p); p = cdr(p))
     if (!is_symbol(car(p)))
       sole_arg_wrong_type_error_nr(sc, sc->features_symbol, car(p), sc->type_names[T_SYMBOL]);
@@ -79802,7 +79818,7 @@ static bool op_set1(s7_scheme *sc)
       symbol_increment_ctr(sym);        /* see define setfib example in s7test.scm -- I'm having second thoughts about this... */
       return(true); /* continue */
     }
-  if ((!is_let(sc->curlet)) ||              /* (with-let (rootlet) (set! undef 3)) */
+  if ((!is_let(sc->curlet)) ||              /* (with-let (rootlet) (set! undef 3)) */ /* TODO: not right -- let () through */
       (!has_let_set_fallback(sc->curlet)))  /* (with-let (mock-hash-table 'b 2) (set! b 3)) */
     error_nr(sc, sc->unbound_variable_symbol, set_elist_4(sc, wrap_string(sc, "~S is unbound in (set! ~S ~S)", 29), sym, sym, sc->value));
   sc->value = call_let_set_fallback(sc, sc->curlet, sym, sc->value);
@@ -94239,7 +94255,7 @@ static s7_pointer sl_set_profile(s7_scheme *sc, s7_pointer sym, s7_pointer val)
   sc->debug_or_profile = ((sc->debug  > 1) || (sc->profile > 0));
   if (sc->profile > 0)
     {
-      if (!is_memq(make_symbol(sc, "profile.scm", 11), s7_symbol_value(sc, sc->features_symbol)))
+      if (!is_a_feature(make_symbol(sc, "profile.scm", 11), s7_symbol_value(sc, sc->features_symbol)))
 	s7_load(sc, "profile.scm");
       if (!sc->profile_data)
 	make_profile_info(sc);
@@ -94256,7 +94272,7 @@ static s7_pointer sl_set_debug(s7_scheme *sc, s7_pointer sym, s7_pointer val)
   sc->debug = s7_integer_clamped_if_gmp(sc, val);
   sc->debug_or_profile = ((sc->debug  > 1) || (sc->profile > 0));
   if ((sc->debug > 0) &&
-      (!is_memq(make_symbol(sc, "debug.scm", 9), s7_symbol_value(sc, sc->features_symbol))))
+      (!is_a_feature(make_symbol(sc, "debug.scm", 9), s7_symbol_value(sc, sc->features_symbol))))
     s7_load(sc, "debug.scm");
   return(val);
 }
@@ -95695,7 +95711,8 @@ static void init_setters(s7_scheme *sc)
 			s7_make_safe_function(sc, "#<set-hash-table-key-typer>", g_set_hash_table_key_typer, 2, 0, false, "hash-table-key-typer setter"));
   c_function_set_setter(global_value(sc->hash_table_value_typer_symbol),
 			s7_make_safe_function(sc, "#<set-hash-table-value-typer>", g_set_hash_table_value_typer, 2, 0, false, "hash-table-value-typer setter"));
-  c_function_set_setter(global_value(sc->symbol_symbol), s7_make_safe_function(sc, "symbol-set", g_symbol_set, 2, 0, true, "symbol setter"));
+  c_function_set_setter(global_value(sc->symbol_symbol), 
+			s7_make_safe_function(sc, "#<symbol-set>", g_symbol_set, 2, 0, true, "symbol setter"));
 }
 
 static void init_syntax(s7_scheme *sc)
@@ -97524,4 +97541,5 @@ int main(int argc, char **argv)
  *  or (set! (setter curlet) (lambda (v) (set! curlet v))) (set! (curlet) 123)  (curlet)->attempt to apply an integer 123 in (123)?
  * either in t725 or safety>0? check func sig against actual call/returned value, same for typers/actual values
  * t718 ()->rootlet where we assume () means no let (find_let etc)
+ * missing cr's?, limit printout
  */

@@ -1035,7 +1035,8 @@
 			  '=>
 
 			  'constant?
-			  '*unbound-variable-hook* '*load-hook* '*rootlet-redefinition-hook* '*missing-close-paren-hook* ;'*read-error-hook*
+			  '*unbound-variable-hook* '*load-hook* '*rootlet-redefinition-hook* '*missing-close-paren-hook* 
+			  '*read-error-hook*
 			  '*after-gc-hook*
 			  '*autoload*
 			  'sequence? 'directory? 'hash-table-entries
@@ -1046,7 +1047,8 @@
 			  'cyclic-sequences 'let->list
 
 			  'setter 'int-vector?
-			  'int-vector-set! 'c-object? 'c-object-type 'proper-list? ;'symbol->dynamic-value
+			  'int-vector-set! 'c-object? 'c-object-type 'proper-list? 
+			  'symbol->dynamic-value
 			  'vector-append
 			  'flush-output-port 'c-pointer 'make-float-vector
 			  'iterate 'float-vector?
@@ -1094,7 +1096,7 @@
 			  'weak-hash-table 'byte? 'the 'lognand 'logeqv
 			  'local-random
 			  'local-read-string 'local-varlet 'local-let-set!
-			  ;'pp-checked
+			  'pp-checked
 			  'kar '_dilambda_ '_vals_ '_vals1_ '_vals2_
                           '_vals3_ '_vals4_ '_vals5_ '_vals6_ '_vals3s_ '_vals4s_ '_vals5s_ '_vals6s_
                           '_svals3_ '_svals4_ '_svals5_ '_svals6_ '_svals3s_ '_svals4s_ '_svals5s_ '_svals6s_
@@ -1274,6 +1276,7 @@
 		    "(make-hash-table 8 #f (cons symbol? block?))"
 		    "(make-block 2)" "(block 1.0 2.0 3.0)" "(block)"
 		    "imb"
+		    "(provide 'asdf)" "*features*"
 
 		    (reader-cond
 		     (with-mock-data
@@ -1313,6 +1316,8 @@
 		    "(let ((<1> #f) (<2> (vector #f))) (set! <1> (make-iterator <2>)) (set! (<2> 0) <1>) <1>)"
 		    "(let ((<1> (list 1 #f))) (set! (<1> 1) (let ((<L> (list #f 3))) (set-car! <L> <1>) <L>)) <1>)"
 		    "(let ((cp (list 1))) (set-cdr! cp cp) (list '+ 1 (list 'quote cp)))"
+		    "(let ((cp (list 1))) (set-cdr! cp cp) (list 'quote cp))"
+		    "(let ((cp (list 1))) (set-cdr! cp cp) (list (list quote cp)))"
 
 		    "(let ((lst (list '+ 1))) (set-cdr! (cdr lst) (cdr lst)) (apply lambda () lst ()))"
 		    "(let ((lst (list '+ 1))) (set-cdr! (cdr lst) (cdr lst)) (apply lambda* () lst ()))"
@@ -1405,12 +1410,14 @@
                     (lambda (s) (string-append "(case x (else " s "))")))
 	      (list (lambda (s) (string-append "(case false ((#f) " s "))"))
                     (lambda (s) (string-append "(case false ((1) #t) (else " s "))")))
+	      (list (lambda (s) (string-append "(with-let (rootlet) " s ")"))
+		    (lambda (s) (string-append "(with-let (sublet (rootlet)) " s ")")))
 	      (reader-cond
 	       (with-continuations
-	      (list (lambda (s) (string-append "(call-with-exit (lambda (_x_) " s "))"))
-                    (lambda (s) (string-append "(call/cc (lambda (_x_) " s "))")))
-	      (list (lambda (s) (string-append "(let () (let-temporarily ((x 1234)) (call-with-exit (lambda (goto) (goto x))) " s "))"))
-                    (lambda (s) (string-append "(let () (let-temporarily ((x 1234)) (call/cc (lambda (goto) (goto x))) " s "))")))))
+		(list (lambda (s) (string-append "(call-with-exit (lambda (_x_) " s "))"))
+                      (lambda (s) (string-append "(call/cc (lambda (_x_) " s "))")))
+		(list (lambda (s) (string-append "(let () (let-temporarily ((x 1234)) (call-with-exit (lambda (goto) (goto x))) " s "))"))
+                      (lambda (s) (string-append "(let () (let-temporarily ((x 1234)) (call/cc (lambda (goto) (goto x))) " s "))")))))
 	      (list (lambda (s) (string-append "(if (not x) (begin " s "))"))
                     (lambda (s) (string-append "(if x #<unspecified> (begin " s "))")))
 	      (list (lambda (s) (string-append "(cond ((not false) " s "))"))
@@ -1517,8 +1524,10 @@
                     (lambda (s) (string-append "(do ((j 0 (+ j 1))) ((= j 1)) (do ((i 0 (- i 1))) ((= i -1)) (with-immutable (i j) " s ")))")))
 	      (list (lambda (s) (string-append "(do ((i -10 (+ i 1))) ((= i 0)) (with-immutable (i) " s "))"))
                     (lambda (s) (string-append "(do ((j 0 (+ j 1))) ((= j 1)) (do ((i -10 (+ i 1))) ((= i 0)) (with-immutable (i j) " s ")))")))
-	      (list (lambda (s) (string-append "(do ((i 0 (+ i 1))) ((= i 1)) (with-immutable (i) (apply values " s " ())))"))
-                    (lambda (s) (string-append "(do ((j 0 (+ j 1))) ((= j 1)) (do ((i 0 (+ i 1))) ((= i 1)) (with-immutable (i j) (apply values " s " ()))))")))
+	      (list (lambda (s) (string-append "(do ((i -5 (+ i 1))) ((= i 5)) (with-immutable (i) " s "))"))
+                    (lambda (s) (string-append "(do ((j 0 (+ j 1))) ((= j 1)) (do ((i -5 (+ i 1))) ((= i 5)) (with-immutable (i j) " s ")))")))
+;	      (list (lambda (s) (string-append "(do ((i 0 (+ i 1))) ((= i 1)) (with-immutable (i) (apply values " s " ())))"))
+;                    (lambda (s) (string-append "(do ((j 0 (+ j 1))) ((= j 1)) (do ((i 0 (+ i 1))) ((= i 1)) (with-immutable (i j) (apply values " s " ()))))")))
 	      (list (let ((last-s "#f")) (lambda (s) (let ((res (string-append "(if (car (list " last-s ")) (begin " s "))"))) (set! last-s s) res)))
                     (let ((last-s "#f")) (lambda (s) (let ((res (string-append "(if (not (car (list " last-s "))) #<unspecified> (begin " s "))"))) (set! last-s s) res))))
 
@@ -1948,6 +1957,9 @@
 	(set! last-func outer-funcs))
 
       ;(unless (output-port? imfo) (format *stderr* "(new) imfo ~S -> ~S~%" estr imfo) (abort)) ; with-mock-data
+      (when (infinite? (length *features*))
+	(format *stderr* "*features*: ~S, estr: ~A~%" *features* estr)
+	(abort))
       (set! error-info #f)
       (set! error-type 'no-error)
       (set! error-code "")
@@ -1998,10 +2010,11 @@
 
 #|
 functions currently omitted (from functions vector):
-unlet owlet *read-error-hook* set-current-output-port immutable! set-cdr! system close-output-port exit symbol->dynamic-value
-rootlet port-filename load string->keyword make-hook provide dynamic-unwind emergency-exit read set-current-error-port *autoload-hook*
+unlet owlet *read-error-hook* set-current-output-port immutable! system close-output-port exit
+port-filename load string->keyword dynamic-unwind emergency-exit read set-current-error-port *autoload-hook*
 gc abort open-output-file set-current-input-port pair-line-number pair-filename coverlet delete-file curlet
 
 [read-line] [funclet] [port-line-number] [read-string] [varlet] [random-state] [random] [hash-code] [random-state->list] [current-input-port]
 [make-string] [symbol-table] [current-error-port] [eval] [read-byte] [stacktrace] [read-char] [reverse!] [procedure-source] [*function*]
+[provide] [rootlet] [symbol->dynamic-value] [set-cdr!] [make-hook]
 |#
