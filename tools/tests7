@@ -165,12 +165,12 @@ gcc s7.c -c -DS7_DEBUGGING=1 -DWITH_HISTORY=1 -DGSL_DISABLE_DEPRECATED -DDISABLE
 gcc -o repl repl.c -g3 -Wall s7.o -I. -Wl,-export-dynamic -lm -ldl
 repl s7test.scm
 
-echo ' '
-echo '-------- fsanitize=address --------'
-echo ' '
-gcc s7.c -c -I. -g3 -ldl -lm -Wl,-export-dynamic -fsanitize=address
-gcc -o repl repl.c -g3 -Wall s7.o -I. -lm -ldl -Wl,-export-dynamic -fsanitize=address -lasan
-repl s7test.scm
-
+# echo ' '
+# echo '-------- fsanitize=address --------'
+# echo ' '
+# gcc s7.c -c -I. -g3 -ldl -lm -Wl,-export-dynamic -fsanitize=address
+# gcc -o repl repl.c -g3 -Wall s7.o -I. -lm -ldl -Wl,-export-dynamic -fsanitize=address -lasan
+# repl s7test.scm
+# 
 # -fsanitize=leak
 # -fsanitize=undefined

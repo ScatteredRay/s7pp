@@ -6118,7 +6118,14 @@ static s7_pointer find_let(s7_scheme *sc, s7_pointer obj)
     case T_MACRO:   case T_MACRO_STAR:
     case T_BACRO:   case T_BACRO_STAR:
     case T_CLOSURE: case T_CLOSURE_STAR:
-      return(closure_let(obj)); /* TODO: this can be ()==rootlet which is ambiguous since we return () as no-let-found below, but we assume this can't ever be rootlet in other places! 9418 -- this is a false comment, maybe always check curlet=() and use rootlet? or fix this ambiguity! */
+#if 0
+      return(closure_let(obj));
+#else
+      {
+	s7_pointer lt = closure_let(obj);
+	return((lt == sc->nil) ? sc->rootlet : lt);
+      }
+#endif
     case T_C_OBJECT:
       return(c_object_let(obj));
     case T_C_POINTER:
@@ -9415,7 +9422,7 @@ static void remove_function_from_heap(s7_scheme *sc, s7_pointer value)
   remove_from_heap(sc, closure_args(value));
   remove_from_heap(sc, closure_body(value));
   /* remove closure if it's local to current func (meaning (define f (let ...) (lambda ...)) removes the enclosing let) */
-  lt = closure_let(value); /* closure_let and all its outlets can't be rootlet */
+  lt = closure_let(value);
   if ((is_let(lt)) && (!let_removed(lt)) && (lt != sc->shadow_rootlet))
     {
       lt = let_outlet(lt);
@@ -10783,7 +10790,7 @@ symbol sym in the given let: (let ((x 32)) (symbol->value 'x)) -> 32"
       if (!is_let(local_let))
 	{
 	  local_let = find_let(sc, local_let);
-	  if (!is_let(local_let)) /* TODO: find_let can return () from a closure at top-level! */
+	  if (!is_let(local_let))
 	    return(method_or_bust(sc, cadr(args), sc->symbol_to_value_symbol, args, a_let_string, 2)); /* not local_let */
 	}
       if (local_let == sc->s7_starlet)
@@ -26912,7 +26919,7 @@ static void init_strings(void)
   a_procedure_string =            make_permanent_string("a procedure");
   a_procedure_or_a_macro_string = make_permanent_string("a procedure or a macro");
   a_normal_procedure_string =     make_permanent_string("a normal procedure");
-  a_let_string =                  make_permanent_string("a let (environment)");
+  a_let_string =                  make_permanent_string("a let (an environment)");
   a_proper_list_string =          make_permanent_string("a proper list");
   a_boolean_string =              make_permanent_string("a boolean");
   a_byte_vector_string =          make_permanent_string("a byte-vector");
@@ -45814,8 +45821,7 @@ static s7_pointer g_funclet(s7_scheme *sc, s7_pointer args)
   if (!((is_any_procedure(p)) || (is_c_object(p))))
     sole_arg_wrong_type_error_nr(sc, sc->funclet_symbol, p, a_procedure_or_a_macro_string);
   e = find_let(sc, p);
-  if ((is_null(e)) &&
-      (!is_c_object(p))) /* rootlet is not the c_object let */
+  if ((is_null(e)) && (!is_c_object(p)))
     return(sc->rootlet);
   return(e);
 }
@@ -95977,8 +95983,8 @@ static void init_rootlet(s7_scheme *sc)
   sc->symbol_to_keyword_symbol =     defun("symbol->keyword",	symbol_to_keyword,	1, 0, false);
   sc->keyword_to_symbol_symbol =     defun("keyword->symbol",	keyword_to_symbol,	1, 0, false);
 
-  sc->outlet_symbol =                /* unsafe_ */ defun("outlet",	outlet,		1, 0, false); /* was unsafe 7-Oct-23 */
-  sc->rootlet_symbol =               /* unsafe_ */ defun("rootlet",    rootlet,		0, 0, false); /* unsafe else unbound var in g_is_defined_in_rootlet? dubious... */
+  sc->outlet_symbol =                /* unsafe_ */ defun("outlet",	outlet,		1, 0, false);
+  sc->rootlet_symbol =               /* unsafe_ */ defun("rootlet",    rootlet,		0, 0, false);
   sc->curlet_symbol =                unsafe_defun("curlet",     curlet,			0, 0, false); /* (define (f a) (curlet)) exports the funclet, see s7test 50215 */
   set_func_is_definer(sc->curlet_symbol);
   sc->unlet_symbol =                 defun("unlet",		unlet,			0, 0, false);
@@ -97536,10 +97542,6 @@ int main(int argc, char **argv)
  * combine lets?
  * widget-size (pane equal)
  * copy/fill!/reverse! + setter/features/let is a mess
- * could someone set curlet|rootlet|unlet's setter and wreak havoc?
- *     (set! (setter curlet) (lambda (v) (set! curlet rootlet))) (set! (curlet) 123) (curlet)->rootlet !
- *  or (set! (setter curlet) (lambda (v) (set! curlet v))) (set! (curlet) 123)  (curlet)->attempt to apply an integer 123 in (123)?
  * either in t725 or safety>0? check func sig against actual call/returned value, same for typers/actual values
- * t718 ()->rootlet where we assume () means no let (find_let etc)
- * missing cr's?, limit printout
+ *   missing cr's?, limit printout
  */
