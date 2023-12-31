@@ -6118,14 +6118,7 @@ static s7_pointer find_let(s7_scheme *sc, s7_pointer obj)
     case T_MACRO:   case T_MACRO_STAR:
     case T_BACRO:   case T_BACRO_STAR:
     case T_CLOSURE: case T_CLOSURE_STAR:
-#if 0
       return(closure_let(obj));
-#else
-      {
-	s7_pointer lt = closure_let(obj);
-	return((lt == sc->nil) ? sc->rootlet : lt);
-      }
-#endif
     case T_C_OBJECT:
       return(c_object_let(obj));
     case T_C_POINTER:
@@ -8241,9 +8234,6 @@ static void pop_stack_no_op_1(s7_scheme *sc, const char *func, int32_t line)
   sc->args = stack_end_args(sc);
 }
 
-#define push_stack(Sc, Op, Args, Code)	\
-  do {s7_pointer *_end_; _end_ = Sc->stack_end; push_stack_1(Sc, Op, Args, Code, _end_, __func__, __LINE__);} while (0)
-
 static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer code, s7_pointer *end, const char *func, int32_t line)
 {
   if ((SHOW_EVAL_OPS) && (op == OP_EVAL_DONE)) fprintf(stderr, "  %s[%d]: push eval_done\n", func, line);
@@ -8279,6 +8269,9 @@ static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer
   stack_end_op(sc) = (s7_pointer)op;
   sc->stack_end += 4;
 }
+
+#define push_stack(Sc, Op, Args, Code)	\
+  do {s7_pointer *_end_; _end_ = Sc->stack_end; push_stack_1(Sc, Op, Args, Code, _end_, __func__, __LINE__);} while (0)
 
 #define push_stack_no_code(Sc, Op, Args)        push_stack(Sc, Op, Args, Sc->unused)
 #define push_stack_no_let_no_code(Sc, Op, Args) push_stack(Sc, Op, Args, Sc->unused)
@@ -9615,11 +9608,13 @@ static s7_pointer g_openlet(s7_scheme *sc, s7_pointer args)
   #define Q_openlet sc->pcl_e
 
   s7_pointer e = car(args), elet, func;
-  if ((e == sc->rootlet) || (e == sc->nil))
+  if (e == sc->nil)
     error_nr(sc, sc->out_of_range_symbol, set_elist_1(sc, wrap_string(sc, "can't openlet rootlet", 21)));
   elet = find_let(sc, e); /* returns nil if no let found, so has to follow error check above */
   if (!is_let(elet))
     sole_arg_wrong_type_error_nr(sc, sc->openlet_symbol, e, a_let_string);
+  if (elet == sc->rootlet)
+    error_nr(sc, sc->out_of_range_symbol, set_elist_1(sc, wrap_string(sc, "can't openlet rootlet", 21)));
   if ((has_active_methods(sc, e)) &&
       ((func = find_method(sc, elet, sc->openlet_symbol)) != sc->undefined))
     return(s7_apply_function(sc, func, args));
@@ -10566,19 +10561,18 @@ s7_pointer s7_set_shadow_rootlet(s7_scheme *sc, s7_pointer let)
 
 
 /* -------------------------------- curlet -------------------------------- */
+s7_pointer s7_curlet(s7_scheme *sc) /* see also fx_curlet */
+{
+  sc->capture_let_counter++;
+  return(sc->curlet);
+}
+
 static s7_pointer g_curlet(s7_scheme *sc, s7_pointer unused_args)
 {
   #define H_curlet "(curlet) returns the current definitions (symbol bindings)"
   #define Q_curlet s7_make_signature(sc, 1, sc->is_let_symbol)
-
   sc->capture_let_counter++;
   return((is_let(sc->curlet)) ? sc->curlet : sc->rootlet);
-}
-
-s7_pointer s7_curlet(s7_scheme *sc)
-{
-  sc->capture_let_counter++;
-  return(sc->curlet);
 }
 
 static void update_symbol_ids(s7_scheme *sc, s7_pointer e)
@@ -10595,7 +10589,7 @@ s7_pointer s7_set_curlet(s7_scheme *sc, s7_pointer e)
 {
   s7_pointer old_e = sc->curlet;
   set_curlet(sc, e);
-  if ((is_let(e)) && (let_id(e) > 0)) /* might be () [id=-1] or rootlet [id=0?] etc */
+  if ((is_let(e)) && (e != sc->rootlet) && (let_id(e) > 0)) /* might be () [id=-1] or rootlet [id meaningless] etc */
     {
       let_set_id(e, ++sc->let_number);
       update_symbol_ids(sc, e);
@@ -10773,7 +10767,7 @@ static s7_pointer g_symbol_to_value(s7_scheme *sc, s7_pointer args)
   #define H_symbol_to_value "(symbol->value sym (let (curlet))) returns the binding of (the value associated with) the \
 symbol sym in the given let: (let ((x 32)) (symbol->value 'x)) -> 32"
   #define Q_symbol_to_value s7_make_signature(sc, 3, sc->T, sc->is_symbol_symbol, sc->is_let_symbol)
-  /* (symbol->value 'x e) => (e 'x)? */
+  /* (symbol->value 'x e) => (e 'x).  But let? in sig is not quite right -- we accept closure -> closure-let etc */
 
   s7_pointer sym = car(args);
   if (!is_symbol(sym))
@@ -30969,12 +30963,13 @@ defaults to the rootlet.  To load into the current environment instead, pass (cu
 
 
 /* -------- *load-path* -------- */
-s7_pointer s7_load_path(s7_scheme *sc) {return(s7_symbol_value(sc, sc->load_path_symbol));}
+s7_pointer s7_load_path(s7_scheme *sc) {return(s7_symbol_local_value(sc, sc->load_path_symbol, sc->curlet));}
 
 s7_pointer s7_add_to_load_path(s7_scheme *sc, const char *dir)
 {
-  s7_symbol_set_value(sc, sc->load_path_symbol, cons(sc, s7_make_string(sc, dir), s7_symbol_value(sc, sc->load_path_symbol)));
-  return(s7_symbol_value(sc, sc->load_path_symbol));
+  s7_pointer path = cons(sc, s7_make_string(sc, dir), s7_symbol_value(sc, sc->load_path_symbol));
+  s7_symbol_set_value(sc, sc->load_path_symbol, path);
+  return(path);
 }
 
 static s7_pointer g_load_path_set(s7_scheme *sc, s7_pointer args)
@@ -53923,7 +53918,7 @@ static s7_pointer fx_V(s7_scheme *sc, s7_pointer arg) {return(V_lookup(sc, T_Sym
 static s7_pointer fx_c_nc(s7_scheme *sc, s7_pointer arg) {return(fc_call(sc, arg));}
 static s7_pointer fx_c_0c(s7_scheme *sc, s7_pointer arg) {return(fn_proc(arg)(sc, sc->nil));}
 static s7_pointer fx_cons_cc(s7_scheme *sc, s7_pointer arg) {return(cons(sc, cadr(arg), caddr(arg)));}
-static s7_pointer fx_curlet(s7_scheme *sc, s7_pointer arg) {return(sc->curlet);}
+static s7_pointer fx_curlet(s7_scheme *sc, s7_pointer arg) {return(s7_curlet(sc));}
 
 #define fx_c_any(Name, Lookup) \
   static s7_pointer Name(s7_scheme *sc, s7_pointer arg) \
@@ -97544,4 +97539,5 @@ int main(int argc, char **argv)
  * copy/fill!/reverse! + setter/features/let is a mess
  * either in t725 or safety>0? check func sig against actual call/returned value, same for typers/actual values
  *   missing cr's?, limit printout
+ * add rootlet special let, so sc->nil isn't used as a let
  */
