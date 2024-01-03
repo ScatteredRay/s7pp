@@ -1607,6 +1607,25 @@ int main(int argc, char **argv)
     {fprintf(stderr, "%d: %s is not an integer?\n", __LINE__, s1 = TO_STR(p)); free(s1);}
   if (s7_integer(p) != 4)
     {fprintf(stderr, "%d: %s is not 4?\n", __LINE__, s1 = TO_STR(p)); free(s1);}
+  {
+    s7_int val;
+    val = s7_integer(s7_apply_function_star(sc, s7_name_to_value(sc, "plus"), 
+					    s7_list(sc, 2, s7_make_integer(sc, 1), s7_make_integer(sc, 2))));
+    if (val != 4)
+      fprintf(stderr, "%d: plus: %" ld64 "\n", __LINE__, val);
+    val = s7_integer(s7_apply_function_star(sc, s7_name_to_value(sc, "plus"),
+					    s7_list(sc, 2, s7_make_keyword(sc, "blue"), s7_make_integer(sc, 2))));
+    if (val != 66)
+      fprintf(stderr, "%d: plus: %" ld64 "\n", __LINE__, val);
+    val = s7_integer(s7_apply_function_star(sc, s7_name_to_value(sc, "plus"),
+					    s7_list(sc, 2, s7_make_symbol(sc, ":blue"), s7_make_integer(sc, 2))));
+    if (val != 66)
+      fprintf(stderr, "%d: plus: %" ld64 "\n", __LINE__, val);
+    val = s7_integer(s7_apply_function_star(sc, s7_name_to_value(sc, "plus"),
+					    s7_list(sc, 2, s7_make_symbol(sc, "blue:"), s7_make_integer(sc, 2))));
+    if (val != 66)
+      fprintf(stderr, "%d: plus: %" ld64 "\n", __LINE__, val);
+  }
 
   s7_define_function_star(sc, "plus1", plus1, "a b c", "an example of define* from C");
   {

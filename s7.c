@@ -281,6 +281,7 @@
 #define HAVE_GMP typo!
 
 #define SHOW_EVAL_OPS 0
+
 #ifndef _GNU_SOURCE
   #define _GNU_SOURCE  /* for qsort_r, grumble... */
 #endif
@@ -8248,14 +8249,8 @@ static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer
       if (sc->stop_at_error) abort();
     }
   if (sc->stack_end >= sc->stack_resize_trigger)
-    {
-      fprintf(stderr, "%s%s[%d]: stack resize skipped%s\n", bold_text, func, line, unbold_text);
-      if (sc->stop_at_error)
-	{
-	  /* this is pointless if we can't look around in gdb, so give us some room */
-	  sc->stack_resize_trigger = (s7_pointer *)(sc->stack_start + (sc->stack_size - ((STACK_RESIZE_TRIGGER) / 2)));
-	  abort();
-	}}
+    fprintf(stderr, "%s%s[%d] from %s: stack resize skipped, stack at %" ld64 " of %u%s\n", 
+	    bold_text, func, line, op_names[op], (sc->stack_end - sc->stack_start) / 4, sc->stack_size / 4, unbold_text);
   if (sc->stack_end != end)
     fprintf(stderr, "%s[%d]: stack changed in push_stack\n", func, line);
   if (op >= NUM_OPS)
@@ -30967,8 +30962,9 @@ s7_pointer s7_load_path(s7_scheme *sc) {return(s7_symbol_local_value(sc, sc->loa
 
 s7_pointer s7_add_to_load_path(s7_scheme *sc, const char *dir)
 {
-  s7_pointer path = cons(sc, s7_make_string(sc, dir), s7_symbol_value(sc, sc->load_path_symbol));
-  s7_symbol_set_value(sc, sc->load_path_symbol, path);
+  s7_pointer slot = lookup_slot_from(sc->load_path_symbol, sc->curlet); /* rootlet possible here */
+  s7_pointer path = cons(sc, s7_make_string(sc, dir), slot_value(slot));
+  slot_set_value(slot, path);
   return(path);
 }
 
@@ -30981,9 +30977,9 @@ static s7_pointer g_load_path_set(s7_scheme *sc, s7_pointer args)
     error_nr(sc, sc->wrong_type_arg_symbol, set_elist_2(sc, wrap_string(sc, "can't set *load-path* to ~S", 27), cadr(args)));
   for (x = cadr(args); is_pair(x); x = cdr(x))
     if (!is_string(car(x)))
-      error_nr(sc, sc->wrong_type_arg_symbol, set_elist_2(sc, wrap_string(sc, "can't set *load-path* to ~S", 27), cadr(args)));
+      error_nr(sc, sc->wrong_type_arg_symbol, set_elist_3(sc, wrap_string(sc, "can't set *load-path* to ~S, ~S is not a string", 47), cadr(args), car(x)));
   if (!is_null(x))
-    error_nr(sc, sc->wrong_type_arg_symbol, set_elist_2(sc, wrap_string(sc, "can't set *load-path* to ~S", 27), cadr(args)));
+    error_nr(sc, sc->wrong_type_arg_symbol, set_elist_2(sc, wrap_string(sc, "can't set *load-path* to ~S, it is not a proper list", 52), cadr(args)));
   return(cadr(args));
 }
 
@@ -45958,7 +45954,7 @@ s7_pointer s7_make_function_star(s7_scheme *sc, const char *name, s7_function fn
 	  else
 	    if (is_pair(arg))                        /* there is a default */
 	      {
-		names[i] = symbol_to_keyword(sc, car(arg));
+		names[i] = car(arg);                 /* key can be passed at runtime as :key or key: so we need both or the symbol */
 		defaults[i] = cadr(arg);
 		remove_from_heap(sc, cadr(arg)); /* ?? */
 		if ((is_pair(defaults[i])) ||
@@ -45971,7 +45967,7 @@ s7_pointer s7_make_function_star(s7_scheme *sc, const char *name, s7_function fn
 	      {
 		if (arg == sc->rest_keyword)
 		  s7_warn(sc, 256, "%s :rest is not supported in C-side define*: %s\n", name, arglist);
-		names[i] = symbol_to_keyword(sc, arg);
+		names[i] = arg;
 		defaults[i] = sc->F;
 	      }}}
   else set_full_type(func, T_C_FUNCTION | T_UNHEAP);
@@ -47586,11 +47582,14 @@ static bool big_floats_are_equivalent(s7_scheme *sc, mpfr_t x, mpfr_t y)
 
 static bool eq_equal(s7_scheme *sc, s7_pointer x, s7_pointer y, shared_info_t *unused_ci) {return(x == y);}
 
-static bool symbol_equivalent(s7_scheme *sc, s7_pointer x, s7_pointer y, shared_info_t *ci)
+static bool symbol_equivalent(s7_scheme *sc, s7_pointer x, s7_pointer y, shared_info_t *ci) /* symbol equal uses eq -- should it check keywords as below? */
 {
   if (x == y) return(true);
-  if (!is_normal_symbol(y)) return(false);            /* (equivalent? ''(1) '(1)) */
-  return((is_slot(global_slot(x))) &&                 /* the optimizer can replace the original symbol with its own */
+  if (!is_symbol(y)) return(false);
+  if (is_keyword(y))
+    return((is_keyword(x)) && (keyword_symbol(x) == keyword_symbol(y))); /* (equivalent? key: :key) -> #t */
+  if (is_keyword(x)) return(false);
+  return((is_slot(global_slot(x))) &&                 /* the optimizer can replace the original symbol with its value */
 	 (is_syntax(global_value(x))) &&
 	 (is_slot(global_slot(y))) &&
 	 (is_syntax(global_value(y))) &&
@@ -53343,7 +53342,7 @@ static s7_pointer set_c_function_star_args(s7_scheme *sc)
 	  set_checked(kpar);
 	for (; is_pair(kpar); kpar = cdr(kpar))
 	  clear_checked(kpar);
-	df = c_function_arg_names(func);
+	df = c_function_arg_names(func); /* changed to use symbols here, not keywords 2-Jan-24 */
 	for (ki = i, karg = arg, kpar = par; (ki < n_args) && (is_pair(karg)); ki++, karg = cdr(karg))
 	  if (!is_symbol_and_keyword(car(karg)))
 	    {
@@ -53360,7 +53359,7 @@ static s7_pointer set_c_function_star_args(s7_scheme *sc)
 	    {
 	      s7_pointer p;
 	      for (j = 0, p = call_args; j < n_args; j++, p = cdr(p))
-		if (df[j] == car(karg))
+		if (df[j] == keyword_symbol(car(karg)))
 		  break;
 	      if (j == n_args)
 		{
@@ -53368,7 +53367,7 @@ static s7_pointer set_c_function_star_args(s7_scheme *sc)
 		    {
 		      if (!is_safe_procedure(func)) unstack_gc_protect(sc);
 		      error_nr(sc, sc->wrong_type_arg_symbol,
-			       set_elist_2(sc, wrap_string(sc, "~A: not a parameter name?", 25), car(karg)));
+			       set_elist_2(sc, wrap_string(sc, "~A is not a parameter name?", 27), car(karg)));
 		    }
 		  karg = cdr(karg);
 		  if (is_null(karg)) /* (f :x) where f arglist includes :allow-other-keys */
@@ -97475,60 +97474,60 @@ int main(int argc, char **argv)
 #endif
 #endif
 
-/* ---------------------------------------------
- *            20.9   21.0   22.0   23.0   24.0
- * ---------------------------------------------
- * tpeak      115    114    108    105    102       148
- * tref       691    687    463    459    464      1081
- * index     1026   1016    973    967    972
- * tmock     1177   1165   1057   1019   1032
- * tvect     2519   2464   1772   1669   1497      3408
- * tauto     ----   ----   2562   2048   1729
- * timp      2637   2575   1930   1694   1740
- * texit     ----   ----   1778   1741   1770      1884
- * s7test    1873   1831   1818   1829   1830
- * lt        2187   2172   2150   2185   1950      2222
- * thook     ----   ----   2590   2030   2046      7651
- * dup       3805   3788   2492   2239   2097
- * tcopy     8035   5546   2539   2375   2386
- * tread     2440   2421   2419   2408   2405
- * trclo     2735   2574   2454   2445   2449      8031
- * titer     2865   2842   2641   2509   2449      3657
- * fbench    2688   2583   2460   2430   2478      2933
- * tload     ----   ----   3046   2404   2566
- * tmat      3065   3042   2524   2578   2590
- * tsort     3105   3104   2856   2804   2858      3683
- * tobj      4016   3970   3828   3577   3508
- * teq       4068   4045   3536   3486   3544
- * tio       3816   3752   3683   3620   3583
- * tmac      3950   3873   3033   3677   3677
- * tcase     4960   4793   4439   4430   4439
- * tlet      7775   5640   4450   4427   4457      9166
- * tclo      4787   4735   4390   4384   4474      6362
- * tfft      7820   7729   4755   4476   4536
- * tstar     6139   5923   5519   4449   4550
- * tmap      8869   8774   4489   4541   4586
- * tshoot    5525   5447   5183   5055   5034
- * tform     5357   5348   5307   5316   5084
- * tstr      6880   6342   5488   5162   5180      10.0
- * tnum      6348   6013   5433   5396   5409
- * tgsl      8485   7802   6373   6282   6208
- * tari      13.0   12.7   6827   6543   6278      15.0
- * tlist     7896   7546   6558   6240   6300      9219
- * tset      ----   ----   ----   6260   6364
- * trec      6936   6922   6521   6588   6583      19.5
- * tleft     10.4   10.2   7657   7479   7627      11.1
- * tmisc     ----   ----   ----   8488   7862      6386
- * tlamb     ----   ----   ----   ----   7941      9894
- * tgc       11.9   11.1   8177   7857   7986
- * thash     11.8   11.7   9734   9479   9526
- * cb        11.2   11.0   9658   9564   9609      12.9
- * tgen      11.2   11.4   12.0   12.1   12.2
- * tall      15.6   15.6   15.6   15.6   15.1      15.9
- * calls     36.7   37.5   37.0   37.5   37.1
- * sg        ----   ----   55.9   55.8   55.4
- * tbig     177.4  175.8  156.5  148.1  146.2
- * ---------------------------------------------
+/* -------------------------------------------------------------
+ *           19.9   20.9   21.0   22.0   23.0   24.0   24.1
+ * -------------------------------------------------------------
+ * tpeak      148    115    114    108    105    102
+ * tref      1081    691    687    463    459    464
+ * index            1026   1016    973    967    972
+ * tmock            1177   1165   1057   1019   1032
+ * tvect     3408   2519   2464   1772   1669   1497
+ * tauto                          2562   2048   1729
+ * timp             2637   2575   1930   1694   1740
+ * texit     1884                 1778   1741   1770
+ * s7test           1873   1831   1818   1829   1830
+ * lt        2222   2187   2172   2150   2185   1950
+ * thook     7651                 2590   2030   2046
+ * dup              3805   3788   2492   2239   2097
+ * tcopy            8035   5546   2539   2375   2386
+ * tread            2440   2421   2419   2408   2405
+ * trclo     8031   2735   2574   2454   2445   2449
+ * titer     3657   2865   2842   2641   2509   2449
+ * fbench    2933   2688   2583   2460   2430   2478
+ * tload                          3046   2404   2566
+ * tmat             3065   3042   2524   2578   2590
+ * tsort     3683   3105   3104   2856   2804   2858
+ * tobj             4016   3970   3828   3577   3508
+ * teq              4068   4045   3536   3486   3544
+ * tio              3816   3752   3683   3620   3583
+ * tmac             3950   3873   3033   3677   3677
+ * tcase            4960   4793   4439   4430   4439
+ * tlet      9166   7775   5640   4450   4427   4457
+ * tclo      6362   4787   4735   4390   4384   4474
+ * tfft             7820   7729   4755   4476   4536
+ * tstar            6139   5923   5519   4449   4550
+ * tmap             8869   8774   4489   4541   4586
+ * tshoot           5525   5447   5183   5055   5034
+ * tform            5357   5348   5307   5316   5084
+ * tstr      10.0   6880   6342   5488   5162   5180
+ * tnum             6348   6013   5433   5396   5409
+ * tgsl             8485   7802   6373   6282   6208
+ * tari      15.0   13.0   12.7   6827   6543   6278
+ * tlist     9219   7896   7546   6558   6240   6300
+ * tset                                  6260   6364
+ * trec      19.5   6936   6922   6521   6588   6583
+ * tleft     11.1   10.4   10.2   7657   7479   7627
+ * tmisc                                 8488   7862
+ * tlamb                                        7941
+ * tgc              11.9   11.1   8177   7857   7986
+ * thash            11.8   11.7   9734   9479   9526
+ * cb        12.9   11.2   11.0   9658   9564   9609
+ * tgen             11.2   11.4   12.0   12.1   12.2
+ * tall      15.9   15.6   15.6   15.6   15.6   15.1
+ * calls            36.7   37.5   37.0   37.5   37.1
+ * sg                             55.9   55.8   55.4
+ * tbig            177.4  175.8  156.5  148.1  146.2
+ * -------------------------------------------------------------
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
@@ -97540,4 +97539,7 @@ int main(int argc, char **argv)
  * either in t725 or safety>0? check func sig against actual call/returned value, same for typers/actual values
  *   missing cr's?, limit printout
  * add rootlet special let, so sc->nil isn't used as a let
+ * check other *x* vars for *load-path* behavior
+ *   *unbound-variable-hook*, *missing-close-paren-hook*, *autoload-hook*, *error-hook*, *read-error-hook*, *rootlet-redefinition-hook*
+ * internal debug check rootlet id = -1?
  */
