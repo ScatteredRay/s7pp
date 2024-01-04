@@ -3234,7 +3234,8 @@ static s7_int let_id(s7_pointer p) {if (p == cur_sc->rootlet) {fprintf(stderr, "
 #else
 #define let_id(p)                      (T_Lid(p))->object.envr.id
 #endif
-#define let_set_id(p, Id)              (T_Lid(p))->object.envr.id = Id
+#define let_set_id(p, Id)              (T_Lsd(p))->object.envr.id = Id
+#define unchecked_let_set_id(p, Id)    (p)->object.envr.id = Id
 #define is_let(p)                      (type(p) == T_LET)
 #define is_let_unchecked(p)            (unchecked_type(p) == T_LET)
 #define let_slots(p)                   T_Sln((T_Lsd(p))->object.envr.slots)
@@ -78679,14 +78680,14 @@ static s7_pointer fx_with_let_s(s7_scheme *sc, s7_pointer arg)
 
 static void activate_with_let(s7_scheme *sc, s7_pointer e)
 {
-  if (!is_let(e))                    /* (with-let . "hi") */
+  if ((!is_let(e)) && (e != sc->nil)) /* (with-let . "hi") or (with-let () ...) */
     {
-      s7_pointer new_e = find_let(sc, e);
-      if (!is_let(new_e))
+      s7_pointer new_e = find_let(sc, e); /* sc->nil here means no let found, or ought to -- this confusion needs to be fixed! */
+      if ((!is_let(new_e)) && (!has_closure_let(e)))
 	error_nr(sc, sc->wrong_type_arg_symbol, set_elist_2(sc, wrap_string(sc, "with-let takes an environment argument: ~A", 42), e));
       e = new_e;
     }
-  if (e == sc->rootlet)
+  if ((e == sc->rootlet) || (e == sc->nil))
     set_curlet(sc, sc->nil);         /* (with-let (rootlet) ...) */
   else
     {
@@ -96470,7 +96471,7 @@ static void init_rootlet(s7_scheme *sc)
   s7_set_setter(sc, sc->features_symbol, sc->features_setter = s7_make_safe_function(sc, "#<set-*features*>", g_features_set, 2, 0, false, "*features* setter"));
 
   /* -------- *load-path* -------- */
-  sc->load_path_symbol = s7_define_variable_with_documentation(sc, "*load-path*", list_1(sc, make_string_with_length(sc, ".", 1)), /* not plist! */
+  sc->load_path_symbol = s7_define_variable_with_documentation(sc, "*load-path*", sc->nil, /* list_1(sc, make_string_with_length(sc, ".", 1)), */ /* not plist! */
 			   "*load-path* is a list of directories (strings) that the load function searches if it is passed an incomplete file name");
   s7_set_setter(sc, sc->load_path_symbol, s7_make_safe_function(sc, "#<set-*load-path*>", g_load_path_set, 2, 0, false, "*load-path* setter"));
 
@@ -96635,7 +96636,7 @@ s7_scheme *s7_init(void)
   /* this is mixing two different s7_cell structs, cons and envr, but luckily envr has two initial s7_pointer fields, equivalent to car and cdr, so
    *   let_id which is the same as opt1 is unaffected.  To get the names built-in, I'll append unique_name and unique_name_length fields to the envr struct.
    */
-  let_set_id(sc->nil, -1);
+  unchecked_let_set_id(sc->nil, -1);
   unique_cdr(sc->unspecified) = sc->unspecified;
 
   sc->t1_1 = semipermanent_cons(sc, sc->unused, sc->nil,  T_PAIR | T_IMMUTABLE);
@@ -97539,7 +97540,12 @@ int main(int argc, char **argv)
  * either in t725 or safety>0? check func sig against actual call/returned value, same for typers/actual values
  *   missing cr's?, limit printout
  * add rootlet special let, so sc->nil isn't used as a let
- * check other *x* vars for *load-path* behavior
- *   *unbound-variable-hook*, *missing-close-paren-hook*, *autoload-hook*, *error-hook*, *read-error-hook*, *rootlet-redefinition-hook*
- * internal debug check rootlet id = -1?
+ *   sc->rootlet = let+id==-1+outlet=NULL?
+ *   sc->rootlet_slots = vector as now (current sc->rootlet)
+ *   wherever set_curlet etc to (), use sc->rootlet, NULL or special #<not-a-let> to mark lack of let (c-pointer etc)
+ *   for no-outlet-let, set to () -> use #<not-a-let>? or perhaps add #<not-a-let> to uniques (or a let??) (so we don't have to use let-ref-fallback)
+ *   s7_c_object_set_let () -> #<not-a-let>?
+ * check other *x* vars for *load-path* behavior: *cload-directory*, *libraries*? *#readers*??
+ *   [these 3 are problematic] libraries should follow the load env arg -- more like features than load-path
+ *   does local *#readers* make sense? eval-string/read maybe? cload-dir -> cload-path?
  */
