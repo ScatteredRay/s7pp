@@ -1767,7 +1767,7 @@ int main(int argc, char **argv)
     {fprintf(stderr, "%d: %s is a multiple-values object?\n", __LINE__, s1 = TO_STR(p)); free(s1);}
 
   s7_define_semisafe_typed_function(sc, "open-plus", open_plus, 1, 0, true, plus_help, s7_make_circular_signature(sc, 1, 2, s7_make_symbol(sc, "number?"), s7_t(sc)));
-  p = s7_sublet(sc, s7_nil(sc), s7_cons(sc, s7_cons(sc, s7_make_symbol(sc, "plus"), s7_name_to_value(sc, "plus")), s7_nil(sc)));
+  p = s7_sublet(sc, s7_rootlet(sc), s7_cons(sc, s7_cons(sc, s7_make_symbol(sc, "plus"), s7_name_to_value(sc, "plus")), s7_nil(sc)));
   s7_openlet(sc, p);
   p1 = s7_apply_function(sc, s7_name_to_value(sc, "open-plus"), s7_list(sc, 3, p, s7_make_integer(sc, 2), s7_make_integer(sc, 3)));
   if ((!s7_is_integer(p1)) ||
@@ -2283,7 +2283,7 @@ int main(int argc, char **argv)
   free(s1);
 
   s1 = TO_STR(s7_closure_let(sc, p));
-  if (strcmp(s1, "()") != 0)
+  if (strcmp(s1, "(rootlet)") != 0)
     {fprintf(stderr, "%d: s7_closure_let is %s?\n", __LINE__, s1);}
   free(s1);
 
@@ -2291,8 +2291,8 @@ int main(int argc, char **argv)
     fprintf(stderr, "closure_body(abs) is not nil?\n");
   if (s7_closure_args(sc, s7_name_to_value(sc, "abs"))  != s7_nil(sc))
     fprintf(stderr, "closure_args(abs) is not nil?\n");
-  if (s7_closure_let(sc, s7_name_to_value(sc, "abs"))  != s7_nil(sc))
-    fprintf(stderr, "closure_let(abs) is not nil?\n");
+  if (s7_closure_let(sc, s7_name_to_value(sc, "abs"))  != s7_rootlet(sc))
+    fprintf(stderr, "closure_let(abs) is not rootlet?\n");
 
   if (!s7_is_aritable(sc, p, 2))
     {fprintf(stderr, "%d: aritable? lambda 2 = #f?\n", __LINE__);}

@@ -3029,9 +3029,8 @@ This is similar to a let form inside another let.
 </pre>
 <p>
 To add the bindings directly to the environment,
-use <b>varlet</b>.  Both of these functions accept () as the
-'env' argument as shorthand for <code>(rootlet)</code>.
-Both also accept other environments as well as individual bindings,
+use <b>varlet</b>.  
+Both accept environment other than the first as well as individual bindings,
 adding all the argument's bindings to the new environment.
 <b>inlet</b> is very similar, but normally omits the environment argument.
 The arguments to sublet and inlet can be passed as
@@ -9269,7 +9268,7 @@ s7_eval evaluates a list that represents Scheme code.  That is,
 s7_eval(sc, s7_cons(sc, s7_make_symbol(sc, "+"),
                s7_cons(sc, s7_make_integer(sc, 1),
                   s7_cons(sc, s7_make_integer(sc, 2), s7_nil(sc)))),
-            s7_rootlet(sc));   /* s7_nil here is the same as s7_rootlet */
+            s7_rootlet(sc));
 </pre>
 <p>returns 3 (as a Scheme integer).  This may look ridiculous, but see snd-sig.c for an actual use.
 s7_eval_c_string evaluates a Scheme expression presented to it as a C string; it combines read and

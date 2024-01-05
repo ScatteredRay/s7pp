@@ -1126,8 +1126,8 @@ struct s7_scheme {
   s7_pointer no_value;                /* the (values) value */
   s7_pointer unused;                  /* a marker for an unoccupied slot in sc->protected_objects (and other similar stuff) */
 
-  s7_pointer symbol_table;            /* symbol table */
-  s7_pointer rootlet, shadow_rootlet; /* rootlet */
+  s7_pointer symbol_table;
+  s7_pointer rootlet, rootlet_slots, shadow_rootlet;
   s7_int rootlet_entries;
   s7_pointer unlet;                   /* original bindings of predefined functions */
 
@@ -1923,13 +1923,11 @@ static void init_types(void)
 
 #if S7_DEBUGGING
   static void print_gc_info(s7_scheme *sc, s7_pointer obj, int32_t line);
-  static s7_pointer check_ref(s7_pointer p, uint8_t expected_type, const char *func, int32_t line, const char *func1, const char *func2);
-  static s7_pointer check_ref7(s7_pointer p, const char *func, int32_t line);
-  static s7_pointer check_ref11(s7_pointer p, const char *func, int32_t line);
-  static s7_pointer check_ref16(s7_pointer p, const char *func, int32_t line);
-  static s7_pointer check_ref16a(s7_pointer p, const char *func, int32_t line);
-  static s7_pointer check_ref19(s7_pointer p, const char *func, int32_t line);
-  static s7_pointer check_ref19a(s7_pointer p, const char *func, int32_t line);
+  static s7_pointer check_ref_one(s7_pointer p, uint8_t expected_type, const char *func, int32_t line, const char *func1, const char *func2);
+  static s7_pointer check_ref_num(s7_pointer p, const char *func, int32_t line);
+  static s7_pointer check_ref_app(s7_pointer p, const char *func, int32_t line);
+  static s7_pointer check_ref_ext(s7_pointer p, const char *func, int32_t line);
+  static s7_pointer check_ref_exs(s7_pointer p, const char *func, int32_t line);
   static s7_pointer check_nref(s7_pointer p, const char *func, int32_t line);
   static s7_pointer check_opcode(s7_pointer p, const char *func, int32_t line);
   static s7_pointer check_let_ref(s7_pointer p, uint64_t role, const char *func, int32_t line);
@@ -1942,66 +1940,64 @@ static void init_types(void)
 #endif
   #define set_full_type(p, f) set_type_1(p, f, __func__, __LINE__)
   /* these check most s7_cell field references (and many type bits) for consistency */
-  #define T_App(P) check_ref11(P,                    __func__, __LINE__)                /* applicable or #f */
-  #define T_Arg(P) check_ref10(P,                    __func__, __LINE__)                /* closure arg (list, symbol) */
-  #define T_BVc(P) check_ref(P, T_BYTE_VECTOR,       __func__, __LINE__, "sweep", NULL)
-  #define T_Bgf(P) check_ref(P, T_BIG_RATIO,         __func__, __LINE__, "sweep", NULL)
-  #define T_Bgi(P) check_ref(P, T_BIG_INTEGER,       __func__, __LINE__, "sweep", NULL)
-  #define T_Bgr(P) check_ref(P, T_BIG_REAL,          __func__, __LINE__, "sweep", NULL)
-  #define T_Bgz(P) check_ref(P, T_BIG_COMPLEX,       __func__, __LINE__, "sweep", NULL)
-  #define T_CMac(P) check_ref(P, T_C_MACRO,          __func__, __LINE__, NULL, NULL)
-  #define T_Cat(P) check_ref(P, T_CATCH,             __func__, __LINE__, NULL, NULL)
-  #define T_Chr(P) check_ref(P, T_CHARACTER,         __func__, __LINE__, NULL, NULL)
-  #define T_Clo(P) check_ref5(P,                     __func__, __LINE__)                /* has closure let */
-  #define T_Cmp(P) check_ref(P, T_COMPLEX,           __func__, __LINE__, NULL, NULL)
-  #define T_Con(P) check_ref(P, T_CONTINUATION,      __func__, __LINE__, "sweep", "process_continuation")
-  #define T_Ctr(P) check_ref(P, T_COUNTER,           __func__, __LINE__, NULL, NULL)
-  #define T_Dyn(P) check_ref(P, T_DYNAMIC_WIND,      __func__, __LINE__, NULL, NULL)
-  #define T_Eof(P) check_ref(P, T_EOF,               __func__, __LINE__, "sweep", NULL)
-  #define T_Exs(P) check_ref19a(P,                   __func__, __LINE__)                /* not an internal type, but #<unused> and slot are ok */
-  #define T_Ext(P) check_ref19(P,                    __func__, __LINE__)                /* not an internal type */
-  #define T_Fnc(P) check_ref6(P,                     __func__, __LINE__)                /* any c_function|c_macro */
-  #define T_Frc(P) check_ref2(P, T_RATIO, T_INTEGER, __func__, __LINE__, NULL, NULL)
-  #define T_Fst(P) check_ref(P, T_C_FUNCTION_STAR,   __func__, __LINE__, NULL, NULL)
-  #define T_Fvc(P) check_ref(P, T_FLOAT_VECTOR,      __func__, __LINE__, "sweep", NULL)
-  #define T_Got(P) check_ref(P, T_GOTO,              __func__, __LINE__, NULL, NULL)
-  #define T_Hsh(P) check_ref(P, T_HASH_TABLE,        __func__, __LINE__, "sweep", "free_hash_table")
-  #define T_Int(P) check_ref(P, T_INTEGER,           __func__, __LINE__, NULL, NULL)
-  #define T_Itr(P) check_ref(P, T_ITERATOR,          __func__, __LINE__, "sweep", "process_iterator")
-  #define T_Ivc(P) check_ref(P, T_INT_VECTOR,        __func__, __LINE__, "sweep", NULL)
-  #define T_Key(P) check_ref18(P,                    __func__, __LINE__)                /* keyword */
-  #define T_Let(P) check_ref(P, T_LET,               __func__, __LINE__, NULL, NULL)    /* let+rootlet but not nil */
-  #define T_Lid(P) check_ref16(P,                    __func__, __LINE__)                /* let/nil but not rootlet */
-  #define T_Lsd(P) check_ref16a(P,                   __func__, __LINE__)                /* let but not nil or rootlet */
-  #define T_Lst(P) check_ref2(P, T_PAIR, T_NIL,      __func__, __LINE__, "gc", NULL)
-  #define T_Mac(P) check_ref17(P,                    __func__, __LINE__)                /* a non-C macro */
-  #define T_Met(P) check_ref9(P,                     __func__, __LINE__)                /* anything that might contain a method */
-  #define T_Nmv(P) check_ref15(P,                    __func__, __LINE__)                /* not multiple-value, not free, only affects slot values */
-  #define T_Num(P) check_ref7(P,                     __func__, __LINE__)                /* any number (not bignums) */
-  #define T_Nvc(P) check_ref(P, T_VECTOR,            __func__, __LINE__, "sweep", NULL)
-  #define T_Obj(P) check_ref(P, T_C_OBJECT,          __func__, __LINE__, "sweep", "s7_c_object_value")
-  #define T_Op(P)  check_opcode(P,                   __func__, __LINE__)
-  #define T_Pair(P) check_ref(P, T_PAIR,             __func__, __LINE__, NULL, NULL)
-  #define T_Pcs(P) check_ref2(P, T_PAIR, T_CLOSURE_STAR, __func__, __LINE__, NULL, NULL)
-  #define T_Pos(P) check_nref(P,                     __func__, __LINE__)                /* not free */
-  #define T_Prc(P) check_ref14(P,                    __func__, __LINE__)                /* any procedure (3-arg setters) or #f|#t */
-  #define T_Pri(P) check_ref3i(P,                    __func__, __LINE__)                /* input_port or #f */
-  #define T_Pro(P) check_ref3o(P,                    __func__, __LINE__)                /* output_port or #f */
-  #define T_Prt(P) check_ref3(P,                     __func__, __LINE__)                /* input|output_port */
-  #define T_Ptr(P) check_ref(P, T_C_POINTER,         __func__, __LINE__, NULL, NULL)
-  #define T_Ran(P) check_ref(P, T_RANDOM_STATE,      __func__, __LINE__, NULL, NULL)
-  #define T_Rel(P) check_ref(P, T_REAL,              __func__, __LINE__, NULL, NULL)
-  #define T_Seq(P) check_ref8(P,                     __func__, __LINE__)                /* any sequence or structure */
-  #define T_Sld(P) check_ref2(P, T_SLOT, T_UNDEFINED,__func__, __LINE__, NULL, NULL)
-  #define T_Sln(P) check_ref12(P,                    __func__, __LINE__)                /* slot or nil */
-  #define T_Slt(P) check_ref(P, T_SLOT,              __func__, __LINE__, NULL, NULL)
-  #define T_Stk(P) check_ref(P, T_STACK,             __func__, __LINE__, NULL, NULL)
-  #define T_Str(P) check_ref(P, T_STRING,            __func__, __LINE__, "sweep", NULL)
-  #define T_SVec(P) check_ref13(P,                   __func__, __LINE__)                /* subvector */
-  #define T_Sym(P) check_ref(P, T_SYMBOL,            __func__, __LINE__, "sweep", "remove_gensym_from_symbol_table")
-  #define T_Syn(P) check_ref(P, T_SYNTAX,            __func__, __LINE__, NULL, NULL)
-  #define T_Undf(P) check_ref(P, T_UNDEFINED,        __func__, __LINE__, "sweep", NULL)
-  #define T_Vec(P) check_ref4(P,                     __func__, __LINE__)                /* any vector */
+  #define T_App(P) check_ref_app(P,                      __func__, __LINE__)                /* applicable or #f */
+  #define T_Arg(P) check_ref_arg(P,                      __func__, __LINE__)                /* closure arg (list, symbol) */
+  #define T_BVc(P) check_ref_one(P, T_BYTE_VECTOR,       __func__, __LINE__, "sweep", NULL)
+  #define T_Bgf(P) check_ref_one(P, T_BIG_RATIO,         __func__, __LINE__, "sweep", NULL)
+  #define T_Bgi(P) check_ref_one(P, T_BIG_INTEGER,       __func__, __LINE__, "sweep", NULL)
+  #define T_Bgr(P) check_ref_one(P, T_BIG_REAL,          __func__, __LINE__, "sweep", NULL)
+  #define T_Bgz(P) check_ref_one(P, T_BIG_COMPLEX,       __func__, __LINE__, "sweep", NULL)
+  #define T_CMac(P) check_ref_one(P, T_C_MACRO,          __func__, __LINE__, NULL, NULL)
+  #define T_Cat(P) check_ref_one(P, T_CATCH,             __func__, __LINE__, NULL, NULL)
+  #define T_Chr(P) check_ref_one(P, T_CHARACTER,         __func__, __LINE__, NULL, NULL)
+  #define T_Clo(P) check_ref_clo(P,                      __func__, __LINE__)                /* has closure let */
+  #define T_Cmp(P) check_ref_one(P, T_COMPLEX,           __func__, __LINE__, NULL, NULL)
+  #define T_Con(P) check_ref_one(P, T_CONTINUATION,      __func__, __LINE__, "sweep", "process_continuation")
+  #define T_Ctr(P) check_ref_one(P, T_COUNTER,           __func__, __LINE__, NULL, NULL)
+  #define T_Dyn(P) check_ref_one(P, T_DYNAMIC_WIND,      __func__, __LINE__, NULL, NULL)
+  #define T_Eof(P) check_ref_one(P, T_EOF,               __func__, __LINE__, "sweep", NULL)
+  #define T_Exs(P) check_ref_exs(P,                      __func__, __LINE__)                /* not an internal type, but #<unused> and slot are ok */
+  #define T_Ext(P) check_ref_ext(P,                      __func__, __LINE__)                /* not an internal type */
+  #define T_Fnc(P) check_ref_fnc(P,                      __func__, __LINE__)                /* any c_function|c_macro */
+  #define T_Frc(P) check_ref_two(P, T_RATIO, T_INTEGER,  __func__, __LINE__, NULL, NULL)
+  #define T_Fst(P) check_ref_one(P, T_C_FUNCTION_STAR,   __func__, __LINE__, NULL, NULL)
+  #define T_Fvc(P) check_ref_one(P, T_FLOAT_VECTOR,      __func__, __LINE__, "sweep", NULL)
+  #define T_Got(P) check_ref_one(P, T_GOTO,              __func__, __LINE__, NULL, NULL)
+  #define T_Hsh(P) check_ref_one(P, T_HASH_TABLE,        __func__, __LINE__, "sweep", "free_hash_table")
+  #define T_Int(P) check_ref_one(P, T_INTEGER,           __func__, __LINE__, NULL, NULL)
+  #define T_Itr(P) check_ref_one(P, T_ITERATOR,          __func__, __LINE__, "sweep", "process_iterator")
+  #define T_Ivc(P) check_ref_one(P, T_INT_VECTOR,        __func__, __LINE__, "sweep", NULL)
+  #define T_Key(P) check_ref_key(P,                      __func__, __LINE__)                /* keyword */
+  #define T_Let(P) check_ref_one(P, T_LET,               __func__, __LINE__, NULL, NULL)    /* let+rootlet but not nil */
+  #define T_Lst(P) check_ref_two(P, T_PAIR, T_NIL,       __func__, __LINE__, "gc", NULL)
+  #define T_Mac(P) check_ref_mac(P,                      __func__, __LINE__)                /* a non-C macro */
+  #define T_Met(P) check_ref_met(P,                      __func__, __LINE__)                /* anything that might contain a method */
+  #define T_Nmv(P) check_ref_nmv(P,                      __func__, __LINE__)                /* not multiple-value, not free, only affects slot values */
+  #define T_Num(P) check_ref_num(P,                      __func__, __LINE__)                /* any number (not bignums) */
+  #define T_Nvc(P) check_ref_one(P, T_VECTOR,            __func__, __LINE__, "sweep", NULL)
+  #define T_Obj(P) check_ref_one(P, T_C_OBJECT,          __func__, __LINE__, "sweep", "s7_c_object_value")
+  #define T_Op(P)  check_opcode(P,                       __func__, __LINE__)
+  #define T_Pair(P) check_ref_one(P, T_PAIR,             __func__, __LINE__, NULL, NULL)
+  #define T_Pcs(P) check_ref_two(P, T_PAIR, T_CLOSURE_STAR, __func__, __LINE__, NULL, NULL)
+  #define T_Pos(P) check_nref(P,                         __func__, __LINE__)                /* not free */
+  #define T_Prc(P) check_ref_prc(P,                      __func__, __LINE__)                /* any procedure (3-arg setters) or #f|#t */
+  #define T_Pri(P) check_ref_pri(P,                      __func__, __LINE__)                /* input_port or #f */
+  #define T_Pro(P) check_ref_pro(P,                      __func__, __LINE__)                /* output_port or #f */
+  #define T_Prt(P) check_ref_prt(P,                      __func__, __LINE__)                /* input|output_port */
+  #define T_Ptr(P) check_ref_one(P, T_C_POINTER,         __func__, __LINE__, NULL, NULL)
+  #define T_Ran(P) check_ref_one(P, T_RANDOM_STATE,      __func__, __LINE__, NULL, NULL)
+  #define T_Rel(P) check_ref_one(P, T_REAL,              __func__, __LINE__, NULL, NULL)
+  #define T_Seq(P) check_ref_seq(P,                      __func__, __LINE__)                /* any sequence or structure */
+  #define T_Sld(P) check_ref_two(P, T_SLOT, T_UNDEFINED, __func__, __LINE__, NULL, NULL)
+  #define T_Sln(P) check_ref_sln(P,                      __func__, __LINE__)                /* slot or nil */
+  #define T_Slt(P) check_ref_one(P, T_SLOT,              __func__, __LINE__, NULL, NULL)
+  #define T_Stk(P) check_ref_one(P, T_STACK,             __func__, __LINE__, NULL, NULL)
+  #define T_Str(P) check_ref_one(P, T_STRING,            __func__, __LINE__, "sweep", NULL)
+  #define T_SVec(P) check_ref_svec(P,                    __func__, __LINE__)                /* subvector */
+  #define T_Sym(P) check_ref_one(P, T_SYMBOL,            __func__, __LINE__, "sweep", "remove_gensym_from_symbol_table")
+  #define T_Syn(P) check_ref_one(P, T_SYNTAX,            __func__, __LINE__, NULL, NULL)
+  #define T_Undf(P) check_ref_one(P, T_UNDEFINED,        __func__, __LINE__, "sweep", NULL)
+  #define T_Vec(P) check_ref_vec(P,                      __func__, __LINE__)                /* any vector */
 #else
   /* if not debugging, all those checks go away */
   #define T_App(P)  P
@@ -2033,8 +2029,6 @@ static void init_types(void)
   #define T_Ivc(P)  P
   #define T_Key(P)  P
   #define T_Let(P)  P
-  #define T_Lid(P)  P
-  #define T_Lsd(P)  P
   #define T_Lst(P)  P
   #define T_Mac(P)  P
   #define T_Met(P)  P
@@ -2242,8 +2236,8 @@ static void init_types(void)
 /* marks do-loops that resist optimization */
 
 #define T_DOX_SLOT1                    T_MID_GLOBAL
-#define has_dox_slot1(p)               has_mid_type_bit(T_Lsd(p), T_DOX_SLOT1)
-#define set_has_dox_slot1(p)           set_mid_type_bit(T_Lsd(p), T_DOX_SLOT1)
+#define has_dox_slot1(p)               has_mid_type_bit(T_Let(p), T_DOX_SLOT1)
+#define set_has_dox_slot1(p)           set_mid_type_bit(T_Let(p), T_DOX_SLOT1)
 /* marks a let that includes the dox_slot1 */
 
 #define T_COLLECTED                    (1 << (16 + 1))
@@ -2276,8 +2270,8 @@ static void init_types(void)
 /* marks a slot that has a setter or symbol that might have a setter */
 
 #define T_WITH_LET_LET                 T_MID_LOCATION
-#define is_with_let_let(p)             has_mid_type_bit(T_Lsd(p), T_WITH_LET_LET)
-#define set_with_let_let(p)            set_mid_type_bit(T_Lsd(p), T_WITH_LET_LET)
+#define is_with_let_let(p)             has_mid_type_bit(T_Let(p), T_WITH_LET_LET)
+#define set_with_let_let(p)            set_mid_type_bit(T_Let(p), T_WITH_LET_LET)
 /* marks a let that is the argument to with-let (but not rootlet in its uses) */
 
 #define T_SIMPLE_DEFAULTS              T_MID_LOCATION
@@ -2338,15 +2332,15 @@ static void init_types(void)
 #define set_has_stepper(p)             set_mid_type_bit(T_Slt(p), T_HAS_STEPPER)
 
 #define T_DOX_SLOT2                    T_MID_UNSAFE
-#define has_dox_slot2(p)               has_mid_type_bit(T_Lsd(p), T_DOX_SLOT2)
-#define set_has_dox_slot2(p)           set_mid_type_bit(T_Lsd(p), T_DOX_SLOT2)
+#define has_dox_slot2(p)               has_mid_type_bit(T_Let(p), T_DOX_SLOT2)
+#define set_has_dox_slot2(p)           set_mid_type_bit(T_Let(p), T_DOX_SLOT2)
 /* marks a let that includes the dox_slot2 */
 
 #define T_IMMUTABLE                    (1 << (16 + 8))
 #define T_MID_IMMUTABLE                (1 << 8)
 #define is_immutable(p)                has_mid_type_bit(T_Exs(p), T_MID_IMMUTABLE)
 #define set_immutable(p)               set_mid_type_bit(T_Exs(p), T_MID_IMMUTABLE) /* can be a slot, so not T_Ext */
-#define set_immutable_let(p)           set_mid_type_bit(T_Lsd(p), T_MID_IMMUTABLE)
+#define set_immutable_let(p)           set_mid_type_bit(T_Let(p), T_MID_IMMUTABLE)
 #define set_immutable_slot(p)          set_mid_type_bit(T_Slt(p), T_MID_IMMUTABLE)
 #define is_immutable_port(p)           has_mid_type_bit(T_Prt(p), T_MID_IMMUTABLE)
 #define is_immutable_symbol(p)         has_mid_type_bit(T_Sym(p), T_MID_IMMUTABLE)
@@ -2374,8 +2368,8 @@ static void init_types(void)
  */
 
 #define T_LET_REMOVED                  T_MID_SETTER
-#define let_set_removed(p)             set_mid_type_bit(T_Lsd(p), T_LET_REMOVED)
-#define let_removed(p)                 has_mid_type_bit(T_Lsd(p), T_LET_REMOVED)
+#define let_set_removed(p)             set_mid_type_bit(T_Let(p), T_LET_REMOVED)
+#define let_removed(p)                 has_mid_type_bit(T_Let(p), T_LET_REMOVED)
 /* mark lets that have been removed from the heap or checked for that possibility */
 
 #define T_HAS_EXPRESSION               T_MID_SETTER
@@ -2474,8 +2468,8 @@ static void init_types(void)
 
 #define T_FUNCLET                      T_GENSYM
 #define T_MID_FUNCLET                  T_MID_GENSYM
-#define is_funclet(p)                  has_mid_type_bit(T_Lsd(p), T_MID_FUNCLET)
-#define set_funclet(p)                 set_mid_type_bit(T_Lsd(p), T_MID_FUNCLET)
+#define is_funclet(p)                  has_mid_type_bit(T_Let(p), T_MID_FUNCLET)
+#define set_funclet(p)                 set_mid_type_bit(T_Let(p), T_MID_FUNCLET)
 /* this marks a funclet */
 
 #define T_HASH_CHOSEN                  T_MID_GENSYM
@@ -2518,12 +2512,12 @@ static void init_types(void)
 #define T_MID_HAS_LET_SET_FALLBACK     T_MID_SAFE_STEPPER
 #define T_HAS_LET_REF_FALLBACK         T_MUTABLE
 #define T_MID_HAS_LET_REF_FALLBACK     T_MID_MUTABLE
-#define has_let_ref_fallback(p)        ((mid_type(T_Lsd(p)) & (T_MID_HAS_LET_REF_FALLBACK | T_MID_HAS_METHODS)) == (T_MID_HAS_LET_REF_FALLBACK | T_MID_HAS_METHODS))
-#define has_let_set_fallback(p)        ((mid_type(T_Lsd(p)) & (T_MID_HAS_LET_SET_FALLBACK | T_MID_HAS_METHODS)) == (T_MID_HAS_LET_SET_FALLBACK | T_MID_HAS_METHODS))
-#define set_has_let_ref_fallback(p)    set_mid_type_bit(T_Lsd(p), T_MID_HAS_LET_REF_FALLBACK)
-#define set_has_let_set_fallback(p)    set_mid_type_bit(T_Lsd(p), T_MID_HAS_LET_SET_FALLBACK)
-#define has_let_fallback(p)            has_mid_type_bit(T_Lsd(p), (T_MID_HAS_LET_REF_FALLBACK | T_MID_HAS_LET_SET_FALLBACK))
-#define set_all_methods(p, e)          mid_type(T_Lsd(p)) |= (mid_type(e) & (T_MID_HAS_METHODS | T_MID_HAS_LET_REF_FALLBACK | T_MID_HAS_LET_SET_FALLBACK))
+#define has_let_ref_fallback(p)        ((mid_type(T_Let(p)) & (T_MID_HAS_LET_REF_FALLBACK | T_MID_HAS_METHODS)) == (T_MID_HAS_LET_REF_FALLBACK | T_MID_HAS_METHODS))
+#define has_let_set_fallback(p)        ((mid_type(T_Let(p)) & (T_MID_HAS_LET_SET_FALLBACK | T_MID_HAS_METHODS)) == (T_MID_HAS_LET_SET_FALLBACK | T_MID_HAS_METHODS))
+#define set_has_let_ref_fallback(p)    set_mid_type_bit(T_Let(p), T_MID_HAS_LET_REF_FALLBACK)
+#define set_has_let_set_fallback(p)    set_mid_type_bit(T_Let(p), T_MID_HAS_LET_SET_FALLBACK)
+#define has_let_fallback(p)            has_mid_type_bit(T_Let(p), (T_MID_HAS_LET_REF_FALLBACK | T_MID_HAS_LET_SET_FALLBACK))
+#define set_all_methods(p, e)          mid_type(T_Let(p)) |= (mid_type(e) & (T_MID_HAS_METHODS | T_MID_HAS_LET_REF_FALLBACK | T_MID_HAS_LET_SET_FALLBACK))
 
 #define T_ITER_OK                      (1LL << (16 + 15))
 #define T_MID_ITER_OK                  (1 << 15)
@@ -2571,14 +2565,14 @@ static void init_types(void)
 #define set_is_int_optable(p)          set_high_type_bit(T_Pair(p), T_INT_OPTABLE)
 
 #define T_UNLET                        T_SYMCONS
-#define is_unlet(p)                    has_high_type_bit(T_Lsd(p), T_UNLET)
-#define set_is_unlet(p)                set_high_type_bit(T_Lsd(p), T_UNLET)
+#define is_unlet(p)                    has_high_type_bit(T_Let(p), T_UNLET)
+#define set_is_unlet(p)                set_high_type_bit(T_Let(p), T_UNLET)
 
 #define T_FULL_HAS_LET_FILE            (1LL << (48 + 1))
 #define T_HAS_LET_FILE                 (1 << 1)
-#define has_let_file(p)                has_high_type_bit(T_Lsd(p), T_HAS_LET_FILE)
-#define set_has_let_file(p)            set_high_type_bit(T_Lsd(p), T_HAS_LET_FILE)
-#define clear_has_let_file(p)          clear_high_type_bit(T_Lsd(p), T_HAS_LET_FILE)
+#define has_let_file(p)                has_high_type_bit(T_Let(p), T_HAS_LET_FILE)
+#define set_has_let_file(p)            set_high_type_bit(T_Let(p), T_HAS_LET_FILE)
+#define clear_has_let_file(p)          clear_high_type_bit(T_Let(p), T_HAS_LET_FILE)
 
 #define T_TYPED_VECTOR                 T_HAS_LET_FILE
 #define is_typed_vector(p)             has_high_type_bit(T_Nvc(p), T_TYPED_VECTOR)
@@ -2616,8 +2610,8 @@ static void init_types(void)
 /* this marks "definers" like define and define-macro */
 
 #define T_MACLET                       T_DEFINER
-#define is_maclet(p)                   has_high_type_bit(T_Lsd(p), T_MACLET)
-#define set_maclet(p)                  set_high_type_bit(T_Lsd(p), T_MACLET)
+#define is_maclet(p)                   has_high_type_bit(T_Let(p), T_MACLET)
+#define set_maclet(p)                  set_high_type_bit(T_Let(p), T_MACLET)
 /* this marks a maclet */
 
 #define T_HAS_FX                       T_DEFINER
@@ -2668,8 +2662,8 @@ static void init_types(void)
 #define set_very_safe_closure_body(p)  set_high_type_bit(T_Pair(p), T_SHORT_VERY_SAFE_CLOSURE)
 
 #define T_BAFFLE_LET                   T_SHORT_VERY_SAFE_CLOSURE
-#define is_baffle_let(p)               has_high_type_bit(T_Lsd(p), T_BAFFLE_LET)
-#define set_baffle_let(p)              set_high_type_bit(T_Lsd(p), T_BAFFLE_LET)
+#define is_baffle_let(p)               has_high_type_bit(T_Let(p), T_BAFFLE_LET)
+#define set_baffle_let(p)              set_high_type_bit(T_Let(p), T_BAFFLE_LET)
 
 #define T_CYCLIC                       (1LL << (48 + 5))
 #define T_SHORT_CYCLIC                 (1 << 5)
@@ -2964,8 +2958,8 @@ static void init_types(void)
 #define set_opt3_pair(P, X)            set_opt3(P, T_Pair(X),       OPT3_AND)
 #define opt3_any(P)                    opt3(P,                      OPT3_ANY)
 #define set_opt3_any(P, X)             set_opt3(P, X,               OPT3_ANY)
-#define opt3_let(P)                    T_Lid(opt3(P,                OPT3_LET))
-#define set_opt3_let(P, X)             set_opt3(P, T_Lid(X),        OPT3_LET)
+#define opt3_let(P)                    T_Let(opt3(P,                OPT3_LET))
+#define set_opt3_let(P, X)             set_opt3(P, T_Let(X),        OPT3_LET)
 #define opt3_direct(P)                 opt3(P,                      OPT3_DIRECT)
 #define set_opt3_direct(P, X)          set_opt3(P, (s7_pointer)(X), OPT3_DIRECT)
 
@@ -3229,38 +3223,29 @@ static s7_pointer slot_expression(s7_pointer p)    \
 #define is_syntax_or_qq(p)	       ((is_syntax(p)) || ((p) == sc->quasiquote_function)) /* qq is from s7_define_macro -> T_C_MACRO */
 
 #define INITIAL_ROOTLET_SIZE           512
-#if S7_DEBUGGING                       /* let_id(rootlet) is not -1 */
-static s7_int let_id(s7_pointer p) {if (p == cur_sc->rootlet) {fprintf(stderr, "let_id(rootlet)?\n"); abort();} return((T_Lid(p))->object.envr.id);}
-#else
-#define let_id(p)                      (T_Lid(p))->object.envr.id
-#endif
-#define let_set_id(p, Id)              (T_Lsd(p))->object.envr.id = Id
-#define unchecked_let_set_id(p, Id)    (p)->object.envr.id = Id
+#define let_id(p)                      (T_Let(p))->object.envr.id
+#define let_set_id(p, Id)              (T_Let(p))->object.envr.id = Id
 #define is_let(p)                      (type(p) == T_LET)
 #define is_let_unchecked(p)            (unchecked_type(p) == T_LET)
-#define let_slots(p)                   T_Sln((T_Lsd(p))->object.envr.slots)
-#define let_outlet(p)                  T_Lid((T_Lsd(p))->object.envr.nxt)
-#if S7_DEBUGGING
-#define let_set_outlet(p, ol)          do {if ((ol) == sc->rootlet) fprintf(stderr, "%s[%d]: set_outlet to rootlet\n", __func__, __LINE__); (T_Lsd(p))->object.envr.nxt = T_Lid(ol);} while (0)
-#else
-#define let_set_outlet(p, ol)          (T_Lsd(p))->object.envr.nxt = T_Lid(ol)
-#endif
+#define let_slots(p)                   T_Sln((T_Let(p))->object.envr.slots)
+#define let_outlet(p)                  T_Let((T_Let(p))->object.envr.nxt)
+#define let_set_outlet(p, ol)          (T_Let(p))->object.envr.nxt = T_Let(ol)
 #if S7_DEBUGGING
   #define let_set_slots(p, Slot)       do {if ((!in_heap(p)) && (Slot) && (in_heap(Slot))) fprintf(stderr, "%s[%d]: let+slot mismatch\n", __func__, __LINE__); \
-                                           T_Lsd(p)->object.envr.slots = T_Sln(Slot);} while (0)
+                                           T_Let(p)->object.envr.slots = T_Sln(Slot);} while (0)
   #define C_Let(p, role)               check_let_ref(p, role, __func__, __LINE__)
   #define S_Let(p, role)               check_let_set(p, role, __func__, __LINE__)
 #else
-  #define let_set_slots(p, Slot)       (T_Lsd(p))->object.envr.slots = T_Sln(Slot)
+  #define let_set_slots(p, Slot)       (T_Let(p))->object.envr.slots = T_Sln(Slot)
   #define C_Let(p, role)               p
   #define S_Let(p, role)               p
 #endif
 #define funclet_function(p)            T_Sym((C_Let(p, L_FUNC))->object.envr.edat.efnc.function)
 #define funclet_set_function(p, F)     (S_Let(p, L_FUNC))->object.envr.edat.efnc.function = T_Sym(F)
-#define set_curlet(Sc, P)              Sc->curlet = T_Lid(P)
+#define set_curlet(Sc, P)              Sc->curlet = T_Let(P)
 
-#define let_baffle_key(p)              (T_Lsd(p))->object.envr.edat.key
-#define set_let_baffle_key(p, K)       (T_Lsd(p))->object.envr.edat.key = K
+#define let_baffle_key(p)              (T_Let(p))->object.envr.edat.key
+#define set_let_baffle_key(p, K)       (T_Let(p))->object.envr.edat.key = K
 
 #define let_line(p)                    (C_Let(p, L_FUNC))->object.envr.edat.efnc.line
 #define let_set_line(p, L)             (S_Let(p, L_FUNC))->object.envr.edat.efnc.line = L
@@ -3537,8 +3522,8 @@ static s7_int let_id(s7_pointer p) {if (p == cur_sc->rootlet) {fprintf(stderr, "
 #define closure_set_args(p, Val)       (T_Clo(p))->object.func.args = T_Arg(Val)
 #define closure_body(p)                (T_Pair((T_Clo(p))->object.func.body))
 #define closure_set_body(p, Val)       (T_Clo(p))->object.func.body = T_Pair(Val)
-#define closure_let(p)                 T_Lid((T_Clo(p))->object.func.env)
-#define closure_set_let(p, L)          (T_Clo(p))->object.func.env = T_Lid(L)
+#define closure_let(p)                 T_Let((T_Clo(p))->object.func.env)
+#define closure_set_let(p, L)          (T_Clo(p))->object.func.env = T_Let(L)
 #define closure_arity(p)               (T_Clo(p))->object.func.arity
 #define closure_set_arity(p, A)        (T_Clo(p))->object.func.arity = A
 
@@ -3573,8 +3558,8 @@ static s7_int let_id(s7_pointer p) {if (p == cur_sc->rootlet) {fprintf(stderr, "
 #define is_c_object(p)                 (type(p) == T_C_OBJECT)
 #define c_object_value(p)              (T_Obj(p))->object.c_obj.value
 #define c_object_type(p)               (T_Obj(p))->object.c_obj.type
-#define c_object_let(p)                T_Lid((T_Obj(p))->object.c_obj.e)
-#define c_object_set_let(p, L)         (T_Obj(p))->object.c_obj.e = T_Lid(L)
+#define c_object_let(p)                T_Let((T_Obj(p))->object.c_obj.e)
+#define c_object_set_let(p, L)         (T_Obj(p))->object.c_obj.e = T_Let(L)
 #define c_object_s7(p)                 (T_Obj(p))->object.c_obj.sc
 
 #define c_object_info(Sc, p)           Sc->c_object_types[c_object_type(T_Obj(p))]
@@ -3616,8 +3601,8 @@ static s7_int let_id(s7_pointer p) {if (p == cur_sc->rootlet) {fprintf(stderr, "
 #define counter_set_list(p, Val)       (T_Ctr(p))->object.ctr.list = T_Ext(Val)
 #define counter_capture(p)             (T_Ctr(p))->object.ctr.cap
 #define counter_set_capture(p, Val)    (T_Ctr(p))->object.ctr.cap = Val
-#define counter_let(p)                 T_Lid((T_Ctr(p))->object.ctr.env)
-#define counter_set_let(p, L)          (T_Ctr(p))->object.ctr.env = T_Lid(L)
+#define counter_let(p)                 T_Let((T_Ctr(p))->object.ctr.env)
+#define counter_set_let(p, L)          (T_Ctr(p))->object.ctr.env = T_Let(L)
 #define counter_slots(p)               T_Sln(T_Ctr(p)->object.ctr.slots)
 #define counter_set_slots(p, Val)      (T_Ctr(p))->object.ctr.slots = T_Sln(Val)
 
@@ -3672,7 +3657,7 @@ const char *display(s7_pointer obj)
   const char *res;
   if (!has_methods(obj))
     return(string_value(s7_object_to_string(cur_sc, obj, false)));
-  clear_type_bit(obj, T_HAS_METHODS); /* clear_has_methods calls T_Met -> check_ref9 */
+  clear_type_bit(obj, T_HAS_METHODS); /* clear_has_methods calls T_Met -> check_ref_met */
   res = string_value(s7_object_to_string(cur_sc, obj, false));
   set_type_bit(obj, T_HAS_METHODS);   /* same for set_has_methods */
   return(res);
@@ -5089,7 +5074,7 @@ static bool has_odd_bits(s7_pointer obj)
 void s7_show_let(s7_scheme *sc);
 void s7_show_let(s7_scheme *sc) /* debugging convenience */
 {
-  for (s7_pointer olet = sc->curlet; is_let(T_Lid(olet)); olet = let_outlet(olet))
+  for (s7_pointer olet = sc->curlet; olet != sc->rootlet; olet = let_outlet(olet))
     {
       if (olet == sc->owlet)
 	fprintf(stderr, "(owlet): ");
@@ -5189,7 +5174,7 @@ static char* show_debugger_bits(s7_pointer p)
   return(bits_str);
 }
 
-static s7_pointer check_ref(s7_pointer p, uint8_t expected_type, const char *func, int32_t line, const char *func1, const char *func2)
+static s7_pointer check_ref_one(s7_pointer p, uint8_t expected_type, const char *func, int32_t line, const char *func1, const char *func2)
 {
   if (!p)
     fprintf(stderr, "%s%s[%d]: null pointer passed to check_ref%s\n", bold_text, func, line, unbold_text);
@@ -5218,7 +5203,7 @@ static s7_pointer check_ref(s7_pointer p, uint8_t expected_type, const char *fun
 
 static s7_pointer check_let_ref(s7_pointer p, uint64_t role, const char *func, int32_t line)
 {
-  check_ref(p, T_LET, func, line, NULL, NULL);
+  check_ref_one(p, T_LET, func, line, NULL, NULL);
   if ((p->debugger_bits & L_HIT) == 0) fprintf(stderr, "%s[%d]: let not set\n", func, line);
   if ((p->debugger_bits & L_MASK) != role) fprintf(stderr, "%s[%d]: let bad role\n", func, line);
   return(p);
@@ -5226,26 +5211,26 @@ static s7_pointer check_let_ref(s7_pointer p, uint64_t role, const char *func, i
 
 static s7_pointer check_let_set(s7_pointer p, uint64_t role, const char *func, int32_t line)
 {
-  check_ref(p, T_LET, func, line, NULL, NULL);
+  check_ref_one(p, T_LET, func, line, NULL, NULL);
   p->debugger_bits &= (~L_MASK);
   p->debugger_bits |= (L_HIT | role);
   return(p);
 }
 
-static s7_pointer check_ref2(s7_pointer p, uint8_t expected_type, int32_t other_type, const char *func, int32_t line, const char *func1, const char *func2)
+static s7_pointer check_ref_two(s7_pointer p, uint8_t expected_type, int32_t other_type, const char *func, int32_t line, const char *func1, const char *func2)
 {
   if (!p)
-    fprintf(stderr, "%s[%d]: null pointer passed to check_ref2\n", func, line);
+    fprintf(stderr, "%s[%d]: null pointer passed to check_ref_two\n", func, line);
   else
     {
       uint8_t typ = unchecked_type(p);
       if ((typ != expected_type) && (typ != other_type))
-	return(check_ref(p, expected_type, func, line, func1, func2));
+	return(check_ref_one(p, expected_type, func, line, func1, func2));
     }
   return(p);
 }
 
-static s7_pointer check_ref3(s7_pointer p, const char *func, int32_t line)
+static s7_pointer check_ref_prt(s7_pointer p, const char *func, int32_t line)
 {
   uint8_t typ = unchecked_type(p);
   if ((typ != T_INPUT_PORT) && (typ != T_OUTPUT_PORT) && (typ != T_FREE))
@@ -5253,7 +5238,7 @@ static s7_pointer check_ref3(s7_pointer p, const char *func, int32_t line)
   return(p);
 }
 
-static s7_pointer check_ref3i(s7_pointer p, const char *func, int32_t line)
+static s7_pointer check_ref_pri(s7_pointer p, const char *func, int32_t line)
 {
   uint8_t typ = unchecked_type(p);
   if ((typ != T_INPUT_PORT) && (p != cur_sc->F))
@@ -5261,7 +5246,7 @@ static s7_pointer check_ref3i(s7_pointer p, const char *func, int32_t line)
   return(p);
 }
 
-static s7_pointer check_ref3o(s7_pointer p, const char *func, int32_t line)
+static s7_pointer check_ref_pro(s7_pointer p, const char *func, int32_t line)
 {
   uint8_t typ = unchecked_type(p);
   if ((typ != T_OUTPUT_PORT) && (p != cur_sc->F))
@@ -5269,7 +5254,7 @@ static s7_pointer check_ref3o(s7_pointer p, const char *func, int32_t line)
   return(p);
 }
 
-static s7_pointer check_ref4(s7_pointer p, const char *func, int32_t line)
+static s7_pointer check_ref_vec(s7_pointer p, const char *func, int32_t line)
 {
   if ((strcmp(func, "sweep") != 0) &&
       (strcmp(func, "process_multivector") != 0))
@@ -5280,21 +5265,21 @@ static s7_pointer check_ref4(s7_pointer p, const char *func, int32_t line)
   return(p);
 }
 
-static s7_pointer check_ref5(s7_pointer p, const char *func, int32_t line)
+static s7_pointer check_ref_clo(s7_pointer p, const char *func, int32_t line)
 {
   uint8_t typ = unchecked_type(p);
   if (!t_has_closure_let[typ]) complain("%s%s[%d]: not a closure, but %s (%s)%s\n", p, func, line, typ);
   return(p);
 }
 
-static s7_pointer check_ref6(s7_pointer p, const char *func, int32_t line)
+static s7_pointer check_ref_fnc(s7_pointer p, const char *func, int32_t line)
 {
   uint8_t typ = unchecked_type(p);
   if (typ < T_C_MACRO) complain("%s%s[%d]: not a c function or macro (type < T_C_MACRO, from T_Fnc), but %s (%s)%s\n", p, func, line, typ);
   return(p);
 }
 
-static s7_pointer check_ref7(s7_pointer p, const char *func, int32_t line)
+static s7_pointer check_ref_num(s7_pointer p, const char *func, int32_t line)
 {
   uint8_t typ = unchecked_type(p);
   if ((typ < T_INTEGER) || (typ > T_COMPLEX))
@@ -5302,7 +5287,7 @@ static s7_pointer check_ref7(s7_pointer p, const char *func, int32_t line)
   return(p);
 }
 
-static s7_pointer check_ref8(s7_pointer p, const char *func, int32_t line)
+static s7_pointer check_ref_seq(s7_pointer p, const char *func, int32_t line)
 {
   uint8_t typ = unchecked_type(p);
   if ((!t_sequence_p[typ]) && (!t_structure_p[typ]) && (!is_any_closure(p))) /* closure as iterator -- see s7test */
@@ -5310,7 +5295,7 @@ static s7_pointer check_ref8(s7_pointer p, const char *func, int32_t line)
   return(p);
 }
 
-static s7_pointer check_ref9(s7_pointer p, const char *func, int32_t line)
+static s7_pointer check_ref_met(s7_pointer p, const char *func, int32_t line)
 {
   uint8_t typ = unchecked_type(p);
   if ((typ != T_LET) && (typ != T_C_OBJECT) && (!is_any_closure(p)) && (!is_any_macro(p)) && (typ != T_C_POINTER))
@@ -5318,7 +5303,7 @@ static s7_pointer check_ref9(s7_pointer p, const char *func, int32_t line)
   return(p);
 }
 
-static s7_pointer check_ref10(s7_pointer p, const char *func, int32_t line)
+static s7_pointer check_ref_arg(s7_pointer p, const char *func, int32_t line)
 {
   uint8_t typ = unchecked_type(p);
   if ((typ != T_PAIR) && (typ != T_NIL) && (typ != T_SYMBOL))
@@ -5326,7 +5311,7 @@ static s7_pointer check_ref10(s7_pointer p, const char *func, int32_t line)
   return(p);
 }
 
-static s7_pointer check_ref11(s7_pointer p, const char *func, int32_t line)
+static s7_pointer check_ref_app(s7_pointer p, const char *func, int32_t line)
 {
   uint8_t typ = unchecked_type(p);
   if ((!t_applicable_p[typ]) && (p != cur_sc->F))
@@ -5334,7 +5319,7 @@ static s7_pointer check_ref11(s7_pointer p, const char *func, int32_t line)
   return(p);
 }
 
-static s7_pointer check_ref12(s7_pointer p, const char *func, int32_t line)
+static s7_pointer check_ref_sln(s7_pointer p, const char *func, int32_t line)
 {
   uint8_t typ;
   if (is_slot_end(p)) return(p);
@@ -5344,14 +5329,14 @@ static s7_pointer check_ref12(s7_pointer p, const char *func, int32_t line)
   return(p);
 }
 
-static s7_pointer check_ref13(s7_pointer p, const char *func, int32_t line)
+static s7_pointer check_ref_svec(s7_pointer p, const char *func, int32_t line)
 {
   if (!is_any_vector(p)) complain("%s%s[%d]: subvector is %s (%s)%s?\n", p, func, line, unchecked_type(p));
   if (!is_subvector(p)) complain("%s%s[%d]: subvector is %s (%s), but not a subvector?%s\n", p, func, line, unchecked_type(p));
   return(p);
 }
 
-static s7_pointer check_ref14(s7_pointer p, const char *func, int32_t line)
+static s7_pointer check_ref_prc(s7_pointer p, const char *func, int32_t line)
 {
   if ((!is_any_procedure(p)) && (!is_boolean(p)))
     complain("%s%s[%d]: setter is %s (%s)%s?\n", p, func, line, unchecked_type(p));
@@ -5409,7 +5394,7 @@ static s7_pointer check_nref(s7_pointer p, const char *func, int32_t line)
   return(p);
 }
 
-static s7_pointer check_ref15(s7_pointer p, const char *func, int32_t line)
+static s7_pointer check_ref_nmv(s7_pointer p, const char *func, int32_t line)
 {
   uint8_t typ = unchecked_type(p);
   check_nref(p, func, line);
@@ -5426,39 +5411,13 @@ static s7_pointer check_ref15(s7_pointer p, const char *func, int32_t line)
   return(p);
 }
 
-static s7_pointer check_ref16(s7_pointer p, const char *func, int32_t line) /* let or nil but not rootlet (mainly because let_id(rootlet) is not actually -1) */
-{
-  uint8_t typ = unchecked_type(p);
-  check_nref(p, func, line);
-  if ((typ != T_LET) && (typ != T_NIL)) complain("%s%s[%d]: not a let or nil, but %s (%s)%s\n", p, func, line, typ);
-  if (p == cur_sc->rootlet)
-    {
-      fprintf(stderr, "%s%s[%d]: T_Lid(rootlet) %s?%s\n", bold_text, func, line, checked_type_name(cur_sc, type(p)), unbold_text);
-      if (cur_sc->stop_at_error) abort();
-    }
-  return(p);
-}
-
-static s7_pointer check_ref16a(s7_pointer p, const char *func, int32_t line) /* let or nil but not rootlet (mainly because let_id(rootlet) is not actually -1) */
-{
-  uint8_t typ = unchecked_type(p);
-  check_nref(p, func, line);
-  if (typ != T_LET) complain("%s%s[%d]: not a let, but %s (%s)%s\n", p, func, line, typ);
-  if (p == cur_sc->rootlet)
-    {
-      fprintf(stderr, "%s%s[%d]: T_Lsd(rootlet) %s?%s\n", bold_text, func, line, checked_type_name(cur_sc, type(p)), unbold_text);
-      if (cur_sc->stop_at_error) abort();
-    }
-  return(p);
-}
-
-static s7_pointer check_ref17(s7_pointer p, const char *func, int32_t line)
+static s7_pointer check_ref_mac(s7_pointer p, const char *func, int32_t line)
 {
   if ((!is_any_macro(p)) || (is_c_macro(p))) complain("%s%s[%d]: macro is %s (%s)%s?\n", p, func, line, unchecked_type(p));
   return(p);
 }
 
-static s7_pointer check_ref18(s7_pointer p, const char *func, int32_t line)
+static s7_pointer check_ref_key(s7_pointer p, const char *func, int32_t line)
 {
   if (!is_symbol_and_keyword(p)) complain("%s%s[%d]: not a keyword: %s (%s)%s?\n", p, func, line, unchecked_type(p));
   if (strcmp(func, "new_symbol") != 0)
@@ -5477,7 +5436,7 @@ static s7_pointer check_ref18(s7_pointer p, const char *func, int32_t line)
   return(p);
 }
 
-static s7_pointer check_ref19(s7_pointer p, const char *func, int32_t line)
+static s7_pointer check_ref_ext(s7_pointer p, const char *func, int32_t line)
 {
   uint8_t typ = unchecked_type(p);
   check_nref(p, func, line);
@@ -5489,7 +5448,7 @@ static s7_pointer check_ref19(s7_pointer p, const char *func, int32_t line)
   return(p);
 }
 
-static s7_pointer check_ref19a(s7_pointer p, const char *func, int32_t line)
+static s7_pointer check_ref_exs(s7_pointer p, const char *func, int32_t line)
 {
   uint8_t typ = unchecked_type(p);
   check_nref(p, func, line);
@@ -6127,18 +6086,21 @@ static s7_pointer find_let(s7_scheme *sc, s7_pointer obj)
       if ((is_let(c_pointer_info(obj))) &&
 	  (c_pointer_info(obj) != sc->rootlet))
 	return(c_pointer_info(obj));
+    case T_CONTINUATION: case T_GOTO:
+    case T_C_MACRO: case T_C_FUNCTION_STAR: case T_C_FUNCTION: case T_C_RST_NO_REQ_FUNCTION:
+      return(sc->rootlet); /* TODO: what about cload into local? */
     }
   return(sc->nil);
 }
 
-static inline s7_pointer lookup_slot_from(s7_pointer symbol, s7_pointer e);
+static inline s7_pointer lookup_slot_from(s7_scheme *sc, s7_pointer symbol, s7_pointer e);
 
 static s7_pointer find_method(s7_scheme *sc, s7_pointer let, s7_pointer symbol)
 {
   s7_pointer slot;
   if (symbol_id(symbol) == 0) /* this means the symbol has never been used locally, so how can it be a method? */
     return(sc->undefined);
-  slot = lookup_slot_from(symbol, let);
+  slot = lookup_slot_from(sc, symbol, let);
   if (slot != global_slot(symbol))
     return(slot_value(slot));
   return(sc->undefined);
@@ -6532,7 +6494,7 @@ static s7_pointer g_is_immutable(s7_scheme *sc, s7_pointer args)
 	    wrong_type_error_nr(sc, sc->is_immutable_symbol, 2, e, a_let_string);
 	  if (e == sc->rootlet)
 	    slot = global_slot(p);
-	  else slot = lookup_slot_from((is_keyword(p)) ? keyword_symbol(p) : p, e);
+	  else slot = lookup_slot_from(sc, (is_keyword(p)) ? keyword_symbol(p) : p, e);
 	}
       else slot = s7_slot(sc, p);
       if (is_slot(slot)) /* might be #<undefined> */
@@ -7145,7 +7107,7 @@ static inline void mark_slot(s7_pointer p)
 
 static void mark_let(s7_pointer let)
 {
-  for (s7_pointer x = let; is_let(x) && (!is_marked(x)); x = let_outlet(x)) /* let can be sc->nil, e.g. closure_let */
+  for (s7_pointer x = let; (x != cur_sc->rootlet) && (!is_marked(x)); x = let_outlet(x)) /* let can be sc->nil, e.g. closure_let */
     {
       set_mark(x);
       if (has_dox_slot1(x)) mark_slot(let_dox_slot1(x));
@@ -7485,7 +7447,7 @@ static void mark_input_port_stack(s7_scheme *sc)
 
 static void mark_rootlet(s7_scheme *sc)
 {
-  s7_pointer ge = sc->rootlet;
+  s7_pointer ge = sc->rootlet_slots;
   s7_pointer *tmp = rootlet_elements(ge);
   s7_pointer *top = (s7_pointer *)(tmp + sc->rootlet_entries);
   set_mark(ge);
@@ -8211,7 +8173,7 @@ static void pop_stack_1(s7_scheme *sc, const char *func, int32_t line)
    *   and are carried around as GC protection in other cases.
    */
   sc->code = T_Pos(stack_end_code(sc));
-  sc->curlet = stack_end_let(sc);  /* not T_Lid|Pos, see op_any_closure_3p_end et al (stack used to pass args, not curlet) */
+  sc->curlet = stack_end_let(sc);  /* not T_Let|Pos, see op_any_closure_3p_end et al (stack used to pass args, not curlet) */
   sc->args = stack_end_args(sc);
   sc->cur_op = (opcode_t)T_Op(stack_end_op(sc));
   if ((sc->cur_op != OP_GC_PROTECT) &&
@@ -8230,9 +8192,9 @@ static void pop_stack_no_op_1(s7_scheme *sc, const char *func, int32_t line)
       if (sc->stop_at_error) abort();
     }
   sc->code = T_Pos(stack_end_code(sc));
-  if ((sc->cur_op != OP_GC_PROTECT) && (!is_let(stack_end_let(sc))) && (!is_null(stack_end_let(sc))))
+  if ((sc->cur_op != OP_GC_PROTECT) && (!is_let(stack_end_let(sc))))
     fprintf(stderr, "%s[%d]: curlet not a let\n", func, line);
-  sc->curlet = stack_end_let(sc); /* not T_Lid|Pos: gc_protect can set this directly (not through push_stack) to anything */
+  sc->curlet = stack_end_let(sc); /* not T_Let|Pos: gc_protect can set this directly (not through push_stack) to anything */
   sc->args = stack_end_args(sc);
 }
 
@@ -8260,7 +8222,7 @@ static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer
       if (sc->stop_at_error) abort();
     }
   if (code) stack_end_code(sc) = T_Pos(code);
-  stack_end_let(sc) = T_Lid(sc->curlet);
+  stack_end_let(sc) = T_Let(sc->curlet);
   if ((args) && (unchecked_type(args) != T_FREE)) stack_end_args(sc) = T_Pos(args);
   stack_end_op(sc) = (s7_pointer)op;
   sc->stack_end += 4;
@@ -9387,7 +9349,7 @@ static void remove_let_from_heap(s7_scheme *sc, s7_pointer lt)
 
 static void add_slot_to_rootlet(s7_scheme *sc, s7_pointer slot)
 {
-  s7_pointer ge = sc->rootlet;
+  s7_pointer ge = sc->rootlet_slots;
   rootlet_element(ge, sc->rootlet_entries++) = slot;
   set_in_rootlet(slot);
   if (sc->rootlet_entries >= vector_length(ge))
@@ -9659,7 +9621,7 @@ static void append_let(s7_scheme *sc, s7_pointer new_e, s7_pointer old_e)
 	s7_pointer sym = slot_symbol(x), val = slot_value(x);
 	if (is_slot(global_slot(sym)))
 	  slot_set_value(global_slot(sym), val);
-	else s7_make_slot(sc, new_e, sym, val);
+	else s7_make_slot(sc, sc->rootlet_slots, sym, val);
       }
   else
     if (old_e == sc->s7_starlet)
@@ -9705,7 +9667,7 @@ s7_pointer s7_varlet(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7_pointe
     {
       if (is_slot(global_slot(symbol)))
 	slot_set_value(global_slot(symbol), value);
-      else s7_make_slot(sc, let, symbol, value);
+      else s7_make_slot(sc, sc->rootlet_slots, symbol, value);
     }
   else
     {
@@ -9786,7 +9748,7 @@ to the let target-let, and returns target-let.  (varlet (curlet) 'a 1) adds 'a t
 		immutable_object_error_nr(sc, set_elist_5(sc, wrap_string(sc, "~S is immutable in (varlet ~S '~S ~S)", 37), sym, car(args), p, val));
 	      slot_set_value_with_hook(global_slot(sym), val);
 	    }
-	  else s7_make_slot(sc, e, sym, val);
+	  else s7_make_slot(sc, sc->rootlet_slots, sym, val);
 	}
       else
 	{
@@ -9880,7 +9842,9 @@ static s7_pointer g_cutlet(s7_scheme *sc, s7_pointer args)
 /* -------------------------------- sublet -------------------------------- */
 static s7_pointer sublet_1(s7_scheme *sc, s7_pointer e, s7_pointer bindings, s7_pointer caller)
 {
-  s7_pointer new_e = make_let(sc, (e == sc->rootlet) ? sc->nil : e);
+  s7_pointer new_e;
+  if (e == sc->nil) e = sc->rootlet; /* backwards compatibility */
+  new_e = make_let(sc, e);
   set_all_methods(new_e, e);
 
   if (!is_null(bindings))
@@ -9955,11 +9919,12 @@ static s7_pointer g_sublet(s7_scheme *sc, s7_pointer args)
   if (is_null(e))
     e = sc->rootlet;
   else
-    {
-      check_method(sc, e, sc->sublet_symbol, args);
-      if (!is_let(e))
-	wrong_type_error_nr(sc, sc->sublet_symbol, 1, e, a_let_string);
-    }
+    if (e != sc->rootlet)
+      {
+	check_method(sc, e, sc->sublet_symbol, args);
+	if (!is_let(e))
+	  wrong_type_error_nr(sc, sc->sublet_symbol, 1, e, a_let_string);
+      }
   return(sublet_1(sc, e, cdr(args), sc->sublet_symbol));
 }
 
@@ -10000,7 +9965,7 @@ to a new let, and returns the new let. (inlet :a 1 :b 2) or (inlet '(a . 1) '(b 
 static s7_pointer g_simple_inlet(s7_scheme *sc, s7_pointer args)
 {
   /* here all args are paired with normal symbol/value, no fallbacks, no immutable symbols, no syntax, etc */
-  s7_pointer new_e = make_let(sc, sc->nil);
+  s7_pointer new_e = make_let(sc, sc->rootlet);
   int64_t id = let_id(new_e);
   s7_pointer sp = NULL;
 
@@ -10028,7 +9993,7 @@ static s7_pointer inlet_p_pp(s7_scheme *sc, s7_pointer symbol, s7_pointer value)
   s7_pointer x;
 
   if (!is_symbol(symbol))
-    return(sublet_1(sc, sc->nil, set_plist_2(sc, symbol, value), sc->inlet_symbol));
+    return(sublet_1(sc, sc->rootlet, set_plist_2(sc, symbol, value), sc->inlet_symbol));
   if (is_keyword(symbol))
     symbol = keyword_symbol(symbol);
   if (is_constant_symbol(sc, symbol))
@@ -10040,7 +10005,7 @@ static s7_pointer inlet_p_pp(s7_scheme *sc, s7_pointer symbol, s7_pointer value)
   new_cell(sc, x, T_LET | T_SAFE_PROCEDURE);
   sc->temp3 = x;
   let_set_id(x, ++sc->let_number);
-  let_set_outlet(x, sc->nil);
+  let_set_outlet(x, sc->rootlet);
   let_set_slots(x, slot_end);
   add_slot_unchecked(sc, x, symbol, value, let_id(x));
   sc->temp3 = sc->unused;
@@ -10050,7 +10015,7 @@ static s7_pointer inlet_p_pp(s7_scheme *sc, s7_pointer symbol, s7_pointer value)
 static s7_pointer internal_inlet(s7_scheme *sc, s7_int num_args, ...)
 {
   va_list ap;
-  s7_pointer new_e = make_let(sc, sc->nil);
+  s7_pointer new_e = make_let(sc, sc->rootlet);
   int64_t id = let_id(new_e);
   s7_pointer sp = NULL;
 
@@ -10123,7 +10088,7 @@ s7_pointer s7_let_to_list(s7_scheme *sc, s7_pointer let)
   if (let == sc->rootlet)
     {
       s7_int i, lim2 = sc->rootlet_entries;
-      s7_pointer *entries = rootlet_elements(let);
+      s7_pointer *entries = rootlet_elements(sc->rootlet_slots);
 
       if (lim2 & 1) lim2--;
       for (i = 0; i < lim2; )
@@ -10247,13 +10212,13 @@ static /* inline */ s7_pointer let_ref(s7_scheme *sc, s7_pointer let, s7_pointer
   if (is_keyword(symbol))
     symbol = keyword_symbol(symbol);
 
-  if (let == sc->rootlet) /* almost never happens -- only if explicit (let-ref (rootlet) 'abs) */
+  if (let == sc->rootlet)
     return((is_slot(global_slot(symbol))) ? global_value(symbol) : sc->undefined);
 
   if (let_id(let) == symbol_id(symbol))
     return(local_value(symbol)); /* this has to follow the rootlet check(?) */
 
-  for (s7_pointer x = let; is_let(x); x = let_outlet(x))
+  for (s7_pointer x = let; x != sc->rootlet; x = let_outlet(x))
     for (s7_pointer y = let_slots(x); tis_slot(y); y = next_slot(y))
       if (slot_symbol(y) == symbol)
 	return(slot_value(y));
@@ -10288,7 +10253,7 @@ static s7_pointer slot_in_let(s7_scheme *sc, s7_pointer e, const s7_pointer sym)
 
 static s7_pointer lint_let_ref_p_pp(s7_scheme *sc, s7_pointer lt, s7_pointer sym)
 {
-  for (s7_pointer x = lt; is_let(x); x = let_outlet(x))
+  for (s7_pointer x = lt; x != sc->rootlet; x = let_outlet(x))
     for (s7_pointer y = let_slots(x); tis_slot(y); y = next_slot(y))
       if (slot_symbol(y) == sym)
 	return(slot_value(y));
@@ -10302,7 +10267,7 @@ static s7_pointer lint_let_ref_p_pp(s7_scheme *sc, s7_pointer lt, s7_pointer sym
 static inline s7_pointer g_lint_let_ref(s7_scheme *sc, s7_pointer args)
 {
   s7_pointer lt = car(args), sym = cadr(args);
-  if (!is_let(lt))
+  if ((!is_let(lt)) || (lt == sc->rootlet))
     wrong_type_error_nr(sc, sc->let_ref_symbol, 1, lt, a_let_string);
   for (s7_pointer y = let_slots(lt); tis_slot(y); y = next_slot(y))
     if (slot_symbol(y) == sym)
@@ -10381,7 +10346,7 @@ static s7_pointer let_set_1(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7
 	 symbol_increment_ctr(symbol);
 	 return(checked_slot_set_value(sc, slot, value));
        }}
-  for (s7_pointer x = let; is_let(x); x = let_outlet(x))
+  for (s7_pointer x = let; x != sc->rootlet; x = let_outlet(x))
     for (s7_pointer y = let_slots(x); tis_slot(y); y = next_slot(y))
       if (slot_symbol(y) == symbol)
 	{
@@ -10440,7 +10405,7 @@ static s7_pointer g_lint_let_set(s7_scheme *sc, s7_pointer args)
     wrong_type_error_nr(sc, sc->let_set_symbol, 1, lt, a_let_string);
   if (lt != sc->rootlet)
     {
-      for (s7_pointer x = lt; is_let(x); x = let_outlet(x))
+      for (s7_pointer x = lt; x != sc->rootlet; x = let_outlet(x))
 	for (y = let_slots(x); tis_slot(y); y = next_slot(y))
 	  if (slot_symbol(y) == sym)
 	    {
@@ -10568,7 +10533,7 @@ static s7_pointer g_curlet(s7_scheme *sc, s7_pointer unused_args)
   #define H_curlet "(curlet) returns the current definitions (symbol bindings)"
   #define Q_curlet s7_make_signature(sc, 1, sc->is_let_symbol)
   sc->capture_let_counter++;
-  return((is_let(sc->curlet)) ? sc->curlet : sc->rootlet);
+  return(sc->curlet);
 }
 
 static void update_symbol_ids(s7_scheme *sc, s7_pointer e)
@@ -10585,7 +10550,7 @@ s7_pointer s7_set_curlet(s7_scheme *sc, s7_pointer e)
 {
   s7_pointer old_e = sc->curlet;
   set_curlet(sc, e);
-  if ((is_let(e)) && (e != sc->rootlet) && (let_id(e) > 0)) /* might be () [id=-1] or rootlet [id meaningless] etc */
+  if ((is_let(e)) && (let_id(e) > 0))
     {
       let_set_id(e, ++sc->let_number);
       update_symbol_ids(sc, e);
@@ -10597,8 +10562,6 @@ s7_pointer s7_set_curlet(s7_scheme *sc, s7_pointer e)
 /* -------------------------------- outlet -------------------------------- */
 s7_pointer s7_outlet(s7_scheme *sc, s7_pointer let)
 {
-  if ((let == sc->rootlet) || (is_null(let_outlet(let))))
-    return(sc->rootlet);
   return(let_outlet(let));
 }
 
@@ -10606,8 +10569,6 @@ static s7_pointer outlet_p_p(s7_scheme *sc, s7_pointer let)
 {
   if (!is_let(let))
     sole_arg_wrong_type_error_nr(sc, sc->outlet_symbol, let, a_let_string); /* not a method call here! */
-  if ((let == sc->rootlet) || (is_null(let_outlet(let))))
-    return(sc->rootlet);
   return(let_outlet(let));
 }
 
@@ -10636,11 +10597,11 @@ static s7_pointer g_set_outlet(s7_scheme *sc, s7_pointer args)
   if (let != sc->rootlet)
     {
       /* here it's possible to get cyclic let chains; maybe do this check only if safety>0 */
-      for (s7_pointer lt = new_outer; (is_let(lt)) && (lt != sc->rootlet); lt = let_outlet(lt))
+      for (s7_pointer lt = new_outer; lt != sc->rootlet; lt = let_outlet(lt))
 	if (let == lt)
 	  error_nr(sc, make_symbol(sc, "cyclic-let", 10),
 		   set_elist_2(sc, wrap_string(sc, "set! (outlet ~A) creates a cyclic let chain", 43), let));
-      let_set_outlet(let, (new_outer == sc->rootlet) ? sc->nil : new_outer);  /* outlet rootlet->() so that slot search can use is_let(outlet) I think */
+      let_set_outlet(let, new_outer);
     }
   return(new_outer);
 }
@@ -10650,13 +10611,13 @@ static Inline s7_pointer inline_lookup_from(s7_scheme *sc, const s7_pointer symb
 { /* splitting out the no-sc WITH_GCC case made no difference in speed */
   if (let_id(e) == symbol_id(symbol))
     return(local_value(symbol));
-  if (symbol_id(symbol) < let_id(e))
+  if (let_id(e) > symbol_id(symbol)) /* let is newer so look back in the outlet chain */
     {
-      do {e = let_outlet(e);} while (symbol_id(symbol) < let_id(e));
+      do {e = let_outlet(e);} while (let_id(e) > symbol_id(symbol));
       if (let_id(e) == symbol_id(symbol))
 	return(local_value(symbol));
     }
-  for (; is_let(e); e = let_outlet(e))
+  for (; e != sc->rootlet; e = let_outlet(e))
     for (s7_pointer y = let_slots(e); tis_slot(y); y = next_slot(y))
       if (slot_symbol(y) == symbol)
 	return(slot_value(y));
@@ -10679,25 +10640,25 @@ static inline s7_pointer lookup(s7_scheme *sc, const s7_pointer symbol) /* looku
   return(inline_lookup_from(sc, symbol, sc->curlet));
 }
 
-static inline s7_pointer lookup_slot_from(s7_pointer symbol, s7_pointer e)
+static inline s7_pointer lookup_slot_from(s7_scheme *sc, s7_pointer symbol, s7_pointer e)
 {
   if (let_id(e) == symbol_id(symbol))
     return(local_slot(symbol));
-  if (symbol_id(symbol) < let_id(e))
+  if (let_id(e) > symbol_id(symbol))
     {
-      do {e = let_outlet(e);} while (symbol_id(symbol) < let_id(e));
+      do {e = let_outlet(e);} while (let_id(e) > symbol_id(symbol));
       if (let_id(e) == symbol_id(symbol))
 	return(local_slot(symbol));
     }
-  for (; is_let(e); e = let_outlet(e))
+  for (; e != sc->rootlet; e = let_outlet(e))
     for (s7_pointer y = let_slots(e); tis_slot(y); y = next_slot(y))
       if (slot_symbol(y) == symbol)
 	return(y);
   return(global_slot(symbol));
 }
 
-s7_pointer s7_slot(s7_scheme *sc, s7_pointer symbol) {return(lookup_slot_from(symbol, sc->curlet));}
-static s7_pointer lookup_slot_with_let(s7_pointer symbol, s7_pointer let) {return(lookup_slot_from(symbol, let));}
+s7_pointer s7_slot(s7_scheme *sc, s7_pointer symbol) {return(lookup_slot_from(sc, symbol, sc->curlet));}
+static s7_pointer lookup_slot_with_let(s7_scheme *sc, s7_pointer symbol, s7_pointer let) {return(lookup_slot_from(sc, symbol, let));}
 
 s7_pointer s7_slot_value(s7_pointer slot) {return(slot_value(slot));}
 
@@ -10707,7 +10668,7 @@ void s7_slot_set_real_value(s7_scheme *sc, s7_pointer slot, s7_double value) {se
 
 static s7_pointer symbol_to_local_slot(s7_scheme *sc, s7_pointer symbol, s7_pointer e)
 {
-  if (!is_let(e))
+  if ((!is_let(e)) || (e == sc->rootlet))
     return(global_slot(symbol));
   if (symbol_id(symbol) != 0)
     for (s7_pointer y = let_slots(e); tis_slot(y); y = next_slot(y))
@@ -10739,7 +10700,7 @@ s7_pointer s7_symbol_local_value(s7_scheme *sc, s7_pointer sym, s7_pointer let)
       if (let_id(let) == symbol_id(sym))
 	return(local_value(sym));
     }
-  for (; is_let(let); let = let_outlet(let))
+  for (; let != sc->rootlet; let = let_outlet(let))
     for (s7_pointer y = let_slots(let); tis_slot(y); y = next_slot(y))
       if (slot_symbol(y) == sym)
 	return(slot_value(y));
@@ -10811,7 +10772,7 @@ static s7_pointer find_dynamic_value(s7_scheme *sc, s7_pointer x, s7_pointer sym
       (*id) = let_id(x);
       return(local_value(sym));
     }
-  for (; (is_let(x)) && (let_id(x) > (*id)); x = let_outlet(x))
+  for (; (x != sc->rootlet) && (let_id(x) > (*id)); x = let_outlet(x))
     for (s7_pointer y = let_slots(x); tis_slot(y); y = next_slot(y))
       if (slot_symbol(y) == sym)
 	{
@@ -10881,7 +10842,7 @@ static bool let_symbol_is_safe(s7_scheme *sc, s7_pointer sym, s7_pointer e)
 {
   if (is_slot(global_slot(sym)))
     return(true);
-  if ((is_null(e)) || (e == sc->rootlet))
+  if (e == sc->rootlet)
     return(false);
   return((!is_with_let_let(e)) && (is_slot(s7_slot(sc, sym))));
 }
@@ -11020,8 +10981,8 @@ static s7_pointer make_macro(s7_scheme *sc, opcode_t op, bool named)
     case OP_DEFINE_MACRO_STAR: case OP_MACRO_STAR: typ = T_MACRO_STAR; break;
     case OP_DEFINE_BACRO:      case OP_BACRO:      typ = T_BACRO;      break;
     case OP_DEFINE_BACRO_STAR: case OP_BACRO_STAR: typ = T_BACRO_STAR; break;
-    case OP_DEFINE_EXPANSION:      typ = T_MACRO | ((is_let(sc->curlet)) ? 0 : T_EXPANSION); break; /* local expansions are just normal macros */
-    case OP_DEFINE_EXPANSION_STAR: typ = T_MACRO_STAR | ((is_let(sc->curlet)) ? 0 : T_EXPANSION); break;
+    case OP_DEFINE_EXPANSION:      typ = T_MACRO | ((sc->curlet != sc->rootlet) ? 0 : T_EXPANSION); break; /* local expansions are just normal macros */
+    case OP_DEFINE_EXPANSION_STAR: typ = T_MACRO_STAR | ((sc->curlet != sc->rootlet) ? 0 : T_EXPANSION); break;
     default:
       if (S7_DEBUGGING) fprintf(stderr, "%s[%d]: got %s\n", __func__, __LINE__, op_names[op]);
       typ = T_MACRO;
@@ -11042,7 +11003,7 @@ static s7_pointer make_macro(s7_scheme *sc, opcode_t op, bool named)
       s7_pointer mac_slot;
       mac_name = caar(sc->code);
       if (((op == OP_DEFINE_EXPANSION) || (op == OP_DEFINE_EXPANSION_STAR)) &&
-	  (!is_let(sc->curlet)))
+	  (sc->curlet == sc->rootlet))
 	set_full_type(mac_name, T_EXPANSION | T_SYMBOL | (full_type(mac_name) & T_UNHEAP));
 
       /* symbol? macro name has already been checked, find name in let, and define it */
@@ -11406,7 +11367,7 @@ static bool is_defined_b_7pp(s7_scheme *sc, s7_pointer p, s7_pointer e) {return(
 void s7_define(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7_pointer value)
 {
   s7_pointer x;
-  if ((let == sc->nil) || (let == sc->rootlet))
+  if (let == sc->rootlet)
     let = sc->shadow_rootlet;
   x = symbol_to_local_slot(sc, symbol, let); /* x can be #<undefined> */
   if (is_slot(x))
@@ -11916,7 +11877,7 @@ static bool find_baffle(s7_scheme *sc, s7_int key)
 {
   /* search backwards through sc->curlet for baffle_let with (continuation_)key as its baffle_key value */
   if (sc->baffle_ctr > 0)
-    for (s7_pointer x = sc->curlet; is_let(x); x = let_outlet(x))
+    for (s7_pointer x = sc->curlet; x != sc->rootlet; x = let_outlet(x))
       if ((is_baffle_let(x)) &&
 	  (let_baffle_key(x) == key))
 	return(true);
@@ -11929,7 +11890,7 @@ static s7_int find_any_baffle(s7_scheme *sc)
 {
   /* search backwards through sc->curlet for any sc->baffle_symbol -- called by s7_make_continuation to set continuation_key */
   if (sc->baffle_ctr > 0)
-    for (s7_pointer x = sc->curlet; is_let(x); x = let_outlet(x))
+    for (s7_pointer x = sc->curlet; x != sc->rootlet; x = let_outlet(x))
       if (is_baffle_let(x))
 	return(let_baffle_key(x));
   return(NOT_BAFFLED);
@@ -12051,7 +12012,7 @@ static bool check_for_dynamic_winds(s7_scheme *sc, s7_pointer c)
 			  sc->value = s7_call(sc, dynamic_wind_out(x), sc->nil);
 			/* free_cell is unsafe here and below */
 		      }}
-		else let_temp_done(sc, stack_args(sc->stack, i), T_Lid(stack_let(sc->stack, i)));
+		else let_temp_done(sc, stack_args(sc->stack, i), T_Let(stack_let(sc->stack, i)));
 	      }}
 	  break;
 
@@ -12282,7 +12243,7 @@ static void call_with_exit(s7_scheme *sc)
       case OP_LET_TEMP_DONE:
 	{
 	  s7_pointer old_args = sc->args;
-	  let_temp_done(sc, stack_args(sc->stack, i), T_Lid(stack_let(sc->stack, i)));
+	  let_temp_done(sc, stack_args(sc->stack, i), T_Let(stack_let(sc->stack, i)));
 	  sc->args = old_args;
 	}
 	break;
@@ -30509,7 +30470,7 @@ s7_pointer s7_read(s7_scheme *sc, s7_pointer port)
     {
       s7_pointer old_let = sc->curlet;
       declare_jump_info();
-      set_curlet(sc, sc->nil);
+      set_curlet(sc, sc->rootlet);
       push_input_port(sc, port);
       store_jump_info(sc);
       set_jump_info(sc, READ_SET_JUMP);
@@ -30839,9 +30800,10 @@ s7_pointer s7_load_with_environment(s7_scheme *sc, const char *filename, s7_poin
   declare_jump_info();
   TRACK(sc);
   if (e == sc->s7_starlet) return(NULL);
+  if (e == sc->nil) e = sc->rootlet;
 
 #if WITH_C_LOADER
-  port = load_shared_object(sc, filename, (is_null(e)) ? sc->rootlet : e);
+  port = load_shared_object(sc, filename, e);
   if (port) return(port);
 #endif
 
@@ -30849,7 +30811,7 @@ s7_pointer s7_load_with_environment(s7_scheme *sc, const char *filename, s7_poin
   port = load_file_1(sc, filename);
   if (!port) return(NULL);
 
-  set_curlet(sc, (e == sc->rootlet) ? sc->nil : e);
+  set_curlet(sc, e);
   push_stack(sc, OP_LOAD_RETURN_IF_EOF, port, sc->code);
 
   store_jump_info(sc);
@@ -30869,7 +30831,7 @@ s7_pointer s7_load_with_environment(s7_scheme *sc, const char *filename, s7_poin
   return(sc->value);
 }
 
-s7_pointer s7_load(s7_scheme *sc, const char *filename) {return(s7_load_with_environment(sc, filename, sc->nil));}
+s7_pointer s7_load(s7_scheme *sc, const char *filename) {return(s7_load_with_environment(sc, filename, sc->rootlet));}
 
 s7_pointer s7_load_c_string_with_environment(s7_scheme *sc, const char *content, s7_int bytes, s7_pointer e)
 {
@@ -30878,13 +30840,14 @@ s7_pointer s7_load_c_string_with_environment(s7_scheme *sc, const char *content,
   declare_jump_info();
   TRACK(sc);
 
+  if (e == sc->nil) e = sc->rootlet;
   if (content[bytes] != 0)
     error_nr(sc, make_symbol(sc, "bad-data", 8), set_elist_1(sc, wrap_string(sc, "s7_load_c_string content is not terminated", 42)));
   port = open_input_string(sc, content, bytes);
   port_loc = gc_protect_1(sc, port);
   set_loader_port(port);
   push_input_port(sc, port);
-  set_curlet(sc, (e == sc->rootlet) ? sc->nil : e);
+  set_curlet(sc, e);
   push_stack(sc, OP_LOAD_RETURN_IF_EOF, port, sc->code);
   s7_gc_unprotect_at(sc, port_loc);
 
@@ -30930,9 +30893,9 @@ defaults to the rootlet.  To load into the current environment instead, pass (cu
       if (e == sc->s7_starlet)
 	error_nr(sc, sc->wrong_type_arg_symbol,
 		 set_elist_2(sc, wrap_string(sc, "can't load ~S into *s7*", 23), name));
-      set_curlet(sc, (e == sc->rootlet) ? sc->nil : e);
+      set_curlet(sc, e);
     }
-  else set_curlet(sc, sc->nil);
+  else set_curlet(sc, sc->rootlet);
 
   fname = string_value(name);
   if ((!fname) || (!(*fname)))   /* fopen("", "r") returns a file pointer?? */
@@ -30944,7 +30907,7 @@ defaults to the rootlet.  To load into the current environment instead, pass (cu
 	     set_elist_2(sc, wrap_string(sc, "load: ~S is a directory", 23), wrap_string(sc, fname, safe_strlen(fname))));
 #if WITH_C_LOADER
   {
-    s7_pointer p = load_shared_object(sc, fname, (is_null(sc->curlet)) ? sc->rootlet : sc->curlet);
+    s7_pointer p = load_shared_object(sc, fname, sc->curlet);
     if (p) return(p);
   }
 #endif
@@ -30963,7 +30926,7 @@ s7_pointer s7_load_path(s7_scheme *sc) {return(s7_symbol_local_value(sc, sc->loa
 
 s7_pointer s7_add_to_load_path(s7_scheme *sc, const char *dir)
 {
-  s7_pointer slot = lookup_slot_from(sc->load_path_symbol, sc->curlet); /* rootlet possible here */
+  s7_pointer slot = lookup_slot_from(sc, sc->load_path_symbol, sc->curlet); /* rootlet possible here */
   s7_pointer path = cons(sc, s7_make_string(sc, dir), slot_value(slot));
   slot_set_value(slot, path);
   return(path);
@@ -31240,7 +31203,7 @@ static s7_pointer g_is_provided(s7_scheme *sc, s7_pointer args)
   if (is_global(sc->features_symbol))
     return(sc->F);
   for (x = sc->curlet; symbol_id(sc->features_symbol) < let_id(x); x = let_outlet(x));
-  for (; is_let(x); x = let_outlet(x))
+  for (; x != sc->rootlet; x = let_outlet(x))
     for (s7_pointer y = let_slots(x); tis_slot(y); y = next_slot(y))
       if ((slot_symbol(y) == sc->features_symbol) &&
 	  (slot_value(y) != topf) &&
@@ -31369,7 +31332,7 @@ static s7_pointer g_eval_string(s7_scheme *sc, s7_pointer args)
       s7_pointer e = cadr(args);
       if (!is_let(e))
  	wrong_type_error_nr(sc, sc->eval_string_symbol, 2, e, a_let_string);
-      set_curlet(sc, (e == sc->rootlet) ? sc->nil : e);
+      set_curlet(sc, e);
     }
   sc->temp3 = sc->args; /* see t101-aux-17.scm */
   push_stack(sc, OP_EVAL_STRING, args, sc->code);
@@ -31782,7 +31745,7 @@ static s7_pointer rootlet_iterate(s7_scheme *sc, s7_pointer iterator)
   if (iterator_position(iterator) < sc->rootlet_entries)
     {
       iterator_position(iterator)++;
-      iterator_current(iterator) = rootlet_element(sc->rootlet, iterator_position(iterator));
+      iterator_current(iterator) = rootlet_element(sc->rootlet_slots, iterator_position(iterator));
     }
   else iterator_current(iterator) = sc->nil;
   return(cons(sc, slot_symbol(slot), slot_value(slot)));
@@ -31964,10 +31927,10 @@ static s7_pointer find_make_iterator_method(s7_scheme *sc, s7_pointer e, s7_poin
 /* -------------------------------- make-iterator -------------------------------- */
 static s7_pointer funclet_entry(s7_scheme *sc, s7_pointer x, s7_pointer sym)
 {
-  if ((has_closure_let(x)) && (is_let(closure_let(x))))
+  if ((has_closure_let(x)) && (is_let(closure_let(x))) && (closure_let(x) != sc->rootlet))
     {
       s7_pointer val = symbol_to_local_slot(sc, sym, closure_let(x));
-      if ((!is_slot(val)) && (is_let(let_outlet(closure_let(x)))))
+      if ((!is_slot(val)) && (let_outlet(closure_let(x)) != sc->rootlet))
 	val = symbol_to_local_slot(sc, sym, let_outlet(closure_let(x)));
       if (is_slot(val))
 	return(slot_value(val));
@@ -32008,7 +31971,7 @@ s7_pointer s7_make_iterator(s7_scheme *sc, s7_pointer e)
     case T_LET:
       if (e == sc->rootlet)
 	{
-	  iterator_current(iter) = rootlet_element(e, 0); /* unfortunately tricky -- let_iterate uses different fields */
+	  iterator_current(iter) = rootlet_element(sc->rootlet_slots, 0); /* unfortunately tricky -- let_iterate uses different fields */
 	  iterator_position(iter) = 0;
 	  iterator_next(iter) = rootlet_iterate;
 	  return(iter);
@@ -32428,7 +32391,7 @@ static bool collect_shared_info(s7_scheme *sc, shared_info_t *ci, s7_pointer top
 	    top_cyclic = true;
 	}
       else
-	for (s7_pointer q = top; is_let(q) && (q != sc->rootlet); q = let_outlet(q))
+	for (s7_pointer q = top; q != sc->rootlet; q = let_outlet(q))
 	  for (s7_pointer p = let_slots(q); tis_slot(p); p = next_slot(p))
 	    if ((has_structure(slot_value(p))) &&
 		(collect_shared_info(sc, ci, slot_value(p), stop_at_print_length)))
@@ -32576,7 +32539,7 @@ static shared_info_t *load_shared_info(s7_scheme *sc, s7_pointer top, bool stop_
   else /* added these 19-Oct-22 -- helps in tgc, but not much elsewhere */
     if ((is_let(top)) && (top != sc->rootlet))
       {
-	for (s7_pointer lp = top; (no_problem) && (is_let(lp)) && (lp != sc->rootlet); lp = let_outlet(lp))
+	for (s7_pointer lp = top; (no_problem) && (lp != sc->rootlet); lp = let_outlet(lp))
 	  for (s7_pointer p = let_slots(lp); tis_slot(p); p = next_slot(p))
 	    if (has_structure(slot_value(p))) /* slot_symbol need not be checked? */
 	      {no_problem = false; break;}
@@ -34353,8 +34316,7 @@ static void let_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, use_writ
 	      port_write_string(ci->cycle_port)(sc, buf, len, ci->cycle_port);
 	      return;
 	    }
-	  if ((let_outlet(obj) != sc->nil) &&
-	      (let_outlet(obj) != sc->rootlet))
+	  if (let_outlet(obj) != sc->rootlet)
 	    {
 	      char buf[128];
 	      int32_t len = (int32_t)catstrs_direct(buf, "  (set! (outlet <", pos_int_to_str_direct(sc, lref), ">) ", (const char *)NULL);
@@ -34402,8 +34364,7 @@ static void let_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, use_writ
 	    }
 	  else
 	    {
-	      if ((let_outlet(obj) != sc->nil) &&
-		  (let_outlet(obj) != sc->rootlet))
+	      if (let_outlet(obj) != sc->rootlet)
 		{
 		  int32_t ref;
 		  port_write_string(port)(sc, "(sublet ", 8, port);
@@ -34486,9 +34447,9 @@ static void write_macro_readably(s7_scheme *sc, s7_pointer obj, s7_pointer port)
 }
 
 
-static s7_pointer match_symbol(const s7_pointer symbol, s7_pointer e)
+static s7_pointer match_symbol(s7_scheme *sc, const s7_pointer symbol, s7_pointer e)
 {
-  for (s7_pointer le = e; is_let(le); le = let_outlet(le))
+  for (s7_pointer le = e; le != sc->rootlet; le = let_outlet(le))
     for (s7_pointer y = let_slots(le); tis_slot(y); y = next_slot(y))
       if (slot_symbol(y) == symbol)
 	return(y);
@@ -34518,7 +34479,7 @@ static void collect_symbol(s7_scheme *sc, s7_pointer sym, s7_pointer e, s7_point
   if ((!arg_memq(T_Sym(sym), args)) &&
       (!slot_memq(sym, gc_protected_at(sc, gc_loc))))
     {
-      s7_pointer slot = match_symbol(sym, e);
+      s7_pointer slot = match_symbol(sc, sym, e);
       if (slot)
 	gc_protected_at(sc, gc_loc) = cons(sc, slot, gc_protected_at(sc, gc_loc));
     }
@@ -34546,7 +34507,7 @@ static void collect_specials(s7_scheme *sc, s7_pointer e, s7_pointer args, s7_in
 
 static s7_pointer find_closure(s7_scheme *sc, s7_pointer closure, s7_pointer current_let)
 {
-  for (s7_pointer e = current_let; is_let(e); e = let_outlet(e))
+  for (s7_pointer e = current_let; e != sc->rootlet; e = let_outlet(e))
     {
       if ((is_funclet(e)) || (is_maclet(e)))
 	{
@@ -45677,7 +45638,7 @@ static void s7_function_set_setter(s7_scheme *sc, s7_pointer getter, s7_pointer 
 }
 
 s7_pointer s7_closure_body(s7_scheme *sc, s7_pointer p) {return((has_closure_let(p)) ? closure_body(p) : sc->nil);}
-s7_pointer s7_closure_let(s7_scheme *sc, s7_pointer p)  {return((has_closure_let(p)) ? closure_let(p)  : sc->nil);}
+s7_pointer s7_closure_let(s7_scheme *sc, s7_pointer p)  {return((has_closure_let(p)) ? closure_let(p)  : sc->rootlet);}
 s7_pointer s7_closure_args(s7_scheme *sc, s7_pointer p) {return((has_closure_let(p)) ? closure_args(p) : sc->nil);}
 
 
@@ -45749,7 +45710,7 @@ static s7_pointer g_function(s7_scheme *sc, s7_pointer args)
   s7_pointer e, sym = NULL, fname, fval;
   if (is_null(args))                /* (*function*) is akin to __func__ in C */
     {
-      for (e = sc->curlet; is_let(e); e = let_outlet(e))
+      for (e = sc->curlet; e != sc->rootlet; e = let_outlet(e))
 	if ((is_funclet(e)) || (is_maclet(e)))
 	  break;
       return(let_to_function(sc, e));
@@ -45801,7 +45762,7 @@ static s7_pointer g_funclet(s7_scheme *sc, s7_pointer args)
   #define H_funclet "(funclet func) tries to return a function's definition environment"
   #define Q_funclet s7_make_signature(sc, 2, s7_make_signature(sc, 2, sc->is_let_symbol, sc->is_null_symbol), \
 				      s7_make_signature(sc, 3, sc->is_procedure_symbol, sc->is_macro_symbol, sc->is_symbol_symbol))
-  s7_pointer p = car(args), e;
+  s7_pointer p = car(args);
   if (is_symbol(p))
     {
       if ((symbol_ctr(p) == 0) || ((p = s7_symbol_value(sc, p)) == sc->undefined))
@@ -45809,13 +45770,9 @@ static s7_pointer g_funclet(s7_scheme *sc, s7_pointer args)
 		 set_elist_2(sc, wrap_string(sc, "funclet argument, '~S, is unbound", 33), car(args))); /* not p here */
     }
   check_method(sc, p, sc->funclet_symbol, args);
-
   if (!((is_any_procedure(p)) || (is_c_object(p))))
     sole_arg_wrong_type_error_nr(sc, sc->funclet_symbol, p, a_procedure_or_a_macro_string);
-  e = find_let(sc, p);
-  if ((is_null(e)) && (!is_c_object(p)))
-    return(sc->rootlet);
-  return(e);
+  return(find_let(sc, p));
 }
 
 
@@ -46681,7 +46638,7 @@ static s7_pointer make_c_object_with_let(s7_scheme *sc, s7_int type, void *value
    */
   c_object_type(x) = type;
   c_object_value(x) = value;
-  c_object_set_let(x, (let == sc->rootlet) ? sc->nil : let);
+  c_object_set_let(x, let);
   c_object_s7(x) = sc;
   if (with_gc) add_c_object(sc, x);
   return(x);
@@ -46694,12 +46651,12 @@ s7_pointer s7_make_c_object_with_let(s7_scheme *sc, s7_int type, void *value, s7
 
 s7_pointer s7_make_c_object(s7_scheme *sc, s7_int type, void *value)
 {
-  return(make_c_object_with_let(sc, type, value, sc->nil, true));
+  return(make_c_object_with_let(sc, type, value, sc->rootlet, true));
 }
 
 s7_pointer s7_make_c_object_without_gc(s7_scheme *sc, s7_int type, void *value)
 {
-  return(make_c_object_with_let(sc, type, value, sc->nil, false));
+  return(make_c_object_with_let(sc, type, value, sc->rootlet, false));
 }
 
 s7_pointer s7_c_object_let(s7_pointer obj) {return(c_object_let(obj));}
@@ -46708,7 +46665,7 @@ s7_pointer s7_c_object_set_let(s7_scheme *sc, s7_pointer obj, s7_pointer e)
 {
   if ((!is_immutable(obj)) &&
       (is_let(e)))
-    c_object_set_let(obj, (e == sc->rootlet) ? sc->nil : e);
+    c_object_set_let(obj, e);
   return(e);
 }
 
@@ -47218,7 +47175,7 @@ static s7_pointer symbol_setter(s7_scheme *sc, s7_pointer sym, s7_pointer e)
   s7_pointer slot, setter;
   if (is_keyword(sym))
     return(sc->F);
-  if ((e == sc->rootlet) || (e == sc->nil))
+  if (e == sc->rootlet)
     slot = global_slot(sym);
   else
     {
@@ -47235,7 +47192,7 @@ static s7_pointer symbol_setter(s7_scheme *sc, s7_pointer sym, s7_pointer e)
 
 static s7_pointer setter_p_pp(s7_scheme *sc, s7_pointer p, s7_pointer e)
 {
-  if (!((is_let(e)) || (e == sc->rootlet) || (e == sc->nil)))
+  if (!is_let(e))
     wrong_type_error_nr(sc, sc->setter_symbol, 2, e, sc->type_names[T_LET]); /* need to check this in case let arg is bogus */
 
   switch (type(p))
@@ -47333,13 +47290,13 @@ static s7_pointer symbol_set_setter(s7_scheme *sc, s7_pointer sym, s7_pointer ar
     {
       s7_pointer e = cadr(args); /* (let ((x 1)) (set! (setter 'x (curlet)) (lambda (s v e) ...))) */
       func = caddr(args);
-      if ((e == sc->rootlet) || (e == sc->nil))
+      if (e == sc->rootlet)
 	slot = global_slot(sym);
       else
 	{
 	  if (!is_let(e))
 	    wrong_type_error_nr(sc, wrap_string(sc, "set! setter", 11), 2, e, sc->type_names[T_LET]);
-	  slot = lookup_slot_with_let(sym, e);
+	  slot = lookup_slot_with_let(sc, sym, e);
 	}}
   else
     {
@@ -47872,7 +47829,7 @@ static bool hash_table_equivalent(s7_scheme *sc, s7_pointer x, s7_pointer y, sha
 
 static bool slots_match(s7_scheme *sc, s7_pointer px, s7_pointer y, shared_info_t *nci)
 {
-  for (s7_pointer ey = y; is_let(T_Lid(ey)); ey = let_outlet(ey))
+  for (s7_pointer ey = y; ey != sc->rootlet; ey = let_outlet(ey))
     for (s7_pointer py = let_slots(ey); tis_slot(py); py = next_slot(py))
       if (slot_symbol(px) == slot_symbol(py)) /* we know something will match */
 	return(is_equal_1(sc, slot_value(px), slot_value(py), nci));
@@ -47881,7 +47838,7 @@ static bool slots_match(s7_scheme *sc, s7_pointer px, s7_pointer y, shared_info_
 
 static bool slots_equivalent_match(s7_scheme *sc, s7_pointer px, s7_pointer y, shared_info_t *nci)
 {
-  for (s7_pointer ey = y; is_let(T_Lid(ey)); ey = let_outlet(ey))
+  for (s7_pointer ey = y; ey != sc->rootlet; ey = let_outlet(ey))
     for (s7_pointer py = let_slots(ey); tis_slot(py); py = next_slot(py))
       if (slot_symbol(px) == slot_symbol(py)) /* we know something will match */
 	return(is_equivalent_1(sc, slot_value(px), slot_value(py), nci));
@@ -47900,7 +47857,7 @@ static bool let_equal_1(s7_scheme *sc, s7_pointer x, s7_pointer y, shared_info_t
   if ((ci) && (equal_ref(sc, x, y, ci))) return(true);
 
   clear_symbol_list(sc);
-  for (x_len = 0, ex = x; is_let(T_Lid(ex)); ex = let_outlet(ex))
+  for (x_len = 0, ex = x; ex != sc->rootlet; ex = let_outlet(ex))
     for (px = let_slots(ex); tis_slot(px); px = next_slot(px))
       if (!symbol_is_in_list(sc, slot_symbol(px)))
 	{
@@ -47908,12 +47865,12 @@ static bool let_equal_1(s7_scheme *sc, s7_pointer x, s7_pointer y, shared_info_t
 	  x_len++;
 	}
 
-  for (ey = y; is_let(T_Lid(ey)); ey = let_outlet(ey))
+  for (ey = y; ey != sc->rootlet; ey = let_outlet(ey))
     for (py = let_slots(ey); tis_slot(py); py = next_slot(py))
       if (!symbol_is_in_list(sc, slot_symbol(py)))          /* symbol in y, not in x */
 	return(false);
 
-  for (y_len = 0, ey = y; is_let(T_Lid(ey)); ey = let_outlet(ey))
+  for (y_len = 0, ey = y; ey != sc->rootlet; ey = let_outlet(ey))
     for (py = let_slots(ey); tis_slot(py); py = next_slot(py))
       if (symbol_tag(slot_symbol(py)) != 0)
 	{
@@ -47926,7 +47883,7 @@ static bool let_equal_1(s7_scheme *sc, s7_pointer x, s7_pointer y, shared_info_t
 
   if (!nci) nci = clear_shared_info(sc->circle_info);
 
-  for (ex = x; is_let(T_Lid(ex)); ex = let_outlet(ex))
+  for (ex = x; ex != sc->rootlet; ex = let_outlet(ex))
     for (px = let_slots(ex); tis_slot(px); px = next_slot(px))
       if (symbol_tag(slot_symbol(px)) == 0)                  /* unshadowed */
 	{
@@ -50470,7 +50427,7 @@ static s7_pointer let_append(s7_scheme *sc, s7_pointer args)
   s7_pointer new_let, e = car(args);
   check_method(sc, e, sc->append_symbol, args);
   gc_protect_via_stack(sc, args);
-  new_let = make_let(sc, sc->nil);
+  new_let = make_let(sc, sc->rootlet);
   set_stack_protected2(sc, new_let);
   for (s7_pointer p = args; is_pair(p); p = cdr(p))
     if (!sequence_is_empty(sc, car(p)))
@@ -50880,7 +50837,7 @@ static s7_pointer let_to_let(s7_scheme *sc, s7_pointer obj)
 		       sc->type_symbol, sc->is_let_symbol,
 		       sc->size_symbol, s7_length(sc, obj),
 		       sc->open_symbol, make_boolean(sc, is_openlet(obj)),
-		       sc->outlet_symbol, (obj == sc->rootlet) ? sc->nil : let_outlet(obj),
+		       sc->outlet_symbol, let_outlet(obj),
 		       sc->is_mutable_symbol, make_boolean(sc, !is_immutable_let(obj)));
   gc_loc = gc_protect_1(sc, let);
   if (obj == sc->rootlet)
@@ -51950,7 +51907,7 @@ static void op_c_catch_all_a(s7_scheme *sc)
 static s7_pointer init_owlet(s7_scheme *sc)
 {
   s7_pointer p; /* watch out for order below */
-  s7_pointer e = make_let(sc, sc->nil);
+  s7_pointer e = make_let(sc, sc->rootlet);
   sc->temp3 = e;
   sc->error_type = add_slot_checked_with_id(sc, e, make_symbol(sc, "error-type", 10), sc->F);    /* the error type or tag ('division-by-zero) */
   sc->error_data = add_slot_unchecked_with_id(sc, e, make_symbol(sc, "error-data", 10), sc->F);  /* the message or information passed by the error function */
@@ -52342,7 +52299,7 @@ static bool catch_let_temporarily_function(s7_scheme *sc, s7_int catch_loc, s7_p
 	  push_stack_direct(sc, OP_EVAL_DONE);
 	  eval(sc, OP_SET_UNCHECKED);
 	}}
-  else let_temp_done(sc, stack_args(sc->stack, catch_loc), T_Lid(stack_let(sc->stack, catch_loc)));
+  else let_temp_done(sc, stack_args(sc->stack, catch_loc), T_Let(stack_let(sc->stack, catch_loc)));
   return(false);
 }
 
@@ -52382,7 +52339,7 @@ static bool catch_dynamic_unwind_function(s7_scheme *sc, s7_int catch_loc, s7_po
    */
   if (sc->debug > 0)
     {
-      s7_pointer spaces = lookup_slot_with_let(make_symbol(sc, "*debug-spaces*", 14), T_Lid(stack_let(sc->stack, catch_loc)));
+      s7_pointer spaces = lookup_slot_with_let(sc, make_symbol(sc, "*debug-spaces*", 14), T_Let(stack_let(sc->stack, catch_loc)));
       if (is_slot(spaces))
 	slot_set_value(spaces, make_integer(sc, max_i_ii(0LL, integer(slot_value(spaces)) - 2))); /* should involve only small_ints */
     }
@@ -52512,7 +52469,7 @@ static noreturn void error_nr(s7_scheme *sc, s7_pointer type, s7_pointer info)
   slot_set_value(sc->error_data, info);
 
   if (unchecked_type(sc->curlet) != T_LET)
-    set_curlet(sc, sc->nil);      /* in the reader, the sc->curlet stack entry is mostly ignored, so it can be (and usually is) garbage */
+    set_curlet(sc, sc->rootlet);      /* in the reader, the sc->curlet stack entry is mostly ignored, so it can be (and usually is) garbage */
   let_set_outlet(sc->owlet, sc->curlet);
   slot_set_value(sc->error_code, cur_code); /* if mv here, evalable code has the mv bit set, maybe from c-macro that uses s7_values */
 
@@ -52899,8 +52856,8 @@ static noreturn void missing_close_paren_error_nr(s7_scheme *sc)
   char *syntax_msg = NULL;
   s7_pointer pt = current_input_port(sc);
 
-  if ((unchecked_type(sc->curlet) != T_LET) && (sc->curlet != sc->nil))
-    set_curlet(sc, sc->nil);
+  if (unchecked_type(sc->curlet) != T_LET)
+    set_curlet(sc, sc->rootlet);
 
   /* check *missing-close-paren-hook* */
   if (hook_has_functions(sc->missing_close_paren_hook))
@@ -53309,7 +53266,7 @@ static inline void fill_star_defaults(s7_scheme *sc, s7_pointer func, int32_t st
 	s7_pointer defval = df[i];
 	if (is_symbol(defval))
 	  set_car(par, lookup_checked(sc, defval));
-	else set_car(par, (is_pair(defval)) ? s7_eval(sc, defval, sc->nil) : defval);
+	else set_car(par, (is_pair(defval)) ? s7_eval(sc, defval, sc->rootlet) : defval);
       }
 }
 
@@ -53420,7 +53377,7 @@ static s7_pointer set_c_function_star_args(s7_scheme *sc)
 		    s7_pointer defval = df[ki];
 		    if (is_symbol(defval))
 		      set_car(kpar, lookup_checked(sc, defval));
-		    else set_car(kpar, (is_pair(defval)) ? s7_eval(sc, defval, sc->nil) : defval);
+		    else set_car(kpar, (is_pair(defval)) ? s7_eval(sc, defval, sc->rootlet) : defval);
 		  }}
 	if (!is_safe_procedure(func)) unstack_gc_protect(sc);
 	return(call_args);
@@ -53507,10 +53464,7 @@ s7_pointer s7_eval(s7_scheme *sc, s7_pointer code, s7_pointer e)
     {
       push_stack_direct(sc, OP_EVAL_DONE);
       sc->code = code;
-      if ((e != sc->rootlet) &&
-	  (is_let(e)))
-	set_curlet(sc, e);
-      else set_curlet(sc, sc->nil);
+      set_curlet(sc, (is_let(e)) ? e : sc->rootlet);
       eval(sc, OP_EVAL);
     }
   restore_jump_info(sc);
@@ -53529,7 +53483,7 @@ s7_pointer s7_eval_with_location(s7_scheme *sc, s7_pointer code, s7_pointer e, c
       sc->s7_call_file = file;
       sc->s7_call_line = line;
     }
-  result = s7_eval(sc, code, e);
+  result = s7_eval(sc, code, (e == sc->nil) ? sc->rootlet : e);
   if (caller)
     {
       sc->s7_call_name = NULL;
@@ -53557,7 +53511,7 @@ pass (rootlet):\n\
       s7_pointer e = cadr(args);
       if (!is_let(e))
 	wrong_type_error_nr(sc, sc->eval_symbol, 2, e, a_let_string);
-      set_curlet(sc, (e == sc->rootlet) ? sc->nil : e);
+      set_curlet(sc, e);
     }
   sc->code = car(args);
 
@@ -53867,7 +53821,7 @@ static s7_pointer V_lookup_1(s7_scheme *sc, s7_pointer symbol, const char *func,
 static void check_o_1(s7_scheme *sc, s7_pointer e, const char* func, s7_pointer expr, s7_pointer var)
 {
   s7_pointer slot = s7_slot(sc, var);
-  if (lookup_slot_with_let(var, e) != slot)
+  if (lookup_slot_with_let(sc, var, e) != slot)
     {
       fprintf(stderr, "%s%s %s is out of date (%s in %s -> %s)%s\n", bold_text, func, display(expr), display(var), display(e),
 	      (tis_slot(slot)) ? display(slot) : "undefined", unbold_text);
@@ -56553,7 +56507,7 @@ static s7_pointer fx_inlet_ca(s7_scheme *sc, s7_pointer code)
 
   new_cell(sc, new_e, T_LET | T_SAFE_PROCEDURE);
   let_set_slots(new_e, slot_end); /* needed by add_slot_unchecked */
-  let_set_outlet(new_e, sc->nil);
+  let_set_outlet(new_e, sc->rootlet);
   gc_protect_via_stack(sc, new_e);
 
   /* as in let, we need to call the var inits before making the new let, but a simpler equivalent is to make the new let
@@ -66236,7 +66190,7 @@ static bool opt_cell_let_temporarily(s7_scheme *sc, s7_pointer car_x, int32_t le
 
 /* -------- cell_do -------- */
 
-#define do_curlet(o)        T_Lsd(o->v[2].p)
+#define do_curlet(o)        T_Let(o->v[2].p)
 #define do_curlet_unchecked(o) o->v[2].p
 #define do_body_length(o)   o->v[3].i
 #define do_result_length(o) o->v[4].i
@@ -67031,7 +66985,7 @@ static bool opt_cell_do(s7_scheme *sc, s7_pointer car_x, int32_t len)
       return_false(sc, car_x);
     }
 
-  do_curlet_unchecked(opc) = T_Lsd(let);
+  do_curlet_unchecked(opc) = T_Let(let);
   do_body_length(opc) = len - 3;
   do_result_length(opc) = rtn_len;
   opc->v[9].o1 = sc->opts[step_pc];
@@ -67946,10 +67900,10 @@ static Inline s7_pointer inline_make_counter(s7_scheme *sc, s7_pointer iter) /* 
   new_cell(sc, x, T_COUNTER);
   counter_set_result(x, sc->nil);
   if ((S7_DEBUGGING) && (!is_iterator(iter)) && (!is_pair(iter))) fprintf(stderr, "%s[%d]: %s?\n", __func__, __LINE__, display(iter));
-  counter_set_list(x, iter);     /* iterator -- here it's always either an iterator or a pair */
-  counter_set_capture(x, 0);     /* will be capture_let_counter */
-  counter_set_let(x, sc->nil);   /* will be the saved let */
-  counter_set_slots(x, sc->nil); /* local let slots before body is evalled */
+  counter_set_list(x, iter);        /* iterator -- here it's always either an iterator or a pair */
+  counter_set_capture(x, 0);        /* will be capture_let_counter */
+  counter_set_let(x, sc->rootlet);  /* will be the saved let */
+  counter_set_slots(x, sc->nil);    /* local let slots before body is evalled */
   stack_set_has_counters(sc->stack);
   return(x);
 }
@@ -70645,7 +70599,7 @@ static inline s7_pointer find_uncomplicated_symbol(s7_scheme *sc, s7_pointer sym
     return(sc->nil);
 
   for (x = sc->curlet, id = symbol_id(symbol); id < let_id(x); x = let_outlet(x));
-  for (; is_let(x); x = let_outlet(x))
+  for (; x != sc->rootlet; x = let_outlet(x))
     {
       if (let_id(x) == id)
 	return(local_slot(symbol));
@@ -75908,7 +75862,7 @@ static s7_pointer check_let(s7_scheme *sc) /* called only from op_let */
       else
 	{
 	  set_optimize_op(form, optimize_op(form) + 1); /* *_old -> *_new */
-	  set_opt3_let(code, sc->nil);
+	  set_opt3_let(code, sc->rootlet);
 	}}
 
   /* fx_tree inits */
@@ -76532,7 +76486,7 @@ static bool check_let_star(s7_scheme *sc)
 	    else
 	      {
 		set_optimize_op(form, optimize_op(form) + 1); /* *_old -> *_new */
-		set_opt3_let(code, sc->nil);
+		set_opt3_let(code, sc->rootlet);
 	      }}}
     else  /* multiple variables */
       {
@@ -77738,7 +77692,7 @@ static void op_if_unchecked(s7_scheme *sc)
 
 static bool op_if1(s7_scheme *sc)
 {
-  sc->code = (is_true(sc, sc->value)) ? car(sc->code) : unchecked_car(cdr(sc->code));
+  sc->code = (is_true(sc, sc->value)) ? T_Pos(car(sc->code)) : T_Pos(unchecked_car(cdr(sc->code)));
   /* even pre-optimization, (if #f #f) ==> #<unspecified> because unique_car(sc->nil) = sc->unspecified */
   if (is_pair(sc->code))
     return(true);
@@ -78387,7 +78341,7 @@ static void op_define_macro(s7_scheme *sc)
   sc->code = cdr(sc->code);
   check_define_macro(sc, sc->cur_op, form);
   if ((is_immutable(sc->curlet)) &&
-      (is_let(sc->curlet))) /* not () */
+      (is_let(sc->curlet)))
     syntax_error_nr(sc, "define-macro ~S: let is immutable", 33, caar(sc->code)); /* need syntax_error_any_with_caller? */
   sc->value = make_macro(sc, sc->cur_op, true);
 }
@@ -78457,7 +78411,7 @@ static goto_t op_expansion(s7_scheme *sc)
     {
       s7_pointer symbol = car(sc->value), slot;
       /* we're playing fast and loose with sc->curlet in the reader, so here we need a disaster check */
-      if (!is_let(sc->curlet)) set_curlet(sc, sc->nil);
+      if (!is_let(sc->curlet)) set_curlet(sc, sc->rootlet);
 
       if ((symbol_id(symbol) == 0) ||
 	  (sc->curlet == sc->nil))
@@ -78660,7 +78614,7 @@ static s7_pointer fx_with_let_s(s7_scheme *sc, s7_pointer arg)
   s7_pointer e = lookup_checked(sc, car(code));
   s7_pointer sym = cadr(code);
   s7_pointer val;
-  if ((!is_let(e)) && (e != sc->rootlet))
+  if (!is_let(e))
     {
       e = find_let(sc, e);
       if (!is_let(e))
@@ -78671,7 +78625,7 @@ static s7_pointer fx_with_let_s(s7_scheme *sc, s7_pointer arg)
     {
       if ((e == sc->s7_starlet) && (is_slot(global_slot(sym)))) /* (let () (define (func) (with-let *s7* letrec*)) (func) (func)), .5 tlet */
 	return(global_value(sym));                              /* perhaps the e=*s7* check is not needed */
-      if (is_slot(lookup_slot_with_let(sym, e)))
+      if (is_slot(lookup_slot_with_let(sc, sym, e)))
 	return(sc->undefined);
       unbound_variable_error_nr(sc, sym);
     }
@@ -78680,15 +78634,15 @@ static s7_pointer fx_with_let_s(s7_scheme *sc, s7_pointer arg)
 
 static void activate_with_let(s7_scheme *sc, s7_pointer e)
 {
-  if ((!is_let(e)) && (e != sc->nil)) /* (with-let . "hi") or (with-let () ...) */
+  if (!is_let(e)) /* (with-let . "hi") */
     {
-      s7_pointer new_e = find_let(sc, e); /* sc->nil here means no let found, or ought to -- this confusion needs to be fixed! */
+      s7_pointer new_e = find_let(sc, e); /* sc->nil here means no let found */
       if ((!is_let(new_e)) && (!has_closure_let(e)))
 	error_nr(sc, sc->wrong_type_arg_symbol, set_elist_2(sc, wrap_string(sc, "with-let takes an environment argument: ~A", 42), e));
       e = new_e;
     }
-  if ((e == sc->rootlet) || (e == sc->nil))
-    set_curlet(sc, sc->nil);         /* (with-let (rootlet) ...) */
+  if (e == sc->rootlet)
+    set_curlet(sc, e);         /* (with-let (rootlet) ...) */
   else
     {
       set_with_let_let(e);
@@ -84707,7 +84661,7 @@ static void op_define_with_setter(s7_scheme *sc)
        */
       set_let_file_and_line(sc, new_let, new_func);
       /* add the newly defined thing to the current environment */
-      if (is_let(sc->curlet))
+      if ((is_let(sc->curlet)) && (sc->curlet != sc->rootlet))
 	{
 	  if (let_id(sc->curlet) <= symbol_id(code)) /* we're adding a later-bound symbol to an old let (?) */
 	    {                                        /* was < 16-Aug-22: (let ((a 3)) (define (a) 4) (curlet)) */
@@ -90362,7 +90316,7 @@ static bool is_immutable_and_stable(s7_scheme *sc, s7_pointer func)
     return(false);
   if ((is_global(func)) && (is_immutable_slot(global_slot(func))))
     return(true);
-  for (s7_pointer p = sc->curlet; is_let(p); p = let_outlet(p))
+  for (s7_pointer p = sc->curlet; p != sc->rootlet; p = let_outlet(p))
     if ((is_funclet(p)) && (funclet_function(p) != func))
       return(false);
   return(is_immutable_slot(s7_slot(sc, func)));
@@ -93405,7 +93359,7 @@ void s7_heap_analyze(s7_scheme *sc)
   for (s7_pointer p = sc->sole_arg_out_of_range_info; is_pair(p); p = cdr(p)) mark_holdee(NULL, car(p), "simple out-of-range");
 
   {
-    s7_pointer *tmp = rootlet_elements(sc->rootlet);
+    s7_pointer *tmp = rootlet_elements(sc->rootlet_slots);
     s7_pointer *top = (s7_pointer *)(tmp + sc->rootlet_entries);
     while (tmp < top) {s7_pointer slot = *tmp++; mark_holdee(NULL, slot_value(slot), "rootlet");}
   }
@@ -93571,7 +93525,7 @@ static s7_pointer make_s7_starlet(s7_scheme *sc)  /* *s7* is semipermanent -- 20
   s7_pointer x = alloc_pointer(sc);
   set_full_type(x, T_LET | T_SAFE_PROCEDURE | T_UNHEAP | T_HAS_METHODS | T_HAS_LET_REF_FALLBACK | T_HAS_LET_SET_FALLBACK);
   let_set_id(x, ++sc->let_number);
-  let_set_outlet(x, sc->nil);
+  let_set_outlet(x, sc->rootlet);
   symbol_set_local_slot(sc->let_set_fallback_symbol, sc->let_number, slot1);
   slot_set_next(slot1, slot_end);
   symbol_set_local_slot(sc->let_ref_fallback_symbol, sc->let_number, slot2);
@@ -96631,12 +96585,8 @@ s7_scheme *s7_init(void)
   sc->unspecified = make_unique(sc, "#<unspecified>", T_UNSPECIFIED);
   sc->no_value =    make_unique(sc, (SHOW_EVAL_OPS) ? "#<no-value>" : "#<unspecified>", T_UNSPECIFIED);
 
-  unique_car(sc->nil) = sc->unspecified;
+  unique_car(sc->nil) = sc->unspecified; /* see op_if1 */
   unique_cdr(sc->nil) = sc->unspecified;
-  /* this is mixing two different s7_cell structs, cons and envr, but luckily envr has two initial s7_pointer fields, equivalent to car and cdr, so
-   *   let_id which is the same as opt1 is unaffected.  To get the names built-in, I'll append unique_name and unique_name_length fields to the envr struct.
-   */
-  unchecked_let_set_id(sc->nil, -1);
   unique_cdr(sc->unspecified) = sc->unspecified;
 
   sc->t1_1 = semipermanent_cons(sc, sc->unused, sc->nil,  T_PAIR | T_IMMUTABLE);
@@ -96900,11 +96850,17 @@ s7_scheme *s7_init(void)
   sc->tree_pointers_size = 0;
   sc->tree_pointers_top = 0;
 
-  sc->rootlet = make_vector_1(sc, INITIAL_ROOTLET_SIZE, FILLED, T_VECTOR);
-  set_full_type(sc->rootlet, T_LET | T_SAFE_PROCEDURE);
+  sc->rootlet = alloc_pointer(sc);
+  set_full_type(sc->rootlet, T_LET | T_SAFE_PROCEDURE | T_UNHEAP);
+  let_set_id(sc->rootlet, -1);
+  let_set_outlet(sc->rootlet, sc->rootlet);
+  let_set_slots(sc->rootlet, slot_end);
+  add_semipermanent_let_or_slot(sc, sc->rootlet); /* need to mark outlet and maybe slot values */
+
+  sc->rootlet_slots = make_vector_1(sc, INITIAL_ROOTLET_SIZE, FILLED, T_VECTOR);
   sc->rootlet_entries = 0;
-  for (i = 0; i < INITIAL_ROOTLET_SIZE; i++) rootlet_element(sc->rootlet, i) = sc->nil;
-  set_curlet(sc, sc->nil);
+  for (i = 0; i < INITIAL_ROOTLET_SIZE; i++) rootlet_element(sc->rootlet_slots, i) = sc->nil;
+  set_curlet(sc, sc->rootlet);
   sc->shadow_rootlet = sc->nil;
   sc->objstr_max_len = S7_INT64_MAX;
 
@@ -97254,7 +97210,7 @@ void s7_free(s7_scheme *sc)
 
   big_block_free(sc, stack_block(sc->stack));
   big_block_free(sc, vector_block(sc->protected_objects));
-  big_block_free(sc, rootlet_block(sc->rootlet));
+  big_block_free(sc, rootlet_block(sc->rootlet_slots));
 
   for (i = 0; i < sc->saved_pointers_loc; i++)
     free(sc->saved_pointers[i]);
@@ -97478,56 +97434,56 @@ int main(int argc, char **argv)
 /* -------------------------------------------------------------
  *           19.9   20.9   21.0   22.0   23.0   24.0   24.1
  * -------------------------------------------------------------
- * tpeak      148    115    114    108    105    102
- * tref      1081    691    687    463    459    464
- * index            1026   1016    973    967    972
- * tmock            1177   1165   1057   1019   1032
- * tvect     3408   2519   2464   1772   1669   1497
- * tauto                          2562   2048   1729
- * timp             2637   2575   1930   1694   1740
- * texit     1884                 1778   1741   1770
- * s7test           1873   1831   1818   1829   1830
- * lt        2222   2187   2172   2150   2185   1950
- * thook     7651                 2590   2030   2046
- * dup              3805   3788   2492   2239   2097
- * tcopy            8035   5546   2539   2375   2386
- * tread            2440   2421   2419   2408   2405
- * trclo     8031   2735   2574   2454   2445   2449
- * titer     3657   2865   2842   2641   2509   2449
- * fbench    2933   2688   2583   2460   2430   2478
- * tload                          3046   2404   2566
- * tmat             3065   3042   2524   2578   2590
- * tsort     3683   3105   3104   2856   2804   2858
- * tobj             4016   3970   3828   3577   3508
- * teq              4068   4045   3536   3486   3544
- * tio              3816   3752   3683   3620   3583
- * tmac             3950   3873   3033   3677   3677
- * tcase            4960   4793   4439   4430   4439
- * tlet      9166   7775   5640   4450   4427   4457
- * tclo      6362   4787   4735   4390   4384   4474
- * tfft             7820   7729   4755   4476   4536
- * tstar            6139   5923   5519   4449   4550
- * tmap             8869   8774   4489   4541   4586
- * tshoot           5525   5447   5183   5055   5034
- * tform            5357   5348   5307   5316   5084
- * tstr      10.0   6880   6342   5488   5162   5180
- * tnum             6348   6013   5433   5396   5409
- * tgsl             8485   7802   6373   6282   6208
- * tari      15.0   13.0   12.7   6827   6543   6278
- * tlist     9219   7896   7546   6558   6240   6300
- * tset                                  6260   6364
- * trec      19.5   6936   6922   6521   6588   6583
- * tleft     11.1   10.4   10.2   7657   7479   7627
- * tmisc                                 8488   7862
- * tlamb                                        7941
- * tgc              11.9   11.1   8177   7857   7986
- * thash            11.8   11.7   9734   9479   9526
- * cb        12.9   11.2   11.0   9658   9564   9609
- * tgen             11.2   11.4   12.0   12.1   12.2
- * tall      15.9   15.6   15.6   15.6   15.6   15.1
- * calls            36.7   37.5   37.0   37.5   37.1
- * sg                             55.9   55.8   55.4
- * tbig            177.4  175.8  156.5  148.1  146.2
+ * tpeak      148    115    114    108    105    102    102
+ * tref      1081    691    687    463    459    464    464  472 [let_set_1]
+ * index            1026   1016    973    967    972    972
+ * tmock            1177   1165   1057   1019   1032   1032
+ * tvect     3408   2519   2464   1772   1669   1497   1497
+ * tauto                          2562   2048   1729   1729
+ * timp             2637   2575   1930   1694   1740   1740
+ * texit     1884                 1778   1741   1770   1770
+ * s7test           1873   1831   1818   1829   1830   1830
+ * lt        2222   2187   2172   2150   2185   1950   1950
+ * thook     7651                 2590   2030   2046   2046
+ * dup              3805   3788   2492   2239   2097   2097
+ * tcopy            8035   5546   2539   2375   2386   2386
+ * tread            2440   2421   2419   2408   2405   2405
+ * trclo     8031   2735   2574   2454   2445   2449   2449
+ * titer     3657   2865   2842   2641   2509   2449   2449
+ * fbench    2933   2688   2583   2460   2430   2478   2478
+ * tload                          3046   2404   2566   2566  2493 [s7_make_keyword]
+ * tmat             3065   3042   2524   2578   2590   2590
+ * tsort     3683   3105   3104   2856   2804   2858   2858
+ * tobj             4016   3970   3828   3577   3508   3508
+ * teq              4068   4045   3536   3486   3544   3544  3515 [let_equal_1]
+ * tio              3816   3752   3683   3620   3583   3583
+ * tmac             3950   3873   3033   3677   3677   3677
+ * tcase            4960   4793   4439   4430   4439   4439
+ * tlet      9166   7775   5640   4450   4427   4457   4457
+ * tclo      6362   4787   4735   4390   4384   4474   4474
+ * tfft             7820   7729   4755   4476   4536   4536
+ * tstar            6139   5923   5519   4449   4550   4550  4604 [find_let]
+ * tmap             8869   8774   4489   4541   4586   4586
+ * tshoot           5525   5447   5183   5055   5034   5034
+ * tform            5357   5348   5307   5316   5084   5084
+ * tstr      10.0   6880   6342   5488   5162   5180   5180
+ * tnum             6348   6013   5433   5396   5409   5409
+ * tgsl             8485   7802   6373   6282   6208   6208
+ * tari      15.0   13.0   12.7   6827   6543   6278   6278
+ * tlist     9219   7896   7546   6558   6240   6300   6300
+ * tset                                  6260   6364   6364
+ * trec      19.5   6936   6922   6521   6588   6583   6583
+ * tleft     11.1   10.4   10.2   7657   7479   7627   7627
+ * tmisc                                 8488   7862   7862
+ * tlamb                                        7941   7941
+ * tgc              11.9   11.1   8177   7857   7986   7986
+ * thash            11.8   11.7   9734   9479   9526   9526
+ * cb        12.9   11.2   11.0   9658   9564   9609   9609
+ * tgen             11.2   11.4   12.0   12.1   12.2   12.2
+ * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1
+ * calls            36.7   37.5   37.0   37.5   37.1   37.1
+ * sg                             55.9   55.8   55.4   55.4
+ * tbig            177.4  175.8  156.5  148.1  146.2  146.3  [lookup]
  * -------------------------------------------------------------
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
@@ -97539,12 +97495,6 @@ int main(int argc, char **argv)
  * copy/fill!/reverse! + setter/features/let is a mess
  * either in t725 or safety>0? check func sig against actual call/returned value, same for typers/actual values
  *   missing cr's?, limit printout
- * add rootlet special let, so sc->nil isn't used as a let
- *   sc->rootlet = let+id==-1+outlet=NULL?
- *   sc->rootlet_slots = vector as now (current sc->rootlet)
- *   wherever set_curlet etc to (), use sc->rootlet, NULL or special #<not-a-let> to mark lack of let (c-pointer etc)
- *   for no-outlet-let, set to () -> use #<not-a-let>? or perhaps add #<not-a-let> to uniques (or a let??) (so we don't have to use let-ref-fallback)
- *   s7_c_object_set_let () -> #<not-a-let>?
  * check other *x* vars for *load-path* behavior: *cload-directory*, *libraries*? *#readers*??
  *   [these 3 are problematic] libraries should follow the load env arg -- more like features than load-path
  *   does local *#readers* make sense? eval-string/read maybe? cload-dir -> cload-path?
