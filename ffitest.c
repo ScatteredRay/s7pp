@@ -1908,6 +1908,7 @@ int main(int argc, char **argv)
     old_e = s7_set_curlet(sc, e);
     arg = s7_make_symbol(sc, "arg");
     yp = s7_make_slot(sc, e, arg, s7_make_mutable_real(sc, 1.0));
+    s7_gc_protect_2_via_stack(sc, yp, old_e);
     if (s7_real(s7_slot_value(yp)) != 1.0)
       {fprintf(stderr, "%d: mutable real slot-value %s is not 1.0?\n", __LINE__, s1 = TO_STR(s7_slot_value(yp))); free(s1);}
     s7_slot_set_real_value(sc, yp, 2.0);

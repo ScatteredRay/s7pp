@@ -9073,6 +9073,7 @@ void s7_gc_unprotect_at(s7_scheme *sc, s7_int loc);
 s7_pointer s7_gc_protected_at(s7_scheme *sc, s7_int loc);
 
 s7_pointer s7_gc_protect_via_stack(s7_scheme *sc, s7_pointer x);
+s7_pointer s7_gc_protect_2_via_stack(s7_scheme *sc, s7_pointer x, s7_pointer y);
 s7_pointer s7_gc_unprotect_via_stack(s7_scheme *sc, s7_pointer x);
 
 s7_pointer s7_gc_protect_via_location(s7_scheme *sc, s7_pointer x, s7_int loc);
@@ -9100,7 +9101,8 @@ s7_cons(s7, s7_make_real(s7, 3.14),
 <p>The protect_via_stack functions place the object on the s7 stack where it is
 protected until the stack unwinds past that point.  Besides speed, this provides
 a way to be sure an object is unprotected even in some complicated situation where
-error handling may bypass an explicit s7_gc_unprotect_at call.
+error handling may bypass an explicit s7_gc_unprotect_at call.  s7_gc_protect_2_via_stack
+protects two objects in one stack location, saving stack space.
 The protect_via_location are intended for cases where you have a location already
 (from s7_gc_protect), and want to reuse it for a different object.
 s7_gc_on turns the GC on or off.  Objects can be created at a blistering pace,

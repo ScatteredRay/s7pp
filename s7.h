@@ -1,10 +1,10 @@
 #ifndef S7_H
 #define S7_H
 
-#define S7_VERSION "10.7"
-#define S7_DATE "8-Jan-2024"
+#define S7_VERSION "10.8"
+#define S7_DATE "10-Jan-2024"
 #define S7_MAJOR_VERSION 10
-#define S7_MINOR_VERSION 7
+#define S7_MINOR_VERSION 8
 
 #include <stdint.h>           /* for int64_t */
 
@@ -148,6 +148,7 @@ s7_int s7_gc_protect(s7_scheme *sc, s7_pointer x);
 void s7_gc_unprotect_at(s7_scheme *sc, s7_int loc);
 s7_pointer s7_gc_protected_at(s7_scheme *sc, s7_int loc);
 s7_pointer s7_gc_protect_via_stack(s7_scheme *sc, s7_pointer x);
+s7_pointer s7_gc_protect_2_via_stack(s7_scheme *sc, s7_pointer x, s7_pointer y);
 s7_pointer s7_gc_unprotect_via_stack(s7_scheme *sc, s7_pointer x);
 s7_pointer s7_gc_protect_via_location(s7_scheme *sc, s7_pointer x, s7_int loc);
 s7_pointer s7_gc_unprotect_via_location(s7_scheme *sc, s7_int loc);
@@ -903,7 +904,9 @@ bool s7_is_bignum(s7_pointer obj);
 /* --------------------------------------------------------------------------------
  *
  *        s7 changes
- *
+
+ * 8-Jan-23:  s7_gc_protect_2_via_stack.
+ * --------
  * 15-Nov:    s7_make_c_pointer_wrapper_with_type.
  * 17-Mar-23: moved s7_is_bignum declaration outside WITH_GMP.
  * --------
