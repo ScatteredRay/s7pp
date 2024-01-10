@@ -19,14 +19,17 @@
       (with-let (unlet)
 
 	(set! *cload-library-name* "*libc*")
+	(set! *libraries* (cons (cons "libc.scm" (curlet)) *libraries*))
 	
 	;; -------- stddef.h --------
-	(define NULL (c-pointer 0 'void*))
-	(define (c-null? p) (and (c-pointer? p) (zero? (car (c-pointer->list p)))))
+	;(define NULL (c-pointer 0 'void*))
+	;(define (c-null? p) (and (c-pointer? p) (zero? (car (c-pointer->list p)))))
 
 	;; -------- stdbool.h --------
-	(define false #f)
-	(define true #t)
+	;(define false #f)
+	;(define true #t)
+	;scheme objects like false or c-null in *libc* will not appear in *libc* normally: no s7_define -> shadow_rootlet, 
+	;  and this file itself is not loaded except when libc_s7.c is written (when libc_s7.so is out of date)
 
 	;; -------- iso646.h --------
 	;; spelled-out names for & = bitand et al
@@ -45,7 +48,6 @@
 	               (#t (values))))
         (define (hiho a) (assert (> a 2)) (+ a 1))
 |#
-	(set! *libraries* (cons (cons "libc.scm" (curlet)) *libraries*))
 
 	;; -------- setjmp.h --------
 	;; longjmp etc

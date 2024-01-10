@@ -1128,12 +1128,7 @@ struct s7_scheme {
 
   s7_pointer symbol_table;
   s7_pointer rootlet, rootlet_slots, shadow_rootlet;
-#define OLD_UNLET_SLOTS 0
-#if OLD_UNLET_SLOTS
-  s7_pointer unlet;                   /* original bindings of predefined functions */
-#else
   s7_pointer unlet_slots;             /* original bindings of predefined functions */
-#endif
 
   s7_pointer input_port;              /* current-input-port */
   s7_pointer *input_port_stack;       /*   input port stack (load and read internally) */
@@ -9444,15 +9439,16 @@ s7_pointer s7_make_slot(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7_poi
 	  if ((!is_gensym(symbol)) &&
 	      (initial_slot(symbol) == sc->undefined) &&
 	      (!in_heap(value)) &&        /* else initial_slot value can be GC'd if symbol set! (initial != global, initial unprotected) */
-#if OLD_UNLET_SLOTS
-	      ((!sc->unlet) ||            /* init_unlet creates sc->unlet (includes syntax), after that initial_slot is for c_functions?? */
-#else
 	       ((!sc->string_signature) || /* from init_signatures -- TODO: maybe need a boolean for this */
-#endif
 	       (is_c_function(value))))   /* || (is_syntax(value)) -- we need 'else as a special case? */
-#if OLD_UNLET_SLOTS	      
-	    set_initial_slot(symbol, make_semipermanent_slot(sc, symbol, value));
-#else
+	    /* the string_signature business means only the initial rootlet c_functions take part in unlet.  It would be neat if any
+	     *   cload library's c_functions could be there as well, but then (unlet) needs to know which envs are in the chain.
+	     *   The current shadow_rootlet could be saved in each initial_slot, these could be marked in some way, then the chain
+	     *   searched in (unlet) to get the currently active envs -- maybe too complex?  We could also provide a way to overrule
+	     *   the string_signature check, but then symbol collisions would probably be resolved as the last loaded (which might not
+	     *   be in the active chain).
+	     * Also, the c_function check is overly paranoid -- all we need is that the value is semipermanent (T_UNHEAP?).
+	     */
 	    {
 	      set_initial_slot(symbol, make_semipermanent_slot(sc, symbol, value));
 	      if ((!sc->string_signature) && ((is_c_function(value)) || (is_syntax(value)))) /* syntax probably can't happen here (handled explicitly in syntax procedure) */
@@ -9462,9 +9458,7 @@ s7_pointer s7_make_slot(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7_poi
 		   */
 		  slot_set_next(initial_slot(symbol), sc->unlet_slots);
 		  sc->unlet_slots = initial_slot(symbol);
-		}
-	    }
-#endif
+		}}
 	  set_local_slot(symbol, slot);
 	  set_global(symbol);
 	}
@@ -9514,76 +9508,17 @@ static s7_pointer g_is_funclet(s7_scheme *sc, s7_pointer args)
 
 
 /* -------------------------------- unlet -------------------------------- */
-#if OLD_UNLET_SLOTS
-static s7_pointer t_vector_setter(s7_scheme *sc, s7_pointer vec, s7_int loc, s7_pointer val);
-static s7_pointer t_vector_getter(s7_scheme *sc, s7_pointer vec, s7_int loc);
-
-#define UNLET_ENTRIES 512 /* 397 if not --disable-deprecated etc */
-
-static void init_unlet(s7_scheme *sc)
-{
-  int32_t k = 0;
-  s7_pointer *inits;
-  s7_pointer *els = vector_elements(sc->symbol_table);
-  block_t *block = mallocate(sc, UNLET_ENTRIES * sizeof(s7_pointer));
-  sc->unlet = (s7_pointer)Malloc(sizeof(s7_cell));  /* freed explicitly in s7_free */
-  set_full_type(sc->unlet, T_VECTOR | T_UNHEAP);
-  vector_length(sc->unlet) = UNLET_ENTRIES;
-  vector_block(sc->unlet) = block;
-  vector_elements(sc->unlet) = (s7_pointer *)block_data(block);
-  vector_set_dimension_info(sc->unlet, NULL);
-  vector_getter(sc->unlet) = t_vector_getter;
-  vector_setter(sc->unlet) = t_vector_setter;
-  inits = vector_elements(sc->unlet);
-  s7_vector_fill(sc, sc->unlet, sc->nil);
-
-  inits[k++] = initial_slot(sc->else_symbol);
-  for (int32_t i = 0; i < SYMBOL_TABLE_SIZE; i++)
-    for (s7_pointer x = els[i]; is_pair(x); x = cdr(x))
-      {
-	s7_pointer sym = car(x);
-	if ((!is_gensym(sym)) && (is_slot(initial_slot(sym))))
-	  {
-	    s7_pointer val = initial_value(sym);
-	    if ((is_c_function(val)) || (is_syntax(val)))  /* we assume the initial_slot value needs no GC protection */
-	      inits[k++] = initial_slot(sym);
-	    /* non-c_functions that are not set! (and therefore initial_slot GC) protected by default: make-hook hook-functions
-	     *   if these initial_slot values are added to unlet, they need explicit GC protection.
-	     */
-	    if ((S7_DEBUGGING) && (k >= UNLET_ENTRIES)) fprintf(stderr, "unlet overflow\n");
-	  }}
-}
-#endif
-
 static s7_pointer g_unlet(s7_scheme *sc, s7_pointer unused_args)
 {
   /* add sc->unlet bindings to the current environment */
   #define H_unlet "(unlet) returns a let that establishes the original bindings of all the predefined functions"
   #define Q_unlet s7_make_signature(sc, 1, sc->is_let_symbol)
 
-#if OLD_UNLET_SLOTS
-  s7_pointer *inits = vector_elements(sc->unlet);
-#endif
   s7_pointer res;
-
   sc->w = make_let(sc, sc->curlet);
   set_is_unlet(sc->w);
   if (global_value(sc->else_symbol) != sc->else_symbol)
     add_slot_checked_with_id(sc, sc->w, sc->else_symbol, initial_value(sc->else_symbol));
-#if OLD_UNLET_SLOTS
-  for (int32_t i = 1; (i < UNLET_ENTRIES) && (is_slot(inits[i])); i++)
-    {
-      s7_pointer sym = slot_symbol(inits[i]);
-      s7_pointer x = slot_value(inits[i]);
-      if ((x != global_value(sym)) ||  /* it has been changed globally */
-	  ((!is_global(sym)) &&        /* it might be shadowed locally */
-	   (s7_symbol_local_value(sc, sym, sc->curlet) != global_value(sym))))
-	add_slot_checked_with_id(sc, sc->w, sym, x);
-    }
-  /* if (set! + -) then + needs to be overridden, but the local bit isn't set, so we have to check the actual values in the non-local case.
-   *   (define (f x) (with-let (unlet) (+ x 1)))
-   */
-#else
   for (s7_pointer p = sc->unlet_slots; tis_slot(p); p = next_slot(p))
     {
       s7_pointer sym = slot_symbol(p);
@@ -9593,8 +9528,6 @@ static s7_pointer g_unlet(s7_scheme *sc, s7_pointer unused_args)
 	   (s7_symbol_local_value(sc, sym, sc->curlet) != global_value(sym))))
 	add_slot_checked_with_id(sc, sc->w, sym, x);
     }
-  /* fprintf(stderr, "unlet: %s\n", display(sc->w)); */
-#endif
   res = sc->w;
   sc->w = sc->unused;
   return(res);
@@ -32612,8 +32545,7 @@ static shared_info_t *load_shared_info(s7_scheme *sc, s7_pointer top, bool stop_
 	  if (hash_table_entries(top) == 0) return(NULL);
 	  for (s7_int i = 0; i < len; i++)
 	    for (hash_entry_t *p = entries[i]; p; p = hash_entry_next(p))
-	      if (((!keys_safe) &&	(has_structure(hash_entry_key(p)))) ||
-		  (has_structure(hash_entry_value(p))))
+	      if (((!keys_safe) && (has_structure(hash_entry_key(p)))) || (has_structure(hash_entry_value(p))))
 		{no_problem = false; break;}
 	  if (no_problem) return(NULL);
 	}
@@ -33697,7 +33629,7 @@ static void pair_to_port(s7_scheme *sc, s7_pointer lst, s7_pointer port, use_wri
       if (need_new_ci)
 	{
 	  new_ci = make_shared_info(sc);
-	  clear_shared_info(new_ci);
+	  /* clear_shared_info(new_ci); */
 	  temp_ci = load_shared_info(sc, cadr(lst), false, new_ci); /* temp_ci can be NULL! */
 	}
       else temp_ci = ci;
@@ -34751,9 +34683,18 @@ static void write_closure_readably(s7_scheme *sc, s7_pointer obj, s7_pointer por
     {
       if (tree_is_cyclic(sc, body))
 	{
-	  port_write_string(port)(sc, "#<write_closure: body is cyclic>", 32, port); /* not s7_error here! */
+	  port_write_string(port)(sc, "#<write_closure_readably: body is cyclic>", 41, port); /* not s7_error here! */
 	  return;
-	}}
+	}
+      if ((!ci) && (is_pair(arglist)))
+	{ /* (format #f "~W" (make-hook (cons 'ho (list (values (list (let ((<1> (hash-table))) (set! (<1> 'a) <1>) <1>))))))) -- yow! */
+	  shared_info_t *new_ci = make_shared_info(sc);
+	  clear_shared_info(new_ci);
+	  if (collect_shared_info(sc, new_ci, arglist, false))
+	    {
+	      port_write_string(port)(sc, "#<write_closure_readably: arglist is cyclic>", 44, port); /* not s7_error here! */
+	      return;
+	    }}}
   if (is_symbol(arglist)) arglist = set_dlist_1(sc, arglist);
   pe = closure_let(obj);
 
@@ -94611,9 +94552,6 @@ static const char *decoded_name(s7_scheme *sc, const s7_pointer p)
   if (p == sc->symbol_table)        return("symbol_table");
   if (p == sc->rootlet)             return("rootlet");
   if (p == sc->s7_starlet)          return("*s7*"); /* this is the function */
-#if OLD_UNLET_SLOTS
-  if (p == sc->unlet)               return("unlet");
-#endif
   if (p == sc->owlet)               return("owlet");
   if (p == sc->standard_input)      return("*stdin*");
   if (p == sc->standard_output)     return("*stdout*");
@@ -94622,7 +94560,7 @@ static const char *decoded_name(s7_scheme *sc, const s7_pointer p)
   if (p == current_input_port(sc))  return("current-input-port");
   if (p == current_output_port(sc)) return("current-output-port");
   if (p == current_error_port(sc))  return("current-error_port");
-  if ((is_let(p)) && (is_let(p)) && (is_unlet(p))) return("unlet");
+  if ((is_let(p)) && (is_unlet(p))) return("unlet");
   return((p == sc->stack) ? "stack" : NULL);
 }
 
@@ -95602,10 +95540,8 @@ static s7_pointer syntax(s7_scheme *sc, const char *name, opcode_t op, s7_pointe
   syntax_documentation(syn) = doc;
   set_global_slot(x, make_semipermanent_slot(sc, x, syn));
   set_initial_slot(x, make_semipermanent_slot(sc, x, syn));  /* set_local_slot(x, global_slot(x)); */
-#if (!OLD_UNLET_SLOTS)
   slot_set_next(initial_slot(x), sc->unlet_slots);
   sc->unlet_slots = initial_slot(x);
-#endif
   set_type_bit(x, T_SYMBOL | T_SYNTACTIC | T_GLOBAL | T_UNHEAP);
   symbol_set_local_slot_unchecked(x, 0LL, sc->nil);
   symbol_clear_ctr(x);
@@ -96973,10 +96909,8 @@ s7_scheme *s7_init(void)
 
     sc->pi_symbol = s7_define_constant(sc, "pi", big_pi(sc)); /* not actually a constant because it changes with bignum-precision */
     set_initial_slot(sc->pi_symbol, make_semipermanent_slot(sc, sc->pi_symbol, big_pi(sc))); /* s7_make_slot does not handle this */
-#if (!OLD_UNLET_SLOTS)
     slot_set_next(initial_slot(sc->pi_symbol), sc->unlet_slots);
     sc->unlet_slots = initial_slot(sc->pi_symbol);
-#endif
     s7_provide(sc, "gmp");
 #else
     random_seed(p) = (uint64_t)my_clock(); /* used to be time(NULL), but that means separate threads can get the same random number sequence */
@@ -97001,9 +96935,6 @@ s7_scheme *s7_init(void)
   init_tc_rec(sc);
 #endif
 
-#if OLD_UNLET_SLOTS
-  init_unlet(sc);
-#endif
   init_signatures(sc);      /* depends on procedure symbols */
   sc->s7_starlet = make_s7_starlet(sc);
   s7_set_history_enabled(sc, true);
@@ -97309,9 +97240,6 @@ void s7_free(s7_scheme *sc)
   free(sc->free_heap);
   free(vector_elements(sc->symbol_table)); /* alloc'd directly, not via block */
   free(sc->symbol_table);
-#if OLD_UNLET_SLOTS
-  free(sc->unlet);
-#endif
   free(sc->setters);
   free(sc->op_stack);
   if (sc->tree_pointers) free(sc->tree_pointers);
@@ -97577,11 +97505,5 @@ int main(int argc, char **argv)
  * widget-size (pane equal)
  * copy/fill!/reverse! + setter/features/let is a mess
  * either in t725 or safety>0? check func sig against actual call/returned value, same for typers/actual values
- * cycle in hash_table_to_port + over 8192 gc_protect
- *   estr made no sense here -- maybe make cycle larger.
- * fx_s -> g?
- * *libc*: cload into local let? why aren't the libc.scm scheme objects like false or c-null in *libc*?
- *   (*libc* 'memcpy): memcpy, ((rootlet) 'memcpy): #<undefined>, (with-let (rootlet) memcpy): error (undefined), (with-let *libc* memcpy): memcpy
- * unlet settable from libraries too?
- * t718 circular hash as default
+ * fx_s -> g? [instrument how far up the chain it is or how far into current tuv->wxy?]
  */
