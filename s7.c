@@ -343,7 +343,7 @@
 
 #ifndef S7_ALIGNED
   #define S7_ALIGNED 0
-  /* memclr, local_strcmp and local_memset */
+  /* memclr and local_memset */
 #endif
 
 #include <stdio.h>
@@ -3174,9 +3174,10 @@ static void symbol_set_id(s7_pointer p, s7_int id)
 #define slot_set_symbol(p, Sym)        (T_Slt(p))->object.slt.sym = T_Sym(Sym)
 #define slot_value(p)                  T_Nmv((T_Slt(p))->object.slt.val)
 #if S7_DEBUGGING
+/* how to see an unheaped and un-GC-checked slot with a heap value?  Can't do it here because unheap=most rootlet slots */
 #define slot_set_value(slot, value) \
   do { \
-       if (is_immutable_slot(slot)) {fprintf(stderr, "setting immutable slot %s\n", symbol_name(slot_symbol(slot))); if (cur_sc->stop_at_error) abort();} \
+       if (is_immutable_slot(slot)) {fprintf(stderr, "%s[%d]: setting immutable slot %s\n", __func__, __LINE__, symbol_name(slot_symbol(slot))); if (cur_sc->stop_at_error) abort();} \
        (T_Slt(slot))->object.slt.val = T_Nmv(value); \
      } while (0)
 #else
@@ -4057,23 +4058,8 @@ static char *copy_string_with_length(const char *str, s7_int len)
 
 static char *copy_string(const char *str) {return(copy_string_with_length(str, safe_strlen(str)));}
 
-#if 0
-static bool local_strcmp(const char *s1, const char *s2)
-{
-  while (true)
-    {
-      if (*s1 != *s2++) return(false);
-      if (*s1++ == 0) return(true);
-    }
-  return(true);
-}
-#else
 #define local_strcmp(S1, S2) (strcmp(S1, S2) == 0)
-/* I think libc strcmp is much faster than it used to be, and beats the code above */
-#endif
-
-#define c_strings_are_equal(Str1, Str2) (local_strcmp(Str1, Str2))
-/* scheme strings can have embedded nulls */
+#define c_strings_are_equal(Str1, Str2) (local_strcmp(Str1, Str2))  /* scheme strings can have embedded nulls */
 
 static bool safe_strcmp(const char *s1, const char *s2)
 {
@@ -5804,15 +5790,6 @@ static void set_opt3_len_1(s7_pointer p, uint64_t x)
   (p)->debugger_bits = (OPT3_LEN | (p->debugger_bits & ~(OPT3_LOCATION)));
   set_opt3_is_set(p);
 }
-
-#if 0
-static void check_opt_bits(s7_pointer p, int bits)
-{
-  if (((bits & 1) != 0) && (opt1_is_set(p))) fprintf(stderr, "opt1 set ");
-  if (((bits & 2) != 0) && (opt2_is_set(p))) fprintf(stderr, "opt2 set ");
-  if (((bits & 4) != 0) && (opt3_is_set(p)) && (!has_type_bit(p, T_LOCATION))) fprintf(stderr, "opt3 set ");
-}
-#endif
 
 static void print_debugging_state(s7_scheme *sc, s7_pointer obj, s7_pointer port)
 {
@@ -9886,10 +9863,12 @@ static s7_pointer sublet_1(s7_scheme *sc, s7_pointer e, s7_pointer bindings, s7_
 
 	  if (is_constant_symbol(sc, sym))
 	    wrong_type_error_nr(sc, caller, 1 + position_of(x, bindings), sym, a_non_constant_symbol_string);
+#if 0
 	  if ((is_slot(global_slot(sym))) &&
 	      (is_syntax_or_qq(global_value(sym))))
 	    wrong_type_error_nr(sc, caller, 2, sym, wrap_string(sc, "a non-syntactic symbol", 22));
-
+	  /* this is a local redefinition which we accept elsewhere: (let ((if 3)) if) -> 3 */
+#endif
 	  /* here we know new_e is a let and is not rootlet */
 	  if (!sp)
 	    sp = add_slot_checked_with_id(sc, new_e, sym, val);
@@ -10609,7 +10588,7 @@ static s7_pointer g_set_outlet(s7_scheme *sc, s7_pointer args)
 
 /* -------------------------------- symbol lookup -------------------------------- */
 static Inline s7_pointer inline_lookup_from(s7_scheme *sc, const s7_pointer symbol, s7_pointer e)
-{ /* splitting out the no-sc WITH_GCC case made no difference in speed */
+{ /* splitting out the no-sc WITH_GCC case made no difference in speed, same if using s7_int id = symbol_id(symbol) */
   if (let_id(e) == symbol_id(symbol))
     return(local_value(symbol));
   if (let_id(e) > symbol_id(symbol)) /* let is newer so look back in the outlet chain */
@@ -10695,9 +10674,9 @@ s7_pointer s7_symbol_local_value(s7_scheme *sc, s7_pointer sym, s7_pointer let)
 
   if (let_id(let) == symbol_id(sym))
     return(local_value(sym));
-  if (symbol_id(sym) < let_id(let))
+  if (let_id(let) > symbol_id(sym))
     {
-      do {let = let_outlet(let);} while (symbol_id(sym) < let_id(let));
+      do {let = let_outlet(let);} while (let_id(let) > symbol_id(sym));
       if (let_id(let) == symbol_id(sym))
 	return(local_value(sym));
     }
@@ -10706,7 +10685,7 @@ s7_pointer s7_symbol_local_value(s7_scheme *sc, s7_pointer sym, s7_pointer let)
       if (slot_symbol(y) == sym)
 	return(slot_value(y));
 
-  /* need to check rootlet before giving up */
+  /* maybe let is local but sym is global but previously shadowed */
   if (is_slot(global_slot(sym)))
     return(global_value(sym));
 
@@ -10772,7 +10751,7 @@ s7_pointer s7_symbol_set_value(s7_scheme *sc, s7_pointer sym, s7_pointer val)
 /* -------------------------------- symbol->dynamic-value -------------------------------- */
 static s7_pointer find_dynamic_value(s7_scheme *sc, s7_pointer x, s7_pointer sym, int64_t *id)
 {
-  for (; symbol_id(sym) < let_id(x); x = let_outlet(x));
+  for (; let_id(x) > symbol_id(sym); x = let_outlet(x));
   if (let_id(x) == symbol_id(sym))
     {
       (*id) = let_id(x);
@@ -26825,13 +26804,13 @@ s7_pointer s7_make_semipermanent_string(s7_scheme *sc, const char *str) /* for (
   return(x);
 }
 
-static s7_pointer make_permanent_string(const char *str)           /* for (s7) strings outside all s7 GC's */
+static s7_pointer make_permanent_string(const char *str, s7_int len)     /* for (s7) strings outside all s7 GC's */
 {
   s7_pointer x = (s7_pointer)Calloc(1, sizeof(s7_cell));
-  s7_int len = safe_strlen(str);
   set_full_type(x, T_STRING | T_IMMUTABLE | T_UNHEAP);
   set_optimize_op(x, OP_CONSTANT);
   string_length(x) = len;
+  if ((S7_DEBUGGING) && (len != safe_strlen(str))) fprintf(stderr, "%s[%d]: strlen(%s) != %" ld64 "\n", __func__, __LINE__, str, safe_strlen(str));
   string_block(x) = NULL;
   string_value(x) = (char *)str;
   string_hash(x) = 0;
@@ -26840,87 +26819,87 @@ static s7_pointer make_permanent_string(const char *str)           /* for (s7) s
 
 s7_pointer s7_make_permanent_string(s7_scheme *sc, const char *str) /* keep s7_scheme* arg for backwards compatibility */
 {
-  return(make_permanent_string(str));
+  return(make_permanent_string(str, safe_strlen(str)));
 }
 
 static void init_strings(void)
 {
-  nil_string = make_permanent_string("");
+  nil_string = make_permanent_string("", 0);
   nil_string->tf.u64_type = T_STRING | T_UNHEAP; /* turn off T_IMMUTABLE?? */
   set_optimize_op(nil_string, OP_CONSTANT);
 
-  car_a_list_string = make_permanent_string("a pair whose car is also a pair");
-  cdr_a_list_string = make_permanent_string("a pair whose cdr is also a pair");
+  car_a_list_string = make_permanent_string("a pair whose car is also a pair", 31);
+  cdr_a_list_string = make_permanent_string("a pair whose cdr is also a pair", 31);
 
-  caar_a_list_string = make_permanent_string("a pair whose caar is also a pair");
-  cadr_a_list_string = make_permanent_string("a pair whose cadr is also a pair");
-  cdar_a_list_string = make_permanent_string("a pair whose cdar is also a pair");
-  cddr_a_list_string = make_permanent_string("a pair whose cddr is also a pair");
+  caar_a_list_string = make_permanent_string("a pair whose caar is also a pair", 32);
+  cadr_a_list_string = make_permanent_string("a pair whose cadr is also a pair", 32);
+  cdar_a_list_string = make_permanent_string("a pair whose cdar is also a pair", 32);
+  cddr_a_list_string = make_permanent_string("a pair whose cddr is also a pair", 32);
 
-  caaar_a_list_string = make_permanent_string("a pair whose caaar is also a pair");
-  caadr_a_list_string = make_permanent_string("a pair whose caadr is also a pair");
-  cadar_a_list_string = make_permanent_string("a pair whose cadar is also a pair");
-  caddr_a_list_string = make_permanent_string("a pair whose caddr is also a pair");
-  cdaar_a_list_string = make_permanent_string("a pair whose cdaar is also a pair");
-  cdadr_a_list_string = make_permanent_string("a pair whose cdadr is also a pair");
-  cddar_a_list_string = make_permanent_string("a pair whose cddar is also a pair");
-  cdddr_a_list_string = make_permanent_string("a pair whose cdddr is also a pair");
+  caaar_a_list_string = make_permanent_string("a pair whose caaar is also a pair", 33);
+  caadr_a_list_string = make_permanent_string("a pair whose caadr is also a pair", 33);
+  cadar_a_list_string = make_permanent_string("a pair whose cadar is also a pair", 33);
+  caddr_a_list_string = make_permanent_string("a pair whose caddr is also a pair", 33);
+  cdaar_a_list_string = make_permanent_string("a pair whose cdaar is also a pair", 33);
+  cdadr_a_list_string = make_permanent_string("a pair whose cdadr is also a pair", 33);
+  cddar_a_list_string = make_permanent_string("a pair whose cddar is also a pair", 33);
+  cdddr_a_list_string = make_permanent_string("a pair whose cdddr is also a pair", 33);
 
-  a_list_string =                 make_permanent_string("a list");
-  an_eq_func_string =             make_permanent_string("a procedure that can take two arguments");
-  an_association_list_string =    make_permanent_string("an association list");
-  a_normal_real_string =          make_permanent_string("a normal real");
-  a_rational_string =             make_permanent_string("an integer or a ratio");
-  a_number_string =               make_permanent_string("a number");
-  a_procedure_string =            make_permanent_string("a procedure");
-  a_procedure_or_a_macro_string = make_permanent_string("a procedure or a macro");
-  a_normal_procedure_string =     make_permanent_string("a normal procedure");
-  a_let_string =                  make_permanent_string("a let (an environment)");
-  a_proper_list_string =          make_permanent_string("a proper list");
-  a_boolean_string =              make_permanent_string("a boolean");
-  a_byte_vector_string =          make_permanent_string("a byte-vector");
-  an_input_port_string =          make_permanent_string("an input port");
-  an_open_input_port_string =     make_permanent_string("an open input port");
-  an_open_output_port_string =    make_permanent_string("an open output port");
-  an_output_port_string =         make_permanent_string("an output port");
-  an_output_port_or_f_string =    make_permanent_string("an output port or #f");
-  an_input_string_port_string =   make_permanent_string("an input string port");
-  an_input_file_port_string =     make_permanent_string("an input file port");
-  an_output_string_port_string =  make_permanent_string("an output string port");
-  an_output_file_port_string =    make_permanent_string("an output file port");
-  a_thunk_string =                make_permanent_string("a thunk");
-  a_symbol_string =               make_permanent_string("a symbol");
-  a_non_negative_integer_string = make_permanent_string("a non-negative integer");
-  an_unsigned_byte_string =       make_permanent_string("an unsigned byte");
-  something_applicable_string =   make_permanent_string("a procedure or something applicable");
-  a_random_state_object_string =  make_permanent_string("a random-state object");
-  a_format_port_string =          make_permanent_string("#f, #t, (), or an open output port");
-  a_non_constant_symbol_string =  make_permanent_string("a non-constant symbol");
-  a_sequence_string =             make_permanent_string("a sequence");
-  a_valid_radix_string =          make_permanent_string("it should be between 2 and 16");
-  result_is_too_large_string =    make_permanent_string("result is too large");
-  it_is_too_large_string =        make_permanent_string("it is too large");
-  it_is_too_small_string =        make_permanent_string("it is less than the start position");
-  it_is_negative_string =         make_permanent_string("it is negative");
-  it_is_nan_string =              make_permanent_string("NaN usually indicates a numerical error");
-  it_is_infinite_string =         make_permanent_string("it is infinite");
-  too_many_indices_string =       make_permanent_string("too many indices");
-  parameter_set_twice_string =    make_permanent_string("parameter set twice, ~S in ~S");
-  immutable_error_string =        make_permanent_string("can't ~S ~S (it is immutable)");
-  cant_bind_immutable_string =    make_permanent_string("~A: can't bind an immutable object: ~S");
-  intermediate_too_large_string = make_permanent_string("intermediate result is too large");
+  a_list_string =                 make_permanent_string("a list", 6);
+  an_eq_func_string =             make_permanent_string("a procedure that can take two arguments", 39);
+  an_association_list_string =    make_permanent_string("an association list", 19);
+  a_normal_real_string =          make_permanent_string("a normal real", 13);
+  a_rational_string =             make_permanent_string("an integer or a ratio", 21);
+  a_number_string =               make_permanent_string("a number", 8);
+  a_procedure_string =            make_permanent_string("a procedure", 11);
+  a_procedure_or_a_macro_string = make_permanent_string("a procedure or a macro", 22);
+  a_normal_procedure_string =     make_permanent_string("a normal procedure", 18);
+  a_let_string =                  make_permanent_string("a let (an environment)", 22);
+  a_proper_list_string =          make_permanent_string("a proper list", 13);
+  a_boolean_string =              make_permanent_string("a boolean", 9);
+  a_byte_vector_string =          make_permanent_string("a byte-vector", 13);
+  an_input_port_string =          make_permanent_string("an input port", 13);
+  an_open_input_port_string =     make_permanent_string("an open input port", 18);
+  an_open_output_port_string =    make_permanent_string("an open output port", 19);
+  an_output_port_string =         make_permanent_string("an output port", 14);
+  an_output_port_or_f_string =    make_permanent_string("an output port or #f", 20);
+  an_input_string_port_string =   make_permanent_string("an input string port", 20);
+  an_input_file_port_string =     make_permanent_string("an input file port", 18);
+  an_output_string_port_string =  make_permanent_string("an output string port", 21);
+  an_output_file_port_string =    make_permanent_string("an output file port", 19);
+  a_thunk_string =                make_permanent_string("a thunk", 7);
+  a_symbol_string =               make_permanent_string("a symbol", 8);
+  a_non_negative_integer_string = make_permanent_string("a non-negative integer", 22);
+  an_unsigned_byte_string =       make_permanent_string("an unsigned byte", 16);
+  something_applicable_string =   make_permanent_string("a procedure or something applicable", 35);
+  a_random_state_object_string =  make_permanent_string("a random-state object", 21);
+  a_format_port_string =          make_permanent_string("#f, #t, (), or an open output port", 34);
+  a_non_constant_symbol_string =  make_permanent_string("a non-constant symbol", 21);
+  a_sequence_string =             make_permanent_string("a sequence", 10);
+  a_valid_radix_string =          make_permanent_string("it should be between 2 and 16", 29);
+  result_is_too_large_string =    make_permanent_string("result is too large", 19);
+  it_is_too_large_string =        make_permanent_string("it is too large", 15);
+  it_is_too_small_string =        make_permanent_string("it is less than the start position", 34);
+  it_is_negative_string =         make_permanent_string("it is negative", 14);
+  it_is_nan_string =              make_permanent_string("NaN usually indicates a numerical error", 39);
+  it_is_infinite_string =         make_permanent_string("it is infinite", 14);
+  too_many_indices_string =       make_permanent_string("too many indices", 16);
+  parameter_set_twice_string =    make_permanent_string("parameter set twice, ~S in ~S", 29);
+  immutable_error_string =        make_permanent_string("can't ~S ~S (it is immutable)", 29);
+  cant_bind_immutable_string =    make_permanent_string("~A: can't bind an immutable object: ~S", 38);
+  intermediate_too_large_string = make_permanent_string("intermediate result is too large", 32);
 #if (!HAVE_COMPLEX_NUMBERS)
-  no_complex_numbers_string =     make_permanent_string("this version of s7 does not support complex numbers");
+  no_complex_numbers_string =     make_permanent_string("this version of s7 does not support complex numbers", 51);
 #endif
-  keyword_value_missing_string =  make_permanent_string("~A: keyword argument's value is missing: ~S in ~S");
+  keyword_value_missing_string =  make_permanent_string("~A: keyword argument's value is missing: ~S in ~S", 49);
 
-  format_string_1 = make_permanent_string("format: ~S ~{~S~^ ~}: ~A");
-  format_string_2 = make_permanent_string("format: ~S: ~A");
-  format_string_3 = make_permanent_string("format: ~S ~{~S~^ ~}~&~NT^: ~A");
-  format_string_4 = make_permanent_string("format: ~S~&~NT^: ~A");
+  format_string_1 = make_permanent_string("format: ~S ~{~S~^ ~}: ~A", 24);
+  format_string_2 = make_permanent_string("format: ~S: ~A", 14);
+  format_string_3 = make_permanent_string("format: ~S ~{~S~^ ~}~&~NT^: ~A", 30);
+  format_string_4 = make_permanent_string("format: ~S~&~NT^: ~A", 20);
 
-  too_many_arguments_string = make_permanent_string("~S: too many arguments: ~A");
-  not_enough_arguments_string = make_permanent_string("~S: not enough arguments: ~A");
+  too_many_arguments_string = make_permanent_string("~S: too many arguments: ~A", 26);
+  not_enough_arguments_string = make_permanent_string("~S: not enough arguments: ~A", 28);
 }
 
 
@@ -31207,7 +31186,7 @@ static s7_pointer g_is_provided(s7_scheme *sc, s7_pointer args)
 
   if (is_global(sc->features_symbol))
     return(sc->F);
-  for (x = sc->curlet; symbol_id(sc->features_symbol) < let_id(x); x = let_outlet(x));
+  for (x = sc->curlet; let_id(x) > symbol_id(sc->features_symbol); x = let_outlet(x));
   for (; x; x = let_outlet(x))
     for (s7_pointer y = let_slots(x); tis_slot(y); y = next_slot(y))
       if ((slot_symbol(y) == sc->features_symbol) &&
@@ -33955,32 +33934,12 @@ static void hash_table_procedures_to_port(s7_scheme *sc, s7_pointer hash, s7_poi
     port_write_character(port)(sc, ')', port);
 }
 
-#if CYCLE_DEBUGGING
-static char *base = NULL, *min_char = NULL;
-#endif
-
 static void hash_table_to_port(s7_scheme *sc, s7_pointer hash, s7_pointer port, use_write_t use_write, shared_info_t *ci)
 {
   s7_int gc_iter, len = hash_table_entries(hash);
   bool too_long = false, hash_cyclic = false, copied = false, immut = false, letd = false;
   s7_pointer iterator, p;
   int32_t href = -1;
-
-#if CYCLE_DEBUGGING
-  char xx;
-  if (!base) base = &xx; 
-  else 
-    if (&xx > base) base = &xx; 
-    else 
-      if ((!min_char) || (&xx < min_char))
-	{
-	  min_char = &xx;
-	  if ((base - min_char) > 100000)
-	    {
-	      fprintf(stderr, "hash_table_to_port: unnoticed cycle?\n");
-	      abort();
-	    }}
-#endif
 
   if (len == 0)
     {
@@ -45574,11 +45533,7 @@ static void s7_function_set_class(s7_scheme *sc, s7_pointer f, s7_pointer base_f
 
 static s7_pointer make_function(s7_scheme *sc, const char *name, s7_function f, s7_int req, s7_int opt, bool rst, const char *doc, s7_pointer x, c_proc_t *ptr)
 {
-  uint32_t ftype = T_C_FUNCTION;
-
-  if ((req == 0) && (rst))
-    ftype = T_C_RST_NO_REQ_FUNCTION;
-  set_full_type(x, ftype);
+  set_full_type(x, ((req == 0) && (rst)) ? T_C_RST_NO_REQ_FUNCTION : T_C_FUNCTION);
 
   c_function_data(x) = ptr;
   c_function_call(x) = f;               /* f is T_App but needs cast */
@@ -46573,7 +46528,7 @@ s7_int s7_make_c_type(s7_scheme *sc, const char *name) /* shouldn't this be s7_m
   c_type = (c_object_t *)Calloc(1, sizeof(c_object_t)); /* Malloc+field=NULL is slightly faster here */
   sc->c_object_types[tag] = c_type;
   c_type->type = tag;
-  c_type->scheme_name = make_permanent_string(name);
+  c_type->scheme_name = make_permanent_string(name, safe_strlen(name));
   c_type->getter = sc->F;
   c_type->setter = sc->F;
   c_type->free = fallback_free;
@@ -70618,7 +70573,7 @@ static inline s7_pointer find_uncomplicated_symbol(s7_scheme *sc, s7_pointer sym
       (symbol_is_in_list(sc, symbol_to_keyword(sc, symbol))))
     return(sc->nil);
 
-  for (x = sc->curlet, id = symbol_id(symbol); id < let_id(x); x = let_outlet(x));
+  for (x = sc->curlet, id = symbol_id(symbol); let_id(x) > id; x = let_outlet(x));
   for (; x; x = let_outlet(x))
     {
       if (let_id(x) == id)
@@ -80828,16 +80783,18 @@ static bool do_is_safe(s7_scheme *sc, s7_pointer body, s7_pointer stepper, s7_po
 		      }
 		    else
 		      {
-			if ((is_pair(caddr(sc->code))) &&        /* sc->code = do-form (formerly (cdr(do-form)) causing a bug here) */
-			    (is_pair(caaddr(sc->code))))
+			s7_pointer end_and_result = caddr(sc->code);
+			if ((is_pair(end_and_result)) &&        /* sc->code = do-form (formerly (cdr(do-form)) causing a bug here) */
+			    (is_pair(car(end_and_result))) &&
+			    (!is_syntax(caar(end_and_result)))) /* 10-Jan-24 */
 			  {
 			    bool res;
 			    set_match_symbol(settee);
-			    res = tree_match(caaddr(sc->code));  /* (set! end ...) in some fashion */
+			    res = tree_match(car(end_and_result));  /* (set! end ...) in some fashion */
 			    clear_match_symbol(settee);
 			    if (res) return(false);
 			  }
-			if ((has_set) && (!direct_memq(cadr(expr), var_list))) /* is some non-local variable being set? */
+			if ((has_set) && (!direct_memq(settee, var_list))) /* is some non-local variable being set? */
 			  (*has_set) = true;
 		      }
 		    if (!do_is_safe(sc, cddr(expr), stepper, var_list, has_set)) return(false);
@@ -95527,9 +95484,10 @@ static void init_wrappers(s7_scheme *sc)
 
 static s7_pointer syntax(s7_scheme *sc, const char *name, opcode_t op, s7_pointer min_args, s7_pointer max_args, const char *doc)
 {
-  uint64_t hash = raw_string_hash((const uint8_t *)name, safe_strlen(name));
+  s7_int len = safe_strlen(name);
+  uint64_t hash = raw_string_hash((const uint8_t *)name, len);
   uint32_t loc = hash % SYMBOL_TABLE_SIZE;
-  s7_pointer x = new_symbol(sc, name, safe_strlen(name), hash, loc);
+  s7_pointer x = new_symbol(sc, name, len, hash, loc);
   s7_pointer syn = alloc_pointer(sc);
 
   set_full_type(syn, T_SYNTAX | T_SYNTACTIC | T_DONT_EVAL_ARGS | T_GLOBAL | T_UNHEAP);
@@ -97500,10 +97458,9 @@ int main(int argc, char **argv)
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
- * add wasm test to test suite somehow (at least emscripten)
  * combine lets?
  * widget-size (pane equal)
  * copy/fill!/reverse! + setter/features/let is a mess
- * either in t725 or safety>0? check func sig against actual call/returned value, same for typers/actual values
- * fx_s -> g? [instrument how far up the chain it is or how far into current tuv->wxy?]
+ * check func sig against actual call/returned value, same for typers/actual values
+ * unlet in threads?
  */
