@@ -3995,7 +3995,7 @@ static s7_pointer wrap_integer(s7_scheme *sc, s7_int x)
 static s7_pointer wrap_real(s7_scheme *sc, s7_double x)
 {
   s7_pointer p = car(sc->real_wrappers);
-  real(p) = x;
+  set_real(p, x);
   sc->real_wrappers = cdr(sc->real_wrappers);
   return(p);
 }
@@ -10648,7 +10648,7 @@ void s7_slot_set_real_value(s7_scheme *sc, s7_pointer slot, s7_double value) {se
 
 static s7_pointer symbol_to_local_slot(s7_scheme *sc, s7_pointer symbol, s7_pointer e)
 {
-  if ((!is_let(e)) || (e == sc->rootlet))
+  if ((!is_let(e)) || (e == sc->rootlet)) /* e is () if from s7_define */
     return(global_slot(symbol));
   if (symbol_id(symbol) != 0)
     for (s7_pointer y = let_slots(e); tis_slot(y); y = next_slot(y))
@@ -10665,15 +10665,6 @@ s7_pointer s7_symbol_value(s7_scheme *sc, s7_pointer sym)
 
 s7_pointer s7_symbol_local_value(s7_scheme *sc, s7_pointer sym, s7_pointer let)
 {
-  /* TODO: is this faster? */
-  /* restrict the search to local let outward */
-  if ((let == sc->rootlet) || (is_global(sym)))
-    return((is_slot(global_slot(sym))) ? global_value(sym) : sc->undefined);
-
-  /* TODO: does this still happen? maybe disable_deprecated? */
-  if (!is_let(let))
-    return(s7_symbol_value(sc, sym));
-
   if (let_id(let) == symbol_id(sym))
     return(local_value(sym));
   if (let_id(let) > symbol_id(sym))
@@ -62067,7 +62058,7 @@ static s7_double opt_set_d_d_f(opt_info *o)
 static s7_double opt_set_d_d_fm(opt_info *o)
 {
   s7_double x = o->v[3].fd(o->v[2].o1);
-  real(slot_value(o->v[1].p)) = x;
+  set_real(slot_value(o->v[1].p), x);
   return(x);
 }
 
@@ -67980,17 +67971,17 @@ static s7_pointer g_for_each_closure(s7_scheme *sc, s7_pointer f, s7_pointer seq
 		      {
 			opt_info *o = sc->opts[0];
 			s7_double (*fd)(opt_info *o) = o->v[0].fd;
-			for (i = 0; i < len; i++) {real(sv) = vals[i]; fd(o);}}
+			for (i = 0; i < len; i++) {set_real(sv, vals[i]); fd(o);}}
 		    else
 		      if (func == opt_cell_any_nv)
 			{
 			  opt_info *o = sc->opts[0];
 			  s7_pointer (*fp)(opt_info *o) = o->v[0].fp;
 			  if (fp == opt_unless_p_1)
-			    for (i = 0; i < len; i++) {real(sv) = vals[i]; if (!(o->v[4].fb(o->v[3].o1))) o->v[5].o1->v[0].fp(o->v[5].o1);}
-			  else for (i = 0; i < len; i++) {real(sv) = vals[i]; fp(o);}
+			    for (i = 0; i < len; i++) {set_real(sv, vals[i]); if (!(o->v[4].fb(o->v[3].o1))) o->v[5].o1->v[0].fp(o->v[5].o1);}
+			  else for (i = 0; i < len; i++) {set_real(sv, vals[i]); fp(o);}
 			}
-		      else for (i = 0; i < len; i++) {real(sv) = vals[i]; func(sc);}
+		      else for (i = 0; i < len; i++) {set_real(sv, vals[i]); func(sc);}
 		  }
 		else for (i = 0; i < len; i++) {slot_set_value(slot, make_real(sc, vals[i])); func(sc);}
 		res = sc->unspecified;
@@ -68346,7 +68337,7 @@ Each object can be a list, string, vector, hash-table, or any other sequence."
 		  sc->temp7 = rl;
 		  for (s7_int i = 0; i < vlen; i++)
 		    {
-		      real(rl) = float_vector(v, i);
+		      set_real(rl, float_vector(v, i));
 		      fp(sc, rl);
 		    }}
 	      else
@@ -80689,7 +80680,8 @@ static bool tree_match(s7_pointer tree)
 static bool all_ints_here(s7_scheme *sc, s7_pointer settee, s7_pointer expr, s7_pointer step_vars, int depth) /* see also all_integers above */
 {
   /* since any type change causes false return, we can accept inits across step-vars */
-  s7_pointer func;
+  /* this function started out trivial... */
+  s7_pointer func, sig;
   if (DO_PR) for (int i = 0; i < depth; i++) fprintf(stderr, " ");
   if (DO_PR) fprintf(stderr, "%s: %s %s\n", __func__, display(expr), display(step_vars));
   if (is_number(expr))
@@ -80712,21 +80704,24 @@ static bool all_ints_here(s7_scheme *sc, s7_pointer settee, s7_pointer expr, s7_
   if (!is_symbol(car(expr))) {if (DO_PR) fprintf(stderr, "%d\n", __LINE__); return(false);}
   func = lookup_unexamined(sc, car(expr));
   if (!func) {if (DO_PR) fprintf(stderr, "%d\n", __LINE__); return(false);}
-
-  /* TODO: and (sigh) typed vectors if vector-ref? (tvect) -- could also use (int-vector? cadr) */
+  if (DO_PR) fprintf(stderr, "car(expr): %s\n", display(func));
   if ((is_int_vector(func)) || (is_byte_vector(func))) return(true);
-
-  /* TODO: syntax: (case i ...[all ints]...) */
   if (!is_any_c_function(func)) {if (DO_PR) fprintf(stderr, "%d\n", __LINE__); return(false);}
 
-  {
-    s7_pointer sig = c_function_signature(func);
-    if ((is_pair(sig)) &&
-	((car(sig) == sc->is_integer_symbol) ||
-	 ((is_pair(car(sig))) && (direct_memq(sc->is_integer_symbol, car(sig))))))
-      return(true); /* like int-vector or length */
-    /* TODO: byte-vector-ref uses byte? (tvect) */
-  }
+  if ((car(expr) == sc->vector_ref_symbol) && (is_pair(cdr(expr))) && (is_symbol(cadr(expr))))
+    {
+      s7_pointer v = lookup_unexamined(sc, cadr(expr));
+      if (DO_PR) fprintf(stderr, "cadr(expr): %s\n", display(func));
+      if ((v) && ((is_int_vector(v)) || (is_byte_vector(v)))) return(true);
+    }
+
+  sig = c_function_signature(func);
+  if ((is_pair(sig)) &&
+      ((car(sig) == sc->is_integer_symbol) || (car(sig) == sc->is_byte_symbol) ||
+       ((is_pair(car(sig))) && 
+	((direct_memq(sc->is_integer_symbol, car(sig))) || (direct_memq(sc->is_byte_symbol, car(sig)))))))
+    return(true); /* like int-vector or length */
+  /* byte-vector-ref uses byte? (tvect) */
 
   if (!is_all_integer(car(expr))) {if (DO_PR) fprintf(stderr, "%d\n", __LINE__); return(false);}
   for (s7_pointer p = cdr(expr); is_pair(p); p = cdr(p))
@@ -80866,7 +80861,6 @@ static bool do_is_safe(s7_scheme *sc, s7_pointer body, s7_pointer stepper, s7_po
 		      return(false);
 		    if (!safe_stepper_expr(expr, stepper))      /* is step var's value used as the stored value by set!? */
 		      return(false);
-		    if (DO_PR) fprintf(stderr, "    %s passed check\n", display(body));
 		  }
 		  break;
 
@@ -86224,15 +86218,15 @@ static bool op_tc_if_a_z_laa(s7_scheme *sc, s7_pointer code, bool z_first, tc_ch
 			  while (real(slot_value(slot1)) >= lim)
 			    {
 			      s7_double x1 = real(slot_value(slot2)) - m;
-			      real(val2) = fd2(o2);
-			      real(val1) = x1;
+			      set_real(val2, fd2(o2));
+			      set_real(val1, x1);
 			    }}
 		      else
 			while (fb(o) != z_first)
 			  {
 			    s7_double x1 = fd1(o1);
-			    real(val2) = fd2(o2);
-			    real(val1) = x1;
+			    set_real(val2, fd2(o2));
+			    set_real(val1, x1);
 			  }
 		      return(op_tc_z(sc, if_z));
 		    }}}}
@@ -87572,19 +87566,19 @@ static s7_double oprec_d_if_a_a_opla_laq(s7_scheme *sc)
   s7_double x1, x2;
   if (sc->rec_test_o->v[0].fb(sc->rec_test_o)) return(sc->rec_result_o->v[0].fd(sc->rec_result_o));
   x1 = sc->rec_a1_o->v[0].fd(sc->rec_a1_o);
-  real(sc->rec_val1) = sc->rec_a2_o->v[0].fd(sc->rec_a2_o);
+  set_real(sc->rec_val1, sc->rec_a2_o->v[0].fd(sc->rec_a2_o));
   if (sc->rec_test_o->v[0].fb(sc->rec_test_o))
     x2 = sc->rec_result_o->v[0].fd(sc->rec_result_o);
   else
     {
       s7_double x3;
       x2 = sc->rec_a1_o->v[0].fd(sc->rec_a1_o);
-      real(sc->rec_val1) = sc->rec_a2_o->v[0].fd(sc->rec_a2_o);
+      set_real(sc->rec_val1, sc->rec_a2_o->v[0].fd(sc->rec_a2_o));
       x3 = oprec_d_if_a_a_opla_laq(sc);
-      real(sc->rec_val1) = x2;
+      set_real(sc->rec_val1, x2);
       x2 = sc->rec_d_dd_f(oprec_d_if_a_a_opla_laq(sc), x3);
     }
-  real(sc->rec_val1) = x1;
+  set_real(sc->rec_val1, x1);
   return(sc->rec_d_dd_f(oprec_d_if_a_a_opla_laq(sc), x2));
 }
 
@@ -87636,9 +87630,9 @@ static s7_double oprec_d_if_a_opla_laq_a(s7_scheme *sc)
   s7_double x1, x2;
   if (!(sc->rec_test_o->v[0].fb(sc->rec_test_o))) return(sc->rec_result_o->v[0].fd(sc->rec_result_o));
   x1 = sc->rec_a1_o->v[0].fd(sc->rec_a1_o);
-  real(sc->rec_val1) = sc->rec_a2_o->v[0].fd(sc->rec_a2_o);
+  set_real(sc->rec_val1, sc->rec_a2_o->v[0].fd(sc->rec_a2_o));
   x2 = oprec_d_if_a_opla_laq_a(sc);
-  real(sc->rec_val1) = x1;
+  set_real(sc->rec_val1, x1);
   return(sc->rec_d_dd_f(oprec_d_if_a_opla_laq_a(sc), x2));
 }
 
@@ -95516,7 +95510,7 @@ static void init_wrappers(s7_scheme *sc)
     {
       s7_pointer p = alloc_pointer(sc);
       full_type(p) = T_REAL | T_IMMUTABLE | T_MUTABLE | T_UNHEAP;
-      real(p) = 0.0;
+      set_real(p, 0.0);
       set_car(cp, p);
     }
   unchecked_set_cdr(qp, sc->real_wrappers);
@@ -95844,11 +95838,6 @@ static void init_rootlet(s7_scheme *sc)
 {
   /* most of init_rootlet (the built-in  functions for example), could be shared by all s7 instances.
    *   currently, each s7_init call allocates room for them, then s7_free frees it -- kinda wasteful.
-   *   allocate separately filling unlet then set symbols in init_rootlet by running through unlet and calling s7_define for each?
-   *   need pre-unlet separate from thread-local unlet (dynamic loads).
-   *   but currently the init_unlet run through the symbol table is wasting lots of time.
-   *   unlet has only c_functions/syntax but should we support #_gsl* etc?
-   *   split init_unlet, add load to defun macros
    */
   s7_pointer sym;
   init_syntax(sc);
@@ -96900,6 +96889,7 @@ s7_scheme *s7_init(void)
   sc->rootlet_slots = slot_end;
   set_curlet(sc, sc->rootlet);
   sc->shadow_rootlet = sc->rootlet;
+  sc->unlet_slots = slot_end;
   sc->objstr_max_len = S7_INT64_MAX;
 
   init_wrappers(sc);
@@ -97474,7 +97464,7 @@ int main(int argc, char **argv)
  * tref      1081    691    687    463    459    464    466
  * index            1026   1016    973    967    972    974
  * tmock            1177   1165   1057   1019   1032   1036
- * tvect     3408   2519   2464   1772   1669   1497   1497  1542 [opt_do_very_simple -> opt_dotimes, byte-vector-ref and typed vectors]
+ * tvect     3408   2519   2464   1772   1669   1497   1497  1515 [gc]
  * tauto                          2562   2048   1729   1729
  * timp             2637   2575   1930   1694   1740   1738
  * texit     1884                 1778   1741   1770   1774
@@ -97486,7 +97476,7 @@ int main(int argc, char **argv)
  * tread            2440   2421   2419   2408   2405   2402
  * trclo     8031   2735   2574   2454   2445   2449   2470
  * titer     3657   2865   2842   2641   2509   2449   2446
- * tload                          3046   2404   2566   2452
+ * tload                          3046   2404   2566   2452  2444
  * fbench    2933   2688   2583   2460   2430   2478   2559
  * tmat             3065   3042   2524   2578   2590   2594  2602 [op_safe_do ->op_dotimes_p]
  * tsort     3683   3105   3104   2856   2804   2858   2858
@@ -97507,10 +97497,10 @@ int main(int argc, char **argv)
  * tgsl             8485   7802   6373   6282   6208   6208
  * tari      15.0   13.0   12.7   6827   6543   6278   6284
  * tlist     9219   7896   7546   6558   6240   6300   6300
- * tset                                  6260   6364   6393  6443 [op_safe_do -> op_dotimes*]
+ * tset                                  6260   6364   6443
  * trec      19.5   6936   6922   6521   6588   6583   6583
  * tleft     11.1   10.4   10.2   7657   7479   7627   7622
- * tmisc                                 8488   7862   7869  8157 [do_step1 eval, none down -- new?]
+ * tmisc                                 8488   7862   8157
  * tlamb                                        7941   7941
  * tgc              11.9   11.1   8177   7857   7986   8005
  * thash            11.8   11.7   9734   9479   9526   9531  [fx_add_t1 -> s1]
@@ -97529,7 +97519,4 @@ int main(int argc, char **argv)
  * widget-size (pane equal)
  * copy/fill!/reverse! + setter/features/let is a mess
  * check func sig against actual call/returned value, same for typers/actual values
- * unlet in threads?
- * chec/s7test named-let* kword args
- * extend set_integer|real and check afterwards? for integer see search: 82 hits
  */

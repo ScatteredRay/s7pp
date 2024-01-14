@@ -349,10 +349,10 @@
   
   (test 100000))
 
+
 ;;; typer optimization tests
 
-
-(define typer-size 1000000)
+(define typer-size 10000000)
 
 ;; -------- int-vector
 (define (iv1) ; 77.9 -> 59.0 (no make-integer)
