@@ -3621,7 +3621,9 @@ static s7_pointer slot_expression(s7_pointer p)    \
 #define real(p)                        (T_Rel(p))->object.number.real_value
 #define set_real(p, x)                 real(p) = x
 #define numerator(p)                   (T_Frc(p))->object.number.fraction_value.numerator
+#define set_numerator(p, x)            numerator(p) = x
 #define denominator(p)                 (T_Frc(p))->object.number.fraction_value.denominator
+#define set_denominator(p, x)          denominator(p) = x
 #define fraction(p)                    (((long_double)numerator(p)) / ((long_double)denominator(p)))
 #define inverted_fraction(p)           (((long_double)denominator(p)) / ((long_double)numerator(p)))
 #define real_part(p)                   (T_Cmp(p))->object.number.complex_value.rl
@@ -6088,7 +6090,6 @@ static s7_pointer find_let(s7_scheme *sc, s7_pointer obj)
       return(sc->rootlet);
       /* TODO: what about cload into local?
        *   (*libc* 'memcpy): memcpy, ((rootlet) 'memcpy): #<undefined>, (with-let (rootlet) memcpy): error (undefined), (with-let *libc* memcpy): memcpy
-       * TODO: why aren't the libc.scm scheme objects like false or c-null in *libc*?
        */
     }
   return(sc->nil);
@@ -12398,13 +12399,13 @@ static inline s7_pointer make_simple_ratio(s7_scheme *sc, s7_int num, s7_int den
   new_cell(sc, x, T_RATIO);
   if (den < 0) /* this is noticeably faster in callgrind than using (den < 0) ? ... twice */
     {
-      numerator(x) = -num;
-      denominator(x) = -den;
+      set_numerator(x, -num);
+      set_denominator(x, -den);
     }
   else
     {
-      numerator(x) = num;
-      denominator(x) = den;
+      set_numerator(x, num);
+      set_denominator(x, den);
     }
   return(x);
 }
@@ -13650,8 +13651,8 @@ static s7_pointer make_ratio(s7_scheme *sc, s7_int a, s7_int b)
     return(make_integer(sc, a));
 
   new_cell(sc, x, T_RATIO);
-  numerator(x) = a;
-  denominator(x) = b;
+  set_numerator(x, a);
+  set_denominator(x, b);
   return(x);
 }
 
@@ -21811,8 +21812,8 @@ static s7_pointer g_divide_by_2(s7_scheme *sc, s7_pointer args)
 	{
 	  s7_pointer x;
 	  new_cell(sc, x, T_RATIO);
-	  numerator(x) = i;
-	  denominator(x) = 2;
+	  set_numerator(x, i);
+	  set_denominator(x, 2);
 	  return(x);
 	}
       return(make_integer(sc, i >> 1));
@@ -49017,8 +49018,8 @@ static s7_pointer copy_source_no_dest(s7_scheme *sc, s7_pointer source, s7_point
       return(dest);
     case T_RATIO:
       new_cell(sc, dest, T_RATIO);
-      numerator(dest) = numerator(source);
-      denominator(dest) = denominator(source);
+      set_numerator(dest, numerator(source));
+      set_denominator(dest, denominator(source));
       return(dest);
     case T_REAL:
       new_cell(sc, dest, T_REAL);
@@ -63448,7 +63449,7 @@ static s7_pointer check_loop_end_ref(s7_pointer p, const char *func, int32_t lin
 #else
 #define loop_end(A) denominator(T_Int(slot_value(A)))
 #endif
-#define set_loop_end(A, B) denominator(T_Int(slot_value(A))) = B
+#define set_loop_end(A, B) set_denominator(T_Int(slot_value(A)), B)
 
 static void check_unchecked(s7_scheme *sc, s7_pointer obj, s7_pointer slot, opt_info *opc, s7_pointer expr)
 {
@@ -79840,8 +79841,8 @@ static Inline void inline_op_increment_by_1(s7_scheme *sc)  /* ([set!] ctr (+ ct
       {
       case T_RATIO:
 	new_cell(sc, sc->value, T_RATIO);
-	numerator(sc->value) = numerator(val) + denominator(val);
-	denominator(sc->value) = denominator(val);
+	set_numerator(sc->value, numerator(val) + denominator(val));
+	set_denominator(sc->value, denominator(val));
 	break;
       case T_REAL:
 	sc->value = make_real(sc, real(val) + 1.0);
@@ -79869,8 +79870,8 @@ static void op_decrement_by_1(s7_scheme *sc)  /* ([set!] ctr (- ctr 1)) */
       {
       case T_RATIO:
 	new_cell(sc, sc->value, T_RATIO);
-	numerator(sc->value) = numerator(val) - denominator(val);
-	denominator(sc->value) = denominator(val);
+	set_numerator(sc->value, numerator(val) - denominator(val));
+	set_denominator(sc->value, denominator(val));
 	break;
       case T_REAL:
 	sc->value = make_real(sc, real(val) - 1.0);
@@ -80675,58 +80676,49 @@ static bool tree_match(s7_pointer tree)
 	 ((tree_match(car(tree))) || (tree_match(cdr(tree)))));
 }
 
-#define DO_PR 0
-
-static bool all_ints_here(s7_scheme *sc, s7_pointer settee, s7_pointer expr, s7_pointer step_vars, int depth) /* see also all_integers above */
+static bool all_ints_here(s7_scheme *sc, s7_pointer settee, s7_pointer expr, s7_pointer step_vars) /* see also all_integers above */
 {
   /* since any type change causes false return, we can accept inits across step-vars */
-  /* this function started out trivial... */
   s7_pointer func, sig;
-  if (DO_PR) for (int i = 0; i < depth; i++) fprintf(stderr, " ");
-  if (DO_PR) fprintf(stderr, "%s: %s %s\n", __func__, display(expr), display(step_vars));
   if (is_number(expr))
-    {bool v = is_t_integer(expr); if (!v) if (DO_PR) fprintf(stderr, "%d\n", __LINE__); return(v);}
+    return(is_t_integer(expr));
   if (is_symbol(expr))
     {
       s7_pointer val;
       if (expr == settee) return(true);
       for (s7_pointer step = step_vars; is_pair(step); step = cdr(step))
 	if (caar(step) == expr)
-	  { /* TODO: can we lookup step_vars here? or only in do_is_safe? */
-	    {bool v = all_ints_here(sc, caar(step), cadar(step), step_vars, depth + 1); if (!v) if (DO_PR) {fprintf(stderr, "%d\n", __LINE__); return(v);}}
+	  { 
+	    if (!all_ints_here(sc, caar(step), cadar(step), step_vars)) /* TODO: can we lookup step_vars here? or only in do_is_safe? */
+	      return(false);
 	    if (is_pair(cddar(step)))
-	      {bool v = all_ints_here(sc, caar(step), caddar(step), step_vars, depth + 1); if (!v) if (DO_PR) fprintf(stderr, "%d\n", __LINE__); return(v);}
+	      return(all_ints_here(sc, caar(step), caddar(step), step_vars));
+	    return(true);
 	  }
       val = lookup_unexamined(sc, expr);
-      {bool v = ((val) && (is_t_integer(val))); if (!v) if (DO_PR) fprintf(stderr, "%d\n", __LINE__); return(v);}
+      return((val) && (is_t_integer(val)));
     }
-  if (!is_pair(expr)) {if (DO_PR) fprintf(stderr, "%d\n", __LINE__); return(false);}
-  if (!is_symbol(car(expr))) {if (DO_PR) fprintf(stderr, "%d\n", __LINE__); return(false);}
+  if (!is_pair(expr)) return(false);
+  if (!is_symbol(car(expr))) return(false);
   func = lookup_unexamined(sc, car(expr));
-  if (!func) {if (DO_PR) fprintf(stderr, "%d\n", __LINE__); return(false);}
-  if (DO_PR) fprintf(stderr, "car(expr): %s\n", display(func));
+  if (!func) return(false);
   if ((is_int_vector(func)) || (is_byte_vector(func))) return(true);
-  if (!is_any_c_function(func)) {if (DO_PR) fprintf(stderr, "%d\n", __LINE__); return(false);}
-
+  if (!is_any_c_function(func)) return(false);
   if ((car(expr) == sc->vector_ref_symbol) && (is_pair(cdr(expr))) && (is_symbol(cadr(expr))))
     {
       s7_pointer v = lookup_unexamined(sc, cadr(expr));
-      if (DO_PR) fprintf(stderr, "cadr(expr): %s\n", display(func));
       if ((v) && ((is_int_vector(v)) || (is_byte_vector(v)))) return(true);
     }
-
   sig = c_function_signature(func);
   if ((is_pair(sig)) &&
       ((car(sig) == sc->is_integer_symbol) || (car(sig) == sc->is_byte_symbol) ||
        ((is_pair(car(sig))) && 
 	((direct_memq(sc->is_integer_symbol, car(sig))) || (direct_memq(sc->is_byte_symbol, car(sig)))))))
     return(true); /* like int-vector or length */
-  /* byte-vector-ref uses byte? (tvect) */
-
-  if (!is_all_integer(car(expr))) {if (DO_PR) fprintf(stderr, "%d\n", __LINE__); return(false);}
+  if (!is_all_integer(car(expr))) return(false);
   for (s7_pointer p = cdr(expr); is_pair(p); p = cdr(p))
-    if (!all_ints_here(sc, settee, car(p), step_vars, depth + 1))
-      {if (DO_PR) fprintf(stderr, "%d\n", __LINE__); return(false);}
+    if (!all_ints_here(sc, settee, car(p), step_vars))
+      return(false);
   return(true);
 }
 
@@ -80851,12 +80843,9 @@ static bool do_is_safe(s7_scheme *sc, s7_pointer body, s7_pointer stepper, s7_po
 			  {
 			    s7_pointer val = lookup_unexamined(sc, settee);
 			    if (has_set) (*has_set) = true;
-			    
-			    if ((val) && (is_t_integer(val)) && (!all_ints_here(sc, settee, caddr(expr), step_vars, 0)))
-			      {
-				if (DO_PR) fprintf(stderr, "  %s failed check\n", display(expr));
-				return(false);
-			      }}}
+			    if ((val) && (is_t_integer(val)) && (!all_ints_here(sc, settee, caddr(expr), step_vars)))
+			      return(false);
+			  }}
 		    if (!do_is_safe(sc, cddr(expr), stepper, var_list, step_vars, has_set)) 
 		      return(false);
 		    if (!safe_stepper_expr(expr, stepper))      /* is step var's value used as the stored value by set!? */
@@ -97464,7 +97453,7 @@ int main(int argc, char **argv)
  * tref      1081    691    687    463    459    464    466
  * index            1026   1016    973    967    972    974
  * tmock            1177   1165   1057   1019   1032   1036
- * tvect     3408   2519   2464   1772   1669   1497   1497  1515 [gc]
+ * tvect     3408   2519   2464   1772   1669   1497   1515
  * tauto                          2562   2048   1729   1729
  * timp             2637   2575   1930   1694   1740   1738
  * texit     1884                 1778   1741   1770   1774
@@ -97476,9 +97465,9 @@ int main(int argc, char **argv)
  * tread            2440   2421   2419   2408   2405   2402
  * trclo     8031   2735   2574   2454   2445   2449   2470
  * titer     3657   2865   2842   2641   2509   2449   2446
- * tload                          3046   2404   2566   2452  2444
+ * tload                          3046   2404   2566   2444
  * fbench    2933   2688   2583   2460   2430   2478   2559
- * tmat             3065   3042   2524   2578   2590   2594  2602 [op_safe_do ->op_dotimes_p]
+ * tmat             3065   3042   2524   2578   2590   2602  [op_safe_do ->op_dotimes_p]
  * tsort     3683   3105   3104   2856   2804   2858   2858
  * tobj             4016   3970   3828   3577   3508   3502
  * teq              4068   4045   3536   3486   3544   3517
@@ -97493,7 +97482,7 @@ int main(int argc, char **argv)
  * tshoot           5525   5447   5183   5055   5034   5034
  * tform            5357   5348   5307   5316   5084   5095
  * tstr      10.0   6880   6342   5488   5162   5180   5180
- * tnum             6348   6013   5433   5396   5409   5403  5423 [c:opt_d_7piid_sssf_unchecked etc -> checked]
+ * tnum             6348   6013   5433   5396   5409   5423  [c:opt_d_7piid_sssf_unchecked etc -> checked]
  * tgsl             8485   7802   6373   6282   6208   6208
  * tari      15.0   13.0   12.7   6827   6543   6278   6284
  * tlist     9219   7896   7546   6558   6240   6300   6300
@@ -97518,5 +97507,4 @@ int main(int argc, char **argv)
  * combine lets?
  * widget-size (pane equal)
  * copy/fill!/reverse! + setter/features/let is a mess
- * check func sig against actual call/returned value, same for typers/actual values
  */
