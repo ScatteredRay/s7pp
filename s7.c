@@ -97507,4 +97507,7 @@ int main(int argc, char **argv)
  * combine lets?
  * widget-size (pane equal)
  * copy/fill!/reverse! + setter/features/let is a mess
+ * pretty-print doesn't know about #_ and turns #_unlet -> unlet
+ *   (format #f "~W" #_car) -> "car" -- how to say unlet-it? c-macro is ok: (format #f "~W" #_quasiquote) -> "#_quasiquote" but ~S also works here [also #_if]
+ *   so given (format #f "~W" car) how to disambiguate? a bit from the reader: T_INITIAL_SLOT for c_funcs
  */
