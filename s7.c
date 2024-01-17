@@ -35099,6 +35099,9 @@ static void c_function_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, u
       (is_slot(initial_slot(sym))) &&
       ((use_write == P_READABLE) || (lookup(sc, sym) != initial_value(sym))))
     {
+      /* this is not ideal, but normally the initial_value == global_value (so we can't set a bit there), and the slot
+       *   is not accessible here, so we can't tell that the #_ value was used (and probably needed) in the original code.
+       */
       port_write_string(port)(sc, "#_", 2, port);
       port_write_string(port)(sc, c_function_name(obj), c_function_name_length(obj), port);
       return;
@@ -97452,12 +97455,12 @@ int main(int argc, char **argv)
  * tpeak      148    115    114    108    105    102    102
  * tref      1081    691    687    463    459    464    466
  * index            1026   1016    973    967    972    974
- * tmock            1177   1165   1057   1019   1032   1036
+ * tmock            1177   1165   1057   1019   1032   1037
  * tvect     3408   2519   2464   1772   1669   1497   1515
  * tauto                          2562   2048   1729   1729
  * timp             2637   2575   1930   1694   1740   1738
  * texit     1884                 1778   1741   1770   1774
- * s7test           1873   1831   1818   1829   1830   1875
+ * s7test           1873   1831   1818   1829   1830   1864
  * lt        2222   2187   2172   2150   2185   1950   1950
  * thook     7651                 2590   2030   2046   2046
  * dup              3805   3788   2492   2239   2097   2096
@@ -97496,7 +97499,7 @@ int main(int argc, char **argv)
  * cb        12.9   11.2   11.0   9658   9564   9609   9639
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3
  * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1
- * calls            36.7   37.5   37.0   37.5   37.1   37.1
+ * calls            36.7   37.5   37.0   37.5   37.1   37.0
  * sg                             55.9   55.8   55.4   55.2
  * tbig            177.4  175.8  156.5  148.1  146.2  146.3
  * -------------------------------------------------------------
@@ -97507,7 +97510,4 @@ int main(int argc, char **argv)
  * combine lets?
  * widget-size (pane equal)
  * copy/fill!/reverse! + setter/features/let is a mess
- * pretty-print doesn't know about #_ and turns #_unlet -> unlet
- *   (format #f "~W" #_car) -> "car" -- how to say unlet-it? c-macro is ok: (format #f "~W" #_quasiquote) -> "#_quasiquote" but ~S also works here [also #_if]
- *   so given (format #f "~W" car) how to disambiguate? a bit from the reader: T_INITIAL_SLOT for c_funcs
  */

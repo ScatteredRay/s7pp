@@ -19,11 +19,11 @@
 				       (if (= z pi)
 					   (copy "pi")
 					   (format #f *pretty-print-float-format* z)))
-				   (format #f "~A~A~Ai" 
+				   (format #f "~A~A~Ai"
 					   (messy-number (real-part z))
 					   (if (negative? (imag-part z)) "-" "+")
 					   (messy-number (abs (imag-part z)))))))
-	       
+
 	       (any-keyword? (lambda (lst)
 			       (and (pair? lst)
 				    (or (keyword? (car lst))
@@ -35,11 +35,11 @@
 						  (hash-table? (car sequence))
 						  (any-let-or-hash-table? (cdr sequence)))))))
 	(let ((newlines 0))
-	  
-	  (define (spaces port n) 
+
+	  (define (spaces port n)
 	    (set! newlines (+ newlines 1))
 	    (format port "~%~NC" (+ n *pretty-print-left-margin*) #\space))
-	  
+
 	  (define (stacked-list port lst col)
 	    (do ((p lst (cdr p))
 		 (added 0 0))
@@ -55,11 +55,11 @@
 		    (set! added (+ 1 len))
 		    (set! p (cdr p))
 		    (set! obj (car p))) ; pair? cdr p above
-		  
+
 		  (cond ((or (hash-table? obj)
 			     (let? obj))
 			 (pretty-print-1 obj port col))
-			
+
 			((and (pair? obj)
 			      (pair? (cdr obj))
 			      (null? (cddr obj))
@@ -73,10 +73,10 @@
 			 (pretty-print-1 (cadr obj) port (+ col 1))
 			 (if (not (eq? (car obj) 'quote))
 			     (write-char #\) port)))
-			
+
 			(else
 			 (pretty-print-1 obj port (+ col added))))))))
-	  
+
 	  (define (stacked-split-list port lst col)
 	    (if (not (pair? lst))
 		(write lst port)
@@ -92,8 +92,8 @@
 			    (write (cdar p) port))
 			(write-char #\) port))
 		      (write (car p) port))))) ; pretty-print? (it's always a symbol)
-	  
-	  (let ((writers 
+
+	  (let ((writers
 		 (let ((h (make-hash-table)))
 
 		   ;; -------- quote
@@ -103,8 +103,8 @@
 			 (begin
 			   (write-char #\' port)
 			   (pretty-print-1 (cadr obj) port column))))
-		   (hash-table-set! h 'quote w-quote)
-		   
+		   (hash-table-set! h 'quote w-quote) ; what about #_quote?
+
 		   ;; -------- define
 		   (define (w-define obj port column)
 		     (if (not (pair? (cdr obj)))
@@ -125,15 +125,15 @@
 				   (write (cddr obj) port)))
 			   (write-char #\) port))))
 		   (hash-table-set! h 'define w-define)
-		   
+
 		   ;; -------- if
-		   (define (w-if obj port column)
+		   (define (w-if obj port column if-str)
 		     (let ((objstr (object->string obj))
 			   (ifcol (+ column 4)))
 		       (if (< (length objstr) 40)
 			   (display objstr port)
 			   (begin
-			     (format port "(if ")
+			     (format port "(~A " if-str)
 			     (pretty-print-1 (cadr obj) port ifcol)
 			     (when (pair? (cddr obj)) ; might be a messed-up if
 			       (spaces port ifcol)
@@ -142,33 +142,36 @@
 				 (spaces port ifcol)
 				 (pretty-print-1 (cadddr obj) port ifcol)))
 			     (write-char #\) port)))))
-		   (hash-table-set! h 'if w-if)
-		   
+		   (hash-table-set! h 'if (lambda (obj port col) (w-if obj port col "if")))
+		   (hash-table-set! h #_if (lambda (obj port col) (w-if obj port col "#_if")))
+
 		   ;; -------- when unless
-		   (define (w-when obj port column)
+		   (define (w-when obj port column str)
 		     (let ((objstr (object->string obj)))
 		       (if (< (length objstr) 40)
 			   (display objstr port)
 			   (begin
-			     (format port "(~A " (car obj))
-			     (pretty-print-1 (cadr obj) port (+ column (if (eq? (car obj) 'when) 6 8)))
+			     (format port "(~A " str)
+			     (pretty-print-1 (cadr obj) port (+ column (+ 2 (string-length str)))) ;(if (eq? (car obj) 'when) 6 8)))
 			     (spaces port (+ column *pretty-print-spacing*))
 			     (when (pair? (cddr obj))
 			       (stacked-list port (cddr obj) (+ column *pretty-print-spacing*)))
 			     (write-char #\) port)))))
-		   (hash-table-set! h 'when w-when)
-		   (hash-table-set! h 'unless w-when)
-		   
+		   (hash-table-set! h 'when (lambda (obj port col) (w-when obj port col "when")))
+		   (hash-table-set! h 'unless (lambda (obj port col) (w-when obj port col "unless")))
+		   (hash-table-set! h #_when (lambda (obj port col) (w-when obj port col "#_when")))
+		   (hash-table-set! h #_unless (lambda (obj port col) (w-when obj port col "#_unless")))
+
 		   ;; -------- let let* letrec letrec*
-		   (define (w-let obj port column)
+		   (define (w-let obj port column let-str)
 		     (if (not (and (pair? (cdr obj))
 				   (pair? (cddr obj))))
 			 (write obj port)
 			 (begin
-			   (let ((head-len (length (symbol->string (car obj)))))
+			   (let ((head-len (length let-str)))
 			     (if (symbol? (cadr obj))
 				 (begin
-				   (format port "(~A ~A (" (car obj) (cadr obj))
+				   (format port "(~A ~A (" let-str (cadr obj))
 				   (if (pair? (cddr obj))
 				       (if (pair? (caddr obj)) ; (let x () ...)
 					   (stacked-split-list port (caddr obj) (+ column head-len (length (symbol->string (cadr obj))) 4))
@@ -177,7 +180,7 @@
 				       (if (not (null? (cddr obj)))
 					   (format port " . ~S" (cddr obj)))))
 				 (begin
-				   (format port "(~A (" (car obj))
+				   (format port "(~A (" let-str)
 				   (if (pair? (cadr obj))
 				       (stacked-split-list port (cadr obj) (+ column head-len 3))))))
 			   (write-char #\) port)
@@ -186,17 +189,19 @@
 			       (stacked-list port ((if (symbol? (cadr obj)) cdddr cddr) obj) (+ column *pretty-print-spacing*)))
 			   (write-char #\) port))))
 		   (for-each
-		    (lambda (f)
-		      (hash-table-set! h f w-let))
-		    '(let let* letrec letrec*))
-		   
+		    (lambda (f str)
+		      (hash-table-set! h f (lambda (obj port col) (w-let obj port col str))))
+		    (list 'let 'let* 'letrec 'letrec* #_let #_let* #_letrec #_letrec*)
+		    (list "let" "let*" "letrec" "letrec" "#_let" "#_let*" "#_letrec" "#_letrec*"))
+
 		   ;; -------- set!
-		   (define (w-set obj port column)
+		   (define (w-set obj port column set-str)
 		     (let ((str (object->string obj)))
+
 		       (if (<= (length str) 60)
 			   (display str port)
 			   (let ((settee (object->string (cadr obj))))
-			     (format port "(set! ~A" settee)
+			     (format port "(~A ~A" set-str settee)
 			     (if (pair? (cddr obj))
 				 (if (> (length settee) 20)
 				     (begin
@@ -206,11 +211,12 @@
 				       (write-char #\space port)
 				       (pretty-print-1 (caddr obj) port (+ column 7 (length settee))))))
 			     (write-char #\) port)))))
-		   (hash-table-set! h 'set! w-set)
-		   
+		   (hash-table-set! h 'set! (lambda (obj port col) (w-set obj port col "set!")))
+		   (hash-table-set! h #_set! (lambda (obj port col) (w-set obj port col "#_set!")))
+
 		   ;; -------- cond
-		   (define (w-cond obj port column)
-		     (format port "(cond ")
+		   (define (w-cond obj port column cond-str)
+		     (format port "(~A " cond-str)
 		     (do ((lst (cdr obj) (cdr lst)))
 			 ((not (pair? lst)))
 		       (if (not (eq? lst (cdr obj)))
@@ -227,7 +233,7 @@
 			       (write-char #\( port)
 			       (let ((oldlines newlines))
 				 (pretty-print-1 (caar lst) port (+ column 7))
-				 (if (or extras 
+				 (if (or extras
 					 (not (= oldlines newlines))
 					 too-long)
 				     (spaces port (+ column 7))
@@ -248,27 +254,30 @@
 					 (stacked-list port (cdar lst) (+ column 7)))))
 			       (write-char #\) port)))))
 		     (write-char #\) port))
-		   (hash-table-set! h 'cond w-cond)
-		   
+		   (hash-table-set! h 'cond (lambda (obj port col) (w-cond obj port col "cond")))
+		   (hash-table-set! h #_cond (lambda (obj port col) (w-cond obj port col "#_cond")))
+
 		   ;; -------- and or
-		   (define (w-and obj port column)
+		   (define (w-and obj port column and-str)
 		     (if (> (length (object->string obj)) 40)
 			 (begin
-			   (format port "(~A " (car obj))
+			   (format port "(~A " and-str)
 			   (stacked-list port (cdr obj) (+ column *pretty-print-spacing* (length (symbol->string (car obj)))))
 			   (write-char #\) port))
 			 (write obj port)))
-		   (hash-table-set! h 'and w-and)
-		   (hash-table-set! h 'or w-and)
-		   
+		   (hash-table-set! h 'and (lambda (obj port col) (w-and obj port col "and")))
+		   (hash-table-set! h 'or (lambda (obj port col) (w-and obj port col "or")))
+		   (hash-table-set! h #_and (lambda (obj port col) (w-and obj port col "#_and")))
+		   (hash-table-set! h #_or (lambda (obj port col) (w-and obj port col "#_or")))
+
 		   ;; -------- case
-		   (define (w-case obj port column)
+		   (define (w-case obj port column case-str)
 		     (if (not (and (pair? (cdr obj))
 				   (pair? (cddr obj))))
 			 (write obj port)
 			 (begin
-			   (format port "(case ~A" (cadr obj)) ; send out the selector
-			   (for-each 
+			   (format port "(~A ~A" case-str (cadr obj)) ; send out the selector
+			   (for-each
 			    (lambda (lst)
 			      (spaces port (+ column *pretty-print-spacing*))
 			      (if (not (pair? lst))
@@ -311,29 +320,32 @@
 				    (write-char #\) port))))
 			    (cddr obj))
 			   (write-char #\) port))))
-		   (hash-table-set! h 'case w-case)
-		   
+		   (hash-table-set! h 'case (lambda (obj port col) (w-case obj port col "case")))
+		   (hash-table-set! h #_case (lambda (obj port col) (w-case obj port col "#_case")))
+
 		   ;; -------- map for-each
-		   (define (w-map obj port column)
+		   (define (w-map obj port column map-str)
 		     (let* ((objstr (object->string obj))
 			    (strlen (length objstr)))
 		       (if (< (+ column strlen) *pretty-print-length*)
 			   (display objstr port)
 			   (begin
-			     (format port "(~A" (car obj))
+			     (format port "(~A" map-str)
 			     (when (pair? (cdr obj))
 			       (write-char #\space port)
 			       (stacked-list port (cdr obj) (+ column *pretty-print-spacing*)))
 			     (write-char #\) port)))))
-		   (hash-table-set! h 'map w-map)
-		   (hash-table-set! h 'for-each w-map)
-		   
+		   (hash-table-set! h 'map (lambda (obj port col) (w-map obj port col "map")))
+		   (hash-table-set! h 'for-each (lambda (obj port col) (w-map obj port col "for-each")))
+		   (hash-table-set! h #_map (lambda (obj port col) (w-map obj port col "#_map")))
+		   (hash-table-set! h #_for-each (lambda (obj port col) (w-map obj port col "#_for-each")))
+
 		   ;; -------- do
-		   (define (w-do obj port column)
+		   (define (w-do obj port column do-str)
 		     (if (not (pair? (cdr obj)))
 			 (write obj port)
 			 (begin
-			   (format port "(do ")
+			   (format port "(~A " do-str)
 			   (if (list? (cadr obj))
 			       (write-char #\( port)
 			       (display (cadr obj) port))
@@ -356,75 +368,80 @@
 			       (spaces port (+ column *pretty-print-spacing*))
 			       (stacked-list port (cdddr obj) (+ column *pretty-print-spacing*))))
 			   (write-char #\) port))))
-		   (hash-table-set! h 'do w-do)
-		   
+		   (hash-table-set! h 'do (lambda (obj port col) (w-do obj port col "do")))
+		   (hash-table-set! h #_do (lambda (obj port col) (w-do obj port col "#_do")))
+
 		   ;; -------- begin etc
-		   (define (w-begin obj port column)
-		     (format port "(~A" (car obj))
+		   (define (w-begin obj port column begin-str)
+		     (format port "(~A" begin-str)
 		     (when (pair? (cdr obj))
 		       (spaces port (+ column *pretty-print-spacing*))
 		       (stacked-list port (cdr obj) (+ column *pretty-print-spacing*)))
 		     (write-char #\) port))
 		   (for-each
-		    (lambda (f)
-		      (hash-table-set! h f w-begin))
-		    '(begin call-with-exit call/cc call-with-current-continuation 
-			    with-baffle with-output-to-string call-with-output-string hash-table inlet))
-		   
+		    (lambda (f str)
+		      (hash-table-set! h f (lambda (obj port col) (w-begin obj port col str))))
+		    (list 'begin 'call-with-exit 'call/cc 'call-with-current-continuation 'with-baffle
+			  'with-output-to-string 'call-with-output-string 'hash-table 'inlet
+			  #_begin #_call-with-exit #_call/cc #_call-with-current-continuation #_with-baffle
+			  #_with-output-to-string #_call-with-output-string #_hash-table #_inlet)
+		    (list "begin" "call-with-exit" "call/cc" "call-with-current-continuation" "with-baffle"
+			  "with-output-to-string" "call-with-output-string" "hash-table" "inlet"
+			  "#_begin" "#_call-with-exit" "#_call/cc" "#_call-with-current-continuation" "#_with-baffle"
+			  "#_with-output-to-string" "#_call-with-output-string" "#_hash-table" "#_inlet"))
+
 		   ;; -------- dynamic-wind call-with-values
-		   (define (w-dynwind obj port column)
-		     (format port "(~A" (car obj))
+		   (define (w-dynwind obj port column str)
+		     (format port "(~A" str)
 		     (spaces port (+ column *pretty-print-spacing*))
 		     (stacked-list port (cdr obj) (+ column *pretty-print-spacing*))
 		     (write-char #\) port))
-		   (hash-table-set! h 'dynamic-wind w-dynwind)
-		   (hash-table-set! h 'call-with-values w-dynwind)
-		   
+		   (hash-table-set! h 'dynamic-wind (lambda (obj port col) (w-dynwind obj port col "dynamic-wind")))
+		   (hash-table-set! h 'call-with-values (lambda (obj port col) (w-dynwind obj port col "call-with-values")))
+		   (hash-table-set! h #_dynamic-wind (lambda (obj port col) (w-dynwind obj port col "#_dynamic-wind")))
+		   (hash-table-set! h #_call-with-values (lambda (obj port col) (w-dynwind obj port col "#_call-with-values")))
+
 		   ;; -------- lambda etc
-		   (define (w-lambda obj port column)
+		   (define (w-lambda obj port column str)
 		     (if (not (and (pair? (cdr obj))
 				   (pair? (cddr obj))))
 			 (write obj port)
 			 (begin
-			   (format port "(~A " (car obj)); (cadr obj))
-			   (pretty-print-1 (cadr obj) port (+ column *pretty-print-spacing* (length (symbol->string (car obj)))))
+			   (format port "(~A " str)
+			   (pretty-print-1 (cadr obj) port (+ column *pretty-print-spacing* (length str)))
 			   (spaces port (+ column *pretty-print-spacing*))
 			   (stacked-list port (cddr obj) (+ column *pretty-print-spacing*))
 			   (write-char #\) port))))
 		   (for-each
-		    (lambda (f)
-		      (hash-table-set! h f w-lambda))
-		    '(lambda lambda* define* define-macro define-macro* define-bacro define-bacro* with-let
-			     call-with-input-string call-with-input-file call-with-output-file
-			     with-input-from-file with-input-from-string with-output-to-file
-			     let-temporarily))
-		   
-		   ;; -------- defmacro defmacro*
-		   (define (w-defmacro obj port column)
-		     (if (not (and (pair? (cdr obj))
-				   (pair? (cddr obj))))
-			 (write obj port)
-			 (begin
-			   (format port "(~A ~A ~A" (car obj) (cadr obj) (caddr obj))
-			   (spaces port (+ column *pretty-print-spacing*))
-			   (stacked-list port (cdddr obj) (+ column *pretty-print-spacing*))
-			   (write-char #\) port))))
-		   (hash-table-set! h 'defmacro w-defmacro)
-		   (hash-table-set! h 'defmacro* w-defmacro)
-		   
+		    (lambda (f str)
+		      (hash-table-set! h f (lambda (obj port col) (w-lambda obj port col str))))
+		    (list 'lambda 'lambda* 'define* 'define-macro 'define-macro* 'define-bacro 'define-bacro* 'with-let 
+			  'call-with-input-string 'call-with-input-file 'call-with-output-file 'with-input-from-file 
+			  'with-input-from-string 'with-output-to-file 'let-temporarily
+			  #_lambda #_lambda* #_define* #_define-macro #_define-macro* #_define-bacro #_define-bacro* #_with-let 
+			  #_call-with-input-string #_call-with-input-file #_call-with-output-file #_with-input-from-file 
+			  #_with-input-from-string #_with-output-to-file #_let-temporarily)
+		    (list "lambda" "lambda*" "define*" "define-macro" "define-macro*" "define-bacro" "define-bacro*" "with-let" 
+			  "call-with-input-string" "call-with-input-file" "call-with-output-file" "with-input-from-file" 
+			  "with-input-from-string" "with-output-to-file" "let-temporarily"
+			  "#_lambda" "#_lambda*" "#_define*" "#_define-macro" "#_define-macro*" "#_define-bacro" "#_define-bacro*" "#_with-let" 
+			  "#_call-with-input-string" "#_call-with-input-file" "#_call-with-output-file" "#_with-input-from-file" 
+			  "#_with-input-from-string" "#_with-output-to-file" "#_let-temporarily"))
+
 		   ;; -------- catch
-		   (define (w-catch obj port column)
+		   (define (w-catch obj port column str)
 		     (if (not (pair? (cdr obj))) ; (catch) or (catch . 1)
 			 (write obj port)
 			 (begin
-			   (format port "(~A ~S" catch (cadr obj))
+			   (format port "(~A ~S" str (cadr obj))
 			   (spaces port (+ column *pretty-print-spacing*))
 			   (stacked-list port (cddr obj) (+ column *pretty-print-spacing*))
 			   (write-char #\) port))))
-		   (hash-table-set! h 'catch w-catch)
-		   
+		   (hash-table-set! h 'catch (lambda (obj port col) (w-catch obj port col "catch")))
+		   (hash-table-set! h #_catch (lambda (obj port col) (w-catch obj port col "#_catch")))
+
 		   h)))
-	    
+
 	    ;; pretty-print-1
 	    (lambda (obj port column)
 
@@ -464,7 +481,7 @@
 					     (display #\space port)))
 				     (display numstr port)
 				     (set! col (+ col numlen 1)))))))))
-		    
+
 		    ((and *pretty-print-cycles*
 			  (pair? (cyclic-sequences obj)))
 		     (format port "~W" obj))
@@ -478,7 +495,7 @@
 				   (pretty-print-1 (cdr field) port (+ column 4 (length symstr)))))
 			       obj)
 		     (write-char #\) port))
-		    
+
 		    ((let? obj)
 		     (if (and (openlet? obj)
 			      (defined? 'pretty-print obj #t))  ; #t = locally defined
@@ -492,7 +509,7 @@
 					 (pretty-print-1 (cdr field) port (+ column 4 (length symstr)))))
 				     obj)
 			   (write-char #\) port))))
-		    
+
 		    ((vector? obj)
 		     (if (> (vector-rank obj) 1)
 			 (write obj port)
@@ -522,13 +539,13 @@
 					     (display #\space port)))
 				     (pretty-print-1 (obj i) port col)
 				     (set! col (+ col olen 1)))))))))
-		    
+
 		    ((not (pair? obj))
 		     (write obj port))
 
-		    ((hash-table-ref writers (car obj)) 
+		    ((hash-table-ref writers (car obj))
 		     => (lambda (f) (f obj port column)))
-		    
+
 		    ((any-let-or-hash-table? obj)
 		     (let ((first #t))
 		       (write-char #\( port)
@@ -537,7 +554,7 @@
 				   (pretty-print-1 p port (+ column 4)))
 				 obj)
 		       (write-char #\) port)))
-		    
+
 		    (else
 		     (let* ((objstr (object->string obj))
 			    (strlen (length objstr)))
@@ -553,11 +570,11 @@
 			   ;; and here (lambda (f obj port column) (f=display obj=objstr port)?
 
 			   (let ((lstlen (length obj)))
-			     
+
 			     (cond ((or (infinite? lstlen)
 					(not (positive? lstlen)))
 				    (display objstr port))
-				   
+
 				   ((and (symbol? (car obj))
 					 (> (length (symbol->string (car obj))) 12)
 					 (pair? (cdr obj))
@@ -568,7 +585,7 @@
 				    (spaces port (+ column 2))
 				    (stacked-list port (cdr obj) (+ column 2))
 				    (write-char #\) port))
-				   
+
 				   ((= lstlen 1)
 				    (if (pair? (car obj))
 					(begin
@@ -576,7 +593,7 @@
 					  (pretty-print-1 (car obj) port (+ column 1))
 					  (write-char #\) port))
 					(display objstr port)))
-				   
+
 				   ((and (pair? (car obj))
 					 (memq (caar obj) '(lambda lambda* let let* letrec letrec* cond if case)))
 				    (write-char #\( port)
@@ -594,7 +611,7 @@
 					      (write-char #\space port)))
 					(stacked-list port (cdr obj) (+ column 1)))
 				    (write-char #\) port))
-				   
+
 				   (else
 				    (let* ((carstr (object->string (car obj)))
 					   (carstrlen (length carstr)))
@@ -611,11 +628,11 @@
 					      ((2)
 					       (write-char #\space port)
 					       (pretty-print-1 (cadr obj) port line-start))
-					      
+
 					      ((3)
 					       (write-char #\space port)
 					       (stacked-list port (cdr obj) line-start))
-					      
+
 					      (else
 					       (do ((obj-start line-start)
 						    (lst (cdr obj) (cdr lst)))
@@ -641,7 +658,7 @@
 							       (display str port)))))))))))
 				      (if (not (eq? (car obj) 'quote))
 					  (write-char #\) port)))))))))))))))
-    
+
     ;; pretty-print
     (lambda* (obj (port (current-output-port)) (column 0))
       (let ((old-port port))
@@ -702,7 +719,7 @@
 
 
 ;;; pretty-print method:
-(let ((v (openlet (inlet 'value #(0 1 2 3) 
+(let ((v (openlet (inlet 'value #(0 1 2 3)
 			 'pretty-print (lambda (obj port column)
 					 (display "#(... 2 ...)" port))))))
   (pretty-print (list 1 v 3)))
