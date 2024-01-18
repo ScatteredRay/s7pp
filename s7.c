@@ -34645,9 +34645,12 @@ static void write_closure_readably(s7_scheme *sc, s7_pointer obj, s7_pointer por
 	  clear_shared_info(new_ci);
 	  if (collect_shared_info(sc, new_ci, arglist, false))
 	    {
+	      free_shared_info(new_ci);
 	      port_write_string(port)(sc, "#<write_closure_readably: arglist is cyclic>", 44, port); /* not s7_error here! */
 	      return;
-	    }}}
+	    }
+	  free_shared_info(new_ci);
+	}}
   if (is_symbol(arglist)) arglist = set_dlist_1(sc, arglist);
   pe = closure_let(obj);
 
@@ -35113,6 +35116,7 @@ static void c_function_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, u
 
 static void c_macro_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, use_write_t unused_use_write, shared_info_t *unused_ci)
 {
+  /* should this check initial_slot and so on as in c_function_to_port above? */
   if (c_macro_name_length(obj) > 0)
     {
       port_write_string(port)(sc, "#_", 2, port);
@@ -71837,6 +71841,7 @@ static opt_t optimize_safe_c_func_three_args(s7_scheme *sc, s7_pointer expr, s7_
 	      (is_normal_symbol(arg3)))
 	    {
 	      set_opt1_con(cdr(expr), cadr(arg2));        /* fx_c_scs uses opt1_con */
+	      clear_has_fx(cdr(expr));                    /* (s7test safe_c_func_three_args) this is used above -- maybe just clear it at the top? */
 	      set_opt2_sym(cdr(expr), arg3);
 	      set_optimize_op(expr, hop + OP_SAFE_C_SCS); /* used to be SQS */
 	      choose_c_function(sc, expr, func, 3);
@@ -97486,7 +97491,7 @@ int main(int argc, char **argv)
  * tform            5357   5348   5307   5316   5084   5095
  * tstr      10.0   6880   6342   5488   5162   5180   5180
  * tnum             6348   6013   5433   5396   5409   5423  [c:opt_d_7piid_sssf_unchecked etc -> checked]
- * tgsl             8485   7802   6373   6282   6208   6208
+ * tgsl             8485   7802   6373   6282   6208   6220
  * tari      15.0   13.0   12.7   6827   6543   6278   6284
  * tlist     9219   7896   7546   6558   6240   6300   6300
  * tset                                  6260   6364   6443
@@ -97507,7 +97512,9 @@ int main(int argc, char **argv)
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
- * combine lets?
- * widget-size (pane equal)
- * copy/fill!/reverse! + setter/features/let is a mess
+ * memcall: [make_shared_info 32417 in s7test from write_closure_readably]?
+ *   [opendir needs closedir to free (snd-test) s7__opendir so from libc]?
+ *   describe_smpflt needs free after mus_generator_to_string
+ *   mus_expand_filename needs free in a lot of cases
+ *   snd_sync needs free in add_channel_to_play_list (free_sync_info?)
  */

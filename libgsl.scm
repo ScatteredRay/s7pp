@@ -800,6 +800,11 @@
                 {
                   return(s7_make_c_pointer_with_type(sc, (void *)calloc(1, sizeof(gsl_sf_result)), gsl_sf_result__symbol, s7_f(sc)));
                 }
+                static s7_pointer g_gsl_sf_result_free(s7_scheme *sc, s7_pointer args)
+                {
+                  free(s7_c_pointer(s7_car(args)));
+                  return(s7_f(sc));
+                }
                 static s7_pointer g_gsl_sf_result_val(s7_scheme *sc, s7_pointer args)
                 {
                   return(s7_make_real(sc, ((gsl_sf_result *)s7_c_pointer_with_type(sc, s7_car(args), gsl_sf_result__symbol, __func__, 1))->val));
@@ -827,6 +832,7 @@
                 ")
 	 
 	 (C-function ("gsl_sf_result.make" g_gsl_sf_result_make "" 0))
+	 (C-function ("gsl_sf_result.free" g_gsl_sf_result_free "" 1))
 	 (C-function ("gsl_sf_result_e10.make" g_gsl_sf_result_e10_make "" 0))
 	 (C-function ("gsl_sf_result.val" g_gsl_sf_result_val "" 1))
 	 (C-function ("gsl_sf_result.err" g_gsl_sf_result_err "" 1))

@@ -22,7 +22,7 @@
 	(set! *libraries* (cons (cons "libc.scm" (curlet)) *libraries*))
 	
 	;; -------- stddef.h --------
-	;(define NULL (c-pointer 0 'void*))
+	(define NULL (c-pointer 0 'void*))
 	;(define (c-null? p) (and (c-pointer? p) (zero? (car (c-pointer->list p)))))
 
 	;; -------- stdbool.h --------

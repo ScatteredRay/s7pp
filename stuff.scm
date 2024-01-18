@@ -1471,7 +1471,7 @@ Unlike full-find-if, safe-find-if can handle any circularity in the sequences.")
   (if (not (string? name))
       (error 'wrong-type-arg "directory name should be a string: ~S" name)
       (make-iterator
-       (with-let (sublet *libc* :name name :recursive recursive)
+       (with-let (sublet *libc* :name name :recursive recursive :NULL (c-pointer 0 'void*))
 	 (let ((dir (opendir name)))
 	   (if (equal? dir NULL)
 	       (error 'io-error "can't open ~S: ~S" name (strerror (errno)))
