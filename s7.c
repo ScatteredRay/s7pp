@@ -97490,8 +97490,8 @@ int main(int argc, char **argv)
  * tshoot           5525   5447   5183   5055   5034   5034
  * tform            5357   5348   5307   5316   5084   5095
  * tstr      10.0   6880   6342   5488   5162   5180   5180
- * tnum             6348   6013   5433   5396   5409   5423  [c:opt_d_7piid_sssf_unchecked etc -> checked]
- * tgsl             8485   7802   6373   6282   6208   6220
+ * tnum             6348   6013   5433   5396   5409   5423  [opt_d_7piid_sssf_unchecked etc -> checked]
+ * tgsl             8485   7802   6373   6282   6208   6207
  * tari      15.0   13.0   12.7   6827   6543   6278   6284
  * tlist     9219   7896   7546   6558   6240   6300   6300
  * tset                                  6260   6364   6443
@@ -97512,9 +97512,5 @@ int main(int argc, char **argv)
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
- * memcall: [make_shared_info 32417 in s7test from write_closure_readably]?
- *   [opendir needs closedir to free (snd-test) s7__opendir so from libc]?
- *   describe_smpflt needs free after mus_generator_to_string
- *   mus_expand_filename needs free in a lot of cases
- *   snd_sync needs free in add_channel_to_play_list (free_sync_info?)
+ * tgsl reuse allocs [other such cases?]
  */
