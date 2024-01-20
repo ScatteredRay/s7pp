@@ -452,7 +452,7 @@
 
 #define WRITE_REAL_PRECISION 16
 #ifdef __TINYC__
-  typedef double long_double; /* (- .1 1) -> 0.9! and others similarly: (- double long_double) is broken) */
+  typedef double long_double; /* (- .1 1) -> 0.9! and others similarly: (- double long_double) is broken */
 #else
   typedef long double long_double;
 #endif
@@ -29369,7 +29369,6 @@ static s7_pointer read_file(s7_scheme *sc, FILE *fp, const char *name, s7_int ma
   s7_int size;
 #endif
   block_t *b = mallocate_port(sc);
-
   new_cell(sc, port, T_INPUT_PORT);
   gc_protect_via_stack(sc, port);
   port_block(port) = b;
@@ -31093,7 +31092,6 @@ static s7_pointer g_autoloader(s7_scheme *sc, s7_pointer args) /* the *autoload*
 /* ---------------- require ---------------- */
 static bool is_a_feature(const s7_pointer sym, s7_pointer lst) /* used only with *features* which (sigh) can be circular: (set-cdr! *features* *features*) */
 {
-#if 1
   s7_pointer x = lst, slow = lst;
   while (true)
     {
@@ -31106,11 +31104,6 @@ static bool is_a_feature(const s7_pointer sym, s7_pointer lst) /* used only with
       slow = cdr(slow);
       if (x == slow) return(false);
     }
-#else
-  for (s7_pointer x = lst; is_pair(x); x = cdr(x))
-    if (sym == car(x))
-      return(true);
-#endif
   return(false);
 }
 
@@ -32499,7 +32492,7 @@ static shared_info_t *load_shared_info(s7_scheme *sc, s7_pointer top, bool stop_
 	  if (has_structure(vector_element(top, k))) {no_problem = false; break;}
 	if (no_problem) return(NULL);
       }
-#if 1
+
   else /* added these 19-Oct-22 -- helps in tgc, but not much elsewhere */
     if ((is_let(top)) && (top != sc->rootlet))
       {
@@ -32522,7 +32515,7 @@ static shared_info_t *load_shared_info(s7_scheme *sc, s7_pointer top, bool stop_
 		{no_problem = false; break;}
 	  if (no_problem) return(NULL);
 	}
-#endif
+
   if ((S7_DEBUGGING) && (is_any_vector(top)) && (!is_t_vector(top))) fprintf(stderr, "%s[%d]: got abnormal vector\n", __func__, __LINE__);
   clear_shared_info(ci);
   {
@@ -82372,10 +82365,8 @@ static bool do_step1(s7_scheme *sc)
 	  for (s7_pointer x = sc->code; is_pair(x); x = cdr(x))   /* sc->code here is the original sc->args list */
 	    {
 	      s7_pointer slot = car(x);
-#if 0
 	      if (is_immutable_slot(slot))    /* (let () (define (func) (do ((x 0) (i 0 (+ i 1))) ((= i 1) x) (set! x (immutable! 'i)))) (func)) */
 		immutable_object_error_nr(sc, set_elist_3(sc, wrap_string(sc, "~S is immutable in ~S", 21), slot_symbol(slot), car(slot_expression(slot))));
-#endif
 	      slot_set_value(slot, slot_pending_value(slot));
 	      slot_clear_has_pending_value(slot);
 	    }
@@ -97512,5 +97503,4 @@ int main(int argc, char **argv)
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
- * tgsl reuse allocs [other such cases?]
  */
