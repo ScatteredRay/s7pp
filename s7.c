@@ -752,6 +752,7 @@ typedef union {
   bool (*fb)(opt_info *o);
   s7_pointer (*fp)(opt_info *o);
 } vunion;
+/* libgsl 15 d_i */
 
 #define NUM_VUNIONS 15
 struct opt_info {
@@ -7565,10 +7566,10 @@ static int64_t gc(s7_scheme *sc)
   gc_mark(sc->rec_p2);
 
   /* these probably don't need to be marked */
-  for (s7_pointer p = sc->wrong_type_arg_info; is_pair(p); p = cdr(p)) gc_mark(car(p));
-  for (s7_pointer p = sc->sole_arg_wrong_type_info; is_pair(p); p = cdr(p)) gc_mark(car(p));
-  for (s7_pointer p = sc->out_of_range_info; is_pair(p); p = cdr(p)) gc_mark(car(p));
-  for (s7_pointer p = sc->sole_arg_out_of_range_info; is_pair(p); p = cdr(p)) gc_mark(car(p));
+  for (s7_pointer p = cdr(sc->wrong_type_arg_info); is_pair(p); p = cdr(p)) gc_mark(car(p));
+  for (s7_pointer p = cdr(sc->sole_arg_wrong_type_info); is_pair(p); p = cdr(p)) gc_mark(car(p));
+  for (s7_pointer p = cdr(sc->out_of_range_info); is_pair(p); p = cdr(p)) gc_mark(car(p));
+  for (s7_pointer p = cdr(sc->sole_arg_out_of_range_info); is_pair(p); p = cdr(p)) gc_mark(car(p));
 
   gc_mark(car(sc->elist_1));
   gc_mark(car(sc->elist_2)); gc_mark(cadr(sc->elist_2));
@@ -96699,7 +96700,7 @@ s7_scheme *s7_init(void)
 #if S7_DEBUGGING
 	sc->heap[i]->debugger_bits = 0; sc->heap[i]->gc_line = 0; sc->heap[i]->gc_func = NULL;
 #endif
-	clear_type(sc->heap[i]);
+	clear_type(sc->heap[i]);                  /* type(sc->heap[i]) = T_FREE */
 	i++;
 	sc->heap[i] = &cells[i];
  	sc->free_heap[i] = sc->heap[i];
@@ -96708,6 +96709,8 @@ s7_scheme *s7_init(void)
 #endif
 	clear_type(sc->heap[i]);
      }
+    /* memcpy((void *)(sc->free_heap), (const void *)(sc->heap), sizeof(s7_pointer) * INITIAL_HEAP_SIZE); */
+    /*   weird that this memcpy (without the equivalent sets above) is much slower */
     sc->heap_blocks = (heap_block_t *)Malloc(sizeof(heap_block_t));
     sc->heap_blocks->start = (intptr_t)cells;
     sc->heap_blocks->end = (intptr_t)cells + (sc->heap_size * sizeof(s7_cell));
@@ -96720,6 +96723,12 @@ s7_scheme *s7_init(void)
   sc->max_heap_size = (1LL << 45);
   sc->gc_calls = 0;
   sc->gc_total_time = 0;
+  /* unvectorize free-heap?  t_free obj nxt -> next in list, free_heap_top|length; get free: obj=free_heap_top; top=nxt; len--
+   *   push: cur->nxt=top, top=cur len++; trigger when len<trigger; can still do batch alloc/free setting len at end;
+   *   how to gc sweep tmps -- seems to require a back pointer (2-way list) but there's no room; no need to realloc when heap grows, but do
+   *   need to place new cells on the free list; no malloc needed, but we need to make the initial list; saves 1/8 of heap-related space.
+   *   maybe a circular list (vector?) for tmps
+   */
 
   sc->max_port_data_size = (1LL << 45);
 #ifndef OUTPUT_FILE_PORT_DATA_SIZE
