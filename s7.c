@@ -1402,7 +1402,7 @@ struct s7_scheme {
   s7_pointer wrong_type_arg_info, out_of_range_info, sole_arg_wrong_type_info, sole_arg_out_of_range_info;
 
   #define NUM_SAFE_PRELISTS 8
-  #define NUM_SAFE_LISTS 64               /* 36 is the biggest normally (lint.scm), 49 in s7test, 57 in snd-test */
+  #define NUM_SAFE_LISTS 32               /* 36 is the biggest normally (lint.scm), 49 in s7test, 57 in snd-test, > 16 doesn't happen much */
   s7_pointer safe_lists[NUM_SAFE_LISTS];
   int32_t current_safe_list;
 
@@ -2140,10 +2140,6 @@ static void init_types(void)
 #define list_is_in_use(p)              has_low_type_bit(T_Pair(p), T_LIST_IN_USE)
 #define set_list_in_use(p)             set_low_type_bit(T_Pair(p), T_LIST_IN_USE)
 #define clear_list_in_use(p)           do {clear_low_type_bit(T_Pair(p), T_LIST_IN_USE); sc->current_safe_list = 0;} while (0)
-/* since the safe lists are not in the heap, if the list_in_use bit is off, the list won't be GC-protected even if
- *   it is gc_marked explicitly.  This happens, for example, in copy_proper_list where we try to protect the original list
- *   by sc->temp5 = lst; then in the GC, gc_mark(sc->temp5); but the safe_list probably is already marked, so its contents are not protected.
- */
 
 #define T_ONE_FORM                     T_SIMPLE_ARG_DEFAULTS
 #define set_closure_has_one_form(p)    set_low_type_bit(T_Clo(p), T_ONE_FORM)
@@ -3204,8 +3200,8 @@ static s7_pointer slot_expression(s7_pointer p)    \
 
 #define slot_set_expression(p, Val)    do {(T_Slt(p))->object.slt.expr = T_Ext(Val); slot_set_has_expression(p);} while (0)
 #define slot_just_set_expression(p, Val) (T_Slt(p))->object.slt.expr = T_Ext(Val)
-#define slot_setter(p)                 (T_Slt(p)->object.slt.pending_value)
-#define slot_set_setter_1(p, Val)      (T_Slt(p))->object.slt.pending_value = Val
+#define slot_setter(p)                 T_Prc((T_Slt(p)->object.slt.pending_value))
+#define slot_set_setter_1(p, Val)      (T_Slt(p))->object.slt.pending_value = T_Prc(Val)
 #if S7_DEBUGGING
 #define tis_slot(p) ((p) && (T_Slt(p)))
 #else
@@ -7530,9 +7526,9 @@ static int64_t gc(s7_scheme *sc)
   mark_input_port_stack(sc);
   set_mark(current_output_port(sc));
   set_mark(current_error_port(sc));
-  gc_mark(sc->stacktrace_defaults);
-  gc_mark(sc->autoload_table);
-  gc_mark(sc->default_random_state);
+  mark_pair(sc->stacktrace_defaults);
+  gc_mark(sc->autoload_table);        /* () or a hash-table */
+  set_mark(sc->default_random_state); /* always a random_state object */
   if (sc->let_temp_hook) gc_mark(sc->let_temp_hook);
 
   gc_mark(sc->w);
@@ -7565,7 +7561,7 @@ static int64_t gc(s7_scheme *sc)
   gc_mark(sc->rec_p1);
   gc_mark(sc->rec_p2);
 
-  /* these probably don't need to be marked */
+  /* these do need to be marked, at least protecting "info" for the duration of the error handler procedure */
   for (s7_pointer p = cdr(sc->wrong_type_arg_info); is_pair(p); p = cdr(p)) gc_mark(car(p));
   for (s7_pointer p = cdr(sc->sole_arg_wrong_type_info); is_pair(p); p = cdr(p)) gc_mark(car(p));
   for (s7_pointer p = cdr(sc->out_of_range_info); is_pair(p); p = cdr(p)) gc_mark(car(p));
@@ -7579,12 +7575,9 @@ static int64_t gc(s7_scheme *sc)
   gc_mark(car(sc->elist_6));
   gc_mark(car(sc->elist_7));
 
-  for (i = 1; i < NUM_SAFE_LISTS; i++)
-    if ((is_pair(sc->safe_lists[i])) &&
-	(list_is_in_use(sc->safe_lists[i])))
-      for (s7_pointer p = sc->safe_lists[i]; is_pair(p); p = cdr(p))
-	gc_mark(car(p));
-
+  if (sc->current_safe_list > 0) /* safe_lists are semipermanent, so we have to mark contents by hand */
+    for (s7_pointer p = sc->safe_lists[sc->current_safe_list]; is_pair(p); p = cdr(p))
+      gc_mark(car(p));
   for (i = 0; i < sc->setters_loc; i++)
     gc_mark(cdr(sc->setters[i]));
 
@@ -7594,7 +7587,7 @@ static int64_t gc(s7_scheme *sc)
 
   if (sc->rec_stack)
     {
-      just_mark(sc->rec_stack);
+      set_mark(sc->rec_stack);
       for (i = 0; i < sc->rec_loc; i++)
 	gc_mark(sc->rec_els[i]);
     }
@@ -8204,17 +8197,17 @@ static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer
   if ((SHOW_EVAL_OPS) && (op == OP_EVAL_DONE)) fprintf(stderr, "  %s[%d]: push eval_done\n", func, line);
   if (sc->stack_end >= sc->stack_start + sc->stack_size)
     {
-      fprintf(stderr, "%s%s[%d]: stack overflow, %" ld64 " > %u, trigger: %" ld64 " %s\n",
+      fprintf(stderr, "%s%s[%d]: stack overflow, %u > %u, trigger: %u %s\n",
 	      bold_text, func, line,
-	      (s7_int)((intptr_t)(sc->stack_end - sc->stack_start)), sc->stack_size,
-	      (s7_int)((intptr_t)(sc->stack_resize_trigger - sc->stack_start)),
+	      (uint32_t)((intptr_t)(sc->stack_end - sc->stack_start)), sc->stack_size,
+	      (uint32_t)((intptr_t)(sc->stack_resize_trigger - sc->stack_start)),
 	      unbold_text);
       s7_show_stack(sc);
       if (sc->stop_at_error) abort();
     }
   if (sc->stack_end >= sc->stack_resize_trigger)
-    fprintf(stderr, "%s%s[%d] from %s: stack resize skipped, stack at %" ld64 " of %u%s\n", 
-	    bold_text, func, line, op_names[op], (sc->stack_end - sc->stack_start) / 4, sc->stack_size / 4, unbold_text);
+    fprintf(stderr, "%s%s[%d] from %s: stack resize skipped, stack at %u of %u%s\n", 
+	    bold_text, func, line, op_names[op], (uint32_t)((intptr_t)(sc->stack_end - sc->stack_start) / 4), sc->stack_size / 4, unbold_text);
   if (sc->stack_end != end)
     fprintf(stderr, "%s[%d]: stack changed in push_stack\n", func, line);
   if (op >= NUM_OPS)
@@ -39450,6 +39443,7 @@ static s7_pointer make_safe_list(s7_scheme *sc, s7_int num_args)
 	  set_list_in_use(sc->safe_lists[num_args]);
 	  return(sc->safe_lists[num_args]);
 	}}
+  /* if ((S7_DEBUGGING) && (num_args >= 16)) fprintf(stderr, "sl: %" ld64 "\n", num_args); */
   return(make_big_list(sc, num_args, sc->nil));
 }
 
@@ -47218,7 +47212,7 @@ s7_pointer s7_setter(s7_scheme *sc, s7_pointer obj) {return(setter_p_pp(sc, obj,
 
 
 /* -------------------------------- set-setter -------------------------------- */
-static void protect_setter(s7_scheme *sc, s7_pointer sym, s7_pointer acc)
+static void protect_setter(s7_scheme *sc, s7_pointer sym, s7_pointer fnc)
 {
   s7_int loc;
   if (sc->protected_setters_size == sc->protected_setters_loc)
@@ -47246,7 +47240,7 @@ static void protect_setter(s7_scheme *sc, s7_pointer sym, s7_pointer acc)
       sc->protected_setters_size = new_size;
     }
   loc = sc->protected_setters_loc++;
-  vector_element(sc->protected_setters, loc) = acc;
+  vector_element(sc->protected_setters, loc) = fnc; /* has_closure => T_Clo(fnc) checked earlier */
   vector_element(sc->protected_setter_symbols, loc) = sym;
 }
 
@@ -47379,16 +47373,16 @@ s7_pointer s7_set_setter(s7_scheme *sc, s7_pointer p, s7_pointer setter)
       if (setter != sc->F)
 	{
 	  slot_set_has_setter(global_slot(p));
-	  protect_setter(sc, p, setter);
+	  if (!is_c_function(setter)) protect_setter(sc, p, T_Clo(setter)); /* these don't need GC protection */
 	  slot_set_setter(global_slot(p), setter);
 	  if (s7_is_aritable(sc, setter, 3))
 	    set_has_let_arg(setter);
 	  return(setter);
 	}
-      slot_set_setter(global_slot(p), setter);
-      return(setter);
+      slot_set_setter(global_slot(p), sc->F);
+      return(sc->F);
     }
-  return(g_set_setter(sc, set_plist_2(sc, p, setter)));
+  return(g_set_setter(sc, set_plist_2(sc, p, setter))); /* if T_Clo(setter), doesn't it need GC protection as above? */
 }
 
 /* (let () (define xxx 23) (define (hix) (set! xxx 24)) (hix) (set! (setter 'xxx) (lambda (sym val) (format *stderr* "val: ~A~%" val) val)) (hix))
@@ -52643,6 +52637,7 @@ static noreturn void error_nr(s7_scheme *sc, s7_pointer type, s7_pointer info)
 s7_pointer s7_error(s7_scheme *sc, s7_pointer type, s7_pointer info) /* s7.h backwards compatibility */
 {
   error_nr(sc, type, info);
+  /* info is a temporary value -- do not expect it to be useful beyond the error handler procedure itself */
   return(type);
 }
 
@@ -93374,11 +93369,9 @@ void s7_heap_analyze(s7_scheme *sc)
 	mark_holdee(NULL, opt1_any(s1), "opt1_funcs");
       }}
 
-  for (int32_t i = 1; i < NUM_SAFE_LISTS; i++)
-    if ((is_pair(sc->safe_lists[i])) &&
-	(list_is_in_use(sc->safe_lists[i])))
-      for (s7_pointer p = sc->safe_lists[i]; is_pair(p); p = cdr(p))
-	mark_holdee(NULL, car(p), "safe_lists");
+  if (sc->current_safe_list > 0)
+    for (s7_pointer p = sc->safe_lists[sc->current_safe_list]; is_pair(p); p = cdr(p))
+      mark_holdee(NULL, car(p), "safe_lists");
 
   for (s7_pointer p = sc->wrong_type_arg_info; is_pair(p); p = cdr(p)) mark_holdee(NULL, car(p), "wrong-type-arg");
   for (s7_pointer p = sc->sole_arg_wrong_type_info; is_pair(p); p = cdr(p)) mark_holdee(NULL, car(p), "simple wrong-type-arg");

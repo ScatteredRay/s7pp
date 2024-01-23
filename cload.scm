@@ -451,7 +451,6 @@
 			       func-name local-name func-name)))
 		    (set! double-funcs (cons (list func-name scheme-name local-name) double-funcs))))
 
-		;; libgsl: d_i: 15, d_ii: 5, [handled: d_id: 32], d_iid: 7, d_ddi: 4, d_idd: 10, d_idi: 6, i_ddd i_iii: 1, i_dddd: 4
 		(when (and (memq return-type '(int size_t))        ; int (f int|double|void)
 			   (not (defined? (symbol scheme-name) (rootlet))) ; see below, int-funcs entry not used if already defined
 			   (or ;(= num-args 0)
@@ -488,6 +487,7 @@
 		;; other possibilities: d_7pi|pii p=double* etc piid=checks in s7 (assumes float-vector)
 		;;   d_pd [lots of d_pdd, d_p, p_i and i_p]
 		;;   but how to recognize the "p" portions? (d_7pi with p="s7_pointer" gets no hits in libgsl)
+		;; libgsl: d_i: 15, d_ii: 5, [handled: d_id: 32], d_iid: 7, d_ddi: 4, d_idd: 10, d_idi: 6, i_ddd i_iii: 1, i_dddd: 4
 		
 		(format pp "~%")
 		(set! functions (cons (list scheme-name base-name 
