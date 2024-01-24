@@ -2068,6 +2068,7 @@ static void init_types(void)
   #define set_full_type(p, f)          full_type(p) = f
 #endif
 #define signed_type(p)                 (p)->tf.s64_type
+#define clear_type(p)                  full_type(p) = T_FREE
 
 #define is_number(P)                   t_number_p[type(P)]
 #define is_small_real(P)               t_small_real_p[type(P)]
@@ -2086,7 +2087,7 @@ static void init_types(void)
 #define is_boolean(p)                  (type(p) == T_BOOLEAN)
 
 #define is_free(p)                     (type(p) == T_FREE)
-#define is_free_and_clear(p)           (full_type(p) == T_FREE)
+#define is_free_and_clear(p)           (full_type(p) == T_FREE) /* protect against new_cell in-between states? */
 #define is_simple(P)                   t_simple_p[type(P)]  /* eq? */
 #define has_structure(P)               ((t_structure_p[type(P)]) && ((!is_t_vector(P)) || (!has_simple_elements(P))))
 
@@ -7376,11 +7377,19 @@ static void mark_output_port(s7_pointer p)
     gc_mark(port_string_or_function(p));
 }
 
-#define clear_type(p) full_type(p) = T_FREE
+static void mark_free(s7_pointer p)
+{
+#if S7_DEBUGGING
+  /* this can happen in make_room_for_cc_stack */
+  /* fprintf(stderr, "%smark free: %p%s\n", bold_text, p, unbold_text); */
+  /* if (cur_sc->stop_at_error) abort(); */
+#endif
+}
+
 
 static void init_mark_functions(void)
 {
-  mark_function[T_FREE]                = mark_noop;
+  mark_function[T_FREE]                = mark_free;
   mark_function[T_UNDEFINED]           = just_mark;
   mark_function[T_EOF]                 = mark_noop;
   mark_function[T_UNSPECIFIED]         = mark_noop;
@@ -7575,9 +7584,18 @@ static int64_t gc(s7_scheme *sc)
   gc_mark(car(sc->elist_6));
   gc_mark(car(sc->elist_7));
 
+#if 0
   if (sc->current_safe_list > 0) /* safe_lists are semipermanent, so we have to mark contents by hand */
     for (s7_pointer p = sc->safe_lists[sc->current_safe_list]; is_pair(p); p = cdr(p))
       gc_mark(car(p));
+#else
+  for (i = 1; i < NUM_SAFE_LISTS; i++) /* see tgen.scm -- we can't just check sc->current_safe_list */
+    if ((is_pair(sc->safe_lists[i])) &&
+	(list_is_in_use(sc->safe_lists[i]))) /* safe_lists are semipermanent, so we have to mark contents by hand */
+      for (s7_pointer p = sc->safe_lists[i]; is_pair(p); p = cdr(p))
+	gc_mark(car(p));
+#endif
+
   for (i = 0; i < sc->setters_loc; i++)
     gc_mark(cdr(sc->setters[i]));
 
@@ -7646,12 +7664,12 @@ static int64_t gc(s7_scheme *sc)
         p->debugger_bits = 0; p->gc_func = func; p->gc_line = line;	\
         if (has_odd_bits(p)) {char *s; fprintf(stderr, "odd bits: %s\n", s = describe_type_bits(sc, p)); free(s);} \
 	if (!in_heap(p)) {char *s; fprintf(stderr, "not in heap: %s\n", s = describe_type_bits(sc, p)); free(s);} \
-        signed_type(p) = 0;						\
+        clear_type(p);							\
         (*fp++) = p;							\
       }									\
     else if (signed_type(p) < 0) clear_mark(p);
 #else
-  #define gc_object(Tp) p = (*Tp++); if (signed_type(p) > 0) {signed_type(p) = 0; (*fp++) = p;} else if (signed_type(p) < 0) clear_mark(p);
+  #define gc_object(Tp) p = (*Tp++); if (signed_type(p) > 0) {clear_type(p); (*fp++) = p;} else if (signed_type(p) < 0) clear_mark(p);
   /* this appears to be about 10% faster than the previous form
    *   if the sign bit is on, but no other bits, this version will take no action (it thinks the cell is on the free list), but
    *   it means we've marked a free cell as in-use: since types are set as soon as removed from the free list, this has to be a bug
@@ -10993,7 +11011,7 @@ static s7_pointer make_macro(s7_scheme *sc, opcode_t op, bool named)
 	}
       else s7_make_slot(sc, sc->curlet, mac_name, mac); /* was current but we've checked immutable already */
       if (tree_has_definers(sc, body))
-	set_is_definer(mac_name);            /* (list-values 'define ...) aux-13 */
+	set_is_definer(mac_name);                       /* (list-values 'define ...) aux-13 */
     }
 
   if ((!is_either_bacro(mac)) &&
@@ -11533,6 +11551,8 @@ s7_pointer s7_make_c_pointer_wrapper_with_type(s7_scheme *sc, void *ptr, s7_poin
   c_pointer(x) = ptr;
   c_pointer_type(x) = type;
   c_pointer_info(x) = info;
+  c_pointer_weak1(x) = sc->F;
+  c_pointer_weak2(x) = sc->F;
   return(x);
 }
 
@@ -81805,7 +81825,7 @@ static goto_t op_dox(s7_scheme *sc)
 			    (copy_if_end_ok(sc, slot_value(o->v[1].p), slot_value(o->v[3].p), i, endp, stepper))))
 			{
 			  if (has_loop_end(stepper))
-			    {
+			    {                /* (do ((val 0) (i 0 (+ i 1))) ((= i 1) val) (set! val (real-part (v b1 b2)))) */
 			      s7_int lim = loop_end(stepper);
 			      if ((i >= 0) && (lim < NUM_SMALL_INTS))
 				do {fp(o); slot_set_value(stepper, small_int(++i));} while (i < lim);
@@ -81813,7 +81833,7 @@ static goto_t op_dox(s7_scheme *sc)
 			      sc->value = sc->T;
 			    }
 			  else
-			    do {
+			    do {             /* (do ((i start (+ i 1))) ((= end i)) (display i)) */
 			      fp(o);
 			      slot_set_value(stepper, make_integer(sc, ++i));
 			    } while ((sc->value = endf(sc, endp)) == sc->F);
@@ -81831,14 +81851,14 @@ static goto_t op_dox(s7_scheme *sc)
 			    ((o->v[3].i_7pii_f == int_vector_set_i_7pii_direct) && (o->v[4].o1->v[3].i_7pi_f == int_vector_ref_i_pi_direct))) &&
 			   (copy_if_end_ok(sc, slot_value(o->v[1].p), slot_value(o->v[4].o1->v[1].p), i, endp, stepper)))))
 		      /* here the has_loop_end business doesn't happen much */
-		      do {
+		      do {                 /* (do ((count 0) (i 7 (+ i 1))) ((= i 10) count) (set! count (quotient i 3))) */
 			bodyf(sc);
 			slot_set_value(stepper, make_integer(sc, ++i));
 		      } while ((sc->value = endf(sc, endp)) == sc->F);
 		  sc->code = cdr(end);
 		  return(goto_do_end_clauses);
 		}
-	      do {
+	      do {              /* (do ((count 0.0) (i 7.0 (+ i 1.0))) ((>= i 10.0) count) (set! count (modulo i 3.0))) */
 		bodyf(sc);
 		slot_set_value(stepper, stepf(sc, stepa));
 	      } while ((sc->value = endf(sc, endp)) == sc->F);
@@ -81854,32 +81874,19 @@ static goto_t op_dox(s7_scheme *sc)
 	      s7_function f2 = fx_proc(slot_expression(s2));
 	      s7_pointer p1 = car(slot_expression(s1));
 	      s7_pointer p2 = car(slot_expression(s2));
-	      /* split out opt_float_any_nv gained nothing (see tmp), same for opt_cell_any_nv */
+	      /* split out opt_float_any_nv gained nothing (see tmp), same for opt_cell_any_nv, constant end value was never hit */
 	      if (bodyf == opt_cell_any_nv)
 		{
 		  opt_info *o = sc->opts[0];
 		  s7_pointer (*fp)(opt_info *o) = o->v[0].fp;
-		  /* maybe this can be generalized (thash:79) -- explicit integer stepper, but there must be a simpler way */
-		  if ((f2 == fx_add_u1) && (is_t_integer(slot_value(s2))) && (endf == fx_num_eq_ui) &&
-		      (is_symbol(cadr(endp))) && (cadr(endp) == slot_symbol(s2)) &&
-		      (is_t_integer(caddr(endp))) && (!s7_tree_memq(sc, cadr(endp), body)))
-		    {
-		      s7_int i = integer(slot_value(s2)), endi = integer(caddr(endp));
-		      do {
-			fp(o);
-			slot_set_value(s1, f1(sc, p1));
-			i++;
-		      } while (i < endi);
-		    }
-		  else
-		    do {
-		      fp(o);
-		      slot_set_value(s1, f1(sc, p1));
-		      slot_set_value(s2, f2(sc, p2));
-		    } while ((sc->value = endf(sc, endp)) == sc->F);
+		  do {          /* (do ((i 0 (+ i 1)) (lst lis (cdr lst))) ((= i (- len 1)) (reverse result)) (set! result (cons (car lst) result))) */
+		    fp(o);
+		    slot_set_value(s1, f1(sc, p1));
+		    slot_set_value(s2, f2(sc, p2));
+		  } while ((sc->value = endf(sc, endp)) == sc->F);
 		}
 	      else
-		do {
+		do {              /* (do ((i 0 (+ i 1)) (j 0 (+ j 1))) ((= i 3) x) (set! x (max x (* i j)))) */
 		  bodyf(sc);
 		  slot_set_value(s1, f1(sc, p1));
 		  slot_set_value(s2, f2(sc, p2));
@@ -81888,7 +81895,7 @@ static goto_t op_dox(s7_scheme *sc)
 	      return(goto_do_end_clauses);
 	    }
 	  if (bodyf == opt_cell_any_nv)
-	    {
+	    {                     /* (do ((i npats (- i 1)) (ipats ipats (cdr ipats)) (a '())) ((zero? i) a) (set! a (cons (car ipats) a))) */
 	      opt_info *o = sc->opts[0];
 	      s7_pointer (*fp)(opt_info *o) = o->v[0].fp;
 	      do {
@@ -81902,7 +81909,7 @@ static goto_t op_dox(s7_scheme *sc)
 	      } while ((sc->value = endf(sc, endp)) == sc->F);
 	    }
 	  else
-	    do {
+	    do { /* (do ((i 0 (+ i 1)) (ph 0.0 (+ ph incr)) (kph 0.0 (+ kph kincr))) ((= i 4410)) (float-vector-set! v1 i (+ (cos ph) (cos kph)))) */
 	      s7_pointer slot1 = slots;
 	      bodyf(sc);
 	      do {
@@ -81938,7 +81945,7 @@ static goto_t op_dox(s7_scheme *sc)
 	  val = car(val);
 	  stepf = fx_proc(slot_expression(stepper));
 	  stepa = car(slot_expression(stepper));
-	  do {
+	  do {             /* (do ((i 1 4)) ((> i 3)) (set! x (+ x i))) */
 	    slot_set_value(slot, valf(sc, val));
 	    slot_set_value(stepper, stepf(sc, stepa));
 	  } while ((sc->value = endf(sc, endp)) == sc->F);
@@ -82989,21 +82996,37 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool one
 		{ /* (do ((i 0 (+ i 1))) ((= i size) sum) (set! sum (+ sum (floor (vector-ref v i))))) */
 		  opt_info *o = sc->opts[0];
 		  s7_int (*fi)(opt_info *o) = o->v[0].fi;
+		  if (fi == opt_set_i_i_f)
+		    {
+		      slot_set_value(o->v[1].p, make_mutable_integer(sc, integer(slot_value(o->v[1].p))));
+		      fi = opt_set_i_i_fm;
+		    }
 		  while (step < stop)
 		    {
 		      fi(o);
 		      step = ++integer(step_val);
-		    }}
+		    }
+		  if (fi == opt_set_i_i_fm)
+		    clear_mutable_number(slot_value(o->v[1].p));
+		}
 	      else
 		if (func == opt_float_any_nv)
 		  { /* (do ((i 1 (+ i 1))) ((= i 1000)) (set! (v i) (filter f1 0.0))) */
 		    opt_info *o = sc->opts[0];
 		    s7_double (*fd)(opt_info *o) = o->v[0].fd;
+		    if (fd == opt_set_d_d_f)
+		      {
+			slot_set_value(o->v[1].p, s7_make_mutable_real(sc, real(slot_value(o->v[1].p))));
+			fd = opt_set_d_d_fm;
+		      }
 		    while (step < stop)
 		      {
 			fd(o);
 			step = ++integer(step_val);
-		      }}
+		      }
+		    if (fd == opt_set_d_d_fm)
+		      clear_mutable_number(slot_value(o->v[1].p));
+		  }
 		else
 		  { /* TODO: remove this dead code (we've hit all cases cell/int/float), maybe leave a warning here? */
 		    if (S7_DEBUGGING) fprintf(stderr, "%s[%d]: other case %d: %s\n", __func__, __LINE__, is_mutable_integer(step_val), display(scc));
@@ -93369,9 +93392,17 @@ void s7_heap_analyze(s7_scheme *sc)
 	mark_holdee(NULL, opt1_any(s1), "opt1_funcs");
       }}
 
+#if 0
   if (sc->current_safe_list > 0)
     for (s7_pointer p = sc->safe_lists[sc->current_safe_list]; is_pair(p); p = cdr(p))
       mark_holdee(NULL, car(p), "safe_lists");
+#else
+  for (int32_t i = 1; i < NUM_SAFE_LISTS; i++)
+    if ((is_pair(sc->safe_lists[i])) &&
+	(list_is_in_use(sc->safe_lists[i])))
+      for (s7_pointer p = sc->safe_lists[i]; is_pair(p); p = cdr(p))
+	mark_holdee(NULL, car(p), "safe_lists");
+#endif
 
   for (s7_pointer p = sc->wrong_type_arg_info; is_pair(p); p = cdr(p)) mark_holdee(NULL, car(p), "wrong-type-arg");
   for (s7_pointer p = sc->sole_arg_wrong_type_info; is_pair(p); p = cdr(p)) mark_holdee(NULL, car(p), "simple wrong-type-arg");
@@ -97454,14 +97485,14 @@ int main(int argc, char **argv)
  * tref      1081    691    687    463    459    464    466
  * index            1026   1016    973    967    972    974
  * tmock            1177   1165   1057   1019   1032   1037
- * tvect     3408   2519   2464   1772   1669   1497   1515
+ * tvect     3408   2519   2464   1772   1669   1497   1515  1454 [mutable]
  * tauto                          2562   2048   1729   1729
  * timp             2637   2575   1930   1694   1740   1738
- * texit     1884                 1778   1741   1770   1774
- * s7test           1873   1831   1818   1829   1830   1864
+ * texit     1884                 1778   1741   1770   1771
+ * s7test           1873   1831   1818   1829   1830   1855
  * lt        2222   2187   2172   2150   2185   1950   1950
  * thook     7651                 2590   2030   2046   2046
- * dup              3805   3788   2492   2239   2097   2096
+ * dup              3805   3788   2492   2239   2097   2096  2049
  * tcopy            8035   5546   2539   2375   2386   2386
  * tread            2440   2421   2419   2408   2405   2402
  * trclo     8031   2735   2574   2454   2445   2449   2470
@@ -97471,29 +97502,29 @@ int main(int argc, char **argv)
  * tmat             3065   3042   2524   2578   2590   2602  [op_safe_do ->op_dotimes_p]
  * tsort     3683   3105   3104   2856   2804   2858   2858
  * tobj             4016   3970   3828   3577   3508   3502
- * teq              4068   4045   3536   3486   3544   3517
+ * teq              4068   4045   3536   3486   3544   3517  3537 [hash_table_equal_1 and iterate]
  * tio              3816   3752   3683   3620   3583   3601
- * tmac             3950   3873   3033   3677   3677   3684
+ * tmac             3950   3873   3033   3677   3677   3680
  * tcase            4960   4793   4439   4430   4439   4455
  * tlet      9166   7775   5640   4450   4427   4457   4466
- * tclo      6362   4787   4735   4390   4384   4474   4472
- * tfft             7820   7729   4755   4476   4536   4548  [fx_num_eq_to -> ss add_t1 -> s1]
+ * tclo      6362   4787   4735   4390   4384   4474   4472  4552 [safe_list changes]
+ * tfft             7820   7729   4755   4476   4536   4548  4545 [op_dox][fx_num_eq_to -> ss add_t1 -> s1]
  * tstar            6139   5923   5519   4449   4550   4596
  * tmap             8869   8774   4489   4541   4586   4592
  * tshoot           5525   5447   5183   5055   5034   5034
  * tform            5357   5348   5307   5316   5084   5095
  * tstr      10.0   6880   6342   5488   5162   5180   5180
  * tnum             6348   6013   5433   5396   5409   5423  [opt_d_7piid_sssf_unchecked etc -> checked]
- * tgsl             8485   7802   6373   6282   6208   6207
+ * tgsl             8485   7802   6373   6282   6208   6207  6193 [free additions]
  * tari      15.0   13.0   12.7   6827   6543   6278   6284
  * tlist     9219   7896   7546   6558   6240   6300   6300
- * tset                                  6260   6364   6443
+ * tset                                  6260   6364   6443  6425 [mutable]
  * trec      19.5   6936   6922   6521   6588   6583   6583
  * tleft     11.1   10.4   10.2   7657   7479   7627   7622
- * tmisc                                 8488   7862   8157
  * tlamb                                        7941   7941
  * tgc              11.9   11.1   8177   7857   7986   8005
- * thash            11.8   11.7   9734   9479   9526   9531  [fx_add_t1 -> s1]
+ * tmisc                                 8488   7862   8157  8041 [mutable cases]
+ * thash            11.8   11.7   9734   9479   9526   9531  9976 [op_dox change: fx_add_u1 etc, but it needed to check result t675][fx_add_t1 -> s1]
  * cb        12.9   11.2   11.0   9658   9564   9609   9639
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3
  * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1
@@ -97505,4 +97536,6 @@ int main(int argc, char **argv)
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
+ * decode_ptr for wrappers
+ * fix thash problem in op_dox, check other mutable possibilities (p=string etc)
  */

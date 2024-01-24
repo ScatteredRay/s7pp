@@ -123,9 +123,9 @@
 	 (list "repl" "tset.scm")
 	 (list "repl" "trec.scm")
 	 (list "repl" "tleft.scm")
-	 (list "repl" "tmisc.scm")
 	 (list "repl" "tlamb.scm")
 	 (list "repl" "tgc.scm")
+	 (list "repl" "tmisc.scm")
 	 (list "repl" "thash.scm")
 	 (list "repl" "cb.scm")
 	 (list "snd -noinit" "tgen.scm")    ; repl here + cload sndlib was slower
