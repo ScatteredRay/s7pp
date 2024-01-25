@@ -81879,11 +81879,27 @@ static goto_t op_dox(s7_scheme *sc)
 		{
 		  opt_info *o = sc->opts[0];
 		  s7_pointer (*fp)(opt_info *o) = o->v[0].fp;
-		  do {          /* (do ((i 0 (+ i 1)) (lst lis (cdr lst))) ((= i (- len 1)) (reverse result)) (set! result (cons (car lst) result))) */
-		    fp(o);
-		    slot_set_value(s1, f1(sc, p1));
-		    slot_set_value(s2, f2(sc, p2));
-		  } while ((sc->value = endf(sc, endp)) == sc->F);
+		  s7_pointer s3 = NULL;
+		  /* thash case -- this is dumb */
+		  if ((f2 == fx_add_u1) && (is_t_integer(slot_value(s2))) && (cadr(endp) == slot_symbol(s2)) && (!s7_tree_memq(sc, cadr(endp), body)) &&
+		      (((endf == fx_num_eq_ui) && (is_t_integer(caddr(endp)))) || 
+		       ((endf == fx_num_eq_us) && (s3 = opt_integer_symbol(sc, caddr(endp))) && (!s7_tree_memq(sc, caddr(endp), body)))))
+		    { /* (do ((i 0 (+ i 1)) (z (random 100) (random 100))) ((= i 5000000) counts) (hash-table-set! counts z (+ (or (hash-table-ref counts z) 0) 1))) */
+		      s7_int i = integer(slot_value(s2));
+		      s7_int endi = (is_t_integer(caddr(endp))) ? integer(caddr(endp)) : integer(slot_value(s3));
+		      do {
+			fp(o);
+			slot_set_value(s1, f1(sc, p1));
+			i++;
+		      } while (i < endi);
+		      slot_set_value(s2, make_integer(sc, endi));
+		    }
+		  else
+		    do {          /* (do ((i 0 (+ i 1)) (lst lis (cdr lst))) ((= i (- len 1)) (reverse result)) (set! result (cons (car lst) result))) */
+		      fp(o);
+		      slot_set_value(s1, f1(sc, p1));
+		      slot_set_value(s2, f2(sc, p2));
+		    } while ((sc->value = endf(sc, endp)) == sc->F);
 		}
 	      else
 		do {              /* (do ((i 0 (+ i 1)) (j 0 (+ j 1))) ((= i 3) x) (set! x (max x (* i j)))) */
@@ -81957,6 +81973,7 @@ static goto_t op_dox(s7_scheme *sc)
       if ((has_gx(body)) || (gx_annotate_arg(sc, code, sc->curlet)))
 	{
 	  s7_function f = fx_proc_unchecked(code);
+	  fprintf(stderr, "%d: %s\n", __LINE__, display(form));
 	  do {
 	    s7_pointer slot1 = slots;
 	    f(sc, body);
@@ -82010,13 +82027,12 @@ static goto_t op_dox(s7_scheme *sc)
 	  s7_function stepf = NULL;
 	  if (!use_opts)
 	    fx_annotate_args(sc, code, sc->curlet);
-
 	  if (stepper)
 	    {
 	      stepf = fx_proc(slot_expression(stepper));
 	      stepa = car(slot_expression(stepper));
 	    }
-	  while (true)
+	  while (true) /* (do ((i 0 (+ 1 i))) ((= end i)) (set! end 8) (display i)) */
 	    {
 	      if (use_opts)
 		for (int32_t i = 0; i < body_len; i++)
@@ -83053,6 +83069,7 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool one
 	    body[k] = sc->opts[sc->pc];
 	    if (!float_optimize(sc, p))
 	      break;
+	    /* if opt_set_d_d_f -> fm mutablizing body[k]->v[1].p? see 83033 but protect against (data i) as below */
 	  }
 	if (is_pair(p))
 	  {
@@ -97524,7 +97541,7 @@ int main(int argc, char **argv)
  * tlamb                                        7941   7941
  * tgc              11.9   11.1   8177   7857   7986   8005
  * tmisc                                 8488   7862   8157  8041 [mutable cases]
- * thash            11.8   11.7   9734   9479   9526   9531  9976 [op_dox change: fx_add_u1 etc, but it needed to check result t675][fx_add_t1 -> s1]
+ * thash            11.8   11.7   9734   9479   9526   9531  9542
  * cb        12.9   11.2   11.0   9658   9564   9609   9639
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3
  * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1
@@ -97536,6 +97553,11 @@ int main(int argc, char **argv)
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
- * decode_ptr for wrappers
- * fix thash problem in op_dox, check other mutable possibilities (p=string etc)
+ * decode_ptr for wrappers [int/real/string/c-pointer]
+ * check other mutable possibilities (p=string etc)
+ *   opt_set_i_i_fo -> opt_set_i_i_fom
+ *   opt_dotimes d_d_f in body[i] loop also set related symbol mutable [o->v[1].p]
+ *   opt_set_p_d_f et al, opt_set_p_i_f*
+ *   mutable string? let wrappers seem doable [in safe-do etc]
+ * Arb -> flint3: s7.html s7test.scm libarb_s7.c, maybe crossref (libflint?), add tests7 case for libflint/arb??
  */

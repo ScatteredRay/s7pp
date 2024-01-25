@@ -80,14 +80,16 @@
 ;;; ----------------------------------------
 
 (let ()
-  (define (hash-ints)
+  (define (hash-ints calls)
     (let ((counts (make-hash-table)))
       (do ((i 0 (+ i 1))
 	   (z (random 100) (random 100)))
-	  ((= i 5000000) counts)
+	  ((= i calls) i)
 	(hash-table-set! counts z (+ (or (hash-table-ref counts z) 0) 1)))))
 
-  (hash-ints))
+  (let ((val (hash-ints 5000000)))
+    (unless (= val 5000000)
+      (format *stderr* "thash hash-ints: ~S?~%" val))))
 
 
 ;;; ----------------------------------------
