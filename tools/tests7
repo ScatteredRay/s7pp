@@ -11,6 +11,7 @@ cp ~/cl/low-primes.scm .
 cp ~/cl/full-s7test.scm .
 cp ~/cl/lt.scm .
 cp ~/cl/peak-phases.scm .
+cp ~/cl/arbtest.scm .
 
 echo ' '
 echo '-------- base case --------'
@@ -30,14 +31,6 @@ gcc -o nrepl nrepl.c -g3 -Wall s7.o -I. -Wl,-export-dynamic -lnotcurses-core -lm
 nrepl s7test.scm
 
 echo ' '
-echo '-------- s7-debugging/system-extras --------'
-echo ' '
-gcc s7.c -c -I. -DS7_DEBUGGING -DWITH_SYSTEM_EXTRAS -g3 -ldl -lm -Wl,-export-dynamic
-gcc -o repl repl.c -g3 -Wall s7.o -I. -lm -ldl -Wl,-export-dynamic
-repl s7test.scm
-repl t101.scm
-
-echo ' '
 echo '-------- with-gmp --------'
 echo ' '
 gcc s7.c -c -I. -g3 -DWITH_GMP -ldl -lm -Wl,-export-dynamic
@@ -50,6 +43,23 @@ echo ' '
 gcc s7.c -c -I. -g3 -DWITH_GMP -DDEFAULT_BIGNUM_PRECISION=512 -ldl -lm -Wl,-export-dynamic
 gcc -o repl repl.c -g3 -Wall s7.o -I. -lgmp -lmpfr -lmpc -lm -ldl -Wl,-export-dynamic
 repl s7test.scm
+
+echo ' '
+echo '-------- libarb/flint --------'
+echo ' '
+gcc s7.c -c -I. -g3 -DWITH_GMP -DDEFAULT_BIGNUM_PRECISION=512 -ldl -lm -Wl,-export-dynamic
+gcc -o repl repl.c -g3 -Wall s7.o -I. -lgmp -lmpfr -lmpc -lm -ldl -Wl,-export-dynamic
+gcc -fPIC -c libarb_s7.c
+gcc libarb_s7.o -shared -o libarb_s7.so -L/usr/local/lib -lflint
+repl arbtest.scm
+
+echo ' '
+echo '-------- s7-debugging/system-extras --------'
+echo ' '
+gcc s7.c -c -I. -DS7_DEBUGGING -DWITH_SYSTEM_EXTRAS -g3 -ldl -lm -Wl,-export-dynamic
+gcc -o repl repl.c -g3 -Wall s7.o -I. -lm -ldl -Wl,-export-dynamic
+repl s7test.scm
+repl t101.scm
 
 echo ' '
 echo '-------- with-pure-s7 --------'

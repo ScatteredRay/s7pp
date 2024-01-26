@@ -13583,6 +13583,8 @@ s7_pointer s7_make_mutable_real(s7_scheme *sc, s7_double n)
   return(x);
 }
 
+#define make_mutable_real(Sc, X) s7_make_mutable_real(Sc, X)
+
 s7_pointer s7_make_complex(s7_scheme *sc, s7_double a, s7_double b)
 {
   s7_pointer x;
@@ -59832,6 +59834,13 @@ static s7_int opt_set_i_i_fo(opt_info *o)
   return(x);
 }
 
+static s7_int opt_set_i_i_fom(opt_info *o)
+{
+  s7_int x = integer(slot_value(o->v[3].p)) + o->v[2].i;
+  set_integer(slot_value(o->v[1].p), x);
+  return(x);
+}
+
 static bool set_i_i_f_combinable(s7_scheme *sc, opt_info *opc)
 {
   if ((sc->pc > 1) &&
@@ -59880,7 +59889,7 @@ static bool i_syntax_ok(s7_scheme *sc, s7_pointer car_x, int32_t len)
 		  opc->v[0].fi = (is_mutable_integer(slot_value(opc->v[1].p))) ? opt_set_i_i_fm : opt_set_i_i_f;
 		  opc->v[2].o1 = o1;
 		  opc->v[3].fi = o1->v[0].fi;
-		  return_true(sc, car_x); /* or OO_I? */
+		  return_true(sc, car_x);
 		}}}
       else
 	if ((is_pair(cadr(car_x))) &&    /* if is_pair(settee) get setter */
@@ -64895,6 +64904,13 @@ static s7_pointer opt_set_p_d_f_sf_add(opt_info *o)
   return(x);
 }
 
+static s7_pointer opt_set_p_d_fm_sf_add(opt_info *o)
+{
+  s7_double x = opt_d_dd_sf_add(o->v[4].o1);
+  set_real(slot_value(o->v[1].p), x);
+  return(slot_value(o->v[1].p));
+}
+
 static s7_pointer opt_set_p_d_f_mm_add(opt_info *o)
 {
   s7_double x1 = float_vector_ref_d_7pi(o->sc, slot_value(o->v[4].p), integer(slot_value(o->v[5].p))) * real(slot_value(o->v[3].p));
@@ -65112,6 +65128,7 @@ static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_sy
 		  if (!set_p_i_f_combinable(sc, opc))
 		    {
 		      opc->v[0].fp = opt_set_p_i_f;
+		      /* fprintf(stderr, "%d: %s\n", __LINE__, display(car_x)); */
 		      opc->v[6].fi = opc->v[5].o1->v[0].fi;
 		    }
 		  return_true(sc, car_x);
@@ -65145,6 +65162,7 @@ static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_sy
 			  opc->v[4].o1 = sc->opts[start_pc];
 			  opc->v[5].fd = sc->opts[start_pc]->v[0].fd;
 			  opc->v[0].fp = (opc->v[5].fd == opt_d_dd_sf_add) ? opt_set_p_d_f_sf_add : opt_set_p_d_f;
+			  /* if (opc->v[0].fp == opt_set_p_d_f) fprintf(stderr, "%d: %s\n", __LINE__, display(car_x)); */
 			}
 		      return_true(sc, car_x);
 		    }
@@ -66297,12 +66315,14 @@ static s7_pointer opt_do_step_1(opt_info *o)
 
 static s7_pointer opt_do_step_i(opt_info *o)
 {
-  /* 1 stepper (multi inits perhaps), 1 body, 1 rtn */
+  /* 1 stepper (multi inits perhaps), 1 body expr, 1 rtn expr */
+  /*   (do ((sum 0.0) (k 0 (+ k 1))) ((= k size) (set! (C i j) sum)) (set! sum (+ sum (* (A i k) (B k j))))) */
   opt_info *o1;
   opt_info *ostart = do_any_test(o);
   opt_info *ostep = o->v[9].o1;
   opt_info *inits = do_any_inits(o);
   opt_info *body = do_any_body(o);
+  s7_pointer (*fp)(opt_info *o) = body->v[0].fp;
   int32_t k;
   s7_pointer vp, result, stepper = NULL, si;
   s7_scheme *sc = o->sc;
@@ -66320,12 +66340,19 @@ static s7_pointer opt_do_step_i(opt_info *o)
   incr = ostep->v[2].i;
   si = make_mutable_integer(sc, integer(slot_value(ostart->v[1].p)));
   if (stepper) slot_set_value(stepper, si);
+  if (fp == opt_set_p_d_f_sf_add)
+    {
+      fp = opt_set_p_d_fm_sf_add;
+      slot_set_value(body->v[1].p, make_mutable_real(sc, real(slot_value(body->v[1].p))));
+    }
   while (integer(si) != end)
     {
-      body->v[0].fp(body);
+      fp(body);
       integer(si) += incr;
     }
   clear_mutable_integer(si);
+  if (fp == opt_set_p_d_fm_sf_add)
+    clear_mutable_number(slot_value(body->v[1].p));
   o1 = do_any_results(o);
   result = o1->v[0].fp(o1);
   unstack_gc_protect(sc);
@@ -67982,7 +68009,7 @@ static s7_pointer g_for_each_closure(s7_scheme *sc, s7_pointer f, s7_pointer seq
 		if ((len > MUTLIM) &&
 		    (!tree_has_setters(sc, body)))
 		  {
-		    s7_pointer sv = wrapped_real(sc); /* s7_make_mutable_real(sc, 0.0) 16-Nov-23 */
+		    s7_pointer sv = wrapped_real(sc); /* make_mutable_real(sc, 0.0) 16-Nov-23 */
 		    slot_set_value(slot, sv);
 		    if (func == opt_float_any_nv)
 		      {
@@ -68350,7 +68377,7 @@ Each object can be a list, string, vector, hash-table, or any other sequence."
 	      s7_int vlen = vector_length(v);
 	      if (is_float_vector(v))
 		{
-		  s7_pointer rl = wrapped_real(sc); /* s7_make_mutable_real(sc, 0.0) */
+		  s7_pointer rl = wrapped_real(sc); /* make_mutable_real(sc, 0.0) */
 		  sc->temp7 = rl;
 		  for (s7_int i = 0; i < vlen; i++)
 		    {
@@ -81571,7 +81598,7 @@ static bool has_safe_steppers(s7_scheme *sc, s7_pointer let)
       else
 	{
 	  if (is_t_real(val))
-	    slot_set_value(slot, s7_make_mutable_real(sc, real(val)));
+	    slot_set_value(slot, make_mutable_real(sc, real(val)));
 	  else
 	    if (is_t_integer(val))
 	      slot_set_value(slot, make_mutable_integer(sc, integer(val)));
@@ -81973,7 +82000,7 @@ static goto_t op_dox(s7_scheme *sc)
       if ((has_gx(body)) || (gx_annotate_arg(sc, code, sc->curlet)))
 	{
 	  s7_function f = fx_proc_unchecked(code);
-	  fprintf(stderr, "%d: %s\n", __LINE__, display(form));
+	  if (S7_DEBUGGING) fprintf(stderr, "%d: %s\n", __LINE__, display(form));
 	  do {
 	    s7_pointer slot1 = slots;
 	    f(sc, body);
@@ -83012,18 +83039,18 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool one
 		{ /* (do ((i 0 (+ i 1))) ((= i size) sum) (set! sum (+ sum (floor (vector-ref v i))))) */
 		  opt_info *o = sc->opts[0];
 		  s7_int (*fi)(opt_info *o) = o->v[0].fi;
-		  if (fi == opt_set_i_i_f)
+		  if ((fi == opt_set_i_i_f) || (fi == opt_set_i_i_fo))
 		    {
 		      slot_set_value(o->v[1].p, make_mutable_integer(sc, integer(slot_value(o->v[1].p))));
-		      fi = opt_set_i_i_fm;
+		      fi = (fi == opt_set_i_i_f) ? opt_set_i_i_fm : opt_set_i_i_fom;
 		    }
 		  while (step < stop)
 		    {
 		      fi(o);
 		      step = ++integer(step_val);
 		    }
-		  if (fi == opt_set_i_i_fm)
-		    clear_mutable_number(slot_value(o->v[1].p));
+		  if ((fi == opt_set_i_i_fm) || (fi == opt_set_i_i_fom))
+		    clear_mutable_integer(slot_value(o->v[1].p));
 		}
 	      else
 		if (func == opt_float_any_nv)
@@ -83031,8 +83058,8 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool one
 		    opt_info *o = sc->opts[0];
 		    s7_double (*fd)(opt_info *o) = o->v[0].fd;
 		    if (fd == opt_set_d_d_f)
-		      {
-			slot_set_value(o->v[1].p, s7_make_mutable_real(sc, real(slot_value(o->v[1].p))));
+		      { /* (do ((i 0 (+ i 1))) ((= i 32768)) (set! sum (+ sum (float-vector-ref ndat i)))) */
+			slot_set_value(o->v[1].p, make_mutable_real(sc, real(slot_value(o->v[1].p))));
 			fd = opt_set_d_d_fm;
 		      }
 		    while (step < stop)
@@ -83184,12 +83211,12 @@ static bool do_let(s7_scheme *sc, s7_pointer step_slot, s7_pointer scc)
 	  return(false);
 	}
       if (let_star)
-	add_slot_checked(sc, sc->curlet, caar(p), s7_make_mutable_real(sc, 1.5));
+	add_slot_checked(sc, sc->curlet, caar(p), make_mutable_real(sc, 1.5));
     }
 
   if (!let_star)
     for (p = let_vars; is_pair(p); p = cdr(p))
-      add_slot_checked(sc, sc->curlet, caar(p), s7_make_mutable_real(sc, 1.5));
+      add_slot_checked(sc, sc->curlet, caar(p), make_mutable_real(sc, 1.5));
 
   for (k = 0, p = let_body; is_pair(p); k++, p = cdr(p))
     {
@@ -86227,8 +86254,8 @@ static bool op_tc_if_a_z_laa(s7_scheme *sc, s7_pointer code, bool z_first, tc_ch
 		      s7_double (*fd1)(opt_info *o) = o1->v[0].fd;
 		      s7_double (*fd2)(opt_info *o) = o2->v[0].fd;
 		      bool (*fb)(opt_info *o) = o->v[0].fb;
-		      s7_pointer val1 = s7_make_mutable_real(sc, real(slot_value(la_slot)));
-		      s7_pointer val2 = s7_make_mutable_real(sc, real(slot_value(laa_slot)));
+		      s7_pointer val1 = make_mutable_real(sc, real(slot_value(la_slot)));
+		      s7_pointer val2 = make_mutable_real(sc, real(slot_value(laa_slot)));
 		      slot_set_value(la_slot, val1);
 		      slot_set_value(laa_slot, val2);
 		      if ((z_first) &&
@@ -87538,7 +87565,7 @@ static opt_pid_t opinit_if_a_a_opla_laq(s7_scheme *sc, bool a_op)
 			      sc->rec_a2_o = sc->opts[sc->pc];
 			      if (float_optimize(sc, cdr(opt3_pair(caller))))
 				{
-				  sc->rec_val1 = s7_make_mutable_real(sc, real(slot_value(slot)));
+				  sc->rec_val1 = make_mutable_real(sc, real(slot_value(slot)));
 				  slot_set_value(slot, sc->rec_val1);
 				  return(OPT_DBL);
 				}}}}}}}}
@@ -97502,47 +97529,47 @@ int main(int argc, char **argv)
  * tref      1081    691    687    463    459    464    466
  * index            1026   1016    973    967    972    974
  * tmock            1177   1165   1057   1019   1032   1037
- * tvect     3408   2519   2464   1772   1669   1497   1515  1454 [mutable]
+ * tvect     3408   2519   2464   1772   1669   1497   1452
  * tauto                          2562   2048   1729   1729
  * timp             2637   2575   1930   1694   1740   1738
  * texit     1884                 1778   1741   1770   1771
  * s7test           1873   1831   1818   1829   1830   1855
  * lt        2222   2187   2172   2150   2185   1950   1950
  * thook     7651                 2590   2030   2046   2046
- * dup              3805   3788   2492   2239   2097   2096  2049
+ * dup              3805   3788   2492   2239   2097   2042
  * tcopy            8035   5546   2539   2375   2386   2386
  * tread            2440   2421   2419   2408   2405   2402
  * trclo     8031   2735   2574   2454   2445   2449   2470
  * titer     3657   2865   2842   2641   2509   2449   2446
  * tload                          3046   2404   2566   2444
  * fbench    2933   2688   2583   2460   2430   2478   2559
- * tmat             3065   3042   2524   2578   2590   2602  [op_safe_do ->op_dotimes_p]
+ * tmat             3065   3042   2524   2578   2590   2583
  * tsort     3683   3105   3104   2856   2804   2858   2858
  * tobj             4016   3970   3828   3577   3508   3502
- * teq              4068   4045   3536   3486   3544   3517  3537 [hash_table_equal_1 and iterate]
+ * teq              4068   4045   3536   3486   3544   3537
  * tio              3816   3752   3683   3620   3583   3601
  * tmac             3950   3873   3033   3677   3677   3680
  * tcase            4960   4793   4439   4430   4439   4455
  * tlet      9166   7775   5640   4450   4427   4457   4466
- * tclo      6362   4787   4735   4390   4384   4474   4472  4552 [safe_list changes]
- * tfft             7820   7729   4755   4476   4536   4548  4545 [op_dox][fx_num_eq_to -> ss add_t1 -> s1]
- * tstar            6139   5923   5519   4449   4550   4596
+ * tclo      6362   4787   4735   4390   4384   4474   4447
+ * tfft             7820   7729   4755   4476   4536   4543
+ * tstar            6139   5923   5519   4449   4550   4604
  * tmap             8869   8774   4489   4541   4586   4592
  * tshoot           5525   5447   5183   5055   5034   5034
  * tform            5357   5348   5307   5316   5084   5095
  * tstr      10.0   6880   6342   5488   5162   5180   5180
- * tnum             6348   6013   5433   5396   5409   5423  [opt_d_7piid_sssf_unchecked etc -> checked]
- * tgsl             8485   7802   6373   6282   6208   6207  6193 [free additions]
- * tari      15.0   13.0   12.7   6827   6543   6278   6284
+ * tnum             6348   6013   5433   5396   5409   5423
+ * tgsl             8485   7802   6373   6282   6208   6193
+ * tari      15.0   13.0   12.7   6827   6543   6278   6208
  * tlist     9219   7896   7546   6558   6240   6300   6300
- * tset                                  6260   6364   6443  6425 [mutable]
+ * tset                                  6260   6364   6402
  * trec      19.5   6936   6922   6521   6588   6583   6583
  * tleft     11.1   10.4   10.2   7657   7479   7627   7622
  * tlamb                                        7941   7941
  * tgc              11.9   11.1   8177   7857   7986   8005
- * tmisc                                 8488   7862   8157  8041 [mutable cases]
- * thash            11.8   11.7   9734   9479   9526   9531  9542
- * cb        12.9   11.2   11.0   9658   9564   9609   9639
+ * tmisc                                 8488   7862   8035
+ * thash            11.8   11.7   9734   9479   9526   9542
+ * cb        12.9   11.2   11.0   9658   9564   9609   9635
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3
  * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1
  * calls            36.7   37.5   37.0   37.5   37.1   37.0
@@ -97555,9 +97582,11 @@ int main(int argc, char **argv)
  *   lots of is_global(sc->quote_symbol)
  * decode_ptr for wrappers [int/real/string/c-pointer]
  * check other mutable possibilities (p=string etc)
- *   opt_set_i_i_fo -> opt_set_i_i_fom
  *   opt_dotimes d_d_f in body[i] loop also set related symbol mutable [o->v[1].p]
- *   opt_set_p_d_f et al, opt_set_p_i_f*
+ *   opt_set_p_d_f et al [gsl/num for opt_set_p_d_fm_sf_add], opt_set_p_i_f* [ari]
+ *     these may not be safe -- do they include (set! (v i) ...)? (pvoc.scm in full-snd-test 8)
  *   mutable string? let wrappers seem doable [in safe-do etc]
- * Arb -> flint3: s7.html s7test.scm libarb_s7.c, maybe crossref (libflint?), add tests7 case for libflint/arb??
+ *   opt_set_d_d_c? would need d_d_cm?? d_d_s? and i cases
+ *   do bodies use cell_optimize which is not optimal
+ * wrapped form of FFI funcs? reals/ints?
  */

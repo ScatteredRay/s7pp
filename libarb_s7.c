@@ -6,10 +6,10 @@
 #include <mpfr.h>
 #include <mpc.h>
 
-#include <arb.h>
-#include <acb.h>
-#include <acb_hypgeom.h>
-#include <acb_elliptic.h>
+#include <flint/arb.h>
+#include <flint/acb.h>
+#include <flint/acb_hypgeom.h>
+#include <flint/acb_elliptic.h>
 
 #define WITH_GMP 1
 #include "s7.h"

@@ -8866,7 +8866,7 @@ the Flint and Arb libraries, flintlib.org and arblib.org.  In Linux:
 
 <pre class="indented">
 gcc -fPIC -c libarb_s7.c
-gcc libarb_s7.o -shared -o libarb_s7.so -lflint -larb
+gcc libarb_s7.o -shared -o libarb_s7.so -lflint
 repl
   &gt; (load "libarb_s7.so" (inlet 'init_func 'libarb_s7_init))
   <em class="gray">#f</em>
@@ -8874,8 +8874,6 @@ repl
   <em class="gray">7.651976865579665514497175261026632209096E-1</em>
 </pre>
 <p>As of January 2024, libarb has been absorbed into libflint 3.0.
-I have not succeeded in building flint 3.0.1 so I can't provide
-any guidance.  Maybe just omit -larb above?
 </p>
 
 
