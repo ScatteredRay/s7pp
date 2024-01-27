@@ -59823,6 +59823,13 @@ static s7_int opt_set_i_i_f(opt_info *o)
 static s7_int opt_set_i_i_fm(opt_info *o) /* called in increment: (set! sum (+ sum (...))) where are all ints */
 {
   s7_int x = o->v[3].fi(o->v[2].o1);
+#if S7_DEBUGGING
+  if (!is_mutable_integer(slot_value(o->v[1].p)))
+    {
+      fprintf(stderr, "%s[%d]: %s value is not mutable", __func__, __LINE__, display(o->v[1].p));
+      if (o->sc->stop_at_error) abort();
+    }
+#endif
   set_integer(slot_value(o->v[1].p), x);
   return(x);
 }
@@ -59837,6 +59844,13 @@ static s7_int opt_set_i_i_fo(opt_info *o)
 static s7_int opt_set_i_i_fom(opt_info *o)
 {
   s7_int x = integer(slot_value(o->v[3].p)) + o->v[2].i;
+#if S7_DEBUGGING
+  if (!is_mutable_integer(slot_value(o->v[1].p)))
+    {
+      fprintf(stderr, "%s[%d]: %s value is not mutable", __func__, __LINE__, display(o->v[1].p));
+      if (o->sc->stop_at_error) abort();
+    }
+#endif
   set_integer(slot_value(o->v[1].p), x);
   return(x);
 }
@@ -62084,6 +62098,13 @@ static s7_double opt_set_d_d_f(opt_info *o)
 static s7_double opt_set_d_d_fm(opt_info *o)
 {
   s7_double x = o->v[3].fd(o->v[2].o1);
+#if S7_DEBUGGING
+  if (!is_mutable_number(slot_value(o->v[1].p)))
+    {
+      fprintf(stderr, "%s[%d]: %s value is not mutable", __func__, __LINE__, display(o->v[1].p));
+      if (o->sc->stop_at_error) abort();
+    }
+#endif
   set_real(slot_value(o->v[1].p), x);
   return(x);
 }
@@ -64880,6 +64901,29 @@ static s7_pointer opt_set_p_i_f(opt_info *o)
   slot_set_value(o->v[1].p, x);
   return(x);
 }
+/* here and below (opt_set_p_d_f), the mutable versions are not safe, and are very tricky to make safe.  First if a variable is set twice,
+ *  in the body, as in (do (...) (... (set! buffix (+ 1 buffix)) (if (>= buffix fftsize) (set! buffix 0)))) from pvoc.scm, 
+ *  if the first set! is opt_set_p_i_fm (buffix is assumed mutable), the second sets it to built-in immutable zero, so the next time around loop, 
+ *  the set_integer is direct so now built-in 0 == 128 (yet still prints itself as "0").  Also if a mutable variable is stored, 
+ * (define (f2) (let ((v (vector 0 0 0)) (y 1.0)) (do ((i 0 (+ i 1))) ((= i 3) v) (set! y (+ y 1.0)) (vector-set! v i y))))
+ * (f2) -> #(4.0 4.0 4.0).  Maybe safe if body has just one statement?
+ */
+
+#if 0
+static s7_pointer opt_set_p_i_fm(opt_info *o)
+{
+  s7_int x = o->v[6].fi(o->v[5].o1);
+#if S7_DEBUGGING
+  if (!is_mutable_integer(slot_value(o->v[1].p)))
+    {
+      fprintf(stderr, "%s[%d]: %s value is not mutable", __func__, __LINE__, display(o->v[1].p));
+      if (o->sc->stop_at_error) abort();
+    }
+#endif
+  set_integer(slot_value(o->v[1].p), x);
+  return(slot_value(o->v[1].p));
+}
+#endif
 
 static s7_pointer opt_set_p_d_s(opt_info *o)
 {
@@ -64897,6 +64941,22 @@ static s7_pointer opt_set_p_d_f(opt_info *o)
   return(x);
 }
 
+#if 0
+static s7_pointer opt_set_p_d_fm(opt_info *o)
+{
+  s7_double x = o->v[5].fd(o->v[4].o1);
+#if S7_DEBUGGING
+  if (!is_mutable_number(slot_value(o->v[1].p)))
+    {
+      fprintf(stderr, "%s[%d]: %s value is not mutable", __func__, __LINE__, display(o->v[1].p));
+      if (o->sc->stop_at_error) abort();
+    }
+#endif
+  set_real(slot_value(o->v[1].p), x);
+  return(slot_value(o->v[1].p));
+}
+#endif
+
 static s7_pointer opt_set_p_d_f_sf_add(opt_info *o)
 {
   s7_pointer x = make_real(o->sc, opt_d_dd_sf_add(o->v[4].o1));
@@ -64907,6 +64967,13 @@ static s7_pointer opt_set_p_d_f_sf_add(opt_info *o)
 static s7_pointer opt_set_p_d_fm_sf_add(opt_info *o)
 {
   s7_double x = opt_d_dd_sf_add(o->v[4].o1);
+#if S7_DEBUGGING
+  if (!is_mutable_number(slot_value(o->v[1].p)))
+    {
+      fprintf(stderr, "%s[%d]: %s value is not mutable", __func__, __LINE__, display(o->v[1].p));
+      if (o->sc->stop_at_error) abort();
+    }
+#endif
   set_real(slot_value(o->v[1].p), x);
   return(slot_value(o->v[1].p));
 }
@@ -66340,7 +66407,7 @@ static s7_pointer opt_do_step_i(opt_info *o)
   incr = ostep->v[2].i;
   si = make_mutable_integer(sc, integer(slot_value(ostart->v[1].p)));
   if (stepper) slot_set_value(stepper, si);
-  if (fp == opt_set_p_d_f_sf_add)
+  if (fp == opt_set_p_d_f_sf_add) /* ok since used only if body has one expr */
     {
       fp = opt_set_p_d_fm_sf_add;
       slot_set_value(body->v[1].p, make_mutable_real(sc, real(slot_value(body->v[1].p))));
@@ -95817,6 +95884,7 @@ then returns each var to its original value."
   sc->unless_symbol =            syntax(sc, "unless",                  OP_UNLESS,            int_two,  max_arity,  H_unless);
   sc->begin_symbol =             syntax(sc, "begin",                   OP_BEGIN,             int_zero, max_arity,  H_begin);      /* (begin) is () */
   sc->set_symbol =               syntax(sc, "set!",                    OP_SET,               int_two,  int_two,    H_set);
+  set_is_setter(sc->set_symbol); /* ? 26-Jan-24 */
   sc->cond_symbol =              copy_args_syntax(sc, "cond",          OP_COND,              int_one,  max_arity,  H_cond);
   sc->and_symbol =               copy_args_syntax(sc, "and",           OP_AND,               int_zero, max_arity,  H_and);
   sc->or_symbol =                copy_args_syntax(sc, "or",            OP_OR,                int_zero, max_arity,  H_or);
@@ -97560,7 +97628,7 @@ int main(int argc, char **argv)
  * tstr      10.0   6880   6342   5488   5162   5180   5180
  * tnum             6348   6013   5433   5396   5409   5423
  * tgsl             8485   7802   6373   6282   6208   6193
- * tari      15.0   13.0   12.7   6827   6543   6278   6208
+ * tari      15.0   13.0   12.7   6827   6543   6278   6208  6284
  * tlist     9219   7896   7546   6558   6240   6300   6300
  * tset                                  6260   6364   6402
  * trec      19.5   6936   6922   6521   6588   6583   6583
@@ -97583,10 +97651,9 @@ int main(int argc, char **argv)
  * decode_ptr for wrappers [int/real/string/c-pointer]
  * check other mutable possibilities (p=string etc)
  *   opt_dotimes d_d_f in body[i] loop also set related symbol mutable [o->v[1].p]
- *   opt_set_p_d_f et al [gsl/num for opt_set_p_d_fm_sf_add], opt_set_p_i_f* [ari]
- *     these may not be safe -- do they include (set! (v i) ...)? (pvoc.scm in full-snd-test 8)
  *   mutable string? let wrappers seem doable [in safe-do etc]
  *   opt_set_d_d_c? would need d_d_cm?? d_d_s? and i cases
  *   do bodies use cell_optimize which is not optimal
+ *   set_integer check mutable?
  * wrapped form of FFI funcs? reals/ints?
  */
