@@ -3973,9 +3973,11 @@ static void try_to_call_gc(s7_scheme *sc);
 #define rational_to_double(Sc, X)     s7_number_to_real(Sc, X)
 #endif
 
+static char *describe_type_bits(s7_scheme *sc, s7_pointer obj);
 static s7_pointer wrapped_integer(s7_scheme *sc) /* wrap_integer without small_int possibility -- usable as a mutable integer for example */
 {
   s7_pointer p = car(sc->integer_wrappers);
+  if ((S7_DEBUGGING) && ((full_type(p) & (~T_GC_MARK)) != (T_INTEGER | T_IMMUTABLE | T_UNHEAP | T_MUTABLE))) fprintf(stderr, "%s\n", describe_type_bits(sc, p));
   sc->integer_wrappers = cdr(sc->integer_wrappers);
   return(p);
 }
@@ -3985,6 +3987,7 @@ static s7_pointer wrap_integer(s7_scheme *sc, s7_int x)
   s7_pointer p;
   if (is_small_int(x)) return(small_int(x));
   p = car(sc->integer_wrappers);
+  if ((S7_DEBUGGING) && ((full_type(p) & (~T_GC_MARK)) != (T_INTEGER | T_IMMUTABLE | T_UNHEAP | T_MUTABLE))) fprintf(stderr, "%s\n", describe_type_bits(sc, p));
   set_integer(p, x);
   sc->integer_wrappers = cdr(sc->integer_wrappers);
   return(p);
@@ -3995,6 +3998,7 @@ static s7_pointer wrap_integer(s7_scheme *sc, s7_int x)
 static s7_pointer wrap_real(s7_scheme *sc, s7_double x)
 {
   s7_pointer p = car(sc->real_wrappers);
+  if ((S7_DEBUGGING) && ((full_type(p) & (~T_GC_MARK)) != (T_REAL | T_IMMUTABLE | T_UNHEAP | T_MUTABLE))) fprintf(stderr, "%s\n", describe_type_bits(sc, p));
   set_real(p, x);
   sc->real_wrappers = cdr(sc->real_wrappers);
   return(p);
@@ -11547,6 +11551,7 @@ s7_pointer s7_make_c_pointer(s7_scheme *sc, void *ptr) {return(s7_make_c_pointer
 s7_pointer s7_make_c_pointer_wrapper_with_type(s7_scheme *sc, void *ptr, s7_pointer type, s7_pointer info)
 {
   s7_pointer x = car(sc->c_pointer_wrappers);
+  if ((S7_DEBUGGING) && (full_type(x) != (T_C_POINTER | T_IMMUTABLE | T_UNHEAP))) fprintf(stderr, "%s\n", describe_type_bits(sc, x));
   sc->c_pointer_wrappers = cdr(sc->c_pointer_wrappers);
   c_pointer(x) = ptr;
   c_pointer_type(x) = type;
@@ -26756,6 +26761,7 @@ s7_int s7_string_length(s7_pointer str) {return(string_length(str));}
 static s7_pointer wrap_string(s7_scheme *sc, const char *str, s7_int len)
 {
   s7_pointer x = car(sc->string_wrappers);
+  if ((S7_DEBUGGING) && ((full_type(x) & (~T_GC_MARK)) != (T_STRING | T_IMMUTABLE | T_UNHEAP | T_SAFE_PROCEDURE))) fprintf(stderr, "%s\n", describe_type_bits(sc, x));
   sc->string_wrappers = cdr(sc->string_wrappers);
   string_value(x) = (char *)str;
   string_length(x) = len;
@@ -41111,6 +41117,8 @@ static s7_pointer g_vector_set(s7_scheme *sc, s7_pointer args)
 	}
       val = caddr(args);
     }
+  if ((S7_DEBUGGING) && (is_number(val)) && (is_mutable_number(val)))
+    fprintf(stderr, "%s[%d] storing mutable number\n", __func__, __LINE__);
   if (is_typed_t_vector(vec))
     return(typed_vector_setter(sc, vec, index, val));
   if (is_t_vector(vec))
@@ -41134,6 +41142,8 @@ static s7_pointer vector_set_p_pip(s7_scheme *sc, s7_pointer v, s7_int i, s7_poi
 
 static s7_pointer vector_set_p_pip_unchecked(s7_scheme *sc, s7_pointer v, s7_int i, s7_pointer p)
 {
+  if ((S7_DEBUGGING) && (is_number(p)) && (is_mutable_number(p)))
+    fprintf(stderr, "%s[%d] storing mutable number\n", __func__, __LINE__);
   if ((i >= 0) && (i < vector_length(v)))
     vector_element(v, i) = p;
   else out_of_range_error_nr(sc, sc->vector_set_symbol, int_two, wrap_integer(sc, i), (i < 0) ? it_is_negative_string : it_is_too_large_string);
@@ -59820,16 +59830,23 @@ static s7_int opt_set_i_i_f(opt_info *o)
   return(x);
 }
 
+#if S7_DEBUGGING
+static void check_mutability(s7_scheme *sc, opt_info *o, const char *func, int line)
+{
+  if (!is_mutable_number(slot_value(o->v[1].p)))
+    {
+      fprintf(stderr, "%s[%d]: %s value is not mutable", func, line, display(o->v[1].p));
+      if (sc->stop_at_error) abort();
+    }
+}
+#else
+#define check_mutability(Sc, O, Func, Line)
+#endif
+
 static s7_int opt_set_i_i_fm(opt_info *o) /* called in increment: (set! sum (+ sum (...))) where are all ints */
 {
   s7_int x = o->v[3].fi(o->v[2].o1);
-#if S7_DEBUGGING
-  if (!is_mutable_integer(slot_value(o->v[1].p)))
-    {
-      fprintf(stderr, "%s[%d]: %s value is not mutable", __func__, __LINE__, display(o->v[1].p));
-      if (o->sc->stop_at_error) abort();
-    }
-#endif
+  check_mutability(o->sc, o, __func__, __LINE__);
   set_integer(slot_value(o->v[1].p), x);
   return(x);
 }
@@ -59844,13 +59861,7 @@ static s7_int opt_set_i_i_fo(opt_info *o)
 static s7_int opt_set_i_i_fom(opt_info *o)
 {
   s7_int x = integer(slot_value(o->v[3].p)) + o->v[2].i;
-#if S7_DEBUGGING
-  if (!is_mutable_integer(slot_value(o->v[1].p)))
-    {
-      fprintf(stderr, "%s[%d]: %s value is not mutable", __func__, __LINE__, display(o->v[1].p));
-      if (o->sc->stop_at_error) abort();
-    }
-#endif
+  check_mutability(o->sc, o, __func__, __LINE__);
   set_integer(slot_value(o->v[1].p), x);
   return(x);
 }
@@ -59901,6 +59912,7 @@ static bool i_syntax_ok(s7_scheme *sc, s7_pointer car_x, int32_t len)
 		  if (set_i_i_f_combinable(sc, opc))
 		    return_true(sc, car_x);
 		  opc->v[0].fi = (is_mutable_integer(slot_value(opc->v[1].p))) ? opt_set_i_i_fm : opt_set_i_i_f;
+		  /* only a few opt_set_i_i_f|fo's remain in valcall suite */
 		  opc->v[2].o1 = o1;
 		  opc->v[3].fi = o1->v[0].fi;
 		  return_true(sc, car_x);
@@ -62098,13 +62110,7 @@ static s7_double opt_set_d_d_f(opt_info *o)
 static s7_double opt_set_d_d_fm(opt_info *o)
 {
   s7_double x = o->v[3].fd(o->v[2].o1);
-#if S7_DEBUGGING
-  if (!is_mutable_number(slot_value(o->v[1].p)))
-    {
-      fprintf(stderr, "%s[%d]: %s value is not mutable", __func__, __LINE__, display(o->v[1].p));
-      if (o->sc->stop_at_error) abort();
-    }
-#endif
+  check_mutability(o->sc, o, __func__, __LINE__);
   set_real(slot_value(o->v[1].p), x);
   return(x);
 }
@@ -62133,8 +62139,15 @@ static bool d_syntax_ok(s7_scheme *sc, s7_pointer car_x, int32_t len)
 	      opc->v[1].p = settee;
 	      if ((!is_t_integer(caddr(car_x))) &&
 		  (float_optimize(sc, cddr(car_x))))
-		{
+		{ /* tari: (set! rlo (min rlo (real-part (v i)))) -- can't tell here that it is used only in this line in the do body */
+		  /*  PERHAPS: if tree_count(body) - tree_count(line) == 0 and no setters within line it's safe as mutable? use the two_sets bit as before? */
+		  /*   but we also need a list of such opt_info ptrs to cancel mutability at the end */
+		  /* tall: (set! la ca)! (How?)
+		   *       (set! temp1 (one-zero dryTap0 (one-pole dryTap1 (piano-noise pnoise amp))))
+		   *   and many more, but none will be self-contained I think
+		   */
 		  opc->v[0].fd = (is_mutable_number(slot_value(opc->v[1].p))) ? opt_set_d_d_fm : opt_set_d_d_f;
+		  /* if (opc->v[0].fd == opt_set_d_d_f) fprintf(stderr, "%d: %s\n", __LINE__, display(car_x)); */
 		  opc->v[2].o1 = o1;
 		  opc->v[3].fd = o1->v[0].fd;
 		  return_true(sc, car_x);
@@ -64913,13 +64926,7 @@ static s7_pointer opt_set_p_i_f(opt_info *o)
 static s7_pointer opt_set_p_i_fm(opt_info *o)
 {
   s7_int x = o->v[6].fi(o->v[5].o1);
-#if S7_DEBUGGING
-  if (!is_mutable_integer(slot_value(o->v[1].p)))
-    {
-      fprintf(stderr, "%s[%d]: %s value is not mutable", __func__, __LINE__, display(o->v[1].p));
-      if (o->sc->stop_at_error) abort();
-    }
-#endif
+  check_mutability(o->sc, o, __func__, __LINE__);
   set_integer(slot_value(o->v[1].p), x);
   return(slot_value(o->v[1].p));
 }
@@ -64945,13 +64952,7 @@ static s7_pointer opt_set_p_d_f(opt_info *o)
 static s7_pointer opt_set_p_d_fm(opt_info *o)
 {
   s7_double x = o->v[5].fd(o->v[4].o1);
-#if S7_DEBUGGING
-  if (!is_mutable_number(slot_value(o->v[1].p)))
-    {
-      fprintf(stderr, "%s[%d]: %s value is not mutable", __func__, __LINE__, display(o->v[1].p));
-      if (o->sc->stop_at_error) abort();
-    }
-#endif
+  check_mutability(o->sc, o, __func__, __LINE__);
   set_real(slot_value(o->v[1].p), x);
   return(slot_value(o->v[1].p));
 }
@@ -64967,13 +64968,7 @@ static s7_pointer opt_set_p_d_f_sf_add(opt_info *o)
 static s7_pointer opt_set_p_d_fm_sf_add(opt_info *o)
 {
   s7_double x = opt_d_dd_sf_add(o->v[4].o1);
-#if S7_DEBUGGING
-  if (!is_mutable_number(slot_value(o->v[1].p)))
-    {
-      fprintf(stderr, "%s[%d]: %s value is not mutable", __func__, __LINE__, display(o->v[1].p));
-      if (o->sc->stop_at_error) abort();
-    }
-#endif
+  check_mutability(o->sc, o, __func__, __LINE__);
   set_real(slot_value(o->v[1].p), x);
   return(slot_value(o->v[1].p));
 }
@@ -65054,6 +65049,7 @@ static bool set_p_i_f_combinable(s7_scheme *sc, opt_info *opc)
 	  opc->v[2].p = o1->v[1].p;
 	  opc->v[3].i = o1->v[2].i;
 	  opc->v[0].fp = (o1->v[0].fi == opt_i_ii_sc_add) ? opt_set_p_i_fo1_add : opt_set_p_i_fo1;
+	  /* opt_if_nbp: opt_set_p_i_fo1_add b/shoot */
 	  backup_pc(sc);
 	  return_true(sc, NULL);
 	}}
@@ -82131,6 +82127,7 @@ static goto_t op_dox(s7_scheme *sc)
 	      if (use_opts)
 		for (int32_t i = 0; i < body_len; i++)
 		  body[i]->v[0].fp(body[i]);
+	      /* opt_set_p_d_f shoot: 144,186,857  => s7.c:opt_set_p_d_f (2,093,278x) (b also, big/fft as part of fft code 7M) */
 	      else
 		for (p = code; is_pair(p); p = cdr(p))
 		  fx_call(sc, p);
@@ -83189,6 +83186,8 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool one
 		step_val = slot_value(step_slot);
 		for (s7_int step = integer(step_val); step < stop; step = ++integer(step_val))
 		  for (int32_t i = 0; i < body_len; i++) body[i]->v[0].fd(body[i]);
+		/* tari[99 ff]: 4 calls here all safe (see d_syntax_ok, need to make the change and the list here dependent on two-sets bit(?) (3.3M calls) */
+		/* tall: (3.3M calls) */
 	      }
 	    sc->value = sc->T;
 	    sc->code = cdadr(scc);
@@ -94671,6 +94670,8 @@ static void init_s7_starlet_immutable_field(void)
   s7_starlet_immutable_field[SL_MINOR_VERSION] = true;
 }
 
+#define NUM_INTEGER_WRAPPERS 4
+#define NUM_REAL_WRAPPERS 4
 
 /* ---------------- gdbinit annotated stacktrace ---------------- */
 #if (!MS_WINDOWS)
@@ -94703,6 +94704,14 @@ static const char *decoded_name(s7_scheme *sc, const s7_pointer p)
   if (p == current_output_port(sc)) return("current-output-port");
   if (p == current_error_port(sc))  return("current-error_port");
   if ((is_let(p)) && (is_unlet(p))) return("unlet");
+  {
+    s7_pointer wrapper;
+    int32_t i;
+    for (i = 0, wrapper = sc->string_wrappers; i < NUM_STRING_WRAPPERS; i++, wrapper = cdr(wrapper)) if (car(wrapper) == p) return("string-wrapper");
+    for (i = 0, wrapper = sc->integer_wrappers; i < NUM_INTEGER_WRAPPERS; i++, wrapper = cdr(wrapper)) if (car(wrapper) == p) return("integer-wrapper");
+    for (i = 0, wrapper = sc->real_wrappers; i < NUM_REAL_WRAPPERS; i++, wrapper = cdr(wrapper)) if (car(wrapper) == p) return("real-wrapper");
+    for (i = 0, wrapper = sc->c_pointer_wrappers; i < NUM_C_POINTER_WRAPPERS; i++, wrapper = cdr(wrapper)) if (car(wrapper) == p) return("c-pointer-wrapper");
+  }
   return((p == sc->stack) ? "stack" : NULL);
 }
 
@@ -95616,8 +95625,6 @@ static void init_features(s7_scheme *sc)
 static void init_wrappers(s7_scheme *sc)
 {
   s7_pointer cp, qp;
-  #define NUM_INTEGER_WRAPPERS 4
-  #define NUM_REAL_WRAPPERS 4
 
   sc->integer_wrappers = semipermanent_list(sc, NUM_INTEGER_WRAPPERS);
   for (cp = sc->integer_wrappers, qp = sc->integer_wrappers; is_pair(cp); qp = cp, cp = cdr(cp))
@@ -97648,12 +97655,8 @@ int main(int argc, char **argv)
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
- * decode_ptr for wrappers [int/real/string/c-pointer]
- * check other mutable possibilities (p=string etc)
- *   opt_dotimes d_d_f in body[i] loop also set related symbol mutable [o->v[1].p]
- *   mutable string? let wrappers seem doable [in safe-do etc]
- *   opt_set_d_d_c? would need d_d_cm?? d_d_s? and i cases
- *   do bodies use cell_optimize which is not optimal
- *   set_integer check mutable?
- * wrapped form of FFI funcs? reals/ints?
+ * do bodies use cell_optimize which is not optimal
+ *   set_pending_value wrapped (big, rclo)
+ * wrapped form of FFI funcs? reals/ints? let wrappers seem doable [in safe-do etc]
+ * big: opt_set_p_p_f -> 4,632,365,608  => s7.c:opt_p_pp_ff_sub_mul_mul (8,912,896x), 4,522,360,682  => s7.c:opt_p_pp_ff_add_mul_mul (8,912,896x)
  */
