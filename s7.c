@@ -3973,11 +3973,16 @@ static void try_to_call_gc(s7_scheme *sc);
 #define rational_to_double(Sc, X)     s7_number_to_real(Sc, X)
 #endif
 
-static char *describe_type_bits(s7_scheme *sc, s7_pointer obj);
+#if S7_DEBUGGING
+  static char *describe_type_bits(s7_scheme *sc, s7_pointer obj);
+#endif
+
 static s7_pointer wrapped_integer(s7_scheme *sc) /* wrap_integer without small_int possibility -- usable as a mutable integer for example */
 {
   s7_pointer p = car(sc->integer_wrappers);
-  if ((S7_DEBUGGING) && ((full_type(p) & (~T_GC_MARK)) != (T_INTEGER | T_IMMUTABLE | T_UNHEAP | T_MUTABLE))) fprintf(stderr, "%s\n", describe_type_bits(sc, p));
+#if S7_DEBUGGING
+  if ((full_type(p) & (~T_GC_MARK)) != (T_INTEGER | T_IMMUTABLE | T_UNHEAP | T_MUTABLE)) fprintf(stderr, "%s\n", describe_type_bits(sc, p));
+#endif
   sc->integer_wrappers = cdr(sc->integer_wrappers);
   return(p);
 }
@@ -3987,7 +3992,9 @@ static s7_pointer wrap_integer(s7_scheme *sc, s7_int x)
   s7_pointer p;
   if (is_small_int(x)) return(small_int(x));
   p = car(sc->integer_wrappers);
-  if ((S7_DEBUGGING) && ((full_type(p) & (~T_GC_MARK)) != (T_INTEGER | T_IMMUTABLE | T_UNHEAP | T_MUTABLE))) fprintf(stderr, "%s\n", describe_type_bits(sc, p));
+#if S7_DEBUGGING
+  if ((full_type(p) & (~T_GC_MARK)) != (T_INTEGER | T_IMMUTABLE | T_UNHEAP | T_MUTABLE)) fprintf(stderr, "%s\n", describe_type_bits(sc, p));
+#endif
   set_integer(p, x);
   sc->integer_wrappers = cdr(sc->integer_wrappers);
   return(p);
@@ -3998,7 +4005,9 @@ static s7_pointer wrap_integer(s7_scheme *sc, s7_int x)
 static s7_pointer wrap_real(s7_scheme *sc, s7_double x)
 {
   s7_pointer p = car(sc->real_wrappers);
-  if ((S7_DEBUGGING) && ((full_type(p) & (~T_GC_MARK)) != (T_REAL | T_IMMUTABLE | T_UNHEAP | T_MUTABLE))) fprintf(stderr, "%s\n", describe_type_bits(sc, p));
+#if S7_DEBUGGING
+  if ((full_type(p) & (~T_GC_MARK)) != (T_REAL | T_IMMUTABLE | T_UNHEAP | T_MUTABLE)) fprintf(stderr, "%s\n", describe_type_bits(sc, p));
+#endif
   set_real(p, x);
   sc->real_wrappers = cdr(sc->real_wrappers);
   return(p);
@@ -11551,7 +11560,9 @@ s7_pointer s7_make_c_pointer(s7_scheme *sc, void *ptr) {return(s7_make_c_pointer
 s7_pointer s7_make_c_pointer_wrapper_with_type(s7_scheme *sc, void *ptr, s7_pointer type, s7_pointer info)
 {
   s7_pointer x = car(sc->c_pointer_wrappers);
-  if ((S7_DEBUGGING) && (full_type(x) != (T_C_POINTER | T_IMMUTABLE | T_UNHEAP))) fprintf(stderr, "%s\n", describe_type_bits(sc, x));
+#if S7_DEBUGGING
+  if ((full_type(x) & (~T_GC_MARK)) != (T_C_POINTER | T_IMMUTABLE | T_UNHEAP)) fprintf(stderr, "%s\n", describe_type_bits(sc, x));
+#endif
   sc->c_pointer_wrappers = cdr(sc->c_pointer_wrappers);
   c_pointer(x) = ptr;
   c_pointer_type(x) = type;
@@ -13861,7 +13872,7 @@ static inline double dpow(int32_t x, int32_t y)
 #ifndef WITH_DTOA
   #define WITH_DTOA 1
 #endif
-/* there was a time when libc was so slow that this code was all but mandatory, but now (Aug-2023) the difference is much smaller */
+/* there was a time when libc was so slow that this code was all but mandatory, but now (Aug-2023) the difference is smaller (ca. factor of 2) */
 
 #if WITH_DTOA
 /* fpconv, revised to fit the local coding style
@@ -22661,7 +22672,8 @@ static s7_pointer max_p_pp(s7_scheme *sc, s7_pointer x, s7_pointer y)
       if (is_t_integer(x))
 	return((integer(x) < integer(y)) ? y : x);
       if (is_t_real(x))
-	return(((is_NaN(real(x))) || (real(x) >= real(y))) ? x : y);
+	/* return(((is_NaN(real(x))) || (real(x) >= real(y))) ? x : y); */
+	return(((real(x) >= real(y)) || (is_NaN(real(x)))) ? x : y);
       if (is_t_ratio(x))
 	return((fraction(x) < fraction(y)) ? y : x);
 #if WITH_GMP
@@ -22681,8 +22693,12 @@ static s7_pointer max_p_pp(s7_scheme *sc, s7_pointer x, s7_pointer y)
 	case T_RATIO:
 	  return((integer(x) < fraction(y)) ? y : x);
 	case T_REAL:
+#if 0
 	  if (is_NaN(real(y))) return(y);
 	  return((integer(x) < real(y)) ? y : x);
+#else
+	  return(((integer(x) < real(y)) || (is_NaN(real(y)))) ? y : x);
+#endif
 #if WITH_GMP
 	case T_BIG_INTEGER:
 	  return((mpz_cmp_si(big_integer(y), integer(x)) < 0) ? x : y);
@@ -22703,8 +22719,12 @@ static s7_pointer max_p_pp(s7_scheme *sc, s7_pointer x, s7_pointer y)
 	case T_INTEGER:
 	  return((fraction(x) < integer(y)) ? y : x);
 	case T_REAL:
+#if 0
 	  if (is_NaN(real(y))) return(y);
 	  return((fraction(x) < real(y)) ? y : x);
+#else
+	  return(((fraction(x) < real(y)) || (is_NaN(real(y)))) ? y : x);
+#endif
 #if WITH_GMP
 	case T_BIG_INTEGER:
 	  mpq_set_si(sc->mpq_1, numerator(x), denominator(x));
@@ -22724,8 +22744,12 @@ static s7_pointer max_p_pp(s7_scheme *sc, s7_pointer x, s7_pointer y)
       switch (type(y))
 	{
 	case T_INTEGER:
+#if 0
 	  if (is_NaN(real(x))) return(x);
 	  return((real(x) < integer(y)) ? y : x);
+#else
+	  return(((real(x) >= integer(y)) || (is_NaN(real(x)))) ? x : y);
+#endif
 	case T_RATIO:
 	  return((real(x) < fraction(y)) ? y : x);
 #if WITH_GMP
@@ -22844,7 +22868,7 @@ static s7_pointer max_chooser(s7_scheme *sc, s7_pointer f, int32_t args, s7_poin
 
 static s7_int max_i_ii(s7_int i1, s7_int i2) {return((i1 > i2) ? i1 : i2);}
 static s7_int max_i_iii(s7_int i1, s7_int i2, s7_int i3) {return((i1 > i2) ? ((i1 > i3) ? i1 : i3) : ((i2 > i3) ? i2 : i3));}
-static s7_double max_d_dd(s7_double x1, s7_double x2) {if (is_NaN(x1)) return(x1); return((x1 > x2) ? x1 : x2);}
+static s7_double max_d_dd(s7_double x1, s7_double x2) {return(((x1 > x2) || (is_NaN(x1))) ? x1 : x2);}
 static s7_double max_d_ddd(s7_double x1, s7_double x2, s7_double x3) {return(max_d_dd(x1, max_d_dd(x2, x3)));}
 static s7_double max_d_dddd(s7_double x1, s7_double x2, s7_double x3, s7_double x4) {return(max_d_dd(x1, max_d_ddd(x2, x3, x4)));}
 
@@ -22860,7 +22884,8 @@ static s7_pointer min_p_pp(s7_scheme *sc, s7_pointer x, s7_pointer y)
       if (is_t_integer(x))
 	return((integer(x) > integer(y)) ? y : x);
       if (is_t_real(x))
-	return(((is_NaN(real(x))) || (real(x) <= real(y))) ? x : y);
+	/* return(((is_NaN(real(x))) || (real(x) <= real(y))) ? x : y); */
+	return(((real(x) <= real(y)) || (is_NaN(real(x)))) ? x : y);
       if (is_t_ratio(x))
 	return((fraction(x) > fraction(y)) ? y : x);
 #if WITH_GMP
@@ -22879,8 +22904,12 @@ static s7_pointer min_p_pp(s7_scheme *sc, s7_pointer x, s7_pointer y)
 	{
 	case T_RATIO:       return((integer(x) > fraction(y)) ? y : x);
 	case T_REAL:
+#if 0
 	  if (is_NaN(real(y))) return(y);
 	  return((integer(x) > real(y)) ? y : x);
+#else
+	  return(((integer(x) > real(y)) || (is_NaN(real(y)))) ? y : x);
+#endif
 #if WITH_GMP
 	case T_BIG_INTEGER: return((mpz_cmp_si(big_integer(y), integer(x)) > 0) ? x : y);
 	case T_BIG_RATIO:   return((mpq_cmp_si(big_ratio(y), integer(x), 1) > 0) ? x : y);
@@ -22899,8 +22928,12 @@ static s7_pointer min_p_pp(s7_scheme *sc, s7_pointer x, s7_pointer y)
 	case T_INTEGER:
 	  return((fraction(x) > integer(y)) ? y : x);
 	case T_REAL:
+#if 0
 	  if (is_NaN(real(y))) return(y);
 	  return((fraction(x) > real(y)) ? y : x);
+#else
+	  return(((fraction(x) > real(y)) || (is_NaN(real(y)))) ? y : x);
+#endif
 #if WITH_GMP
 	case T_BIG_INTEGER:
 	  mpq_set_si(sc->mpq_1, numerator(x), denominator(x));
@@ -22920,8 +22953,12 @@ static s7_pointer min_p_pp(s7_scheme *sc, s7_pointer x, s7_pointer y)
       switch (type(y))
 	{
 	case T_INTEGER:
+#if 0
 	  if (is_NaN(real(x))) return(x);
 	  return((real(x) > integer(y)) ? y : x);
+#else
+	  return(((real(x) <= integer(y)) || (is_NaN(real(x)))) ? x : y);
+#endif
 	case T_RATIO:
 	  return((real(x) > fraction(y)) ? y : x);
 #if WITH_GMP
@@ -23042,7 +23079,7 @@ static s7_pointer min_chooser(s7_scheme *sc, s7_pointer f, int32_t args, s7_poin
 
 static s7_int min_i_ii(s7_int i1, s7_int i2) {return((i1 < i2) ? i1 : i2);}
 static s7_int min_i_iii(s7_int i1, s7_int i2, s7_int i3) {return((i1 < i2) ? ((i1 < i3) ? i1 : i3) : ((i2 < i3) ? i2 : i3));}
-static s7_double min_d_dd(s7_double x1, s7_double x2) {if (is_NaN(x1)) return(x1); return((x1 < x2) ? x1 : x2);}
+static s7_double min_d_dd(s7_double x1, s7_double x2) {return(((x1 < x2) || (is_NaN(x1))) ? x1 : x2);}
 static s7_double min_d_ddd(s7_double x1, s7_double x2, s7_double x3) {return(min_d_dd(x1, min_d_dd(x2, x3)));}
 static s7_double min_d_dddd(s7_double x1, s7_double x2, s7_double x3, s7_double x4) {return(min_d_dd(x1, min_d_ddd(x2, x3, x4)));}
 
@@ -26761,7 +26798,9 @@ s7_int s7_string_length(s7_pointer str) {return(string_length(str));}
 static s7_pointer wrap_string(s7_scheme *sc, const char *str, s7_int len)
 {
   s7_pointer x = car(sc->string_wrappers);
-  if ((S7_DEBUGGING) && ((full_type(x) & (~T_GC_MARK)) != (T_STRING | T_IMMUTABLE | T_UNHEAP | T_SAFE_PROCEDURE))) fprintf(stderr, "%s\n", describe_type_bits(sc, x));
+#if S7_DEBUGGING
+  if ((full_type(x) & (~T_GC_MARK)) != (T_STRING | T_IMMUTABLE | T_UNHEAP | T_SAFE_PROCEDURE)) fprintf(stderr, "%s\n", describe_type_bits(sc, x));
+#endif
   sc->string_wrappers = cdr(sc->string_wrappers);
   string_value(x) = (char *)str;
   string_length(x) = len;
@@ -27466,7 +27505,7 @@ static void check_for_substring_temp(s7_scheme *sc, s7_pointer expr)
     {
       s7_pointer arg = car(p);
       if ((is_pair(arg)) &&
-	  (is_symbol(car(arg))) &&
+	  /* (is_symbol(car(arg))) && */ /* ?? removed 30-Jan-24 */
 	  (is_safely_optimized(arg)) &&
 	  (has_fn(arg)))
 	{
@@ -31333,12 +31372,6 @@ static s7_pointer g_eval_string(s7_scheme *sc, s7_pointer args)
   push_input_port(sc, port);
   push_stack_op_let(sc, OP_READ_INTERNAL);
   return(sc->F);  /* I think this means that sc->value defaults to #f in op_eval_string below, so (eval-string "") mimics (eval) -> #f */
-}
-
-static s7_pointer eval_string_chooser(s7_scheme *sc, s7_pointer f, int32_t unused_args, s7_pointer expr, bool unused_ops)
-{
-  check_for_substring_temp(sc, expr);
-  return(f);
 }
 
 static s7_pointer op_eval_string(s7_scheme *sc)
@@ -59843,7 +59876,7 @@ static void check_mutability(s7_scheme *sc, opt_info *o, const char *func, int l
 #define check_mutability(Sc, O, Func, Line)
 #endif
 
-static s7_int opt_set_i_i_fm(opt_info *o) /* called in increment: (set! sum (+ sum (...))) where are all ints */
+static s7_int opt_set_i_i_fm(opt_info *o) /* called in increment: (set! sum (+ sum (...))) where all are ints */
 {
   s7_int x = o->v[3].fi(o->v[2].o1);
   check_mutability(o->sc, o, __func__, __LINE__);
@@ -69972,16 +70005,30 @@ static void init_choosers(s7_scheme *sc)
 
   /* string-ref et al */
   set_function_chooser(sc->string_ref_symbol, string_substring_chooser);
-  set_function_chooser(sc->string_to_symbol_symbol, string_substring_chooser); /* not string_to_number here */
+  set_function_chooser(sc->string_to_symbol_symbol, string_substring_chooser); /* not string_to_number here (not const char*??) */
   set_function_chooser(sc->string_to_keyword_symbol, string_substring_chooser);
   set_function_chooser(sc->string_downcase_symbol, string_substring_chooser);
   set_function_chooser(sc->string_upcase_symbol, string_substring_chooser);
-  /* if the function assumes a null-terminated string, substring needs to return a copy */
+  set_function_chooser(sc->string_position_symbol, string_substring_chooser);
+  set_function_chooser(sc->string_geq_symbol, string_substring_chooser);
+  set_function_chooser(sc->string_leq_symbol, string_substring_chooser);
+  set_function_chooser(sc->string_copy_symbol, string_copy_chooser);
+  set_function_chooser(sc->eval_string_symbol, string_substring_chooser);
+  /* if the function assumes a null-terminated string, substring needs to return a copy (which assume this?) */
 #if (!WITH_PURE_S7)
   set_function_chooser(sc->string_length_symbol, string_substring_chooser);
   set_function_chooser(sc->string_to_list_symbol, string_substring_chooser);
+  set_function_chooser(sc->string_ci_eq_symbol, string_substring_chooser);
+  set_function_chooser(sc->string_ci_geq_symbol, string_substring_chooser);
+  set_function_chooser(sc->string_ci_leq_symbol, string_substring_chooser);
+  set_function_chooser(sc->string_ci_gt_symbol, string_substring_chooser);
+  set_function_chooser(sc->string_ci_lt_symbol, string_substring_chooser);
 #endif
-  set_function_chooser(sc->string_copy_symbol, string_copy_chooser);
+
+  /* also: directory->list substring string->byte-vector file-exists? symbol with-input-from-file with-input-from-string open-input-file 
+   *   system load write-string getenv file-mtime gensym with-output-to-file open-output-file directory? 
+   *   call-with-output-file delete-file call-with-input-file call-with-input-string open-input-string
+   */
 
   /* symbol->string */
   f = global_value(sc->symbol_to_string_symbol);
@@ -70092,9 +70139,6 @@ static void init_choosers(s7_scheme *sc)
   /* tree-set-memq */
   f = set_function_chooser(sc->tree_set_memq_symbol, tree_set_memq_chooser);
   sc->tree_set_memq_syms = make_function_with_class(sc, f, "tree-set-memq", g_tree_set_memq_syms, 2, 0, false);
-
-  /* eval-string */
-  set_function_chooser(sc->eval_string_symbol, eval_string_chooser);
 
   /* dynamic-wind */
   f = set_function_chooser(sc->dynamic_wind_symbol, dynamic_wind_chooser);
@@ -97605,7 +97649,7 @@ int main(int argc, char **argv)
  * index            1026   1016    973    967    972    974
  * tmock            1177   1165   1057   1019   1032   1037
  * tvect     3408   2519   2464   1772   1669   1497   1452
- * tauto                          2562   2048   1729   1729
+ * tauto                          2562   2048   1729   1704
  * timp             2637   2575   1930   1694   1740   1738
  * texit     1884                 1778   1741   1770   1771
  * s7test           1873   1831   1818   1829   1830   1855
@@ -97618,13 +97662,13 @@ int main(int argc, char **argv)
  * titer     3657   2865   2842   2641   2509   2449   2446
  * tload                          3046   2404   2566   2444
  * fbench    2933   2688   2583   2460   2430   2478   2559
- * tmat             3065   3042   2524   2578   2590   2583
+ * tmat             3065   3042   2524   2578   2590   2576
  * tsort     3683   3105   3104   2856   2804   2858   2858
  * tobj             4016   3970   3828   3577   3508   3502
  * teq              4068   4045   3536   3486   3544   3537
  * tio              3816   3752   3683   3620   3583   3601
  * tmac             3950   3873   3033   3677   3677   3680
- * tcase            4960   4793   4439   4430   4439   4455
+ * tcase            4960   4793   4439   4430   4439   4467
  * tlet      9166   7775   5640   4450   4427   4457   4466
  * tclo      6362   4787   4735   4390   4384   4474   4447
  * tfft             7820   7729   4755   4476   4536   4543
@@ -97635,14 +97679,14 @@ int main(int argc, char **argv)
  * tstr      10.0   6880   6342   5488   5162   5180   5180
  * tnum             6348   6013   5433   5396   5409   5423
  * tgsl             8485   7802   6373   6282   6208   6193
- * tari      15.0   13.0   12.7   6827   6543   6278   6208  6284
+ * tari      15.0   13.0   12.7   6827   6543   6278   6278
  * tlist     9219   7896   7546   6558   6240   6300   6300
  * tset                                  6260   6364   6402
  * trec      19.5   6936   6922   6521   6588   6583   6583
  * tleft     11.1   10.4   10.2   7657   7479   7627   7622
  * tlamb                                        7941   7941
  * tgc              11.9   11.1   8177   7857   7986   8005
- * tmisc                                 8488   7862   8035
+ * tmisc                                 8488   7862   8041
  * thash            11.8   11.7   9734   9479   9526   9542
  * cb        12.9   11.2   11.0   9658   9564   9609   9635
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3
@@ -97658,5 +97702,5 @@ int main(int argc, char **argv)
  * do bodies use cell_optimize which is not optimal
  *   set_pending_value wrapped (big, rclo)
  * wrapped form of FFI funcs? reals/ints? let wrappers seem doable [in safe-do etc]
- * big: opt_set_p_p_f -> 4,632,365,608  => s7.c:opt_p_pp_ff_sub_mul_mul (8,912,896x), 4,522,360,682  => s7.c:opt_p_pp_ff_add_mul_mul (8,912,896x)
+ * more string_uncopied? funcs that make_string but might use a wrapper (via chooser)?
  */

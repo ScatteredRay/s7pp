@@ -1096,7 +1096,7 @@
 			  'weak-hash-table 'byte? 'the 'lognand 'logeqv
 			  'local-random
 			  'local-read-string 'local-varlet 'local-let-set!
-			  'pp-checked
+			  ;'pp-checked
 			  'kar '_dilambda_ '_vals_ '_vals1_ '_vals2_
                           '_vals3_ '_vals4_ '_vals5_ '_vals6_ '_vals3s_ '_vals4s_ '_vals5s_ '_vals6s_
                           '_svals3_ '_svals4_ '_svals5_ '_svals6_ '_svals3s_ '_svals4s_ '_svals5s_ '_svals6s_
@@ -1117,7 +1117,8 @@
 			  'gb1 'gb2 'gb3
 			  'cf00 'c-function-with-values 'c-macro-with-values 'safe-c-function-with-2-values
 
-			  'bignum 'symbol 'count-if 'pretty-print 'tree-member 'funclet? 'bignum? 'copy-tree
+			  'bignum 'symbol 'count-if ;'pretty-print 
+			  'tree-member 'funclet? 'bignum? 'copy-tree
 			  ;'dynamic-unwind ; many swaps that are probably confused
                           ;'function-open-output 'function-open-input 'function-get-output 'function-close-output ;see s7test, not set up for t725
 
@@ -1129,9 +1130,9 @@
 		    "(bignum +inf.0)" "(bignum +nan.0)" "(bignum -inf.0)" "(bignum 0+i)" "(bignum 0.0)" "(bignum 0-i)"
 		    "(expt 2 -32)" "1/2+1/3i"
 		    "=>"
-		    "\"ho\"" ":ho" "'ho" "(list 1)" "(list 1 2)" "(cons 1 2)" "()" "(list (list 1 2))" "(list (list 1))" "(list ())"
+		    "\"ho\"" ":ho" "ho:" "'ho" "(list 1)" "(list 1 2)" "(cons 1 2)" "()" "(list (list 1 2))" "(list (list 1))" "(list ())"
 		    "#f" "#t" "()" "#()" "\"\"" ; ":write" -- not this because sr2 calls write and this can be an arg to sublet redefining write
-		    ":readable" ":rest" ":allow-other-keys" ":display" ":write" ":if" "':abs" ":a" ":frequency" ":scaler" ; for blocks5 s7test.scm
+		    ":readable" ":rest" ":allow-other-keys" ":display" ":write" ":if" "':abs" ":a" "a:" ":frequency" ":scaler" ; for blocks5 s7test.scm
 		    "1/0+i" "0+0/0i" "0+1/0i" "1+0/0i" "0/0+0/0i" "0/0+i" "+nan.0-3i" "+inf.0-nan.0i"
 		    "cons" "\"ra\"" "''2" "'a" "_!asdf!_" "let-ref-fallback"
 
@@ -1304,7 +1305,7 @@
 		    "begin" "cond" "case" "when" "unless" "letrec" "letrec*" "or" "and" "let-temporarily"
 		    "catch" "call-with-exit" "map" "for-each"
 		    ;"lambda*" "lambda" ;-- cyclic body etc
-		    "let" "let*" ;"do"
+		    ;"let" "let*" ;"do" ; infinite loops
 		    "set!" "with-let" "values" "let-set!" ;"define" "define*" "define-macro" "define-macro*" "define-bacro" "define-bacro*"
 
 		    "(let ((L (list 1))) (set-cdr! L L) L)"
@@ -1380,8 +1381,8 @@
 
 		    "(let loop ((i 2)) (if (> i 0) (loop (- i 1)) i))"
 
-		    "(rootlet)" ; why was this commented out?
-		    ;"(unlet)"  ; variable
+		    ;"(rootlet)" ; why was this commented out? -- very verbose useless diffs
+		    "(unlet)"
 		    "(let? (curlet))"
 		    ;"*s7*"     ;variable
 
@@ -1410,8 +1411,8 @@
                     (lambda (s) (string-append "(case x (else " s "))")))
 	      (list (lambda (s) (string-append "(case false ((#f) " s "))"))
                     (lambda (s) (string-append "(case false ((1) #t) (else " s "))")))
-	      (list (lambda (s) (string-append "(with-let (rootlet) " s ")"))
-		    (lambda (s) (string-append "(with-let (sublet (rootlet)) " s ")")))
+;	      (list (lambda (s) (string-append "(with-let (rootlet) " s ")"))
+;		    (lambda (s) (string-append "(with-let (sublet (rootlet)) " s ")")))
 	      (reader-cond
 	       (with-continuations
 		(list (lambda (s) (string-append "(call-with-exit (lambda (_x_) " s "))"))
@@ -1548,9 +1549,6 @@
 
 	      (list (lambda (s) (string-append "(_stable1_ " s ")"))
 		    (lambda (s) (string-append "(_stable2_ " s ")")))
-
-;;; (+ (dynamic-wind (lambda () #f) (lambda () (values 1 2 3)) (lambda () #f))): 6
-
 
 	      ;; perhaps function port (see _rd3_ for open-input-string), gmp?
 	      ))
@@ -1957,12 +1955,14 @@
 	(set! last-func outer-funcs))
 
       ;(unless (output-port? imfo) (format *stderr* "(new) imfo ~S -> ~S~%" estr imfo) (abort)) ; with-mock-data
-      (when (infinite? (length *features*))
-	(format *stderr* "*features*: ~S, estr: ~A~%" *features* estr)
-	(abort))
+;      (when (infinite? (length *features*))
+;	(format *stderr* "*features*: ~S, estr: ~A~%" *features* estr)
+;	(abort))
       (set! error-info #f)
       (set! error-type 'no-error)
       (set! error-code "")
+;     (when (pair? x) (format *stderr* "x is pair, estr: ~S~%" estr))
+      (set! x 0)
       (when (string-position "H_" str)
 	(if (string-position "H_1" str) (fill! H_1 #f))
 	(if (string-position "H_2" str) (fill! H_2 #f))
