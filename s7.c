@@ -2379,9 +2379,9 @@ static void init_types(void)
 
 #define T_MUTABLE                      (1 << (16 + 10))
 #define T_MID_MUTABLE                  (1 << 10)
-#define is_mutable_number(p)           has_mid_type_bit(T_Num(p), T_MID_MUTABLE)
+#define is_mutable_number(p)           has_mid_type_bit(p, T_MID_MUTABLE)
 #define is_mutable_integer(p)          has_mid_type_bit(T_Int(p), T_MID_MUTABLE)
-#define clear_mutable_number(p)        clear_mid_type_bit(T_Num(p), T_MID_MUTABLE)
+#define clear_mutable_number(p)        clear_mid_type_bit(p, T_MID_MUTABLE)
 #define clear_mutable_integer(p)       clear_mid_type_bit(T_Int(p), T_MID_MUTABLE)
 /* used for mutable numbers, can occur with T_IMMUTABLE (outside view vs inside) */
 
@@ -41120,8 +41120,6 @@ static s7_pointer g_vector_set(s7_scheme *sc, s7_pointer args)
 	}
       val = caddr(args);
     }
-  if ((S7_DEBUGGING) && (is_number(val)) && (is_mutable_number(val)))
-    fprintf(stderr, "%s[%d] storing mutable number\n", __func__, __LINE__);
   if (is_typed_t_vector(vec))
     return(typed_vector_setter(sc, vec, index, val));
   if (is_t_vector(vec))
@@ -41145,8 +41143,6 @@ static s7_pointer vector_set_p_pip(s7_scheme *sc, s7_pointer v, s7_int i, s7_poi
 
 static s7_pointer vector_set_p_pip_unchecked(s7_scheme *sc, s7_pointer v, s7_int i, s7_pointer p)
 {
-  if ((S7_DEBUGGING) && (is_number(p)) && (is_mutable_number(p)))
-    fprintf(stderr, "%s[%d] storing mutable number\n", __func__, __LINE__);
   if ((i >= 0) && (i < vector_length(v)))
     vector_element(v, i) = p;
   else out_of_range_error_nr(sc, sc->vector_set_symbol, int_two, wrap_integer(sc, i), (i < 0) ? it_is_negative_string : it_is_too_large_string);
@@ -95648,7 +95644,7 @@ static void init_wrappers(s7_scheme *sc)
   for (cp = sc->integer_wrappers, qp = sc->integer_wrappers; is_pair(cp); qp = cp, cp = cdr(cp))
     {
       s7_pointer p = alloc_pointer(sc);
-      full_type(p) = T_INTEGER | T_IMMUTABLE | T_MUTABLE | T_UNHEAP;  /* mutable to turn off set_has_number_name */
+      full_type(p) = T_INTEGER | T_IMMUTABLE | T_MUTABLE | T_UNHEAP;  /* mutable to turn off set_has_number_name (see set_number_name) */
       set_integer(p, 0);
       set_car(cp, p);
     }
@@ -97679,4 +97675,9 @@ int main(int argc, char **argv)
  * more string_uncopied, read-line-uncopied (etc), generics uncopied?
  * op-*-vector etc
  * hash_string is very slow? thash add 1M strs/syms and check -- for normal strings/hash-tables, it's hashing on the last 1..2 chars!
+ * gmp+debugging snd (snd-test): g_vector_set[41123]: not a number, but a big real (type: 17): Abort (core dumped)
+ *   T_Num does not include bignums?! tests7 tries this?
+ *   T_Num is almost unused -- need T_??? for all numbers
+ *   gmp+snd also segfaults in test 22: see t718 big-pi 97080 don't use big_pi -- make initial_slot+initial_slot value permanent?
+ *   get this to happen in s7test (let-temp precision etc)
  */
