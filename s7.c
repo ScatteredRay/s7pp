@@ -22693,12 +22693,7 @@ static s7_pointer max_p_pp(s7_scheme *sc, s7_pointer x, s7_pointer y)
 	case T_RATIO:
 	  return((integer(x) < fraction(y)) ? y : x);
 	case T_REAL:
-#if 0
-	  if (is_NaN(real(y))) return(y);
-	  return((integer(x) < real(y)) ? y : x);
-#else
 	  return(((integer(x) < real(y)) || (is_NaN(real(y)))) ? y : x);
-#endif
 #if WITH_GMP
 	case T_BIG_INTEGER:
 	  return((mpz_cmp_si(big_integer(y), integer(x)) < 0) ? x : y);
@@ -22719,12 +22714,7 @@ static s7_pointer max_p_pp(s7_scheme *sc, s7_pointer x, s7_pointer y)
 	case T_INTEGER:
 	  return((fraction(x) < integer(y)) ? y : x);
 	case T_REAL:
-#if 0
-	  if (is_NaN(real(y))) return(y);
-	  return((fraction(x) < real(y)) ? y : x);
-#else
 	  return(((fraction(x) < real(y)) || (is_NaN(real(y)))) ? y : x);
-#endif
 #if WITH_GMP
 	case T_BIG_INTEGER:
 	  mpq_set_si(sc->mpq_1, numerator(x), denominator(x));
@@ -22744,12 +22734,7 @@ static s7_pointer max_p_pp(s7_scheme *sc, s7_pointer x, s7_pointer y)
       switch (type(y))
 	{
 	case T_INTEGER:
-#if 0
-	  if (is_NaN(real(x))) return(x);
-	  return((real(x) < integer(y)) ? y : x);
-#else
 	  return(((real(x) >= integer(y)) || (is_NaN(real(x)))) ? x : y);
-#endif
 	case T_RATIO:
 	  return((real(x) < fraction(y)) ? y : x);
 #if WITH_GMP
@@ -22904,12 +22889,7 @@ static s7_pointer min_p_pp(s7_scheme *sc, s7_pointer x, s7_pointer y)
 	{
 	case T_RATIO:       return((integer(x) > fraction(y)) ? y : x);
 	case T_REAL:
-#if 0
-	  if (is_NaN(real(y))) return(y);
-	  return((integer(x) > real(y)) ? y : x);
-#else
 	  return(((integer(x) > real(y)) || (is_NaN(real(y)))) ? y : x);
-#endif
 #if WITH_GMP
 	case T_BIG_INTEGER: return((mpz_cmp_si(big_integer(y), integer(x)) > 0) ? x : y);
 	case T_BIG_RATIO:   return((mpq_cmp_si(big_ratio(y), integer(x), 1) > 0) ? x : y);
@@ -22928,12 +22908,7 @@ static s7_pointer min_p_pp(s7_scheme *sc, s7_pointer x, s7_pointer y)
 	case T_INTEGER:
 	  return((fraction(x) > integer(y)) ? y : x);
 	case T_REAL:
-#if 0
-	  if (is_NaN(real(y))) return(y);
-	  return((fraction(x) > real(y)) ? y : x);
-#else
 	  return(((fraction(x) > real(y)) || (is_NaN(real(y)))) ? y : x);
-#endif
 #if WITH_GMP
 	case T_BIG_INTEGER:
 	  mpq_set_si(sc->mpq_1, numerator(x), denominator(x));
@@ -22953,12 +22928,7 @@ static s7_pointer min_p_pp(s7_scheme *sc, s7_pointer x, s7_pointer y)
       switch (type(y))
 	{
 	case T_INTEGER:
-#if 0
-	  if (is_NaN(real(x))) return(x);
-	  return((real(x) > integer(y)) ? y : x);
-#else
 	  return(((real(x) <= integer(y)) || (is_NaN(real(x)))) ? x : y);
-#endif
 	case T_RATIO:
 	  return((real(x) > fraction(y)) ? y : x);
 #if WITH_GMP
@@ -27505,7 +27475,7 @@ static void check_for_substring_temp(s7_scheme *sc, s7_pointer expr)
     {
       s7_pointer arg = car(p);
       if ((is_pair(arg)) &&
-	  /* (is_symbol(car(arg))) && */ /* ?? removed 30-Jan-24 */
+	  (is_symbol(car(arg))) &&
 	  (is_safely_optimized(arg)) &&
 	  (has_fn(arg)))
 	{
@@ -70014,6 +69984,7 @@ static void init_choosers(s7_scheme *sc)
   set_function_chooser(sc->string_leq_symbol, string_substring_chooser);
   set_function_chooser(sc->string_copy_symbol, string_copy_chooser);
   set_function_chooser(sc->eval_string_symbol, string_substring_chooser);
+  set_function_chooser(sc->symbol_symbol, string_substring_chooser);
   /* if the function assumes a null-terminated string, substring needs to return a copy (which assume this?) */
 #if (!WITH_PURE_S7)
   set_function_chooser(sc->string_length_symbol, string_substring_chooser);
@@ -70024,9 +69995,12 @@ static void init_choosers(s7_scheme *sc)
   set_function_chooser(sc->string_ci_gt_symbol, string_substring_chooser);
   set_function_chooser(sc->string_ci_lt_symbol, string_substring_chooser);
 #endif
+#if WITH_SYSTEM_EXTRAS
+  set_function_chooser(sc->file_exists_symbol, string_substring_chooser);
+#endif
 
-  /* also: directory->list substring string->byte-vector file-exists? symbol with-input-from-file with-input-from-string open-input-file 
-   *   system load write-string getenv file-mtime gensym with-output-to-file open-output-file directory? 
+  /* also: directory->list substring string->byte-vector with-input-from-file with-input-from-string
+   *   system load getenv file-mtime gensym with-output-to-file open-output-file directory? open-input-file 
    *   call-with-output-file delete-file call-with-input-file call-with-input-string open-input-string
    */
 
@@ -97702,5 +97676,7 @@ int main(int argc, char **argv)
  * do bodies use cell_optimize which is not optimal
  *   set_pending_value wrapped (big, rclo)
  * wrapped form of FFI funcs? reals/ints? let wrappers seem doable [in safe-do etc]
- * more string_uncopied? funcs that make_string but might use a wrapper (via chooser)?
+ * more string_uncopied, read-line-uncopied (etc), generics uncopied?
+ * op-*-vector etc
+ * hash_string is very slow? thash add 1M strs/syms and check -- for normal strings/hash-tables, it's hashing on the last 1..2 chars!
  */

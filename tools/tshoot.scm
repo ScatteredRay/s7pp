@@ -118,7 +118,7 @@
 		 (substring s (quotient (string-length s) 2))
 		 (substring s 0 (+ 1 (quotient (string-length s) 2)))))))))
 
-(display (string-cat 600000)) (newline) ; 524278
+(display (string-cat 500000)) (newline) ; 524278
 
 ;;; --------------------------------------------------------------------------------
 
