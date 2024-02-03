@@ -2568,6 +2568,10 @@ static void init_types(void)
 #define is_unlet(p)                    has_high_type_bit(T_Let(p), T_UNLET)
 #define set_is_unlet(p)                set_high_type_bit(T_Let(p), T_UNLET)
 
+#define T_SYMBOL_TABLE                 T_SYMCONS
+#define is_symbol_table(p)             has_high_type_bit(T_Nvc(p), T_SYMBOL_TABLE)
+#define set_is_symbol_table(p)         set_high_type_bit(T_Nvc(p), T_SYMBOL_TABLE)
+
 #define T_FULL_HAS_LET_FILE            (1LL << (48 + 1))
 #define T_HAS_LET_FILE                 (1 << 1)
 #define has_let_file(p)                has_high_type_bit(T_Let(p), T_HAS_LET_FILE)
@@ -4876,7 +4880,8 @@ static char *describe_type_bits(s7_scheme *sc, s7_pointer obj)
 						   ((is_hash_table(obj)) ? " has-value-type" :
 						    ((is_pair(obj)) ? " int-optable" :
 						     ((is_let(obj)) ? " unlet" :
-						      " ?24?"))))) : "",
+						      ((is_t_vector(obj)) ? " symbol-table" :
+						       " ?24?")))))) : "",
 	  /* bit 25+24 */
 	  ((full_typ & T_FULL_HAS_LET_FILE) != 0) ? ((is_let(obj)) ? " has-let-file" :
 						     ((is_t_vector(obj)) ? " typed-vector" :
@@ -5010,7 +5015,7 @@ static bool has_odd_bits(s7_pointer obj)
       (!is_any_macro(obj)) && (!is_any_closure(obj)) && (!is_c_function(obj)) && (!is_syntax(obj)))
     return(true);
   if (((full_typ & T_FULL_SYMCONS) != 0) &&
-      (!is_symbol(obj)) && (!is_any_procedure(obj)) && (!is_hash_table(obj)) && (!is_pair(obj)) && (!is_let(obj)))
+      (!is_symbol(obj)) && (!is_any_procedure(obj)) && (!is_hash_table(obj)) && (!is_pair(obj)) && (!is_let(obj)) && (!is_t_vector(obj)))
     return(true);
   if (((full_typ & T_FULL_BINDER) != 0) &&
       (!is_pair(obj)) && (!is_hash_table(obj)) && (!is_normal_symbol(obj)) && (!is_c_function(obj)) && (!is_syntax(obj)))
@@ -8486,7 +8491,7 @@ s7_pointer s7_gc_unprotect_via_stack(s7_scheme *sc, s7_pointer x)
 
 
 /* -------------------------------- symbols -------------------------------- */
-static inline uint64_t raw_string_hash(const uint8_t *key, s7_int len)
+static inline uint64_t raw_string_hash(const uint8_t *key, s7_int len) /* used in symbols, hash-tables */
 {
   if (len <= 8)
     {
@@ -8494,12 +8499,9 @@ static inline uint64_t raw_string_hash(const uint8_t *key, s7_int len)
       memcpy((void *)xs, (const void *)key, len);
       return(xs[0]);
     }
-  else
-    {
-      uint64_t xs[2] = {0, 0};
-      memcpy((void *)xs, (const void *)key, (len > 16) ? 16 : len);  /* compiler complaint here is bogus */
-      return(xs[0] + xs[1]);
-    }
+  uint64_t xs[2] = {0, 0};
+  memcpy((void *)xs, (const void *)key, (len > 16) ? 16 : len);  /* compiler complaint here is bogus */
+  return(xs[0] + xs[1]);
 }
 
 static uint8_t *alloc_symbol(s7_scheme *sc)
@@ -8634,7 +8636,7 @@ static s7_pointer g_symbol_table(s7_scheme *sc, s7_pointer unused_args)
 
   s7_pointer *els, *entries = vector_elements(sc->symbol_table);
   int32_t syms = 0;
-  s7_pointer lst;
+  s7_pointer vec;
   /* this can't be optimized by returning the actual symbol-table (a vector of lists), because
    *    gensyms can cause the table's lists and symbols to change at any time.  This wreaks havoc
    *    on traversals like for-each.  So, symbol-table returns a snap-shot of the table contents
@@ -8651,13 +8653,14 @@ static s7_pointer g_symbol_table(s7_scheme *sc, s7_pointer unused_args)
 	     set_elist_3(sc, wrap_string(sc, "symbol-table size, ~D, is greater than (*s7* 'max-vector-length), ~D", 68),
 			 wrap_integer(sc, syms), wrap_integer(sc, sc->max_vector_length)));
   sc->w = make_simple_vector(sc, syms);
+  set_is_symbol_table(sc->w);
   els = vector_elements(sc->w);
   for (int32_t i = 0, j = 0; i < SYMBOL_TABLE_SIZE; i++)
     for (s7_pointer x = entries[i]; is_not_null(x); x = cdr(x))
       els[j++] = car(x);
-  lst = sc->w;
+  vec = sc->w;
   sc->w = sc->unused;
-  return(lst);
+  return(vec);
 }
 
 bool s7_for_each_symbol_name(s7_scheme *sc, bool (*symbol_func)(const char *symbol_name, void *data), void *data)
@@ -44085,10 +44088,13 @@ static hash_entry_t *hash_string(s7_scheme *sc, s7_pointer table, s7_pointer key
       s7_int key_len = string_length(key), hash_mask = hash_table_mask(table);
       uint64_t hash;
       const char *key_str = string_value(key);
-
+#if 0
       if (string_hash(key) == 0)
 	string_hash(key) = raw_string_hash((const uint8_t *)string_value(key), string_length(key));
       hash = string_hash(key);
+#else
+      hash = hash_map_string(sc, table, key);
+#endif
       if (key_len <= 8)
 	{
 	  for (x = hash_table_element(table, hash & hash_mask); x; x = hash_entry_next(x))
@@ -44103,6 +44109,12 @@ static hash_entry_t *hash_string(s7_scheme *sc, s7_pointer table, s7_pointer key
 	      (strings_are_equal_with_length(key_str, string_value(hash_entry_key(x)), key_len)))
 	    return(x);
     }
+  /* lower: stats:0|1|2|n|max (12933 1422 634 1395 21)
+   * upper: stats:0|1|2|n|max (9179 5027 1680 498 7)
+   * nnnn:  stats:0|1|2|n|max (16374 1 0 9 1111)
+   * root:  stats:0|1|2|n|max (15990 285 59 50 20)
+   * st:    stats:0|1|2|n|max (30549 2095 93 12 5)
+   */
   return(sc->unentry);
 }
 
@@ -47846,7 +47858,7 @@ static bool let_equal_1(s7_scheme *sc, s7_pointer x, s7_pointer y, shared_info_t
   shared_info_t *nci = ci;
   int32_t x_len, y_len;
 
-  if ((!is_let(y)) || (x == sc->rootlet) || (y == sc->rootlet))
+  if ((!is_let(y)) || (x == sc->rootlet) || (y == sc->rootlet)) /* (equal? (rootlet) (rootlet)) is checked in let_equal below */
     return(false);
 
   if ((ci) && (equal_ref(sc, x, y, ci))) return(true);
@@ -50702,6 +50714,31 @@ static s7_pointer vector_to_let(s7_scheme *sc, s7_pointer obj)
     }
   if (is_typed_t_vector(obj))
     s7_varlet(sc, let, sc->signature_symbol, g_signature(sc, set_plist_1(sc, obj)));
+
+#if S7_DEBUGGING
+  if ((is_t_vector(obj)) && (is_symbol_table(obj))) /* (object->let (symbol-table)) */
+    {
+      s7_int max_len = 0, zeros = 0, ones = 0, twos = 0, biggies = 0;
+      for (s7_int i = 0; i < SYMBOL_TABLE_SIZE; i++)
+	{
+	  s7_int j;
+	  s7_pointer p;
+	  for (p = vector_element(sc->symbol_table, i), j = 0; is_pair(p); p = cdr(p), j++);
+	  if (j == 0) zeros++; else
+	    if (j == 1) ones++;  else
+	      if (j == 2) twos++; else
+		biggies++;
+	  if (j > max_len) max_len = j;
+	}
+      s7_varlet(sc, let, make_symbol(sc, "stats:0|1|2|n|max", 17),
+		cons(sc, make_integer(sc, zeros),
+		     cons(sc, make_integer(sc, ones),
+			  cons(sc, make_integer(sc, twos),
+			       cons(sc, make_integer(sc, biggies),
+				    cons(sc, make_integer(sc, max_len), sc->nil))))));
+    }
+#endif
+
   unstack_gc_protect(sc);
   return(let);
 }
@@ -50779,6 +50816,31 @@ static s7_pointer hash_table_to_let(s7_scheme *sc, s7_pointer obj)
  	              sc->hash_table_signature);
     }
   else hash_table_checker_to_let(sc, let, obj);
+  
+#if S7_DEBUGGING
+  if (hash_table_entries(obj) > 0)
+    {
+      s7_int max_len = 0, zeros = 0, ones = 0, twos = 0, biggies = 0, hash_len = hash_table_mask(obj) + 1;
+      for (s7_int i = 0; i < hash_len; i++)
+	{
+	  hash_entry_t *p;
+	  s7_int j;
+	  for (p = hash_table_element(obj, i), j = 0; p; p = hash_entry_next(p), j++);
+	  if (j == 0) zeros++; else
+	    if (j == 1) ones++;  else
+	      if (j == 2) twos++; else
+		biggies++;
+	  if (j > max_len) max_len = j;
+	}
+      s7_varlet(sc, let, make_symbol(sc, "stats:0|1|2|n|max", 17),
+		cons(sc, make_integer(sc, zeros),
+		     cons(sc, make_integer(sc, ones),
+			  cons(sc, make_integer(sc, twos),
+			       cons(sc, make_integer(sc, biggies),
+				    cons(sc, make_integer(sc, max_len), sc->nil))))));
+    }
+#endif
+
   s7_gc_unprotect_at(sc, gc_loc);
   return(let);
 }
@@ -90134,7 +90196,7 @@ static s7_pointer read_expression(s7_scheme *sc)
 	  break;
 
 	case TOKEN_FLOAT_VECTOR:
-	  push_stack_no_let_no_code(sc, OP_READ_FLOAT_VECTOR, sc->w);
+	  push_stack_no_let_no_code(sc, OP_READ_FLOAT_VECTOR, sc->w); /* here sc->w (vector dimensions from read_sharp) -> sc->args */
 	  sc->tok = TOKEN_LEFT_PAREN;
 	  break;
 
@@ -90448,9 +90510,17 @@ static bool op_read_int_vector(s7_scheme *sc)
 
 static bool op_read_float_vector(s7_scheme *sc)
 {
+  /* sc->value is the list of values, #r(...sc->value...) */
   sc->value = (sc->args == int_one) ? g_float_vector(sc, sc->value) : g_float_multivector(sc, integer(sc->args), sc->value);
   if (sc->safety > IMMUTABLE_VECTOR_SAFETY) set_immutable(sc->value);
   return(stack_top_op(sc) != OP_READ_LIST);
+
+  /* to avoid making the list: sc->floats array (growable and maybe pruned),
+   *   token_float_vector in read_expression: sc->value = unused, push op_read_float_vector
+   *   sc->args = dims (read_sharp sc->w = dims, read_expression push_op moves it to sc->args
+   *   <read each entry...>: push op_read_float_vector (no op_read_list), read, eval,
+   *   fill sc->floats, when right-paren make new vector [for multidims, get list->frame]
+   */ 
 }
 
 static bool op_read_byte_vector(s7_scheme *sc)
@@ -94311,7 +94381,6 @@ static s7_pointer set_bignum_precision(s7_scheme *sc, int32_t precision)
   mpc_set_default_precision(bits);
   bpi = big_pi(sc);
   global_slot(sc->pi_symbol)->object.slt.val = bpi; /* don't check immutable flag here (if debugging) -- i.e. don't use slot_set_value! */
-  slot_set_value(initial_slot(sc->pi_symbol), bpi); /* if #_pi occurs after precision set, make sure #_pi is still legit (not a free cell) */
   return(sc->F);
 }
 #endif
@@ -96924,7 +96993,7 @@ s7_scheme *s7_init(void)
 
   /* keep the symbol table out of the heap */
   sc->symbol_table = (s7_pointer)Malloc(sizeof(s7_cell)); /* was calloc 14-Apr-22 */
-  full_type(sc->symbol_table) = T_VECTOR | T_UNHEAP;
+  full_type(sc->symbol_table) = T_VECTOR | T_UNHEAP | T_SYMBOL_TABLE;
   vector_length(sc->symbol_table) = SYMBOL_TABLE_SIZE;
   vector_elements(sc->symbol_table) = (s7_pointer *)Malloc(SYMBOL_TABLE_SIZE * sizeof(s7_pointer));
   vector_getter(sc->symbol_table) = t_vector_getter;
@@ -97077,9 +97146,6 @@ s7_scheme *s7_init(void)
     gmp_randseed(random_gmp_state(p), sc->mpz_1);
 
     sc->pi_symbol = s7_define_constant(sc, "pi", big_pi(sc)); /* not actually a constant because it changes with bignum-precision */
-    set_initial_slot(sc->pi_symbol, make_semipermanent_slot(sc, sc->pi_symbol, big_pi(sc))); /* s7_make_slot does not handle this */
-    slot_set_next(initial_slot(sc->pi_symbol), sc->unlet_slots);
-    sc->unlet_slots = initial_slot(sc->pi_symbol);
     s7_provide(sc, "gmp");
 #else
     random_seed(p) = (uint64_t)my_clock(); /* used to be time(NULL), but that means separate threads can get the same random number sequence */
@@ -97611,60 +97677,60 @@ int main(int argc, char **argv)
 #endif
 #endif
 
-/* -------------------------------------------------------------
- *           19.9   20.9   21.0   22.0   23.0   24.0   24.1
- * -------------------------------------------------------------
- * tpeak      148    115    114    108    105    102    102
- * tref      1081    691    687    463    459    464    466
- * index            1026   1016    973    967    972    974
- * tmock            1177   1165   1057   1019   1032   1037
- * tvect     3408   2519   2464   1772   1669   1497   1452
- * tauto                          2562   2048   1729   1704
- * timp             2637   2575   1930   1694   1740   1738
- * texit     1884                 1778   1741   1770   1771
- * s7test           1873   1831   1818   1829   1830   1855
- * lt        2222   2187   2172   2150   2185   1950   1950
- * thook     7651                 2590   2030   2046   2046
- * dup              3805   3788   2492   2239   2097   2042
- * tcopy            8035   5546   2539   2375   2386   2386
- * tread            2440   2421   2419   2408   2405   2402
- * trclo     8031   2735   2574   2454   2445   2449   2470
- * titer     3657   2865   2842   2641   2509   2449   2446
- * tload                          3046   2404   2566   2444
- * fbench    2933   2688   2583   2460   2430   2478   2559
- * tmat             3065   3042   2524   2578   2590   2576
- * tsort     3683   3105   3104   2856   2804   2858   2858
- * tobj             4016   3970   3828   3577   3508   3502
- * teq              4068   4045   3536   3486   3544   3537
- * tio              3816   3752   3683   3620   3583   3601
- * tmac             3950   3873   3033   3677   3677   3680
- * tcase            4960   4793   4439   4430   4439   4467
- * tlet      9166   7775   5640   4450   4427   4457   4466
- * tclo      6362   4787   4735   4390   4384   4474   4447
- * tfft             7820   7729   4755   4476   4536   4543
- * tstar            6139   5923   5519   4449   4550   4604
- * tmap             8869   8774   4489   4541   4586   4592
- * tshoot           5525   5447   5183   5055   5034   5034
- * tform            5357   5348   5307   5316   5084   5095
- * tstr      10.0   6880   6342   5488   5162   5180   5180
- * tnum             6348   6013   5433   5396   5409   5423
- * tgsl             8485   7802   6373   6282   6208   6193
- * tari      15.0   13.0   12.7   6827   6543   6278   6278
- * tlist     9219   7896   7546   6558   6240   6300   6300
- * tset                                  6260   6364   6402
- * trec      19.5   6936   6922   6521   6588   6583   6583
- * tleft     11.1   10.4   10.2   7657   7479   7627   7622
- * tlamb                                        7941   7941
- * tgc              11.9   11.1   8177   7857   7986   8005
- * tmisc                                 8488   7862   8041
- * thash            11.8   11.7   9734   9479   9526   9542
- * cb        12.9   11.2   11.0   9658   9564   9609   9635
- * tgen             11.2   11.4   12.0   12.1   12.2   12.3
- * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1
- * calls            36.7   37.5   37.0   37.5   37.1   37.0
- * sg                             55.9   55.8   55.4   55.2
- * tbig            177.4  175.8  156.5  148.1  146.2  146.3
- * -------------------------------------------------------------
+/* ---------------------------------------------------------------------
+ *           19.9   20.9   21.0   22.0   23.0   24.0   24.1   24.2
+ * ---------------------------------------------------------------------
+ * tpeak      148    115    114    108    105    102    102    102
+ * tref      1081    691    687    463    459    464    466    466
+ * index            1026   1016    973    967    972    974    974
+ * tmock            1177   1165   1057   1019   1032   1037   1037
+ * tvect     3408   2519   2464   1772   1669   1497   1452   1452
+ * tauto                          2562   2048   1729   1704   1704
+ * timp             2637   2575   1930   1694   1740   1738   1738
+ * texit     1884                 1778   1741   1770   1771   1771
+ * s7test           1873   1831   1818   1829   1830   1855   1855
+ * lt        2222   2187   2172   2150   2185   1950   1950   1950
+ * thook     7651                 2590   2030   2046   2046   2046
+ * dup              3805   3788   2492   2239   2097   2042   2042
+ * tcopy            8035   5546   2539   2375   2386   2386   2386
+ * tread            2440   2421   2419   2408   2405   2402   2402
+ * trclo     8031   2735   2574   2454   2445   2449   2470   2470
+ * titer     3657   2865   2842   2641   2509   2449   2446   2446
+ * tload                          3046   2404   2566   2444   2444
+ * fbench    2933   2688   2583   2460   2430   2478   2559   2559
+ * tmat             3065   3042   2524   2578   2590   2576   2576
+ * tsort     3683   3105   3104   2856   2804   2858   2858   2858
+ * tobj             4016   3970   3828   3577   3508   3502   3502
+ * teq              4068   4045   3536   3486   3544   3537   3537
+ * tio              3816   3752   3683   3620   3583   3601   3601
+ * tmac             3950   3873   3033   3677   3677   3680   3680
+ * tcase            4960   4793   4439   4430   4439   4467   4467
+ * tlet      9166   7775   5640   4450   4427   4457   4466   4466
+ * tclo      6362   4787   4735   4390   4384   4474   4447   4447
+ * tfft             7820   7729   4755   4476   4536   4543   4543
+ * tstar            6139   5923   5519   4449   4550   4604   4604
+ * tmap             8869   8774   4489   4541   4586   4592   4592
+ * tshoot           5525   5447   5183   5055   5034   5034   5034
+ * tform            5357   5348   5307   5316   5084   5095   5095
+ * tstr      10.0   6880   6342   5488   5162   5180   5180   5180
+ * tnum             6348   6013   5433   5396   5409   5423   5423
+ * tgsl             8485   7802   6373   6282   6208   6193   6193
+ * tari      15.0   13.0   12.7   6827   6543   6278   6278   6278
+ * tlist     9219   7896   7546   6558   6240   6300   6300   6300
+ * tset                                  6260   6364   6402   6402
+ * trec      19.5   6936   6922   6521   6588   6583   6583   6583
+ * tleft     11.1   10.4   10.2   7657   7479   7627   7622   7622
+ * tlamb                                        7941   7941   7941
+ * tgc              11.9   11.1   8177   7857   7986   8005   8005
+ * tmisc                                 8488   7862   8041   8041
+ * thash            11.8   11.7   9734   9479   9526   9542   9542
+ * cb        12.9   11.2   11.0   9658   9564   9609   9635   9635
+ * tgen             11.2   11.4   12.0   12.1   12.2   12.3   12.3
+ * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1   15.1
+ * calls            36.7   37.5   37.0   37.5   37.1   37.0   37.0
+ * sg                             55.9   55.8   55.4   55.2   55.2
+ * tbig            177.4  175.8  156.5  148.1  146.2  146.3  146.3
+ * ---------------------------------------------------------------------
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
@@ -97675,9 +97741,10 @@ int main(int argc, char **argv)
  * more string_uncopied, read-line-uncopied (etc), generics uncopied?
  * op-*-vector etc
  * hash_string is very slow? thash add 1M strs/syms and check -- for normal strings/hash-tables, it's hashing on the last 1..2 chars!
- * gmp+debugging snd (snd-test): g_vector_set[41123]: not a number, but a big real (type: 17): Abort (core dumped)
- *   T_Num does not include bignums?! tests7 tries this?
- *   T_Num is almost unused -- need T_??? for all numbers
- *   gmp+snd also segfaults in test 22: see t718 big-pi 97080 don't use big_pi -- make initial_slot+initial_slot value permanent?
- *   get this to happen in s7test (let-temp precision etc)
+ *   but raw_string_hash has to be unique else symbols match
+ *   current is ok except when names aren't very different; get chain lengths, total hash chains etc
+ *   try symbol-table loc from smsg+mod (saved?), same stats for symbol-table
+ * try current notcurses
+ * clear_all_opts infinite loop
+ * gmp t725 to hit big-pi bugs
  */

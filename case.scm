@@ -365,7 +365,7 @@
  (case* x
    ((a b) 'a-or-b)
    ((1 2/3 3.0) => (lambda (a) (* a 2)))
-   ((#_pi) 1 123)
+   ((pi) 1 123)
    (("string1" "string2"))
    ((#<symbol?>) 'symbol!)
    (((+ x #<symbol?>)) 'got-list)
@@ -382,7 +382,7 @@
    (else 'oops)))
 
 (test (scase 3.0) 6.0)
-(test (scase pi) 123)
+(test (scase 'pi) 123)
 (test (scase "string1") "string1")
 (test (scase "string3") 'oops)
 (test (scase 'a) 'a-or-b)
