@@ -43793,14 +43793,10 @@ static hash_entry_t *hash_symbol(s7_scheme *sc, s7_pointer table, s7_pointer key
 
 
 /* ---------------- hash numbers ---------------- */
-static s7_int hash_float_location(s7_double x) {return(((is_NaN(x)) || (is_inf(x)) || (fabs(x) > DOUBLE_TO_INT64_LIMIT)) ? 0 : (s7_int)floor(fabs(x)));}
-  /* isnormal here in place of is_NaN and is_inf is slower.
-   *   using x*100 to expand small float bin range runs afoul of the hash-table-float-epsilon bin calcs
-   */
-
-static s7_int hash_map_int(s7_scheme *sc, s7_pointer table, s7_pointer key)     {return(s7_int_abs(integer(key)));}
-static s7_int hash_map_real(s7_scheme *sc, s7_pointer table, s7_pointer key)    {return(hash_float_location(real(key)));}
-static s7_int hash_map_complex(s7_scheme *sc, s7_pointer table, s7_pointer key) {return(hash_float_location(real_part(key)));}
+static s7_int hash_map_int(s7_scheme *sc, s7_pointer table, s7_pointer key)  
+{
+  return(s7_int_abs(integer(key)));
+}
 
 static s7_int hash_map_ratio(s7_scheme *sc, s7_pointer table, s7_pointer key)
 {
@@ -43810,6 +43806,28 @@ static s7_int hash_map_ratio(s7_scheme *sc, s7_pointer table, s7_pointer key)
    *    or (gmp:) 1.999999999999999999418826611445214136431E0, so the floorl(fabsl) version is wrong
    */
   return(s7_int_abs(numerator(key) / denominator(key))); /* needs to be compatible with default-hash-table-float-epsilon */
+}
+
+static s7_int hash_float_location(s7_double x) 
+{
+  s7_double dx;
+  if ((is_NaN(x)) || (is_inf(x))) return(0);
+  dx = fabs(x);
+  if (dx > DOUBLE_TO_INT64_LIMIT) return(0);
+  return((s7_int)floor(dx));
+}
+  /* isnormal here in place of is_NaN and is_inf is slower.
+   *   using x*100 to expand small float bin range runs afoul of the hash-table-float-epsilon bin calcs
+   */
+
+static s7_int hash_map_real(s7_scheme *sc, s7_pointer table, s7_pointer key)
+{
+  return(hash_float_location(real(key)));
+}
+
+static s7_int hash_map_complex(s7_scheme *sc, s7_pointer table, s7_pointer key)
+{
+  return(hash_float_location(real_part(key))/* + hash_float_location(imag_part(key)) */); /* imag-part confuses epsilon distance calcs */
 }
 
 #if WITH_GMP
@@ -44214,6 +44232,8 @@ static s7_int hash_map_hash_table(s7_scheme *sc, s7_pointer table, s7_pointer ke
    * if not using equivalent?, hash_table_checker|mapper must also be the same.
    * Keys are supposed to be constant while keys, so a hash-table shouldn't be a key of itself.
    */
+  /* if (hash_table_entries(key) == 0) return(0); */ /* key is a hash-table here */
+  /* to map better we need an entry -- requires a loop through the key here */
   return(hash_table_entries(key));
 }
 
@@ -44276,42 +44296,27 @@ static s7_int hash_map_closure(s7_scheme *sc, s7_pointer table, s7_pointer key)
 
 static s7_int hash_map_let(s7_scheme *sc, s7_pointer table, s7_pointer key)
 {
-  /* lets are equal if same symbol/value pairs, independent of order, taking into account shadowing
-   *   (length (inlet 'a 1 'a 2)) = 2
-   * but this counts as just one entry from equal?'s point of view, so if more than one entry, we have a problem.
-   *   (equal? (inlet 'a 1) (inlet 'a 3 'a 2 'a 1)) = #t
-   * also currently equal? follows outlet, but that is ridiculous here, so in this case hash equal?
-   *   is not the same as equal?  Surely anyone using lets as keys wants eq?
-   */
-  s7_pointer slot;
+  /* lets are equal if same symbol/value pairs, independent of order, taking into account shadowing. equal? follows outlet, but that is ridiculous here. */
+  s7_pointer slot, slot1 = NULL, slot2 = NULL;
   s7_int slots;
 
-  if ((key == sc->rootlet) ||
-      (!tis_slot(let_slots(key))))
-    return(0);
-  slot = let_slots(key);
-  if (!tis_slot(next_slot(slot)))
-    {
-      if (is_sequence(slot_value(slot))) /* avoid loop if cycles */
-	return(pointer_map(slot_symbol(slot)));
-      return(pointer_map(slot_symbol(slot)) + hash_loc(sc, table, slot_value(slot)));
-    }
-  slots = 0;
-  for (; tis_slot(slot); slot = next_slot(slot))
+  if ((key == sc->rootlet) || (!tis_slot(let_slots(key)))) return(0);
+
+  for (slot = let_slots(key), slots = 0; tis_slot(slot); slot = next_slot(slot))
     if (!is_matched_symbol(slot_symbol(slot)))
       {
+	if (!slot1) slot1 = slot; else slot2 = slot;
 	set_match_symbol(slot_symbol(slot));
 	slots++;
       }
   for (slot = let_slots(key); tis_slot(slot); slot = next_slot(slot))
     clear_match_symbol(slot_symbol(slot));
 
-  if (slots != 1)
-    return(slots);
-  slot = let_slots(key);
-  if (is_sequence(slot_value(slot))) /* avoid loop if cycles */
-    return(pointer_map(slot_symbol(slot)));
-  return(pointer_map(slot_symbol(slot)) + hash_loc(sc, table, slot_value(slot)));
+  if (slots == 1)
+    return(pointer_map(slot_symbol(slot1)) + ((is_sequence(slot_value(slot1))) ? 0 : hash_loc(sc, table, slot_value(slot1))));
+
+  return(pointer_map(slot_symbol(slot1)) + ((is_sequence(slot_value(slot1))) ? 0 : hash_loc(sc, table, slot_value(slot1))) + 
+	 pointer_map(slot_symbol(slot2)) + ((is_sequence(slot_value(slot2))) ? 0 : hash_loc(sc, table, slot_value(slot2))));
 }
 
 static hash_entry_t *hash_equal_eq(s7_scheme *sc, s7_pointer table, s7_pointer key)
@@ -44387,10 +44392,11 @@ static hash_entry_t *hash_equal_complex(s7_scheme *sc, s7_pointer table, s7_poin
   s7_int loc;
   s7_double keyrl = real_part(key);
   s7_double keyim = imag_part(key);
+
 #if WITH_GMP
   if ((is_NaN(keyrl)) || (is_NaN(keyim))) return(sc->unentry);
 #endif
-  loc = hash_float_location(keyrl) & hash_table_mask(table);
+  loc = hash_map_complex(sc, table, key) & hash_table_mask(table);
   for (hash_entry_t *x = hash_table_element(table, loc); x; x = hash_entry_next(x))
     {
       if ((is_t_complex(hash_entry_key(x))) &&
@@ -97776,12 +97782,7 @@ int main(int argc, char **argv)
  * wrapped form of FFI funcs? reals/ints? let wrappers seem doable [in safe-do etc]
  * more string_uncopied, read-line-uncopied (etc), generics uncopied?
  * op-*-vector etc
- * hash_string is very slow? see t677 (raw_string_hash has to be unique else symbols match), float_hash is also extremely slow
- *   current is ok except when names aren't very different
- *   try string hash loc from smsg+div
- *   raw_hash compared to hash (etc) mixes uint64_t and s7_int -- sign bit causes hash % mask confusion, so % is problematic ~/old/s7-hash.c
- *     in string_hash, treat mask as uint64_t and save as uint64_t
- *     resize_hash needs string special treatment, hash_table_set and add? needs uint64_t as in hash_string
+ * various hash maps are pessimal (t677)
  * try current notcurses
  * clear_all_opts infinite loop, also in pair_to_port
  * gmp t725 to hit big-pi bugs
