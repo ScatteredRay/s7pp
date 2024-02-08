@@ -5208,7 +5208,7 @@ static s7_pointer check_ref_one(s7_pointer p, uint8_t expected_type, const char 
 static void check_let_set_slots(s7_pointer p, s7_pointer slot, const char *func, int32_t line)
 {
   if ((!in_heap(p)) && (slot) && (in_heap(slot))) fprintf(stderr, "%s[%d]: let+slot mismatch\n", func, line);
-  if ((p == cur_sc->rootlet) && (slot != slot_end)) 
+  if ((p == cur_sc->rootlet) && (slot != slot_end))
     {
       fprintf(stderr, "%s[%d]: setting rootlet slots!\n", func, line);
       if (cur_sc->stop_at_error) abort();
@@ -8243,7 +8243,7 @@ static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer
       if (sc->stop_at_error) abort();
     }
   if (sc->stack_end >= sc->stack_resize_trigger)
-    fprintf(stderr, "%s%s[%d] from %s: stack resize skipped, stack at %u of %u%s\n", 
+    fprintf(stderr, "%s%s[%d] from %s: stack resize skipped, stack at %u of %u%s\n",
 	    bold_text, func, line, op_names[op], (uint32_t)((intptr_t)(sc->stack_end - sc->stack_start) / 4), sc->stack_size / 4, unbold_text);
   if (sc->stack_end != end)
     fprintf(stderr, "%s[%d]: stack changed in push_stack\n", func, line);
@@ -33583,7 +33583,7 @@ static void simple_list_readable_display(s7_scheme *sc, s7_pointer lst, s7_int t
     }
 }
 
-#if CYCLE_DEBUGGING
+#if S7_DEBUGGING
 static char *base = NULL, *min_char = NULL;
 #endif
 
@@ -33594,12 +33594,12 @@ static void pair_to_port(s7_scheme *sc, s7_pointer lst, s7_pointer port, use_wri
   bool immutable = false;
   s7_int true_len = list_length_with_immutable_check(sc, lst, &immutable);
 
-#if CYCLE_DEBUGGING
+#if S7_DEBUGGING
   char xx;
-  if (!base) base = &xx; 
-  else 
-    if (&xx > base) base = &xx; 
-    else 
+  if (!base) base = &xx;
+  else
+    if (&xx > base) base = &xx;
+    else
       if ((!min_char) || (&xx < min_char))
 	{
 	  min_char = &xx;
@@ -33651,7 +33651,7 @@ static void pair_to_port(s7_scheme *sc, s7_pointer lst, s7_pointer port, use_wri
       else temp_ci = ci;
       if (need_new_ci) sc->object_out_locked = true;
       object_to_port_with_circle_check(sc, cadr(lst), port, P_WRITE, temp_ci);
-      if (need_new_ci) 
+      if (need_new_ci)
 	{
 	  sc->object_out_locked = old_locked;
 	  free_shared_info(new_ci);
@@ -43793,7 +43793,7 @@ static hash_entry_t *hash_symbol(s7_scheme *sc, s7_pointer table, s7_pointer key
 
 
 /* ---------------- hash numbers ---------------- */
-static s7_int hash_map_int(s7_scheme *sc, s7_pointer table, s7_pointer key)  
+static s7_int hash_map_int(s7_scheme *sc, s7_pointer table, s7_pointer key)
 {
   return(s7_int_abs(integer(key)));
 }
@@ -43808,7 +43808,7 @@ static s7_int hash_map_ratio(s7_scheme *sc, s7_pointer table, s7_pointer key)
   return(s7_int_abs(numerator(key) / denominator(key))); /* needs to be compatible with default-hash-table-float-epsilon */
 }
 
-static s7_int hash_float_location(s7_double x) 
+static s7_int hash_float_location(s7_double x)
 {
   s7_double dx;
   if ((is_NaN(x)) || (is_inf(x))) return(0);
@@ -44189,7 +44189,7 @@ static s7_int hash_map_eq(s7_scheme *sc, s7_pointer table, s7_pointer key) {retu
 
 static hash_entry_t *hash_eq(s7_scheme *sc, s7_pointer table, s7_pointer key)
 {
-  /* explicit eq? as hash equality func or (for example) symbols as keys */
+  /* explicit eq? as hash equality func for (for example) symbols as keys */
   s7_int hash_mask = hash_table_mask(table);
   s7_int loc = pointer_map(key) & hash_mask; /* hash_map_eq */
   for (hash_entry_t *x = hash_table_element(table, loc); x; x = hash_entry_next(x))
@@ -44230,11 +44230,35 @@ static s7_int hash_map_hash_table(s7_scheme *sc, s7_pointer table, s7_pointer ke
 {
   /* hash-tables are equal if key/values match independent of table size and entry order.
    * if not using equivalent?, hash_table_checker|mapper must also be the same.
+   *    since order doesn't matter, but equal tables need to map to the same bin, we can't use key's
+   *    entries except when key has 1 or 2 entries (or 3 to be tedious).
    * Keys are supposed to be constant while keys, so a hash-table shouldn't be a key of itself.
    */
-  /* if (hash_table_entries(key) == 0) return(0); */ /* key is a hash-table here */
-  /* to map better we need an entry -- requires a loop through the key here */
-  return(hash_table_entries(key));
+  s7_int len = hash_table_entries(key);
+  if ((len == 0) || (len > 2) || (hash_table_size(key) > 32)) return(len);
+
+  {
+  s7_pointer key1 = NULL, val1;
+  hash_entry_t **els = hash_table_elements(key);
+  s7_int size = hash_table_size(key);
+  for (s7_int i = 0; i < size; i++)
+    for (hash_entry_t *x = els[i]; x; x = hash_entry_next(x))
+      {
+	if (len == 1)
+	  return(((is_sequence(hash_entry_key(x))) ? 0 : hash_loc(sc, key, hash_entry_key(x))) +
+		 ((is_sequence(hash_entry_value(x))) ? 0 : hash_loc(sc, key, hash_entry_value(x))));
+	if (!key1)
+	  {
+	    key1 = hash_entry_key(x);
+	    val1 = hash_entry_value(x);
+	  }
+	else
+	  return(((is_sequence(key1)) ? 0 : hash_loc(sc, key, key1)) +
+		 ((is_sequence(val1)) ? 0 : hash_loc(sc, key, val1)) +
+		 ((is_sequence(hash_entry_key(x))) ? 0 : hash_loc(sc, key, hash_entry_key(x))) +
+		 ((is_sequence(hash_entry_value(x))) ? 0 : hash_loc(sc, key, hash_entry_value(x))));
+      }}
+  return(0); /* placate the compiler */
 }
 
 static s7_int hash_map_int_vector(s7_scheme *sc, s7_pointer table, s7_pointer key)
@@ -44315,8 +44339,10 @@ static s7_int hash_map_let(s7_scheme *sc, s7_pointer table, s7_pointer key)
   if (slots == 1)
     return(pointer_map(slot_symbol(slot1)) + ((is_sequence(slot_value(slot1))) ? 0 : hash_loc(sc, table, slot_value(slot1))));
 
-  return(pointer_map(slot_symbol(slot1)) + ((is_sequence(slot_value(slot1))) ? 0 : hash_loc(sc, table, slot_value(slot1))) + 
-	 pointer_map(slot_symbol(slot2)) + ((is_sequence(slot_value(slot2))) ? 0 : hash_loc(sc, table, slot_value(slot2))));
+  if (slots == 2)
+    return(pointer_map(slot_symbol(slot1)) + ((is_sequence(slot_value(slot1))) ? 0 : hash_loc(sc, table, slot_value(slot1))) +
+	   pointer_map(slot_symbol(slot2)) + ((is_sequence(slot_value(slot2))) ? 0 : hash_loc(sc, table, slot_value(slot2))));
+  return(slots);
 }
 
 static hash_entry_t *hash_equal_eq(s7_scheme *sc, s7_pointer table, s7_pointer key)
@@ -44435,6 +44461,11 @@ static s7_int hash_map_c_function(s7_scheme *sc, s7_pointer table, s7_pointer ke
   return(integer(f(sc, with_list_t1(key))));
 }
 
+static s7_int hash_map_c_pointer(s7_scheme *sc, s7_pointer table, s7_pointer key)
+{
+  return(pointer_map(c_pointer(key)));
+}
+
 static hash_entry_t *hash_equal(s7_scheme *sc, s7_pointer table, s7_pointer key);
 
 static hash_entry_t *hash_c_function(s7_scheme *sc, s7_pointer table, s7_pointer key)
@@ -44458,18 +44489,19 @@ static hash_entry_t *hash_c_function(s7_scheme *sc, s7_pointer table, s7_pointer
   return(hash_equal(sc, table, key));
 }
 
-static int32_t len_upto_8(s7_pointer p)
+static int32_t len_upto_100(s7_pointer p)
 {
-  int32_t i = 0;    /* unrolling this loop saves 10-15% */
-  for (s7_pointer x = p; (is_pair(x)) && (i < 8); i++, x = cdr(x));
+  int32_t i = 0;
+  for (s7_pointer x = p; (is_pair(x)) && (i < 100); i++, x = cdr(x));
   return(i);
 }
 
 static s7_int hash_map_pair(s7_scheme *sc, s7_pointer table, s7_pointer key)
 {
   /* len+loc(car) is not horrible, but it means (for example) every list '(set! ...) is hashed to the same location,
-   *   so at least we need to take cadr into account if possible.  Better would combine the list_length
+   *   so at least we need to take cadr into account if possible.  Better would combine the list_length (or tree-leaves == tree_len(sc, p))
    *   with stats like symbols/pairs/constants at top level, then use those to spread it out over all the locs.
+   *   key can be cyclic, so tree_len would need to check for cycles.
    */
   s7_pointer p1 = cdr(key);
   s7_int loc = 0;
@@ -44489,7 +44521,10 @@ static s7_int hash_map_pair(s7_scheme *sc, s7_pointer table, s7_pointer key)
 	    (!is_sequence(caar(p1))))
 	  loc += hash_loc(sc, table, caar(p1)) + 1;
     }
-  return((loc << 3) | (len_upto_8(key)));
+  else
+    if (!is_sequence(p1)) /* include () */
+      loc += hash_loc(sc, table, p1);
+  return((loc << 3) + len_upto_100(key));
 }
 
 static hash_entry_t *hash_closure(s7_scheme *sc, s7_pointer table, s7_pointer key)
@@ -44930,6 +44965,7 @@ static void init_hash_maps(void)
   default_hash_map[T_FLOAT_VECTOR] =  hash_map_float_vector;
   default_hash_map[T_LET] =           hash_map_let;
   default_hash_map[T_PAIR] =          hash_map_pair;
+  default_hash_map[T_C_POINTER] =     hash_map_c_pointer;
 
   default_hash_map[T_INTEGER] =       hash_map_int;
   default_hash_map[T_RATIO] =         hash_map_ratio;
@@ -50858,7 +50894,7 @@ static s7_pointer hash_table_to_let(s7_scheme *sc, s7_pointer obj)
  	              sc->hash_table_signature);
     }
   else hash_table_checker_to_let(sc, let, obj);
-  
+
 #if S7_DEBUGGING
   if (hash_table_entries(obj) > 0)
     {
@@ -65018,9 +65054,9 @@ static s7_pointer opt_set_p_i_f(opt_info *o)
   return(x);
 }
 /* here and below (opt_set_p_d_f), the mutable versions are not safe, and are very tricky to make safe.  First if a variable is set twice,
- *  in the body, as in (do (...) (... (set! buffix (+ 1 buffix)) (if (>= buffix fftsize) (set! buffix 0)))) from pvoc.scm, 
- *  if the first set! is opt_set_p_i_fm (buffix is assumed mutable), the second sets it to built-in immutable zero, so the next time around loop, 
- *  the set_integer is direct so now built-in 0 == 128 (yet still prints itself as "0").  Also if a mutable variable is stored, 
+ *  in the body, as in (do (...) (... (set! buffix (+ 1 buffix)) (if (>= buffix fftsize) (set! buffix 0)))) from pvoc.scm,
+ *  if the first set! is opt_set_p_i_fm (buffix is assumed mutable), the second sets it to built-in immutable zero, so the next time around loop,
+ *  the set_integer is direct so now built-in 0 == 128 (yet still prints itself as "0").  Also if a mutable variable is stored,
  * (define (f2) (let ((v (vector 0 0 0)) (y 1.0)) (do ((i 0 (+ i 1))) ((= i 3) v) (set! y (+ y 1.0)) (vector-set! v i y))))
  * (f2) -> #(4.0 4.0 4.0).  Maybe safe if body has just one statement?
  */
@@ -70100,7 +70136,7 @@ static void init_choosers(s7_scheme *sc)
 #endif
 
   /* also: directory->list substring string->byte-vector with-input-from-file with-input-from-string
-   *   system load getenv file-mtime gensym with-output-to-file open-output-file directory? open-input-file 
+   *   system load getenv file-mtime gensym with-output-to-file open-output-file directory? open-input-file
    *   call-with-output-file delete-file call-with-input-file call-with-input-string open-input-string
    */
 
@@ -78200,7 +78236,7 @@ static void check_define(s7_scheme *sc)
 	    s7_warn(sc, 256, "%s: syntactic keywords tend to behave badly if redefined: %s\n", display(func), display_80(sc->code));
 	  set_local(func);
 	}
-      if ((is_global(func)) && (is_slot(global_slot(func))) && 
+      if ((is_global(func)) && (is_slot(global_slot(func))) &&
 	  (is_immutable(global_slot(func))) && (is_slot(initial_slot(func))))     /* (define (abs x) 1) after (immutable! abs) */
 	immutable_object_error_nr(sc, set_elist_3(sc, wrap_string(sc, "can't ~A ~S: it is immutable", 28), caller, func));
       if (starred)
@@ -80913,7 +80949,7 @@ static bool all_ints_here(s7_scheme *sc, s7_pointer settee, s7_pointer expr, s7_
       if (expr == settee) return(true);
       for (s7_pointer step = step_vars; is_pair(step); step = cdr(step))
 	if (caar(step) == expr)
-	  { 
+	  {
 	    if (!all_ints_here(sc, caar(step), cadar(step), step_vars)) /* TODO: can we lookup step_vars here? or only in do_is_safe? */
 	      return(false);
 	    if (is_pair(cddar(step)))
@@ -80937,7 +80973,7 @@ static bool all_ints_here(s7_scheme *sc, s7_pointer settee, s7_pointer expr, s7_
   sig = c_function_signature(func);
   if ((is_pair(sig)) &&
       ((car(sig) == sc->is_integer_symbol) || (car(sig) == sc->is_byte_symbol) ||
-       ((is_pair(car(sig))) && 
+       ((is_pair(car(sig))) &&
 	((direct_memq(sc->is_integer_symbol, car(sig))) || (direct_memq(sc->is_byte_symbol, car(sig)))))))
     return(true); /* like int-vector or length */
   if (!is_all_integer(car(expr))) return(false);
@@ -81071,7 +81107,7 @@ static bool do_is_safe(s7_scheme *sc, s7_pointer body, s7_pointer stepper, s7_po
 			    if ((val) && (is_t_integer(val)) && (!all_ints_here(sc, settee, caddr(expr), step_vars)))
 			      return(false);
 			  }}
-		    if (!do_is_safe(sc, cddr(expr), stepper, var_list, step_vars, has_set)) 
+		    if (!do_is_safe(sc, cddr(expr), stepper, var_list, step_vars, has_set))
 		      return(false);
 		    if (!safe_stepper_expr(expr, stepper))      /* is step var's value used as the stored value by set!? */
 		      return(false);
@@ -82090,7 +82126,7 @@ static goto_t op_dox(s7_scheme *sc)
 		  s7_pointer s3 = NULL;
 		  /* thash case -- this is dumb */
 		  if ((f2 == fx_add_u1) && (is_t_integer(slot_value(s2))) && (cadr(endp) == slot_symbol(s2)) && (!s7_tree_memq(sc, cadr(endp), body)) &&
-		      (((endf == fx_num_eq_ui) && (is_t_integer(caddr(endp)))) || 
+		      (((endf == fx_num_eq_ui) && (is_t_integer(caddr(endp)))) ||
 		       ((endf == fx_num_eq_us) && (s3 = opt_integer_symbol(sc, caddr(endp))) && (!s7_tree_memq(sc, caddr(endp), body)))))
 		    { /* (do ((i 0 (+ i 1)) (z (random 100) (random 100))) ((= i 5000000) counts) (hash-table-set! counts z (+ (or (hash-table-ref counts z) 0) 1))) */
 		      s7_int i = integer(slot_value(s2));
@@ -90562,7 +90598,7 @@ static bool op_read_float_vector(s7_scheme *sc)
    *   sc->args = dims (read_sharp sc->w = dims, read_expression push_op moves it to sc->args
    *   <read each entry...>: push op_read_float_vector (no op_read_list), read, eval,
    *   fill sc->floats, when right-paren make new vector [for multidims, get list->frame]
-   */ 
+   */
 }
 
 static bool op_read_byte_vector(s7_scheme *sc)
@@ -95957,7 +95993,7 @@ static void init_setters(s7_scheme *sc)
 			s7_make_safe_function(sc, "#<set-hash-table-key-typer>", g_set_hash_table_key_typer, 2, 0, false, "hash-table-key-typer setter"));
   c_function_set_setter(global_value(sc->hash_table_value_typer_symbol),
 			s7_make_safe_function(sc, "#<set-hash-table-value-typer>", g_set_hash_table_value_typer, 2, 0, false, "hash-table-value-typer setter"));
-  c_function_set_setter(global_value(sc->symbol_symbol), 
+  c_function_set_setter(global_value(sc->symbol_symbol),
 			s7_make_safe_function(sc, "#<symbol-set>", g_symbol_set, 2, 0, true, "symbol setter"));
 }
 
@@ -97767,6 +97803,7 @@ int main(int argc, char **argv)
  * tmisc                                 8488   7862   8041   8041
  * thash            11.8   11.7   9734   9479   9526   9542   9542
  * cb        12.9   11.2   11.0   9658   9564   9609   9635   9635
+ * tmap-hash
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3   12.3
  * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1   15.1
  * calls            36.7   37.5   37.0   37.5   37.1   37.0   37.0
@@ -97782,7 +97819,7 @@ int main(int argc, char **argv)
  * wrapped form of FFI funcs? reals/ints? let wrappers seem doable [in safe-do etc]
  * more string_uncopied, read-line-uncopied (etc), generics uncopied?
  * op-*-vector etc
- * various hash maps are pessimal (t677)
+ * vector hash maps are pessimal
  * try current notcurses
  * clear_all_opts infinite loop, also in pair_to_port
  * gmp t725 to hit big-pi bugs

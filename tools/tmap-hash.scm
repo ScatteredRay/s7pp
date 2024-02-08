@@ -1,7 +1,9 @@
-;;; hash timings
+;;; hash map timings
+
+(define debugging (provided? 'debugging))
 
 (define chars-upper "#$%&'()*+,-.0123456789:<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[]^_`abcdefghijklmnopqrstuvwxyz{|}¡¢£¤¥¦§¨©ª«¬­®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûü")
-(define chars-lower "abcdefghijklmnopqrstuvwxyz-?=") ; more schemish? 
+(define chars-lower "abcdefghijklmnopqrstuvwxyz-?=") ; more schemish?
 
 (define ok 1000000)
 (define bad 10000)
@@ -22,37 +24,6 @@
 	(vector-set! keys i str)))))
 
 
-(define (ref-sym) ; [288, 74 eval]
-  (let ((H (make-hash-table 1024))
-	(syms (let ((V (make-vector 10000))
-		    (strs (make-strings chars-lower)))
-		(do ((i 0 (+ i 1)))
-		    ((= i 10000) V)
-		  (vector-set! V i (string->symbol (vector-ref strs i)))))))
-    (do ((i 0 (+ i 1))
-	 (sym (vector-ref syms (random 10000)) (vector-ref syms (random 10000))))
-	((= i ok))
-      (unless (hash-table-ref H sym)
-	(hash-table-set! H sym sym)))
-    (format *stderr* "ref-sym: ~A~%" ((object->let H) 'stats:0|1|2|n|max)))) ; ref-sym: (6412 9945 27 0 2)
-
-;(ref-sym)
-
-
-(define (ref-sym1) ; [266, 73 eval]
-  (let* ((st (symbol-table))
-	 (len (length st)))
-    (let ((H (make-hash-table 1024)))
-      (do ((i 0 (+ i 1))
-	   (sym (vector-ref st (random len)) (vector-ref st (random len))))
-	  ((= i ok))
-	(unless (hash-table-ref H sym)
-	  (hash-table-set! H sym 1)))
-      (format *stderr* "ref-sym1: ~A~%" ((object->let H) 'stats:0|1|2|n|max))))) ; ref-sym1: (493 409 111 11 3)
-
-;(ref-sym1)
-
-
 (define (ref-int) ; [92, 28 in fx_random_i, 17 in hash_int]
   (let ((H (make-hash-table 1024)))
     (do ((i 0 (+ i 1))
@@ -60,7 +31,8 @@
 	((= i ok))
       (unless (hash-table-ref H int)
 	(hash-table-set! H int int)))
-    (format *stderr* "ref-int: ~A~%" ((object->let H) 'stats:0|1|2|n|max)))) ; ref-int: (6384 10000 0 0 1)
+    (when debugging (format *stderr* "ref-int: (~A ~{~A~^ ~})~%"
+			    (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max))))) ; ref-int: (6384 10000 0 0 1)
 
 ;(ref-int)
 
@@ -76,7 +48,8 @@
 	  ((= i bad))
 	(unless (hash-table-ref H rat)
 	  (hash-table-set! H rat rat)))
-      (format *stderr* "ref-rat: ~A~%" ((object->let H) 'stats:0|1|2|n|max))))) ; ref-rat: (16308 36 9 31 2128)
+      (when debugging (format *stderr* "ref-rat: (~A ~{~A~^ ~})~%"
+			      (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max)))))) ; ref-rat: (16308 36 9 31 2128)
 
 ;(ref-rat)
 
@@ -92,7 +65,8 @@
 	  ((= i ok))
 	(unless (hash-table-ref H rat)
 	  (hash-table-set! H rat rat)))
-      (format *stderr* "ref-rat1: ~A~%" ((object->let H) 'stats:0|1|2|n|max))))) ; ref-rat1: (12516 1849 637 1382 14)
+      (when debugging (format *stderr* "ref-rat1: (~A ~{~A~^ ~})~%"
+			      (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max)))))) ; ref-rat1: (12516 1849 637 1382 14)
 
 ;(ref-rat1)
 
@@ -108,7 +82,8 @@
 	  ((= i ok))
 	(unless (hash-table-ref H float)
 	  (hash-table-set! H float float)))
-      (format *stderr* "ref-float: ~A~%" ((object->let H) 'stats:0|1|2|n|max))))) ; ref-float: (15384 2 2 996 21)
+      (when debugging (format *stderr* "ref-float: (~A ~{~A~^ ~})~%"
+			      (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max)))))) ; ref-float: (15384 2 2 996 21)
 
 ;(ref-float)
 
@@ -124,11 +99,12 @@
 	  ((= i ok))
 	(unless (hash-table-ref H c)
 	  (hash-table-set! H c c)))
-      (format *stderr* "ref-complex: ~A~%" ((object->let H) 'stats:0|1|2|n|max))))) ; ref-complex: (16374 0 0 10 1065), (14685 199 202 1298 25)
+      (when debugging (format *stderr* "ref-complex: (~A ~{~A~^ ~})~%"
+			      (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max)))))) ; ref-complex: (16374 0 0 10 1065), (14685 199 202 1298 25)
 
 ;(ref-complex)
 
-  
+
 (define (ref-string) ; [356 (counting make-strings), 74 eval, 62 for hash_string]
   (let ((H (make-hash-table 1024 string=?))
 	(strings (make-strings chars-lower)))
@@ -137,7 +113,8 @@
 	((= i ok))
       (unless (hash-table-ref H str)
 	(hash-table-set! H str str)))
-    (format *stderr* "ref-string: ~A~%" ((object->let H) 'stats:0|1|2|n|max)))) ; ref-string: (12795 1412 686 1491 18)
+    (when debugging (format *stderr* "ref-string: (~A ~{~A~^ ~})~%"
+			    (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max))))) ; ref-string: (12795 1412 686 1491 18)
 
 ;(ref-string)
 
@@ -150,7 +127,8 @@
 	((= i ok))
       (unless (hash-table-ref H str)
 	(hash-table-set! H str str)))
-    (format *stderr* "ref-string1: ~A~%" ((object->let H) 'stats:0|1|2|n|max)))) ; ref-string1: (9114 5128 1663 479 6)
+    (when debugging (format *stderr* "ref-string1: (~A ~{~A~^ ~})~%"
+			    (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max))))) ; ref-string1: (9114 5128 1663 479 6)
 
 ;(ref-string1)
 
@@ -162,14 +140,15 @@
 	((= i bad))
       (unless (hash-table-ref H str)
 	(hash-table-set! H str str)))
-    (format *stderr* "ref-string2: ~A~%" ((object->let H) 'stats:0|1|2|n|max)))) ; ref-string2: (16374 1 0 9 1111)
+    (when debugging (format *stderr* "ref-string2: (~A ~{~A~^ ~})~%"
+			    (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max))))) ; ref-string2: (16374 1 0 9 1111)
 
 ;(ref-string2)
 
 
 (define (ref-string3) ; [344, 73 eval]
   (let* ((syms (symbol-table))
-	 (len (length syms))
+	 (len (length syms))  ; ca 675
 	 (strs (make-vector len)))
     (do ((i 0 (+ i 1)))
 	((= i len))
@@ -180,7 +159,8 @@
 	  ((= i ok))
 	(unless (hash-table-ref H str)
 	  (hash-table-set! H str 1)))
-      (format *stderr* "ref-string3: ~A~%" ((object->let H) 'stats:0|1|2|n|max))))) ; ref-string3: (785 112 47 80 26)
+      (when debugging (format *stderr* "ref-string3: (~A ~{~A~^ ~})~%"
+			      (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max)))))) ; ref-string3: (785 112 47 80 26): (675 786 111 48 79 26)
 
 ;(ref-string3)
 
@@ -193,21 +173,78 @@
 	((= i ok))
       (unless (hash-table-ref H str)
 	(hash-table-set! H str str)))
-    (format *stderr* "ref-ci-string: ~A~%" ((object->let H) 'stats:0|1|2|n|max)))) ; ref-ci-string: (16036 0 0 348 42)
+    (when debugging (format *stderr* "ref-ci-string: (~A ~{~A~^ ~})~%"
+			    (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max))))) ; ref-ci-string: (16036 0 0 348 42)
 
 ;(ref-ci-string)
 
 
-(define (ref-pair) ; [4574, 2936 in pair_equal, 803 integer_equal, 634 hash_equal_any]
-  (let ((H (make-hash-table 1024)))
+(define (ref-sym) ; [288, 74 eval]
+  (let ((H (make-hash-table 1024))
+	(syms (let ((V (make-vector 10000))
+		    (strs (make-strings chars-lower)))
+		(do ((i 0 (+ i 1)))
+		    ((= i 10000) V)
+		  (vector-set! V i (string->symbol (vector-ref strs i)))))))
     (do ((i 0 (+ i 1))
-	 (p (cons (random 100) (random 100)) (cons (random 100) (random 100))))
+	 (sym (vector-ref syms (random 10000)) (vector-ref syms (random 10000))))
+	((= i ok))
+      (unless (hash-table-ref H sym)
+	(hash-table-set! H sym sym)))
+    (when debugging (format *stderr* "ref-sym: (~A ~{~A~^ ~})~%"
+			    (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max))))) ; ref-sym: (6412 9945 27 0 2)
+
+;(ref-sym)
+
+
+(define (ref-sym1) ; [266, 73 eval]
+  (let* ((st (symbol-table))
+	 (len (length st)))
+    (let ((H (make-hash-table 1024)))
+      (do ((i 0 (+ i 1))
+	   (sym (vector-ref st (random len)) (vector-ref st (random len))))
+	  ((= i ok))
+	(unless (hash-table-ref H sym)
+	  (hash-table-set! H sym 1)))
+      (when debugging (format *stderr* "ref-sym1: (~A ~{~A~^ ~})~%"
+			      (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max)))))) ; ref-sym1: (493 409 111 11 3)
+
+;(ref-sym1)
+
+
+(define (ref-pair) ; [4574, 2936 in pair_equal, 803 integer_equal, 634 hash_equal_any] -> [2495, 1570 pair_equal] -> [659, 172 pair_equal, 76 hash_map_pair]
+  (let ((H (make-hash-table 1024)))
+    (let ((lsts (let ((V (make-vector 10000)))
+		  (do ((i 0 (+ i 1)))
+		      ((= i 10000) V)
+		    (vector-set! V i (cons (random 1000) (random 1000)))))))
+    (do ((i 0 (+ i 1))
+	 (p (vector-ref lsts (random 10000)) (vector-ref lsts (random 10000))))
 	((= i ok))
       (unless (hash-table-ref H p)
 	(hash-table-set! H p p)))
-    (format *stderr* "ref-pair: ~A~%" ((object->let H) 'stats:0|1|2|n|max)))) ; ref-pair: (16284 0 0 100 100)
+    (when debugging (format *stderr* "ref-pair: (~A ~{~A~^ ~})~%"
+			    (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max))))))
+    ;; ref-pair: (16284 0 0 100 100): (10000 16185 2 2 195 100): (9953 14600 212 177 1395 21)
 
 ;(ref-pair)
+
+
+(define (ref-pair1) ; [812, 274 hash_map_pair, 150 pair_equal]
+  (let ((H (make-hash-table 1024)))
+    (let ((lsts (let ((V (make-vector 10000)))
+		  (do ((i 0 (+ i 1)))
+		      ((= i 10000) V)
+		    (vector-set! V i (make-list (random 100) (random 1000)))))))
+      (do ((i 0 (+ i 1))
+	   (p (vector-ref lsts (random 10000)) (vector-ref lsts (random 10000))))
+	  ((= i ok))
+	(unless (hash-table-ref H p)
+	  (hash-table-set! H p p)))
+      (when debugging (format *stderr* "ref-pair1: (~A ~{~A~^ ~})~%"
+			      (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max)))))) ; ref-pair1: (9404 9039 5561 1529 255 5)
+
+;(ref-pair1)
 
 
 (define (ref-iv) ; [2515, 951 int_vector_equal, 518 iv_meq, 433 hash_equal_any, 305 vector_rank_match]
@@ -217,7 +254,8 @@
 	((= i ok))
       (unless (hash-table-ref H p)
 	(hash-table-set! H p p)))
-    (format *stderr* "ref-iv: ~A~%" ((object->let H) 'stats:0|1|2|n|max)))) ; ref-iv: (16185 2 2 195 100)
+    (when debugging (format *stderr* "ref-iv: (~A ~{~A~^ ~})~%"
+			    (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max))))) ; ref-iv: (16185 2 2 195 100)
 
 ;(ref-iv)
 
@@ -229,7 +267,8 @@
 	((= i ok))
       (unless (hash-table-ref H p)
 	(hash-table-set! H p p)))
-    (format *stderr* "ref-bv: ~A~%" ((object->let H) 'stats:0|1|2|n|max)))) ; ref-bv: (16185 2 2 195 100)
+    (when debugging (format *stderr* "ref-bv: (~A ~{~A~^ ~})~%"
+			    (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max))))) ; ref-bv: (16185 2 2 195 100)
 
 ;(ref-bv)
 
@@ -241,7 +280,8 @@
 	((= i ok))
       (unless (hash-table-ref H p)
 	(hash-table-set! H p p)))
-    (format *stderr* "ref-v: ~A~%" ((object->let H) 'stats:0|1|2|n|max)))) ; (16185 2 2 195 100)
+    (when debugging (format *stderr* "ref-v: (~A ~{~A~^ ~})~%"
+			    (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max))))) ; (16185 2 2 195 100)
 
 ;(ref-v)
 
@@ -257,7 +297,8 @@
 	  ((= i ok))
 	(unless (hash-table-ref H float)
 	  (hash-table-set! H float float)))
-      (format *stderr* "ref-fv: ~A~%" ((object->let H) 'stats:0|1|2|n|max))))) ; (16185 1 3 195 118)
+      (when debugging (format *stderr* "ref-fv: (~A ~{~A~^ ~})~%"
+			      (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max)))))) ; (16185 1 3 195 118)
 
 ;(ref-fv)
 
@@ -269,13 +310,14 @@
 	((= i ok))
       (unless (hash-table-ref H p)
 	(hash-table-set! H p p)))
-    (format *stderr* "ref-let: ~A~%" ((object->let H) 'stats:0|1|2|n|max)))) ; ref-let: (6384 10000 0 0 1)
+    (when debugging (format *stderr* "ref-let: (~A ~{~A~^ ~})~%"
+			    (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max))))) ; ref-let: (6384 10000 0 0 1)
 
 ;(ref-let)
 
 
 (define (ref-let1) ; was extremely slow even if only 10000 calls [10376, 9144 let_equal_1, 586 hash_equal_any, 394 integer_equal, 244 let_equal]
-                   ; now [1153, 626 let_equal_1] TODO: use this form below for ref-hash1
+                   ; now [1153, 626 let_equal_1]
   (let ((H (make-hash-table 1024)))
     (let ((lets (let ((V (make-vector 10000)))
 		  (do ((i 0 (+ i 1)))
@@ -286,7 +328,8 @@
 	  ((= i ok))
 	(unless (hash-table-ref H p)
 	  (hash-table-set! H p p)))
-      (format *stderr* "ref-let1: ~A~%" ((object->let H) 'stats:0|1|2|n|max))))) ; ref-let1: (14573 208 204 1399 19)
+      (when debugging (format *stderr* "ref-let1: (~A ~{~A~^ ~})~%"
+			      (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max)))))) ; ref-let1: (14573 208 204 1399 19)
 
 ;(ref-let1)
 
@@ -298,40 +341,64 @@
 	((= i ok))
       (unless (hash-table-ref H c)
 	(hash-table-set! H c c)))
-    (format *stderr* "ref-char: ~A~%" ((object->let H) 'stats:0|1|2|n|max)))) ; (768 256 0 0 1)
+    (when debugging (format *stderr* "ref-char: (~A ~{~A~^ ~})~%"
+			    (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max))))) ; (768 256 0 0 1)
 
 ;(ref-char)
 
 
-;;; 1000 here
-(define (ref-hash) ; extremely slow! [8291, 6432 hash_table_equal, 585 hash_equal_any, 536 hash_symbol etc]
+(define (ref-hash) [525] ; slow if hash has > 2 entries
   (let ((H (make-hash-table 1024)))
+    (let ((tabs (let ((V (make-vector 10000)))
+		  (do ((i 0 (+ i 1)))
+		      ((= i 10000) V)
+		    (vector-set! V i (hash-table 'a (random 10000)))))))
     (do ((i 0 (+ i 1))
-	 (p (hash-table 'a (random 10000)) (hash-table 'a (random 10000))))
-	((= i horrible))
+	 (p (vector-ref tabs (random 10000)) (vector-ref tabs (random 10000))))
+	((= i ok))
       (unless (hash-table-ref H p)
 	(hash-table-set! H p p)))
-    (format *stderr* "ref-hash: ~A~%" ((object->let H) 'stats:0|1|2|n|max)))) ; ref-hash: (16383 0 0 1 6317)
+    (when debugging (format *stderr* "ref-hash: (~A ~{~A~^ ~})~%"
+			    (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max)))))) ; ref-hash: (16383 0 0 1 6317): (6350 10034 6350 0 0 1)
 
 ;(ref-hash)
 
 
-;;; 1000 here
-(define (ref-hash1) ; [8258, as above]
+(define (ref-hash1) ; [555]
   (let ((H (make-hash-table 1024)))
+    (let ((tabs (let ((V (make-vector 10000)))
+		  (do ((i 0 (+ i 1)))
+		      ((= i 10000) V)
+		    (vector-set! V i (hash-table 'a (random 10000) 'b (random 10000)))))))
     (do ((i 0 (+ i 1))
-	 (p (hash-table 'a (random 100) 'b (random 100)) (hash-table 'a (random 100) 'b (random 100))))
-	((= i horrible))
+	 (p (vector-ref tabs (random 10000)) (vector-ref tabs (random 10000))))
+	((= i ok))
       (unless (hash-table-ref H p)
 	(hash-table-set! H p p)))
-    (format *stderr* "ref-hash1: ~A~%" ((object->let H) 'stats:0|1|2|n|max)))) ; ref-hash1: (16383 0 0 1 6282)
+    (when debugging (format *stderr* "ref-hash1: (~A ~{~A~^ ~})~%"
+			    (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max)))))) ; ref-hash1: (16383 0 0 1 6282): (10000 9135 5105 1657 487 8)
 
 ;(ref-hash1)
 
 
+(define (ref-c-pointer) ; [352]
+  (let ((H (make-hash-table 1024)))
+    (let ((ptrs (let ((V (make-vector 10000)))
+		  (do ((i 0 (+ i 1)))
+		      ((= i 10000) V)
+		    (vector-set! V i (c-pointer (random 4000000)))))))
+    (do ((i 0 (+ i 1))
+	 (p (vector-ref ptrs (random 10000)) (vector-ref ptrs (random 10000))))
+	((= i ok))
+      (unless (hash-table-ref H p)
+	(hash-table-set! H p p)))
+    (when debugging (format *stderr* "ref-c-pointer: (~A ~{~A~^ ~})~%"
+			    (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max)))))) ; ref-c-pointer: (12794 778 962 1850 10): (9994 9033 5222 1696 433 6)
+
+;(ref-c-pointer)
+
+
 (define (all-cases)
-  (ref-sym)
-  (ref-sym1)
   (ref-int)
   (ref-rat)
   (ref-rat1)
@@ -342,7 +409,10 @@
   (ref-string2)
   (ref-string3)
   (ref-ci-string)
+  (ref-sym1)
+  (ref-sym)
   (ref-pair)
+  (ref-pair1)
   (ref-iv)
   (ref-bv)
   (ref-fv)
@@ -352,22 +422,24 @@
   (ref-char)
   (ref-hash)
   (ref-hash1)
+  (ref-c-pointer)
   )
 
 (all-cases)
 
-
 #|
-;;; (previous limits, not current)
-4,686,080,460  s7.c:hash_equal_ratio [/home/bil/motif-snd/repl]
-4,545,952,668  s7.c:hash_equal_complex [/home/bil/motif-snd/repl]
-3,580,146,875  s7.c:hash_string [/home/bil/motif-snd/repl]
-2,935,734,680  s7.c:pair_equal [/home/bil/motif-snd/repl]
-2,737,055,600  s7.c:vector_equal [/home/bil/motif-snd/repl]
-2,449,985,458  s7.c:hash_equal_any [/home/bil/motif-snd/repl]
-1,432,518,786  s7.c:byte_vector_equal [/home/bil/motif-snd/repl]
-1,423,077,642  s7.c:float_vector_equal [/home/bil/motif-snd/repl]
-1,219,928,760  s7.c:vector_rank_match.constprop.0.isra.0 [/home/bil/motif-snd/repl]
-1,113,398,808  s7.c:integer_equal [/home/bil/motif-snd/repl]
-  951,717,508  s7.c:int_vector_equal [/home/bil/motif-snd/repl]
+18625:
+2,733,749,040  s7.c:vector_equal [/home/bil/motif-snd/repl]
+1,985,768,871  s7.c:hash_equal_any [/home/bil/motif-snd/repl]
+1,444,374,330  s7.c:float_vector_equal [/home/bil/motif-snd/repl]
+1,433,612,508  s7.c:byte_vector_equal [/home/bil/motif-snd/repl]
+1,224,304,767  s7.c:vector_rank_match.constprop.0.isra.0 [/home/bil/motif-snd/repl]
+  956,127,291  s7.c:eval.isra.0 [/home/bil/motif-snd/repl]
+  951,562,108  s7.c:int_vector_equal [/home/bil/motif-snd/repl]
+  795,950,881  s7.c:let_equal_1 [/home/bil/motif-snd/repl]
+  664,521,059  s7.c:fx_num_eq_us [/home/bil/motif-snd/repl]
+  587,077,941  s7.c:hash_ci_string [/home/bil/motif-snd/repl]
+  527,384,789  s7.c:fx_random_i [/home/bil/motif-snd/repl]
+  518,675,415  s7.c:iv_meq [/home/bil/motif-snd/repl]
+  424,339,542  s7.c:fx_hash_table_ref_ss [/home/bil/motif-snd/repl]
 |#

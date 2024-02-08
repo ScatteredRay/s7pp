@@ -193,6 +193,9 @@
 (format *stderr* "~%~NC thash ~NC~%" 20 #\- 20 #\-)
 (system "./repl thash.scm")
 
+(format *stderr* "~%~NC tmap-hash ~NC~%" 20 #\- 20 #\-)
+(system "./repl tmap-hash.scm")
+
 (format *stderr* "~NC tauto ~NC~%" 20 #\- 20 #\-)
 (system "./repl tauto.scm")
 

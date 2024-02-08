@@ -20,6 +20,7 @@
 		     ("tsort.scm" . "v-sort")
 		     ("tlet.scm" . "v-let")
 		     ("thash.scm" . "v-hash")
+		     ("tmap-hash.scm" . "v-map-hash")
 		     ("tgen.scm" . "v-gen")
 		     ("tall.scm" . "v-all")
 		     ("snd-test.scm" . "v-call")
@@ -127,6 +128,7 @@
 	 (list "repl" "tgc.scm")
 	 (list "repl" "tmisc.scm")
 	 (list "repl" "thash.scm")
+	 (list "repl" "tmap-hash.scm")
 	 (list "repl" "cb.scm")
 	 (list "snd -noinit" "tgen.scm")    ; repl here + cload sndlib was slower
 	 (list "snd -noinit" "tall.scm")
