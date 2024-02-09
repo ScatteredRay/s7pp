@@ -3348,7 +3348,7 @@ static s7_pointer slot_expression(s7_pointer p)    \
 #define hash_table_checker(p)          (T_Hsh(p))->object.hasher.hash_func
 #define hash_table_mapper(p)           (T_Hsh(p))->object.hasher.loc
 #define hash_table_procedures(p)       T_Lst(hash_table_block(p)->ex.ex_ptr)
-#define hash_table_set_procedures(p, Lst)       hash_table_block(p)->ex.ex_ptr = T_Lst(Lst)  /* both the checker/mapper: car/cdr, and the two typers (opt/opt2) */
+#define hash_table_set_procedures(p, Lst)       hash_table_block(p)->ex.ex_ptr = T_Lst(Lst)  /* both the checker/mapper: car/cdr, and the two typers (opt1/opt2) */
 #define hash_table_procedures_checker(p)        car(hash_table_procedures(p))
 #define hash_table_procedures_mapper(p)         cdr(hash_table_procedures(p))
 #define hash_table_set_procedures_checker(p, f) set_car(hash_table_procedures(p), f)
@@ -33882,6 +33882,7 @@ static const char *hash_table_typer_name(s7_scheme *sc, s7_pointer typer)
   s7_pointer sym;
   if (is_c_function(typer)) return(c_function_name(typer));
   if (is_boolean(typer)) return("#t");
+  if (typer == sc->unused) return("#<unused>"); /* mapper can be sc->unused briefly */
   sym = find_closure(sc, typer, closure_let(typer));
   if (is_null(sym)) return(NULL);
   return(symbol_name(sym));
@@ -44308,7 +44309,7 @@ static s7_int hash_map_closure(s7_scheme *sc, s7_pointer table, s7_pointer key)
 	     set_elist_1(sc, wrap_string(sc, "hash-table map function called recursively", 42)));
   /* check_stack_size(sc); -- perhaps clear typers as well here or save/restore hash-table-procedures */
   gc_protect_via_stack(sc, f);
-  hash_table_set_procedures_mapper(table, sc->unused);
+  hash_table_set_procedures_mapper(table, sc->unused); /* TODO: why unused here? maybe a dummy procedure? */
   sc->value = s7_call(sc, f, set_plist_1(sc, key));
   unstack_gc_protect(sc);
   hash_table_set_procedures_mapper(table, f);
@@ -44464,6 +44465,11 @@ static s7_int hash_map_c_function(s7_scheme *sc, s7_pointer table, s7_pointer ke
 static s7_int hash_map_c_pointer(s7_scheme *sc, s7_pointer table, s7_pointer key)
 {
   return(pointer_map(c_pointer(key)));
+}
+
+static s7_int hash_map_iterator(s7_scheme *sc, s7_pointer table, s7_pointer key)
+{
+  return(type(iterator_sequence(key)) + hash_loc(sc, table, iterator_sequence(key)));
 }
 
 static hash_entry_t *hash_equal(s7_scheme *sc, s7_pointer table, s7_pointer key);
@@ -44966,6 +44972,7 @@ static void init_hash_maps(void)
   default_hash_map[T_LET] =           hash_map_let;
   default_hash_map[T_PAIR] =          hash_map_pair;
   default_hash_map[T_C_POINTER] =     hash_map_c_pointer;
+  default_hash_map[T_ITERATOR] =      hash_map_iterator;
 
   default_hash_map[T_INTEGER] =       hash_map_int;
   default_hash_map[T_RATIO] =         hash_map_ratio;
@@ -97801,9 +97808,9 @@ int main(int argc, char **argv)
  * tlamb                                        7941   7941   7941
  * tgc              11.9   11.1   8177   7857   7986   8005   8005
  * tmisc                                 8488   7862   8041   8041
+ * tmap-hash                                                  9073 [~/test/timings will take forever]
  * thash            11.8   11.7   9734   9479   9526   9542   9542
  * cb        12.9   11.2   11.0   9658   9564   9609   9635   9635
- * tmap-hash
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3   12.3
  * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1   15.1
  * calls            36.7   37.5   37.0   37.5   37.1   37.0   37.0
@@ -97818,9 +97825,7 @@ int main(int argc, char **argv)
  *   set_pending_value wrapped (big, rclo)
  * wrapped form of FFI funcs? reals/ints? let wrappers seem doable [in safe-do etc]
  * more string_uncopied, read-line-uncopied (etc), generics uncopied?
- * op-*-vector etc
- * vector hash maps are pessimal
- * try current notcurses
  * clear_all_opts infinite loop, also in pair_to_port
- * gmp t725 to hit big-pi bugs
+ * maps: hash|let with more than 2 entries, strings like w1234, resize sometimes is pointless, undefined? c-object? closures? ports?
+ *   haven't timed big* (hash_map_big_int etc) or equivalent_float business with big float/complex
  */

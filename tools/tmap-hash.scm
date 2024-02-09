@@ -7,7 +7,6 @@
 
 (define ok 1000000)
 (define bad 10000)
-(define horrible 1000)
 
 (define (make-strings chr)
   (let* ((num-keys 10000)
@@ -247,58 +246,70 @@
 ;(ref-pair1)
 
 
-(define (ref-iv) ; [2515, 951 int_vector_equal, 518 iv_meq, 433 hash_equal_any, 305 vector_rank_match]
+(define (ref-iv) ; [442]
   (let ((H (make-hash-table 1024)))
-    (do ((i 0 (+ i 1))
-	 (p (int-vector (random 100) (random 100)) (int-vector (random 100) (random 100))))
-	((= i ok))
-      (unless (hash-table-ref H p)
-	(hash-table-set! H p p)))
-    (when debugging (format *stderr* "ref-iv: (~A ~{~A~^ ~})~%"
-			    (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max))))) ; ref-iv: (16185 2 2 195 100)
+    (let ((ivs (let ((V (make-vector 10000)))
+		 (do ((i 0 (+ i 1)))
+		     ((= i 10000) V)
+		   (vector-set! V i (make-int-vector (random 100) (random 1000)))))))
+      (do ((i 0 (+ i 1))
+	   (p (vector-ref ivs (random 10000)) (vector-ref ivs (random 10000))))
+	  ((= i ok))
+	(unless (hash-table-ref H p)
+	  (hash-table-set! H p p)))
+      (when debugging (format *stderr* "ref-iv: (~A ~{~A~^ ~})~%"
+			      (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max)))))) ; ref-iv: (9407 14335 121 210 1718 12)
 
 ;(ref-iv)
 
 
-(define (ref-bv) ; [2466, 1432 byte_vector_equal, 434 hash_equal_any, 306 vector__rank_match]
+(define (ref-bv) ; [616]
   (let ((H (make-hash-table 1024)))
-    (do ((i 0 (+ i 1))
-	 (p (byte-vector (random 100) (random 100)) (byte-vector (random 100) (random 100))))
-	((= i ok))
-      (unless (hash-table-ref H p)
-	(hash-table-set! H p p)))
-    (when debugging (format *stderr* "ref-bv: (~A ~{~A~^ ~})~%"
-			    (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max))))) ; ref-bv: (16185 2 2 195 100)
+    (let ((bvs (let ((V (make-vector 10000)))
+		 (do ((i 0 (+ i 1)))
+		     ((= i 10000) V)
+		   (vector-set! V i (make-byte-vector (random 100) (random 250)))))))
+      (do ((i 0 (+ i 1))
+	   (p (vector-ref bvs (random 10000)) (vector-ref bvs (random 10000))))
+	  ((= i ok))
+	(unless (hash-table-ref H p)
+	  (hash-table-set! H p p)))
+      (when debugging (format *stderr* "ref-bv: (~A ~{~A~^ ~})~%"
+			      (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max)))))) ; ref-bv: (8156 15794 11 8 571 25)
 
 ;(ref-bv)
 
 
-(define (ref-v) ; [4038, 2733 vector_equal, 433 hash_equal_any, 305 vector_rank_match, 280 integer_equal]
+(define (ref-v) ; [614]
   (let ((H (make-hash-table 1024)))
-    (do ((i 0 (+ i 1))
-	 (p (vector (random 100) (random 100)) (vector (random 100) (random 100))))
-	((= i ok))
-      (unless (hash-table-ref H p)
-	(hash-table-set! H p p)))
-    (when debugging (format *stderr* "ref-v: (~A ~{~A~^ ~})~%"
-			    (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max))))) ; (16185 2 2 195 100)
+    (let ((vs (let ((V (make-vector 10000)))
+		 (do ((i 0 (+ i 1)))
+		     ((= i 10000) V)
+		   (vector-set! V i (make-vector (random 100) (random 1000)))))))
+      (do ((i 0 (+ i 1))
+	   (p (vector-ref vs (random 10000)) (vector-ref vs (random 10000))))
+	  ((= i ok))
+	(unless (hash-table-ref H p)
+	  (hash-table-set! H p p)))
+      (when debugging (format *stderr* "ref-v: (~A ~{~A~^ ~})~%"
+			      (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max)))))) ; ref-v: (9433 14334 111 229 1710 13)
 
 ;(ref-v)
 
 
-(define (ref-fv) ; [2434, 1411 float_vector_equal, 437 hash_equal_any, 300 vector_rank_match]
+(define (ref-fv) ; [446]
   (let ((H (make-hash-table 1024)))
     (let ((floats (let ((V (make-vector 10000)))
 		    (do ((i 0 (+ i 1)))
 			((= i 10000) V)
-		      (vector-set! V i (float-vector (random 100.0) (random 100.0)))))))
+		      (vector-set! V i (make-float-vector (random 100) (random 1000.0)))))))
       (do ((i 0 (+ i 1))
 	   (float (vector-ref floats (random 10000)) (vector-ref floats (random 10000))))
 	  ((= i ok))
 	(unless (hash-table-ref H float)
 	  (hash-table-set! H float float)))
       (when debugging (format *stderr* "ref-fv: (~A ~{~A~^ ~})~%"
-			      (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max)))))) ; (16185 1 3 195 118)
+			      (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max)))))) ; ref-fv: (9895 14340 113 172 1759 14)
 
 ;(ref-fv)
 
@@ -306,7 +317,7 @@
 (define (ref-let) ; [452, 167 let_equal_1, 65 simple_inlet] -- let_equal checks outlet chains! called from hash_equal_any
   (let ((H (make-hash-table 1024)))
     (do ((i 0 (+ i 1))
-	 (p (inlet 'a (random 10000)) (inlet 'a (random 10000)))) ; if two fields, extremely slow?
+	 (p (inlet 'a (random 10000)) (inlet 'a (random 10000))))
 	((= i ok))
       (unless (hash-table-ref H p)
 	(hash-table-set! H p p)))
@@ -316,8 +327,7 @@
 ;(ref-let)
 
 
-(define (ref-let1) ; was extremely slow even if only 10000 calls [10376, 9144 let_equal_1, 586 hash_equal_any, 394 integer_equal, 244 let_equal]
-                   ; now [1153, 626 let_equal_1]
+(define (ref-let1) ; [1153, 626 let_equal_1]
   (let ((H (make-hash-table 1024)))
     (let ((lets (let ((V (make-vector 10000)))
 		  (do ((i 0 (+ i 1)))
@@ -347,7 +357,7 @@
 ;(ref-char)
 
 
-(define (ref-hash) [525] ; slow if hash has > 2 entries
+(define (ref-hash) ;[525] slow if hash has > 2 entries
   (let ((H (make-hash-table 1024)))
     (let ((tabs (let ((V (make-vector 10000)))
 		  (do ((i 0 (+ i 1)))
@@ -398,6 +408,32 @@
 ;(ref-c-pointer)
 
 
+(define (ref-iterator) ; [2882, 887 vector_equal, 705 iterator_equal 216 hash_equal_any]
+  (let ((H (make-hash-table 1024)))
+    (let ((ptrs (let ((V (make-vector 10000)))
+		  (do ((i 0 (+ i 1)))
+		      ((= i 10000) V)
+		    (vector-set! V i (make-iterator (case (modulo i 6)
+						      ((0) (make-list (+ (random 100) 1) (random 10000)))
+						      ((1) (vector (random 100) (random 100) (random 100)))
+						      ((2) (float-vector (random 100) (random 100) (random 100)))
+						      ((3) (int-vector (random 100) (random 100) (random 100)))
+						      ((4) (byte-vector (random 100) (random 100) (random 100)))
+						      ((5) (string (integer->char (+ (random 50) 32)) 
+								   (integer->char (+ (random 50) 32)) 
+								   (integer->char (+ (random 50) 32)))))))))))
+    (do ((i 0 (+ i 1))
+	 (p (vector-ref ptrs (random 10000)) (vector-ref ptrs (random 10000))))
+	((= i ok))
+      (unless (hash-table-ref H p)
+	(hash-table-set! H p p)))
+    (when debugging (format *stderr* "ref-iterator: (~A ~{~A~^ ~})~%"
+			    (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max)))))) ; ref-iterator: (9982 13546 2146 395 297 87)
+
+;(ref-iterator)
+
+
+
 (define (all-cases)
   (ref-int)
   (ref-rat)
@@ -423,6 +459,7 @@
   (ref-hash)
   (ref-hash1)
   (ref-c-pointer)
+  (ref-iterator)
   )
 
 (all-cases)
