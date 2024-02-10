@@ -433,6 +433,21 @@
 ;(ref-iterator)
 
 
+(when (provided? 'gmp)
+  (define (ref-big-int) ; [1170]
+    (let ((H (make-hash-table 1024)))
+      (do ((i 0 (+ i 1))
+	   (int (+ 1000000000000000000000000 (random (bignum 10000))) (+ 1000000000000000000000000 (random (bignum 10000)))))
+	  ((= i ok))
+	(unless (hash-table-ref H int)
+	  (hash-table-set! H int int)))
+      (when debugging (format *stderr* "ref-big-int: (~A ~{~A~^ ~})~%"
+			      (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max))))) ; ref-big-int: (10000 6384 10000 0 0 1)
+
+  ;(ref-big-int)
+  )
+
+
 
 (define (all-cases)
   (ref-int)
@@ -460,6 +475,8 @@
   (ref-hash1)
   (ref-c-pointer)
   (ref-iterator)
+  (when (provided? 'gmp)
+    (ref-big-int))
   )
 
 (all-cases)
@@ -479,4 +496,7 @@
   527,384,789  s7.c:fx_random_i [/home/bil/motif-snd/repl]
   518,675,415  s7.c:iv_meq [/home/bil/motif-snd/repl]
   424,339,542  s7.c:fx_hash_table_ref_ss [/home/bil/motif-snd/repl]
+
+all-cases 6 secs
+22.0: 532 secs
 |#

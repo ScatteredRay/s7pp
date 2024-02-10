@@ -2099,6 +2099,7 @@ static void init_types(void)
 #define is_simple_sequence(P)          (t_sequence_p[type(P)])
 #define is_sequence(P)                 ((t_sequence_p[type(P)]) || (has_methods(P)))
 #define is_mutable_sequence(P)         (((t_sequence_p[type(P)]) || (has_methods(P))) && (!is_immutable(P)))
+#define is_sequence_or_iterator(P)     ((t_sequence_p[type(P)]) || (is_iterator(P)))
 #define is_mappable(P)                 (t_mappable_p[type(P)])
 #define is_applicable(P)               (t_applicable_p[type(P)])
 /* this misses #() which is not applicable to anything, and "", and inapplicable c-objects like random-state */
@@ -44246,18 +44247,18 @@ static s7_int hash_map_hash_table(s7_scheme *sc, s7_pointer table, s7_pointer ke
     for (hash_entry_t *x = els[i]; x; x = hash_entry_next(x))
       {
 	if (len == 1)
-	  return(((is_sequence(hash_entry_key(x))) ? 0 : hash_loc(sc, key, hash_entry_key(x))) +
-		 ((is_sequence(hash_entry_value(x))) ? 0 : hash_loc(sc, key, hash_entry_value(x))));
+	  return(((is_sequence_or_iterator(hash_entry_key(x))) ? 0 : hash_loc(sc, key, hash_entry_key(x))) +
+		 ((is_sequence_or_iterator(hash_entry_value(x))) ? 0 : hash_loc(sc, key, hash_entry_value(x))));
 	if (!key1)
 	  {
 	    key1 = hash_entry_key(x);
 	    val1 = hash_entry_value(x);
 	  }
 	else
-	  return(((is_sequence(key1)) ? 0 : hash_loc(sc, key, key1)) +
-		 ((is_sequence(val1)) ? 0 : hash_loc(sc, key, val1)) +
-		 ((is_sequence(hash_entry_key(x))) ? 0 : hash_loc(sc, key, hash_entry_key(x))) +
-		 ((is_sequence(hash_entry_value(x))) ? 0 : hash_loc(sc, key, hash_entry_value(x))));
+	  return(((is_sequence_or_iterator(key1)) ? 0 : hash_loc(sc, key, key1)) +
+		 ((is_sequence_or_iterator(val1)) ? 0 : hash_loc(sc, key, val1)) +
+		 ((is_sequence_or_iterator(hash_entry_key(x))) ? 0 : hash_loc(sc, key, hash_entry_key(x))) +
+		 ((is_sequence_or_iterator(hash_entry_value(x))) ? 0 : hash_loc(sc, key, hash_entry_value(x))));
       }}
   return(0); /* placate the compiler */
 }
@@ -44292,10 +44293,10 @@ static s7_int hash_map_float_vector(s7_scheme *sc, s7_pointer table, s7_pointer 
 static s7_int hash_map_vector(s7_scheme *sc, s7_pointer table, s7_pointer key)
 {
   if ((vector_length(key) == 0) ||
-      (is_sequence(vector_element(key, 0))))
+      (is_sequence_or_iterator(vector_element(key, 0))))
     return(vector_length(key));
   if ((vector_length(key) == 1) ||
-      (is_sequence(vector_element(key, 1))))
+      (is_sequence_or_iterator(vector_element(key, 1))))
     return(hash_loc(sc, table, vector_element(key, 0)));
   return(vector_length(key) + hash_loc(sc, table, vector_element(key, 0)) + hash_loc(sc, table, vector_element(key, 1))); /* see above */
 }
@@ -44309,7 +44310,7 @@ static s7_int hash_map_closure(s7_scheme *sc, s7_pointer table, s7_pointer key)
 	     set_elist_1(sc, wrap_string(sc, "hash-table map function called recursively", 42)));
   /* check_stack_size(sc); -- perhaps clear typers as well here or save/restore hash-table-procedures */
   gc_protect_via_stack(sc, f);
-  hash_table_set_procedures_mapper(table, sc->unused); /* TODO: why unused here? maybe a dummy procedure? */
+  hash_table_set_procedures_mapper(table, sc->unused); /* why unused here? maybe a dummy procedure? */
   sc->value = s7_call(sc, f, set_plist_1(sc, key));
   unstack_gc_protect(sc);
   hash_table_set_procedures_mapper(table, f);
@@ -44338,11 +44339,11 @@ static s7_int hash_map_let(s7_scheme *sc, s7_pointer table, s7_pointer key)
     clear_match_symbol(slot_symbol(slot));
 
   if (slots == 1)
-    return(pointer_map(slot_symbol(slot1)) + ((is_sequence(slot_value(slot1))) ? 0 : hash_loc(sc, table, slot_value(slot1))));
+    return(pointer_map(slot_symbol(slot1)) + ((is_sequence_or_iterator(slot_value(slot1))) ? 0 : hash_loc(sc, table, slot_value(slot1))));
 
   if (slots == 2)
-    return(pointer_map(slot_symbol(slot1)) + ((is_sequence(slot_value(slot1))) ? 0 : hash_loc(sc, table, slot_value(slot1))) +
-	   pointer_map(slot_symbol(slot2)) + ((is_sequence(slot_value(slot2))) ? 0 : hash_loc(sc, table, slot_value(slot2))));
+    return(pointer_map(slot_symbol(slot1)) + ((is_sequence_or_iterator(slot_value(slot1))) ? 0 : hash_loc(sc, table, slot_value(slot1))) +
+	   pointer_map(slot_symbol(slot2)) + ((is_sequence_or_iterator(slot_value(slot2))) ? 0 : hash_loc(sc, table, slot_value(slot2))));
   return(slots);
 }
 
@@ -44469,6 +44470,7 @@ static s7_int hash_map_c_pointer(s7_scheme *sc, s7_pointer table, s7_pointer key
 
 static s7_int hash_map_iterator(s7_scheme *sc, s7_pointer table, s7_pointer key)
 {
+  /* cycles can happen here if the iterator_sequence contains the iterator and hash_loc checks that element */
   return(type(iterator_sequence(key)) + hash_loc(sc, table, iterator_sequence(key)));
 }
 
@@ -44512,23 +44514,23 @@ static s7_int hash_map_pair(s7_scheme *sc, s7_pointer table, s7_pointer key)
   s7_pointer p1 = cdr(key);
   s7_int loc = 0;
 
-  if (!is_sequence(car(key)))
+  if (!is_sequence_or_iterator(car(key)))
     loc = hash_loc(sc, table, car(key)) + 1;
   else
     if ((is_pair(car(key))) &&
-	(!is_sequence(caar(key))))
+	(!is_sequence_or_iterator(caar(key))))
       loc = hash_loc(sc, table, caar(key)) + 1;
   if (is_pair(p1))
     {
-      if (!is_sequence(car(p1)))
+      if (!is_sequence_or_iterator(car(p1)))
 	loc += hash_loc(sc, table, car(p1)) + 1;
       else
 	if ((is_pair(car(p1))) &&
-	    (!is_sequence(caar(p1))))
+	    (!is_sequence_or_iterator(caar(p1))))
 	  loc += hash_loc(sc, table, caar(p1)) + 1;
     }
   else
-    if (!is_sequence(p1)) /* include () */
+    if (!is_sequence_or_iterator(p1)) /* include () */
       loc += hash_loc(sc, table, p1);
   return((loc << 3) + len_upto_100(key));
 }
@@ -64865,7 +64867,7 @@ static bool p_implicit_ok(s7_scheme *sc, s7_pointer s_slot, s7_pointer car_x, in
   opt_info *opc;
   int32_t start;
 
-  if ((!is_sequence(obj)) || (len < 2))
+  if ((!is_simple_sequence(obj)) || (len < 2)) /* was is_sequence? */
     return_false(sc, car_x);
 
   opc = alloc_opt_info(sc);
@@ -73910,13 +73912,13 @@ static body_t form_is_safe(s7_scheme *sc, s7_pointer func, s7_pointer x, bool at
 	    }
 	  else c_safe = false;
 
-	  result = ((is_sequence(f)) ||
+	  result = ((is_simple_sequence(f)) || /* was is_sequence? */
 		    ((is_closure(f)) && (is_very_safe_closure(f))) ||
 		    ((c_safe) && ((is_immutable_slot(f_slot)) || (is_global(expr))))) ? VERY_SAFE_BODY : SAFE_BODY;
 
 	  if ((c_safe) ||
 	      ((is_any_closure(f)) && (is_safe_closure(f))) ||
-	      (is_sequence(f)))
+	      (is_simple_sequence(f)))  /* was is_sequence? */
 	    {
 	      bool follow = false;
 	      s7_pointer sp = x, p = cdr(x);
@@ -97808,7 +97810,7 @@ int main(int argc, char **argv)
  * tlamb                                        7941   7941   7941
  * tgc              11.9   11.1   8177   7857   7986   8005   8005
  * tmisc                                 8488   7862   8041   8041
- * tmap-hash                                                  9073 [~/test/timings will take forever]
+ * tmap-hash                    ~800.0                        9073
  * thash            11.8   11.7   9734   9479   9526   9542   9542
  * cb        12.9   11.2   11.0   9658   9564   9609   9635   9635
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3   12.3
@@ -97827,5 +97829,4 @@ int main(int argc, char **argv)
  * more string_uncopied, read-line-uncopied (etc), generics uncopied?
  * clear_all_opts infinite loop, also in pair_to_port
  * maps: hash|let with more than 2 entries, strings like w1234, resize sometimes is pointless, undefined? c-object? closures? ports?
- *   haven't timed big* (hash_map_big_int etc) or equivalent_float business with big float/complex
  */
