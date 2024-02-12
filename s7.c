@@ -43807,7 +43807,7 @@ static s7_int hash_map_ratio(s7_scheme *sc, s7_pointer table, s7_pointer key)
    *    floor ratio is 1: (- (* 2 1720656898084610641) 3441313796169221281) -> 1
    *    or (gmp:) 1.999999999999999999418826611445214136431E0, so the floorl(fabsl) version is wrong
    */
-  return(s7_int_abs(numerator(key) / denominator(key))); /* needs to be compatible with default-hash-table-float-epsilon */
+  return(s7_int_abs(numerator(key) / denominator(key))); /* needs to be compatible with default-hash-table-float-epsilon which is unfortunate */
 }
 
 static s7_int hash_float_location(s7_double x)
@@ -44152,13 +44152,6 @@ static hash_entry_t *hash_string(s7_scheme *sc, s7_pointer table, s7_pointer key
 	      (strings_are_equal_with_length(key_str, string_value(hash_entry_key(x)), key_len)))
 	    return(x);
     }
-  /* lower: & stats:0|1|2|n|max (12933 1422 634 1395 21)
-   * upper: & stats:0|1|2|n|max (9179 5027 1680 498 7)
-   * nnnn:  & stats:0|1|2|n|max (16374 1 0 9 1111)
-   * root:  & stats:0|1|2|n|max (15990 285 59 50 20)
-   * st:    & stats:0|1|2|n|max (30549 2095 93 12 5)
-   * refrt: & stats:0|1|2|n|max (786 112 48 78 25)
-   */
   return(sc->unentry);
 }
 
@@ -44466,6 +44459,12 @@ static s7_int hash_map_c_function(s7_scheme *sc, s7_pointer table, s7_pointer ke
 static s7_int hash_map_c_pointer(s7_scheme *sc, s7_pointer table, s7_pointer key)
 {
   return(pointer_map(c_pointer(key)));
+}
+
+static s7_int hash_map_undefined(s7_scheme *sc, s7_pointer table, s7_pointer key)
+{
+  return(raw_string_hash((const uint8_t *)(undefined_name(key) + 1), undefined_name_length(key) - 1) + undefined_name_length(key));
+  /* undefined_name always starts with "#", so we omit it above */
 }
 
 static s7_int hash_map_iterator(s7_scheme *sc, s7_pointer table, s7_pointer key)
@@ -44974,7 +44973,10 @@ static void init_hash_maps(void)
   default_hash_map[T_LET] =           hash_map_let;
   default_hash_map[T_PAIR] =          hash_map_pair;
   default_hash_map[T_C_POINTER] =     hash_map_c_pointer;
+  default_hash_map[T_UNDEFINED] =     hash_map_undefined;
   default_hash_map[T_ITERATOR] =      hash_map_iterator;
+  for (int32_t i = T_OUTPUT_PORT; i < NUM_TYPES; i++)
+    default_hash_map[i] = hash_map_eq;
 
   default_hash_map[T_INTEGER] =       hash_map_int;
   default_hash_map[T_RATIO] =         hash_map_ratio;
@@ -44995,7 +44997,8 @@ static void init_hash_maps(void)
   char_ci_eq_hash_map[T_CHARACTER] =  hash_map_ci_char;
 #endif
 
-  for (int32_t i = 0; i < NUM_TYPES; i++) equivalent_hash_map[i] = default_hash_map[i];
+  for (int32_t i = 0; i < NUM_TYPES; i++) 
+    equivalent_hash_map[i] = default_hash_map[i];
 
   equal_hash_checks[T_SYNTAX] =       hash_equal_syntax;
   equal_hash_checks[T_SYMBOL] =       hash_equal_eq;
@@ -96136,6 +96139,17 @@ then returns each var to its original value."
   sc->write_keyword =               s7_make_keyword(sc, "write");
 }
 
+#if 0
+static s7_pointer add_initial_slot(s7_scheme *sc, s7_pointer symbol, s7_pointer value)
+{
+  if ((S7_DEBUGGING) && (is_slot(initial_slot(symbol)))) fprintf(stderr, "%s: %s already has an initial_slot\n", __func__, display(symbol));
+  set_initial_slot(symbol, make_semipermanent_slot(sc, symbol, value));
+  slot_set_next(initial_slot(symbol), sc->unlet_slots);
+  sc->unlet_slots = initial_slot(symbol);
+  return(value);
+}
+#endif
+
 static void init_rootlet(s7_scheme *sc)
 {
   /* most of init_rootlet (the built-in  functions for example), could be shared by all s7 instances.
@@ -97385,6 +97399,19 @@ s7_scheme *s7_init(void)
    *   Otherwise, the cond-expand has no effect."  The code above returns #<unspecified>, but I read that prose to say that
    *   (begin 23 (cond-expand (surreals 1) (foonly 2))) should evaluate to 23.
    */
+#if 0
+  {
+    s7_pointer sym;
+    sym = make_symbol(sc, "make-polar", 10);          add_initial_slot(sc, sym, global_value(sym));
+    sym = make_symbol(sc, "call-with-values", 16);    add_initial_slot(sc, sym, global_value(sym));
+    sym = make_symbol(sc, "make-hook", 9);            add_initial_slot(sc, sym, global_value(sym));
+    sym = make_symbol(sc, "hook-functions", 14);      add_initial_slot(sc, sym, global_value(sym));
+    sym = make_symbol(sc, "multiple-value-bind", 19); add_initial_slot(sc, sym, global_value(sym));
+    sym = make_symbol(sc, "cond-expand", 11);         add_initial_slot(sc, sym, global_value(sym));
+    sym = make_symbol(sc, "reader-cond", 11);         add_initial_slot(sc, sym, global_value(sym));
+    sym = make_symbol(sc, "*s7*", 4);                 add_initial_slot(sc, sym, global_value(sym));
+  }
+#endif
 #endif
 
 #if S7_DEBUGGING
@@ -97778,7 +97805,7 @@ int main(int argc, char **argv)
  * s7test           1873   1831   1818   1829   1830   1855   1855
  * lt        2222   2187   2172   2150   2185   1950   1950   1950
  * thook     7651                 2590   2030   2046   2046   2046
- * dup              3805   3788   2492   2239   2097   2042   2042
+ * dup              3805   3788   2492   2239   2097   2042   2064
  * tcopy            8035   5546   2539   2375   2386   2386   2386
  * tread            2440   2421   2419   2408   2405   2402   2402
  * trclo     8031   2735   2574   2454   2445   2449   2470   2470
@@ -97810,10 +97837,10 @@ int main(int argc, char **argv)
  * tlamb                                        7941   7941   7941
  * tgc              11.9   11.1   8177   7857   7986   8005   8005
  * tmisc                                 8488   7862   8041   8041
- * tmap-hash                    ~800.0                        9073
- * thash            11.8   11.7   9734   9479   9526   9542   9542
+ * thash            11.8   11.7   9734   9479   9526   9542   9334
  * cb        12.9   11.2   11.0   9658   9564   9609   9635   9635
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3   12.3
+ * tmap-hash                                                  14.1
  * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1   15.1
  * calls            36.7   37.5   37.0   37.5   37.1   37.0   37.0
  * sg                             55.9   55.8   55.4   55.2   55.2
@@ -97824,9 +97851,7 @@ int main(int argc, char **argv)
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * do bodies use cell_optimize which is not optimal
- *   set_pending_value wrapped (big, rclo)
- * wrapped form of FFI funcs? reals/ints? let wrappers seem doable [in safe-do etc]
  * more string_uncopied, read-line-uncopied (etc), generics uncopied?
  * clear_all_opts infinite loop, also in pair_to_port
- * maps: hash|let with more than 2 entries, strings like w1234, resize sometimes is pointless, undefined? c-object? closures? ports?
+ * why does #_call-with-values in s7test (32459) cause a problem with global-var (97449)?
  */

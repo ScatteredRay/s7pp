@@ -36,7 +36,7 @@
 ;(ref-int)
 
 
-(define (ref-rat) ; [4821, 4546 hash_equal_ratio] this is a worst case -- 0..1 mostly
+(define (ref-rat) ; [4821, 4546 hash_equal_ratio] this is a worst case -- 0..1 mostly and default-hash-table-float-epsilon constrains our options
   (let ((H (make-hash-table 1024)))
     (let ((rats (let ((V (make-vector 10000)))
 		  (do ((i 0 (+ i 1)))
@@ -433,6 +433,52 @@
 ;(ref-iterator)
 
 
+(define (ref-undefined) ; [25262, 9641 undefined_equal, 9393 strcmp, 5065 hash_equal_any (3 hash_map_undefined)]
+                        ; [ 2040, 1666 hash_equal_any, 76 eval (18 hash_map_undefined]
+                        ; [  450, 76 eval, 71 hash_equal_any (24 hash_map_undefined]
+  (let ((H (make-hash-table 1024))
+	(strings (let ((strs (make-strings chars-lower))
+		       (V (make-vector 10000)))
+		   (do ((i 0 (+ i 1)))
+		       ((= i 10000) V)
+		     (vector-set! V i (eval-string (string-append "#a" (vector-ref strs i)))))))) ;slightly faster than with-input-from-string + read
+    (do ((i 0 (+ i 1))
+	 (str (vector-ref strings (random 10000)) (vector-ref strings (random 10000))))
+	((= i ok))
+      (unless (hash-table-ref H str)
+	(hash-table-set! H str str)))
+    (when debugging (format *stderr* "ref-undefined: (~A ~{~A~^ ~})~%"
+			    (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max))))) ; ref-undefined: (10000 16372 0 0 12 862): (9999 15542 3 5 834 2443)
+
+;(ref-undefined)
+
+
+(define (ref-c-func) ; [2004, 1271 hash_equal_any, 411 eq_equal, 73 eval]
+                     ; [340]
+  (let* ((st (symbol-table))
+	 (len (length st)))
+    (let ((H (make-hash-table 1024))
+	  (fncs (let ((V (make-vector len #f))
+		      (i 0))
+		  (for-each (lambda (sym)
+			      (let ((f (symbol->value sym)))
+				(when (procedure? f)
+				  (vector-set! V i f)
+				  (set! i (+ i 1)))))
+			    st)
+		  (set! len i)
+		  V)))
+      (do ((i 0 (+ i 1))
+	   (f (vector-ref fncs (random len)) (vector-ref fncs (random len))))
+	  ((= i ok))
+	(unless (hash-table-ref H f)
+	  (hash-table-set! H f 1)))
+      (when debugging (format *stderr* "ref-c-func: (~A ~{~A~^ ~})~%"
+			      (hash-table-entries H) ((object->let H) 'stats:0|1|2|n|max)))))) ; ref-c-func: (442 632 342 50 0 2)
+
+;(ref-c-func)
+
+
 (when (provided? 'gmp)
   (define (ref-big-int) ; [1170]
     (let ((H (make-hash-table 1024)))
@@ -475,6 +521,8 @@
   (ref-hash1)
   (ref-c-pointer)
   (ref-iterator)
+  (ref-undefined)
+  (ref-c-func)
   (when (provided? 'gmp)
     (ref-big-int))
   )
@@ -482,20 +530,6 @@
 (all-cases)
 
 #|
-18625:
-2,733,749,040  s7.c:vector_equal [/home/bil/motif-snd/repl]
-1,985,768,871  s7.c:hash_equal_any [/home/bil/motif-snd/repl]
-1,444,374,330  s7.c:float_vector_equal [/home/bil/motif-snd/repl]
-1,433,612,508  s7.c:byte_vector_equal [/home/bil/motif-snd/repl]
-1,224,304,767  s7.c:vector_rank_match.constprop.0.isra.0 [/home/bil/motif-snd/repl]
-  956,127,291  s7.c:eval.isra.0 [/home/bil/motif-snd/repl]
-  951,562,108  s7.c:int_vector_equal [/home/bil/motif-snd/repl]
-  795,950,881  s7.c:let_equal_1 [/home/bil/motif-snd/repl]
-  664,521,059  s7.c:fx_num_eq_us [/home/bil/motif-snd/repl]
-  587,077,941  s7.c:hash_ci_string [/home/bil/motif-snd/repl]
-  527,384,789  s7.c:fx_random_i [/home/bil/motif-snd/repl]
-  518,675,415  s7.c:iv_meq [/home/bil/motif-snd/repl]
-  424,339,542  s7.c:fx_hash_table_ref_ss [/home/bil/motif-snd/repl]
 
 all-cases 6 secs
 22.0: 532 secs
