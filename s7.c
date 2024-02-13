@@ -44442,6 +44442,9 @@ static hash_entry_t *hash_equal_any(s7_scheme *sc, s7_pointer table, s7_pointer 
   s7_int hash = hash_loc(sc, table, key);
   s7_int loc = hash & hash_table_mask(table);
   for (hash_entry_t *x = hash_table_element(table, loc); x; x = hash_entry_next(x))
+    if (key == hash_entry_key(x)) /* avoid the equal funcs if possible -- this saves in both hash timing tests */
+      return(x);
+  for (hash_entry_t *x = hash_table_element(table, loc); x; x = hash_entry_next(x))
     if ((hash_entry_raw_hash(x) == hash) &&
 	(equal(sc, key, hash_entry_key(x), NULL)))
       return(x);
@@ -96139,7 +96142,6 @@ then returns each var to its original value."
   sc->write_keyword =               s7_make_keyword(sc, "write");
 }
 
-#if 0
 static s7_pointer add_initial_slot(s7_scheme *sc, s7_pointer symbol, s7_pointer value)
 {
   if ((S7_DEBUGGING) && (is_slot(initial_slot(symbol)))) fprintf(stderr, "%s: %s already has an initial_slot\n", __func__, display(symbol));
@@ -96148,7 +96150,6 @@ static s7_pointer add_initial_slot(s7_scheme *sc, s7_pointer symbol, s7_pointer 
   sc->unlet_slots = initial_slot(symbol);
   return(value);
 }
-#endif
 
 static void init_rootlet(s7_scheme *sc)
 {
@@ -97399,7 +97400,7 @@ s7_scheme *s7_init(void)
    *   Otherwise, the cond-expand has no effect."  The code above returns #<unspecified>, but I read that prose to say that
    *   (begin 23 (cond-expand (surreals 1) (foonly 2))) should evaluate to 23.
    */
-#if 0
+
   {
     s7_pointer sym;
     sym = make_symbol(sc, "make-polar", 10);          add_initial_slot(sc, sym, global_value(sym));
@@ -97411,7 +97412,6 @@ s7_scheme *s7_init(void)
     sym = make_symbol(sc, "reader-cond", 11);         add_initial_slot(sc, sym, global_value(sym));
     sym = make_symbol(sc, "*s7*", 4);                 add_initial_slot(sc, sym, global_value(sym));
   }
-#endif
 #endif
 
 #if S7_DEBUGGING
@@ -97840,7 +97840,7 @@ int main(int argc, char **argv)
  * thash            11.8   11.7   9734   9479   9526   9542   9334
  * cb        12.9   11.2   11.0   9658   9564   9609   9635   9635
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3   12.3
- * tmap-hash                                                  14.1
+ * tmap-hash                                                  14.1  10.3
  * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1   15.1
  * calls            36.7   37.5   37.0   37.5   37.1   37.0   37.0
  * sg                             55.9   55.8   55.4   55.2   55.2
@@ -97853,5 +97853,4 @@ int main(int argc, char **argv)
  * do bodies use cell_optimize which is not optimal
  * more string_uncopied, read-line-uncopied (etc), generics uncopied?
  * clear_all_opts infinite loop, also in pair_to_port
- * why does #_call-with-values in s7test (32459) cause a problem with global-var (97449)?
  */

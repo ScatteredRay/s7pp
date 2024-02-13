@@ -531,6 +531,6 @@
 
 #|
 
-all-cases 6 secs
-22.0: 532 secs
+all-cases 4.1 secs
+22.0: 606
 |#
