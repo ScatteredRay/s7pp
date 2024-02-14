@@ -70136,6 +70136,7 @@ static void init_choosers(s7_scheme *sc)
   set_function_chooser(sc->string_copy_symbol, string_copy_chooser);
   set_function_chooser(sc->eval_string_symbol, string_substring_chooser);
   set_function_chooser(sc->symbol_symbol, string_substring_chooser);
+  set_function_chooser(sc->string_to_byte_vector_symbol, string_substring_chooser);
   /* if the function assumes a null-terminated string, substring needs to return a copy (which assume this?) */
 #if (!WITH_PURE_S7)
   set_function_chooser(sc->string_length_symbol, string_substring_chooser);
@@ -70150,9 +70151,8 @@ static void init_choosers(s7_scheme *sc)
   set_function_chooser(sc->file_exists_symbol, string_substring_chooser);
 #endif
 
-  /* also: directory->list substring string->byte-vector with-input-from-file with-input-from-string
-   *   system load getenv file-mtime gensym with-output-to-file open-output-file directory? open-input-file
-   *   call-with-output-file delete-file call-with-input-file call-with-input-string open-input-string
+  /* also: directory->list substring with-input-from-file with-input-from-string with-output-to-file open-output-file open-input-file
+   *   system load getenv file-mtime gensym directory? call-with-output-file delete-file call-with-input-file call-with-input-string open-input-string
    */
 
   /* symbol->string */
@@ -97839,8 +97839,8 @@ int main(int argc, char **argv)
  * tmisc                                 8488   7862   8041   8041
  * thash            11.8   11.7   9734   9479   9526   9542   9334
  * cb        12.9   11.2   11.0   9658   9564   9609   9635   9635
+ * tmap-hash                                                  10.3
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3   12.3
- * tmap-hash                                                  14.1  10.3
  * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1   15.1
  * calls            36.7   37.5   37.0   37.5   37.1   37.0   37.0
  * sg                             55.9   55.8   55.4   55.2   55.2
@@ -97850,7 +97850,5 @@ int main(int argc, char **argv)
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
- * do bodies use cell_optimize which is not optimal
- * more string_uncopied, read-line-uncopied (etc), generics uncopied?
- * clear_all_opts infinite loop, also in pair_to_port
+ * clear_all_opts infinite loop, also in pair_to_port (from '#1=(#1# . #1) but need more context (t678))
  */
