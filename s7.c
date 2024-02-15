@@ -10983,7 +10983,7 @@ static s7_pointer make_macro(s7_scheme *sc, opcode_t op, bool named)
 {
   s7_pointer mac, body, mac_name = NULL;
   uint64_t typ;
-  if (SHOW_EVAL_OPS) fprintf(stderr, "%s[%d]: %s\n", __func__, __LINE__, display_80(sc->code));
+  if (SHOW_EVAL_OPS) fprintf(stderr, "  %s[%d]: %s\n", __func__, __LINE__, display_80(sc->code));
   switch (op)
     {
     case OP_DEFINE_MACRO:      case OP_MACRO:      typ = T_MACRO;      break;
@@ -12343,7 +12343,7 @@ static s7_pointer g_call_with_exit(s7_scheme *sc, s7_pointer args)   /* (call-wi
   #define Q_call_with_exit s7_make_signature(sc, 2, sc->values_symbol, sc->is_procedure_symbol)
 
   s7_pointer p = car(args), x;
-  if (is_any_closure(p))
+  if (is_any_closure(p)) /* lambda or lambda* */
     {
       x = make_goto(sc, ((is_pair(closure_args(p))) && (is_symbol(car(closure_args(p))))) ? car(closure_args(p)) : sc->F);
       push_stack(sc, OP_DEACTIVATE_GOTO, x, p); /* this means call-with-exit is not tail-recursive */
@@ -12356,6 +12356,9 @@ static s7_pointer g_call_with_exit(s7_scheme *sc, s7_pointer args)   /* (call-wi
   if (!s7_is_aritable(sc, p, 1))
     error_nr(sc, sc->wrong_type_arg_symbol,
 	     set_elist_2(sc, wrap_string(sc, "call-with-exit argument should be a function of one argument: ~S", 64), p));
+  if (is_continuation(p)) /* (call/cc call-with-exit) ! */
+    error_nr(sc, sc->wrong_type_arg_symbol,
+	     set_elist_2(sc, wrap_string(sc, "call-with-exit argument should be a normal function (not a continuation: ~S)", 76), p));
   x = make_goto(sc, sc->F);
   call_exit_active(x) = false;
   return((is_c_function(p)) ? c_function_call(p)(sc, set_plist_1(sc, x)) : s7_apply_function_star(sc, p, set_plist_1(sc, x)));
@@ -51968,7 +51971,7 @@ s7_pointer s7_call_with_catch(s7_scheme *sc, s7_pointer tag, s7_pointer body, s7
   if (sc->stack_end == sc->stack_start) /* no stack! */
     push_stack_direct(sc, OP_EVAL_DONE);
 
-  if (SHOW_EVAL_OPS) fprintf(stderr, "%s[%d]\n", __func__, __LINE__);
+  if (SHOW_EVAL_OPS) fprintf(stderr, "  %s[%d]\n", __func__, __LINE__);
   new_cell(sc, p, T_CATCH);
   catch_tag(p) = tag;
   catch_goto_loc(p) = stack_top(sc);
@@ -70874,9 +70877,10 @@ static opt_t optimize_c_function_one_arg(s7_scheme *sc, s7_pointer expr, s7_poin
   s7_pointer arg1 = cadr(expr);
   bool func_is_safe = is_safe_procedure(func);
   if (hop == 0) hop = hop_if_constant(sc, car(expr));
+  if (SHOW_EVAL_OPS) fprintf(stderr, "  %s[%d]: %s %d %d\n", __func__, __LINE__, display_80(expr), func_is_safe, pairs);
   if (pairs == 0)
     {
-      if (func_is_safe)                  /* safe c function */
+      if (func_is_safe)                /* safe c function */
 	{
 	  set_safe_optimize_op(expr, hop + ((symbols == 0) ? OP_SAFE_C_NC : OP_SAFE_C_S));
 	  choose_c_function(sc, expr, func, 1);
@@ -71201,7 +71205,7 @@ static opt_t optimize_func_one_arg(s7_scheme *sc, s7_pointer expr, s7_pointer fu
   arg1 = cadr(expr);
   /* need in_with_let -> search only rootlet not lookup */
   if ((symbols == 1) &&
-      (!arg_findable(sc, arg1, e)))
+      ((!arg_findable(sc, arg1, e)) || (sc->in_with_let))) /* (set! (with-let ...) ...) can involve an unbound variable otherwise bound */
     {
       /* wrap the bad arg in a check symbol lookup */
       if (s7_is_aritable(sc, func, 1))
@@ -72678,6 +72682,7 @@ static opt_t optimize_syntax(s7_scheme *sc, s7_pointer expr, s7_pointer func, in
   opcode_t op = syntax_opcode(func);
   s7_pointer body = cdr(expr), vars;
   bool body_export_ok = true;
+  if (SHOW_EVAL_OPS) fprintf(stderr, "  %s[%d]: %s\n", __func__, __LINE__, display_80(expr));
 
   sc->w = e;
   switch (op)
@@ -72889,12 +72894,18 @@ static opt_t optimize_syntax(s7_scheme *sc, s7_pointer expr, s7_pointer func, in
       if ((is_pair(cadr(expr))) &&
 	  (!is_checked(cadr(expr))))
 	{
+	  bool old_in_with_let = sc->in_with_let;
 	  set_checked(cadr(expr));
+	  if (caadr(expr) == sc->with_let_symbol) sc->in_with_let = true;
 	  for (s7_pointer lp = cdadr(expr); is_pair(lp); lp = cdr(lp))
 	    if ((is_pair(car(lp))) &&
 		(!is_checked(car(lp))) &&
 		(optimize_expression(sc, car(lp), hop, e, body_export_ok) == OPT_OOPS))
-	      return(OPT_OOPS);
+	      {
+		sc->in_with_let = old_in_with_let;
+		return(OPT_OOPS);
+	      }
+	  sc->in_with_let = old_in_with_let;
 	}
       if ((is_pair(caddr(expr))) &&
 	  (!is_checked(caddr(expr))) &&
@@ -75180,7 +75191,7 @@ static void mark_fx_treeable(s7_scheme *sc, s7_pointer body)
 static void optimize_lambda(s7_scheme *sc, bool unstarred_lambda, s7_pointer func, s7_pointer args, s7_pointer body)
 {                                                                 /* func is either sc->unused or a symbol */
   s7_int len = s7_list_length(sc, body);
-  if (SHOW_EVAL_OPS) fprintf(stderr, "%s[%d]: %s\n", __func__, __LINE__, display_80(body));
+  if (SHOW_EVAL_OPS) fprintf(stderr, "  %s[%d]: %s\n", __func__, __LINE__, display_80(body));
   if (len < 0)                /* (define (hi) 1 . 2) */
     error_nr(sc, sc->syntax_error_symbol,
 	     set_elist_3(sc, wrap_string(sc, "~A: function body messed up, ~A", 31),
@@ -78802,7 +78813,7 @@ static void op_finish_expansion(s7_scheme *sc)
   /* after the expander has finished, if a list was returned, we need to add some annotations.
    *   if the expander returned (values), the list-in-progress vanishes! (This mimics map and *#readers*).
    */
-  if (SHOW_EVAL_OPS) fprintf(stderr, "%s[%d]: op: %s, value: %s\n", __func__, __LINE__, op_names[stack_top_op(sc)], display_80(sc->value));
+  if (SHOW_EVAL_OPS) fprintf(stderr, "  %s[%d]: op: %s, value: %s\n", __func__, __LINE__, op_names[stack_top_op(sc)], display_80(sc->value));
   if (sc->value == sc->no_value)
     {
       if (stack_top_op(sc) != OP_LOAD_RETURN_IF_EOF) /* latter op if empty expansion at top-level */
@@ -89355,7 +89366,7 @@ static void op_c_aa(s7_scheme *sc)
 
 static inline void op_c_s(s7_scheme *sc)
 {
-  sc->args = list_1(sc, lookup(sc, cadr(sc->code)));
+  sc->args = list_1(sc, lookup_checked(sc, cadr(sc->code)));
   sc->value = fn_proc(sc->code)(sc, sc->args);
 }
 
@@ -90659,7 +90670,7 @@ static bool op_unknown(s7_scheme *sc)
   s7_pointer code = sc->code, f = sc->last_function;
   if (!f) /* can be NULL if unbound variable */
     unbound_variable_error_nr(sc, car(sc->code));
-  if (SHOW_EVAL_OPS) fprintf(stderr, "%s %s %s\n", __func__, display_80(f), s7_type_names[type(f)]);
+  if (SHOW_EVAL_OPS) fprintf(stderr, "  %s %s %s\n", __func__, display_80(f), s7_type_names[type(f)]);
 
   switch (type(f))
     {
@@ -90797,7 +90808,7 @@ static bool op_unknown_s(s7_scheme *sc)
   s7_pointer code = sc->code, f = sc->last_function;
 
   if (!f) unbound_variable_error_nr(sc, car(sc->code));
-  if (SHOW_EVAL_OPS) fprintf(stderr, "%s %s\n", __func__, display_80(f));
+  if (SHOW_EVAL_OPS) fprintf(stderr, "  %s %s\n", __func__, display_80(f));
 
   if ((S7_DEBUGGING) && (!is_normal_symbol(cadr(code)))) fprintf(stderr, "%s[%d]: not a symbol: %s\n", __func__, __LINE__, display(code));
   if ((!is_any_macro(f)) &&   /* if f is a macro, its argument can be unbound legitimately */
@@ -90888,7 +90899,7 @@ static bool op_unknown_a(s7_scheme *sc)
 {
   s7_pointer code = sc->code, f = sc->last_function;
   if (!f) unbound_variable_error_nr(sc, car(sc->code));
-  if (SHOW_EVAL_OPS) fprintf(stderr, "%s %s\n", __func__, display_80(f));
+  if (SHOW_EVAL_OPS) fprintf(stderr, "  %s %s\n", __func__, display_80(f));
 
   switch (type(f))
     {
@@ -90967,7 +90978,7 @@ static bool op_unknown_gg(s7_scheme *sc)
   bool s1, s2;
   s7_pointer code = sc->code, f = sc->last_function;
   if (!f) unbound_variable_error_nr(sc, car(sc->code));
-  if (SHOW_EVAL_OPS) fprintf(stderr, "%s %s\n", __func__, display_80(f));
+  if (SHOW_EVAL_OPS) fprintf(stderr, "  %s %s\n", __func__, display_80(f));
 
   s1 = is_normal_symbol(cadr(code));
   s2 = is_normal_symbol(caddr(code));
@@ -91104,7 +91115,7 @@ static bool op_unknown_ns(s7_scheme *sc)
   int32_t num_args = opt3_arglen(cdr(code));
 
   if (!f) unbound_variable_error_nr(sc, car(sc->code));
-  if (SHOW_EVAL_OPS) fprintf(stderr, "%s %s\n", __func__, display_80(f));
+  if (SHOW_EVAL_OPS) fprintf(stderr, "  %s %s\n", __func__, display_80(f));
 
   for (s7_pointer arg = cdr(code); is_pair(arg); arg = cdr(arg))
     if (!is_slot(s7_slot(sc, car(arg))))
@@ -91176,7 +91187,7 @@ static bool op_unknown_aa(s7_scheme *sc)
   s7_pointer code = sc->code, f = sc->last_function;
 
   if (!f) unbound_variable_error_nr(sc, car(sc->code));
-  if (SHOW_EVAL_OPS) fprintf(stderr, "%s %s\n", __func__, display_80(f));
+  if (SHOW_EVAL_OPS) fprintf(stderr, "  %s %s\n", __func__, display_80(f));
 
   switch (type(f))
     {
@@ -91264,7 +91275,7 @@ static bool op_unknown_na(s7_scheme *sc)
   int32_t num_args = (is_pair(cdr(code))) ? opt3_arglen(cdr(code)) : 0;
 
   if (!f) unbound_variable_error_nr(sc, car(sc->code));
-  if (SHOW_EVAL_OPS) fprintf(stderr, "%s[%d]: %s %s\n", __func__, __LINE__, display_80(f), display_80(sc->code));
+  if (SHOW_EVAL_OPS) fprintf(stderr, "  %s[%d]: %s %s\n", __func__, __LINE__, display_80(f), display_80(sc->code));
   if (num_args == 0) return(fixup_unknown_op(sc, code, f, OP_S));  /* via op_closure*-fx where original had 0 args, safe case -> op_safe_closure*_0 */
 
   switch (type(f))
@@ -91382,7 +91393,7 @@ static bool op_unknown_np(s7_scheme *sc)
   int32_t num_args = (is_pair(cdr(code))) ? opt3_arglen(cdr(code)) : 0;
 
   if (!f) unbound_variable_error_nr(sc, car(sc->code));
-  if (SHOW_EVAL_OPS) fprintf(stderr, "%s[%d]: %s %s %s\n", __func__, __LINE__, display_80(f), type_name(sc, f, NO_ARTICLE), display_80(sc->code));
+  if (SHOW_EVAL_OPS) fprintf(stderr, "  %s[%d]: %s %s %s\n", __func__, __LINE__, display_80(f), type_name(sc, f, NO_ARTICLE), display_80(sc->code));
 
   switch (type(f))
     {
@@ -97421,7 +97432,6 @@ s7_scheme *s7_init(void)
   if (NUM_OPS != 933) fprintf(stderr, "size: cell: %d, block: %d, max op: %d, opt: %d\n", (int)sizeof(s7_cell), (int)sizeof(block_t), NUM_OPS, (int)sizeof(opt_info));
   /* cell size: 48, 120 if debugging, block size: 40, opt: 128 or 280 */
 #endif
-
   return(sc);
 }
 
@@ -97850,5 +97860,6 @@ int main(int argc, char **argv)
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
- * clear_all_opts infinite loop, also in pair_to_port (from '#1=(#1# . #1) but need more context (t678))
+ * clear_all_opts infinite loop, also in pair_to_port (from '#1=(#1# . #1) but need more context (t678)) [clear collected first]
+ * t718
  */
