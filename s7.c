@@ -6417,7 +6417,8 @@ bool s7_is_unspecified(s7_scheme *sc, s7_pointer val) {return(is_unspecified(val
 
 static s7_pointer g_is_undefined(s7_scheme *sc, s7_pointer args)
 {
-  #define H_is_undefined "(undefined? val) returns #t if val is #<undefined> or its reader equivalent"
+  #define H_is_undefined "(undefined? val) returns #t if val is #<undefined> or some other #... value that s7 does not recognize; (undefined? #asdf): #t.\
+This is not the same as (not (defined? val)) which refers to whether a symbol has a binding: (undefined? 'asdf): #f, but (not (defined? 'asdf)): #t"
   #define Q_is_undefined sc->pl_bt
   check_boolean_method(sc, is_undefined, sc->is_undefined_symbol, args);
 }
@@ -6437,7 +6438,7 @@ s7_pointer s7_eof_object(s7_scheme *sc) {return(eof_object);}
 
 static s7_pointer g_is_eof_object(s7_scheme *sc, s7_pointer args)
 {
-  #define H_is_eof_object "(eof-object? val) returns #t if val is the end-of-file object"
+  #define H_is_eof_object "(eof-object? val) returns #t if val is the end-of-file object, #<eof>.  It is the same as (eq? val #<eof>)"
   #define Q_is_eof_object sc->pl_bt
   check_boolean_method(sc, is_eof, sc->is_eof_object_symbol, args);
 }
@@ -6450,7 +6451,7 @@ static bool not_b_7p(s7_scheme *sc, s7_pointer p) {return(p == sc->F);}
 
 static s7_pointer g_not(s7_scheme *sc, s7_pointer args)
 {
-  #define H_not "(not obj) returns #t if obj is #f, otherwise #t: (not ()) -> #f"
+  #define H_not "(not obj) returns #t if obj is #f, otherwise #f: (not ()) -> #f"
   #define Q_not sc->pl_bt
   return((car(args) == sc->F) ? sc->T : sc->F);
 }
@@ -6502,7 +6503,7 @@ bool s7_is_immutable(s7_pointer p) {return(is_immutable(p));}
 
 static s7_pointer g_is_immutable(s7_scheme *sc, s7_pointer args)
 {
-  #define H_is_immutable "(immutable? obj (env (curlet))) returns #t if obj (or obj in env) is immutable"
+  #define H_is_immutable "(immutable? obj (env (curlet))) returns #t if obj (or obj in the environment env) is immutable"
   #define Q_is_immutable s7_make_signature(sc, 3, sc->is_boolean_symbol, sc->T, sc->is_let_symbol)
   s7_pointer p = car(args), slot;
   if (is_symbol(p))
@@ -6546,7 +6547,7 @@ s7_pointer s7_immutable(s7_pointer p)
 
 static s7_pointer g_immutable(s7_scheme *sc, s7_pointer args)
 {
-  #define H_immutable "(immutable! obj (env (curlet))) declares that the object obj (or obj in env) can't be changed. obj is returned."
+  #define H_immutable "(immutable! obj (env (curlet))) declares that the object obj (or obj in the environment env) can't be changed. obj is returned."
   #define Q_immutable s7_make_signature(sc, 3, sc->T, sc->T, sc->is_let_symbol)
   s7_pointer p = car(args), slot;
   if (is_symbol(p))
@@ -7633,7 +7634,6 @@ static int64_t gc(s7_scheme *sc)
   mark_vector(sc->protected_setters);
   set_mark(sc->protected_setter_symbols);
   if ((is_symbol(sc->profile_prefix)) && (is_gensym(sc->profile_prefix))) set_mark(sc->profile_prefix);
-  /* what about the integer_wrappers et al?  are they protected by the tmps below? or by being always in elist/plist? */
 
   /* protect recent allocations using the free_heap cells above the current free_heap_top (if any).
    * cells above sc->free_heap_top might be malloc'd garbage (after heap reallocation), so we keep track of
@@ -7886,7 +7886,7 @@ static void try_to_call_gc(s7_scheme *sc)
 
 static s7_pointer g_gc(s7_scheme *sc, s7_pointer args)
 {
-  #define H_gc "(gc (on #t)) runs the garbage collector.  If 'on' is supplied, it turns the GC on or off. \
+  #define H_gc "(gc (on #t)) runs the garbage collector.  If 'on' (a boolean) is supplied, it turns the GC on or off. \
 Evaluation produces a surprising amount of garbage, so don't leave the GC off for very long!"
   #define Q_gc s7_make_signature(sc, 2, sc->T, sc->is_boolean_symbol)
 
@@ -8633,7 +8633,7 @@ static inline s7_pointer make_simple_vector(s7_scheme *sc, s7_int len);
 
 static s7_pointer g_symbol_table(s7_scheme *sc, s7_pointer unused_args)
 {
-  #define H_symbol_table "(symbol-table) returns a vector containing the current symbol-table symbols"
+  #define H_symbol_table "(symbol-table) returns a vector containing the current contents (symbols) of s7's symbol-table"
   #define Q_symbol_table s7_make_signature(sc, 1, sc->is_vector_symbol)
 
   s7_pointer *els, *entries = vector_elements(sc->symbol_table);
@@ -9565,7 +9565,7 @@ s7_pointer s7_openlet(s7_scheme *sc, s7_pointer e)
 
 static s7_pointer g_openlet(s7_scheme *sc, s7_pointer args)
 {
-  #define H_openlet "(openlet e) tells the built-in generic functions that the let 'e might have an over-riding method."
+  #define H_openlet "(openlet e) tells the built-in functions that the let 'e might have an over-riding method."
   #define Q_openlet sc->pcl_e
 
   s7_pointer e = car(args), elet, func;
@@ -9700,7 +9700,7 @@ to the let target-let, and returns target-let.  (varlet (curlet) 'a 1) adds 'a t
                          sc->T)
 
   s7_pointer e = car(args);
-  if (is_null(e))
+  if (is_null(e)) /* PERHAPS: this is a leftover from the days when () -> rootlet -- remove? */
     e = sc->rootlet;
   else
     {
@@ -9778,7 +9778,7 @@ static s7_pointer g_cutlet(s7_scheme *sc, s7_pointer args)
   s7_pointer e = car(args);
   s7_int the_un_id;
   if (is_null(e))
-    e = sc->rootlet;
+    e = sc->rootlet; /* PERHAPS: this is a leftover from the days when () -> rootlet -- remove? */
   else
     {
       check_method(sc, e, sc->cutlet_symbol, args);
@@ -9849,7 +9849,7 @@ static s7_pointer g_cutlet(s7_scheme *sc, s7_pointer args)
 static s7_pointer sublet_1(s7_scheme *sc, s7_pointer e, s7_pointer bindings, s7_pointer caller)
 {
   s7_pointer new_e;
-  if (e == sc->nil) e = sc->rootlet; /* backwards compatibility */
+  if (e == sc->nil) e = sc->rootlet; /* PERHAPS: this is a leftover from the days when () -> rootlet -- remove? */
   new_e = make_let(sc, e);
   set_all_methods(new_e, e);
 
@@ -9920,12 +9920,12 @@ s7_pointer s7_sublet(s7_scheme *sc, s7_pointer e, s7_pointer bindings) {return(s
 
 static s7_pointer g_sublet(s7_scheme *sc, s7_pointer args)
 {
-  #define H_sublet "(sublet let ...) makes a new let within the environment 'let', initializing it with the bindings"
+  #define H_sublet "(sublet lt ...) makes a new let (environment) within the environment 'lt', initializing it with the bindings"
   #define Q_sublet Q_varlet
 
   s7_pointer e = car(args);
-  if (is_null(e))
-    e = sc->rootlet;
+  if (is_null(e))    /* is this a good idea anymore?  () no longer stands for rootlet elsewhere(?) */
+    e = sc->rootlet; /* PERHAPS: this is a leftover from the days when () -> rootlet -- remove? */
   else
     if (e != sc->rootlet)
       {
@@ -9962,8 +9962,8 @@ static s7_pointer sublet_chooser(s7_scheme *sc, s7_pointer f, int32_t num_args, 
 /* -------------------------------- inlet -------------------------------- */
 s7_pointer s7_inlet(s7_scheme *sc, s7_pointer args)
 {
-  #define H_inlet "(inlet ...) adds its arguments, each a let, a cons: '(symbol . value), or a keyword/value pair, \
-to a new let, and returns the new let. (inlet :a 1 :b 2) or (inlet '(a . 1) '(b . 2))"
+  #define H_inlet "(inlet ...) adds its arguments, each a let, a cons: '(symbol . value), or a symbol/value pair, \
+to a new let, and returns the new let. (inlet :a 1 :b 2) or (inlet 'a 1 'b 2)"
   #define Q_inlet s7_make_circular_signature(sc, 1, 2, sc->is_let_symbol, sc->T)
   return(sublet_1(sc, sc->rootlet, args, sc->inlet_symbol));
 }
@@ -10213,8 +10213,7 @@ static /* inline */ s7_pointer let_ref(s7_scheme *sc, s7_pointer let, s7_pointer
     }
 #if 0
   /* let-ref is currently immutable */
-  if (!is_global(sc->let_ref_symbol))
-    check_method(sc, let, sc->let_ref_symbol, set_plist_2(sc, let, symbol));
+  if (!is_global(sc->let_ref_symbol)) check_method(sc, let, sc->let_ref_symbol, set_plist_2(sc, let, symbol));
   /* a let-ref method is almost impossible to write without creating an infinite loop:
    *   any reference to the let will probably call let-ref somewhere, calling us again, and looping.
    *   This is not a problem in c-objects and funclets because c-object-ref and funclet-ref don't exist.
@@ -30816,7 +30815,7 @@ s7_pointer s7_load_with_environment(s7_scheme *sc, const char *filename, s7_poin
   declare_jump_info();
   TRACK(sc);
   if (e == sc->s7_starlet) return(NULL);
-  if (e == sc->nil) e = sc->rootlet;
+  if (e == sc->nil) e = sc->rootlet; /* PERHAPS: this is a leftover from the days when () -> rootlet -- remove? */
 
 #if WITH_C_LOADER
   port = load_shared_object(sc, filename, e);
@@ -30856,7 +30855,7 @@ s7_pointer s7_load_c_string_with_environment(s7_scheme *sc, const char *content,
   declare_jump_info();
   TRACK(sc);
 
-  if (e == sc->nil) e = sc->rootlet;
+  if (e == sc->nil) e = sc->rootlet; /* PERHAPS: this is a leftover from the days when () -> rootlet -- remove? */
   if (content[bytes] != 0)
     error_nr(sc, make_symbol(sc, "bad-data", 8), set_elist_1(sc, wrap_string(sc, "s7_load_c_string content is not terminated", 42)));
   port = open_input_string(sc, content, bytes);
@@ -94008,6 +94007,7 @@ static s7_pointer memory_usage(s7_scheme *sc)
   add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "cell-size", 9), make_integer(sc, sizeof(s7_cell)));
   add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "gc-total-freed", 14), make_integer(sc, sc->gc_total_freed));
   add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "gc-total-time", 13), make_real(sc, (double)(sc->gc_total_time) / ticks_per_second()));
+  add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "gc-calls", 8), make_integer(sc, sc->gc_calls));
 
   add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "small_ints", 10),
 			     cons(sc, make_integer(sc, NUM_SMALL_INTS), kmg(sc, NUM_SMALL_INTS * (sizeof(s7_pointer) + sizeof(s7_cell)))));
@@ -94188,7 +94188,7 @@ static s7_pointer memory_usage(s7_scheme *sc)
     sc->w = cons(sc, make_integer(sc, k), sc->w);
 #if S7_DEBUGGING
     num_blocks += k;
-    add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "blocks allocated", 16),
+    add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "blocks-allocated", 16),
 			       cons(sc, make_integer(sc, num_blocks), make_integer(sc, sc->blocks_allocated)));
 #endif
     add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "free-lists", 10),
@@ -97847,7 +97847,7 @@ int main(int argc, char **argv)
  * tlamb                                        7941   7941   7941
  * tgc              11.9   11.1   8177   7857   7986   8005   8005
  * tmisc                                 8488   7862   8041   8041
- * thash            11.8   11.7   9734   9479   9526   9542   9334
+ * thash            11.8   11.7   9734   9479   9526   9542   9325
  * cb        12.9   11.2   11.0   9658   9564   9609   9635   9635
  * tmap-hash                                                  10.3
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3   12.3
@@ -97861,5 +97861,4 @@ int main(int argc, char **argv)
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * clear_all_opts infinite loop, also in pair_to_port (from '#1=(#1# . #1) but need more context (t678)) [clear collected first]
- * t718
  */

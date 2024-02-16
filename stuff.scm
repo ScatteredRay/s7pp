@@ -1277,7 +1277,6 @@ Unlike full-find-if, safe-find-if can handle any circularity in the sequences.")
 |#
 ;; ideally this would simply vanish, and make no change in the run-time state, but (values) here returns #<unspecified>
 ;;   (let ((a 1) (b 2)) (list (set! a 3) (reflective-probe) b)) -> '(3 2) not '(3 #<unspecified> 2)
-;;   I was too timid when I started s7 and thought (then) that (abs -1 (values)) should be an error
 ;; perhaps if we want it to disappear:
 
 (define-bacro (reflective-probe . body)
