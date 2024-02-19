@@ -399,7 +399,7 @@
 		   (hash-table-set! h 'dynamic-wind (lambda (obj port col) (w-dynwind obj port col "dynamic-wind")))
 		   (hash-table-set! h 'call-with-values (lambda (obj port col) (w-dynwind obj port col "call-with-values")))
 		   (hash-table-set! h #_dynamic-wind (lambda (obj port col) (w-dynwind obj port col "#_dynamic-wind")))
-		   (hash-table-set! h #_call-with-values (lambda (obj port col) (w-dynwind obj port col "#_call-with-values")))
+		   ;(hash-table-set! h #_call-with-values (lambda (obj port col) (w-dynwind obj port col "#_call-with-values")))
 
 		   ;; -------- lambda etc
 		   (define (w-lambda obj port column str)

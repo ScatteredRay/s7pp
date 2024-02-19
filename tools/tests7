@@ -12,6 +12,7 @@ cp ~/cl/full-s7test.scm .
 cp ~/cl/lt.scm .
 cp ~/cl/peak-phases.scm .
 cp ~/cl/arbtest.scm .
+cp ~/cl/threads.c .
 
 echo ' '
 echo '-------- base case --------'
@@ -184,3 +185,10 @@ repl s7test.scm
 # 
 # -fsanitize=leak
 # -fsanitize=undefined
+
+echo ' '
+echo '-------- threads --------'
+echo ' '
+gcc s7.c -c -I. -g3 -ldl -lm -Wl,-export-dynamic
+gcc -o threads threads.c s7.o -O -g -Wl,-export-dynamic -pthread -lm -I. -ldl
+threads

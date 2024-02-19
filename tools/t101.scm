@@ -293,10 +293,12 @@
 (system "./repl full-s7test.scm")
 
 (format *stderr* "~NC full s7test ~NC~%" 20 #\- 20 #\-)
-(system "gcc -o trepl trepl.c s7.o -O -Wl,-export-dynamic -lm -I. -ldl")
+(system "gcc -o trepl ~/cl/trepl.c s7.o -O -Wl,-export-dynamic -lm -I. -ldl")
 (system "trepl")
 
 (format *stderr* "~NC valgrind leak check ~NC~%" 20 #\- 20 #\-)
 (system "valgrind --leak-check=full --show-reachable=no --suppressions=/home/bil/cl/free.supp ./repl s7test.scm")
+
+(format *stderr* "all done\n")
 
 (exit)

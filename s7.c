@@ -3350,10 +3350,10 @@ static s7_pointer slot_expression(s7_pointer p)    \
 #define hash_table_mapper(p)           (T_Hsh(p))->object.hasher.loc
 #define hash_table_procedures(p)       T_Lst(hash_table_block(p)->ex.ex_ptr)
 #define hash_table_set_procedures(p, Lst)       hash_table_block(p)->ex.ex_ptr = T_Lst(Lst)  /* both the checker/mapper: car/cdr, and the two typers (opt1/opt2) */
-#define hash_table_procedures_checker(p)        car(hash_table_procedures(p))
-#define hash_table_procedures_mapper(p)         cdr(hash_table_procedures(p))
-#define hash_table_set_procedures_checker(p, f) set_car(hash_table_procedures(p), f)
-#define hash_table_set_procedures_mapper(p, f)  set_cdr(hash_table_procedures(p), f)
+#define hash_table_procedures_checker(p)        T_Prc(car(hash_table_procedures(p)))
+#define hash_table_procedures_mapper(p)         T_Prc(cdr(hash_table_procedures(p)))
+#define hash_table_set_procedures_checker(p, f) set_car(hash_table_procedures(p), T_Prc(f))
+#define hash_table_set_procedures_mapper(p, f)  set_cdr(hash_table_procedures(p), T_Prc(f))
 #define hash_table_key_typer(p)                 T_Prc(opt1_any(hash_table_procedures(p)))
 #define hash_table_key_typer_unchecked(p)       hash_table_block(p)->ex.ex_ptr->object.cons.opt1
 #define hash_table_set_key_typer(p, Fnc)        set_opt1_any(hash_table_procedures(T_Hsh(p)), T_Prc(Fnc))
@@ -7241,10 +7241,10 @@ static void mark_stack_1(s7_pointer p, s7_int top)
   tend = (s7_pointer *)(tp + top);
   while (tp < tend)
     {
-      gc_mark(*tp++);
-      gc_mark(*tp++);
-      gc_mark(*tp++);
-      tp++;
+      gc_mark(*tp++); /* sc->code */
+      gc_mark(*tp++); /* sc->curlet */
+      gc_mark(*tp++); /* sc->args */
+      tp++;           /* sc->cur_op */
     }
 }
 
@@ -7546,6 +7546,7 @@ static int64_t gc(s7_scheme *sc)
   mark_owlet(sc);
 
   gc_mark(sc->code);
+  if ((S7_DEBUGGING) && (!(sc->args))) {fprintf(stderr, "%d: sc->args is NULL\n", __LINE__); if (sc->stop_at_error) abort();}
   if (sc->args) gc_mark(sc->args);
   gc_mark(sc->curlet);   /* not mark_let because op_any_closure_3p uses sc->curlet as a temp!! */
   mark_current_code(sc); /* probably redundant if with_history */
@@ -7559,6 +7560,7 @@ static int64_t gc(s7_scheme *sc)
   mark_pair(sc->stacktrace_defaults);
   gc_mark(sc->autoload_table);        /* () or a hash-table */
   set_mark(sc->default_random_state); /* always a random_state object */
+  if ((S7_DEBUGGING) && (!(sc->let_temp_hook))) {fprintf(stderr, "%d: sc->let_temp_hook is NULL\n", __LINE__); if (sc->stop_at_error) abort();}
   if (sc->let_temp_hook) gc_mark(sc->let_temp_hook);
 
   gc_mark(sc->w);
@@ -44305,7 +44307,7 @@ static s7_int hash_map_closure(s7_scheme *sc, s7_pointer table, s7_pointer key)
 	     set_elist_1(sc, wrap_string(sc, "hash-table map function called recursively", 42)));
   /* check_stack_size(sc); -- perhaps clear typers as well here or save/restore hash-table-procedures */
   gc_protect_via_stack(sc, f);
-  hash_table_set_procedures_mapper(table, sc->unused); /* why unused here? maybe a dummy procedure? */
+  hash_table_set_procedures_mapper(table, sc->F);
   sc->value = s7_call(sc, f, set_plist_1(sc, key));
   unstack_gc_protect(sc);
   hash_table_set_procedures_mapper(table, f);
@@ -45806,7 +45808,12 @@ static s7_pointer let_to_function(s7_scheme *sc, s7_pointer e)
 
 static s7_pointer g_function(s7_scheme *sc, s7_pointer args)
 {
-  #define H_function "(*function* e) returns the current function in e"
+  #define H_function "(*function* (emv field)) returns the current function.  (*function*) is like __func__ in C. \
+If 'env is specified, *function* looks for the current function in the environment 'e.  If 'field (a symbol) is given \
+a function-specific value is returned.  The fields are 'name (the name of the current function), 'signature, 'arity,\
+ 'documentation, 'value (the function itself), 'line and 'file (the function's definition location), 'funclet, 'source, \
+and 'arglist. (define (func x y) (*function* (curlet) 'arglist)) (func 1 2): '(x y)"
+
   #define Q_function s7_make_signature(sc, 3, sc->T, sc->is_let_symbol, sc->is_symbol_symbol)
 
   s7_pointer e, sym = NULL, fname, fval;
@@ -47027,7 +47034,7 @@ s7_pointer s7_arity(s7_scheme *sc, s7_pointer x)
 
 static s7_pointer g_arity(s7_scheme *sc, s7_pointer args)
 {
-  #define H_arity "(arity obj) the min and max acceptable args for obj if it is applicable, otherwise #f."
+  #define H_arity "(arity obj) the min and max number of args that obj can be applied to.  Returns #f if the object is not applicable."
   #define Q_arity s7_make_signature(sc, 2, s7_make_signature(sc, 2, sc->is_pair_symbol, sc->not_symbol), sc->T)
   /* check_method(sc, p, sc->arity_symbol, args); */
   return(s7_arity(sc, car(args)));
@@ -53818,7 +53825,7 @@ s7_pointer s7_type_of(s7_scheme *sc, s7_pointer arg) {return(sc->type_to_typers[
 
 static s7_pointer g_type_of(s7_scheme *sc, s7_pointer args)
 {
-  #define H_type_of "(type-of obj) returns a symbol describing obj's type"
+  #define H_type_of "(type-of obj) returns a symbol describing obj's type: (type-of 1): 'integer?"
   #define Q_type_of s7_make_signature(sc, 2, s7_make_signature(sc, 2, sc->is_symbol_symbol, sc->not_symbol), sc->T)
   return(sc->type_to_typers[type(car(args))]);
 }
@@ -69351,6 +69358,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
        *   setting stacked args to cdr of reversed-args and returning car because the list (args)
        *   can be some variable's value in a macro expansion via ,@ and reversing it in place
        *   (all this to avoid consing), clobbers the variable's value.
+       * (let ((g-1 (lambda (x a b c) (x (+ a 1) (- b 1) (values c 2))))) (g-1 (lambda (b c d e) (+ b c d e)) 2 3 5)) eval_args2 
        */
       sc->w = args;
       for (x = args; is_not_null(cdr(x)); x = cdr(x))
@@ -69359,6 +69367,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
       return(car(x));
 
     case OP_EVAL_ARGS5:
+      /* (let ((g-1 (lambda (x a b c) (x (+ a 1) (- b 1) 2 (values c 2))))) (g-1 (macro (x y z w) (list-values '+ x y z w)) 2 3 5)) */
       /* code = previous arg saved, args = ante-previous args reversed, we'll take value->code->args and reverse in args5 */
       if (is_null(args))
 	return(sc->unspecified);
@@ -69373,7 +69382,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
       /* handle implicit set! */
     case OP_EVAL_SET1_NO_MV: /* (set! (fnc) <val>) where evaluation of <val> returned multiple values */
     case OP_EVAL_SET2_NO_MV: /* (set! (fnc <ind...>) <val>), <val> = mv */
-    case OP_EVAL_SET3_NO_MV: /* same as above */
+    case OP_EVAL_SET3_NO_MV: /* (define f (dilambda (lambda () 1) (lambda (x) x))) (define (f2) (values 1 2 3)) (set! (f) (f2)) */
       syntax_error_nr(sc, "too many arguments to set!: ~S", 30, set_ulist_1(sc, sc->values_symbol, args));
     case OP_EVAL_SET2:       /* here <ind> = args is mv */
       set_stack_top_op(sc, OP_EVAL_SET2_MV);
@@ -69391,7 +69400,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
       set_stack_top_op(sc, OP_ANY_C_NP_MV);
       goto FP_MV;
 
-    case OP_ANY_C_NP_1: case OP_ANY_CLOSURE_NP_1:
+    case OP_ANY_C_NP_1: case OP_ANY_CLOSURE_NP_1: /* ((eval-string (object->string mac5 :readable)) 1 5 3 4) */
       set_stack_top_op(sc, stack_top_op(sc) + 1); /* replace with mv version */
 
     case OP_ANY_C_NP_MV: case OP_ANY_CLOSURE_NP_MV:
@@ -69410,23 +69419,24 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
       return(args);
 
     case OP_SAFE_C_SP_1: case OP_SAFE_CONS_SP_1: case OP_SAFE_ADD_SP_1: case OP_SAFE_MULTIPLY_SP_1:
+      /* (let () (define (ho a) (+ a 2)) (define (hi) (+ (ho 1) (values 3 4))) (hi)) safe_add_sp_1 */
       set_stack_top_op(sc, OP_SAFE_C_SP_MV);
       clear_multiple_value(args); /* see op_safe_c_sp_mv in s7test */
       return(args);
 
-    case OP_SAFE_C_PS_1:
+    case OP_SAFE_C_PS_1:     /* (define (f) (let ((d #\d)) (string (values #\a #\b #\c) d))) (f) */
       set_stack_top_op(sc, OP_SAFE_C_PS_MV);
       return(args);
 
-    case OP_SAFE_C_PC_1:
+    case OP_SAFE_C_PC_1:     /* (define (f) (string (values #\a #\b #\c) #\d)) (f) */
       set_stack_top_op(sc, OP_SAFE_C_PC_MV);
       return(args);
 
-    case OP_SAFE_C_PA_1:
+    case OP_SAFE_C_PA_1:     /* (let () (define (func) (do ((x 0.0 (+ x 0.1)) (i 0 (+ i 1))) ((>= x 0.1) (#_with-baffle (inlet (values 1 2) (symbol? x)))))) (func)) */
       set_stack_top_op(sc, OP_SAFE_C_PA_MV);
       return(args);
 
-    case OP_C_P_1: case OP_SAFE_C_P_1:
+    case OP_C_P_1: case OP_SAFE_C_P_1:   /* (let () (define (ho a) (values a 1)) (define (hi) (- (ho 2))) (hi)) */ /* (string (values #\a #\b #\c)) */
       set_stack_top_op(sc, OP_C_P_MV);
       return(args);
 
@@ -69440,26 +69450,29 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
     case OP_SAFE_CLOSURE_PA_1: case OP_CLOSURE_PA_1:      /* arity is 2, we have 2 args, this has to be an error (see optimize_closure_sym) */
     case OP_ANY_CLOSURE_3P_1: case OP_ANY_CLOSURE_3P_2: case OP_ANY_CLOSURE_3P_3:
     case OP_ANY_CLOSURE_4P_1: case OP_ANY_CLOSURE_4P_2: case OP_ANY_CLOSURE_4P_3: case OP_ANY_CLOSURE_4P_4:
+      /* (let () (define (func) (do ((x 0.0 (+ x 0.1)) (i 0 (+ i 1))) ((>= x 0.1) (#_with-baffle (inlet (values 1 2) (symbol? x)))))) (func)) */
       if (is_multiple_value(sc->value)) clear_multiple_value(sc->value);
       error_nr(sc, sc->wrong_number_of_args_symbol, set_elist_3(sc, too_many_arguments_string, stack_top_code(sc), sc->value));
 
-    case OP_SAFE_C_PP_1:
+    case OP_SAFE_C_PP_1:     /* (let () (define (ho a) (+ a 2)) (define (hi) (+ (ho 1) (values 3 4))) (hi)) */
       set_stack_top_op(sc, OP_SAFE_C_PP_3_MV);
       return(args);
 
-    case OP_SAFE_C_PP_5:
+    case OP_SAFE_C_PP_5:     /* (let () (define (hi) (+ (values 1 2) (values 3 4))) (hi)) (also safe_c_pp_1) */
       set_stack_top_op(sc, OP_SAFE_C_PP_6_MV);
       return(args);
 
     case OP_SAFE_C_3P_1: case OP_SAFE_C_3P_2: case OP_SAFE_C_3P_3:
+      /* (let ((g-1 (lambda (x a b c) (x (+ a 1) (- b 1) (values c 2))))) (g-1 + 2 3 5)) */
       set_stack_top_op(sc, stack_top_op(sc) +  3); /* change op to parallel mv case */
     case OP_SAFE_C_3P_1_MV: case OP_SAFE_C_3P_2_MV: case OP_SAFE_C_3P_3_MV:
+      /* (list-values '+ 1 (apply-values (list 2 3))) */
       return(cons(sc, sc->unused, copy_proper_list(sc, args)));
 
       /* look for errors here rather than glomming up the set! and let code */
     case OP_SET_SAFE:                         /* symbol is sc->code after pop */
     case OP_SET1:
-    case OP_SET_FROM_LET_TEMP:                /* (set! var (values 1 2 3)) */
+    case OP_SET_FROM_LET_TEMP:                /* (let-temporarily ((var (values 1 2 3))) var) */
     case OP_SET_FROM_SETTER:                  /* stack_top_code(sc) is slot if (set! x (set! (setter 'x) g)) s7test.scm */
       syntax_error_with_caller_nr(sc, "set!: can't set ~A to ~S", 24,
 				  (is_slot(stack_top_code(sc))) ? slot_symbol(stack_top_code(sc)) : stack_top_code(sc),
@@ -69481,6 +69494,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 
     case OP_LET1:                         /* (let ((var (values 1 2 3))) ...) */
       {
+	/* (let () (define (hi) (let ((x (values 1 2))) (if x (list x)))) (define (ho) (hi)) (catch #t (lambda () (ho)) (lambda args #f)) (ho)) */
 	s7_pointer let_code, vars, sym, p = stack_top_args(sc);
 	for (let_code = p; is_pair(cdr(let_code)); let_code = cdr(let_code));
 	for (vars = caar(let_code); is_pair(cdr(p)); p = cdr(p), vars = cdr(vars));
@@ -69492,6 +69506,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
       }
 
     case OP_LET_ONE_NEW_1: case OP_LET_ONE_P_NEW_1:
+      /* (let () (define (hi) (let ((x (values 1 2))) (display x) (if x (list x)))) (define (ho) (hi)) (catch #t (lambda () (ho)) (lambda args #f)) (ho)) */
       syntax_error_with_caller2_nr(sc, "~A: can't bind ~A to ~S", 23, sc->let_symbol,
 			      opt2_sym(stack_top_code(sc)), set_ulist_1(sc, sc->values_symbol, args));
 
@@ -69529,9 +69544,11 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
     case OP_WHEN_PP: case OP_UNLESS_PP: case OP_WITH_LET1:
     case OP_CASE_G_G: case OP_CASE_G_S: case OP_CASE_E_G: case OP_CASE_E_S: case OP_CASE_I_S:
     case OP_COND1: case OP_COND1_SIMPLE:
+      /* (if (values 1 2) 3) */
       return(car(args));
 
     case OP_IF_PN: /* (if|when (not (values...)) ...) as opposed to (if|unless (values...)...) which follows CL and drops trailing values */
+      /* doesn't this error check happen elsewhere? */
       syntax_error_nr(sc, "too many arguments to not: ~S", 29, set_ulist_1(sc, sc->values_symbol, args));
 
     case OP_DYNAMIC_UNWIND: case OP_DYNAMIC_UNWIND_PROFILE:
@@ -69610,6 +69627,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
       /* we get here if a reader-macro (define-expansion) returns multiple values.
        *    these need to be read in order into the current reader lists (we'll assume OP_READ_LIST is next in the stack.
        *    and that it will be expecting the next arg entry in sc->value; but it could be OP_LOAD_RETURN_IF_EOF if the expansion is at top level).
+       * (+ (reader-cond (#t 1 (values 2 3) 4)))
        */
       if (SHOW_EVAL_OPS)
 	fprintf(stderr, "  %s[%d]: %s stack top: %" ld64 ", op: %s, args: %s\n", __func__, __LINE__,
@@ -69626,7 +69644,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
       pop_stack(sc);               /* need GC protection in loop above, so do this afterwards */
       return(car(x));              /* sc->value from OP_READ_LIST point of view */
 
-    case OP_EVAL_DONE:
+    case OP_EVAL_DONE:    /* ((lambda (w) 1) (char-ready? (open-input-function (lambda (x) (values 1 2 3 4 5 6 7))))) */
       if (stack_top4_op(sc) == OP_NO_VALUES)
  	error_nr(sc, sc->error_symbol,
 		 set_elist_1(sc, wrap_string(sc, "function-port should not return multiple-values", 47)));
@@ -69636,6 +69654,8 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
       return(args);
 
     default:
+      /* (let () (define (f1) (do ((i 0 (+ i 1))) ((= i 1)) (values (append "" (block)) 1))) (f1)) safe_dotimes_step_o */
+      /* ((values memq (values #\a '(#\A 97 #\a)))) eval_args */
       if (SHOW_EVAL_OPS) fprintf(stderr, "  %s[%d]: splice punts: %s\n", __func__, __LINE__, op_names[stack_top_op(sc)]);
       break;
     }
@@ -96153,15 +96173,6 @@ then returns each var to its original value."
   sc->write_keyword =               s7_make_keyword(sc, "write");
 }
 
-static s7_pointer add_initial_slot(s7_scheme *sc, s7_pointer symbol, s7_pointer value)
-{
-  if ((S7_DEBUGGING) && (is_slot(initial_slot(symbol)))) fprintf(stderr, "%s: %s already has an initial_slot\n", __func__, display(symbol));
-  set_initial_slot(symbol, make_semipermanent_slot(sc, symbol, value));
-  slot_set_next(initial_slot(symbol), sc->unlet_slots);
-  sc->unlet_slots = initial_slot(symbol);
-  return(value);
-}
-
 static void init_rootlet(s7_scheme *sc)
 {
   /* most of init_rootlet (the built-in  functions for example), could be shared by all s7 instances.
@@ -97227,6 +97238,7 @@ s7_scheme *s7_init(void)
   sc->shadow_rootlet = sc->rootlet;
   sc->unlet_slots = slot_end;
   sc->objstr_max_len = S7_INT64_MAX;
+  sc->let_temp_hook = sc->nil;
 
   init_wrappers(sc);
   init_standard_ports(sc);
@@ -97411,18 +97423,9 @@ s7_scheme *s7_init(void)
    *   Otherwise, the cond-expand has no effect."  The code above returns #<unspecified>, but I read that prose to say that
    *   (begin 23 (cond-expand (surreals 1) (foonly 2))) should evaluate to 23.
    */
-
-  {
-    s7_pointer sym;
-    sym = make_symbol(sc, "make-polar", 10);          add_initial_slot(sc, sym, global_value(sym));
-    sym = make_symbol(sc, "call-with-values", 16);    add_initial_slot(sc, sym, global_value(sym));
-    sym = make_symbol(sc, "make-hook", 9);            add_initial_slot(sc, sym, global_value(sym));
-    sym = make_symbol(sc, "hook-functions", 14);      add_initial_slot(sc, sym, global_value(sym));
-    sym = make_symbol(sc, "multiple-value-bind", 19); add_initial_slot(sc, sym, global_value(sym));
-    sym = make_symbol(sc, "cond-expand", 11);         add_initial_slot(sc, sym, global_value(sym));
-    sym = make_symbol(sc, "reader-cond", 11);         add_initial_slot(sc, sym, global_value(sym));
-    sym = make_symbol(sc, "*s7*", 4);                 add_initial_slot(sc, sym, global_value(sym));
-  }
+  /* make-polar, call-with-values, make-hook, hook-functions, multiple-value-bind, cond-expand, and reader-cond can't
+   *   set the initial_value to the global_value so that #_... can be used because the global_value is not semipremanent.
+   */
 #endif
 
 #if S7_DEBUGGING
@@ -97801,64 +97804,67 @@ int main(int argc, char **argv)
 #endif
 #endif
 
-/* ---------------------------------------------------------------------
- *           19.9   20.9   21.0   22.0   23.0   24.0   24.1   24.2
- * ---------------------------------------------------------------------
- * tpeak      148    115    114    108    105    102    102    102
- * tref      1081    691    687    463    459    464    466    466
- * index            1026   1016    973    967    972    974    974
- * tmock            1177   1165   1057   1019   1032   1037   1037
- * tvect     3408   2519   2464   1772   1669   1497   1452   1452
- * tauto                          2562   2048   1729   1704   1704
- * timp             2637   2575   1930   1694   1740   1738   1738
- * texit     1884                 1778   1741   1770   1771   1771
- * s7test           1873   1831   1818   1829   1830   1855   1855
- * lt        2222   2187   2172   2150   2185   1950   1950   1950
- * thook     7651                 2590   2030   2046   2046   2046
- * dup              3805   3788   2492   2239   2097   2042   2064
- * tcopy            8035   5546   2539   2375   2386   2386   2386
- * tread            2440   2421   2419   2408   2405   2402   2402
- * trclo     8031   2735   2574   2454   2445   2449   2470   2470
- * titer     3657   2865   2842   2641   2509   2449   2446   2446
- * tload                          3046   2404   2566   2444   2444
- * fbench    2933   2688   2583   2460   2430   2478   2559   2559
- * tmat             3065   3042   2524   2578   2590   2576   2576
- * tsort     3683   3105   3104   2856   2804   2858   2858   2858
- * tobj             4016   3970   3828   3577   3508   3502   3502
- * teq              4068   4045   3536   3486   3544   3537   3537
- * tio              3816   3752   3683   3620   3583   3601   3601
- * tmac             3950   3873   3033   3677   3677   3680   3680
- * tcase            4960   4793   4439   4430   4439   4467   4467
- * tlet      9166   7775   5640   4450   4427   4457   4466   4466
- * tclo      6362   4787   4735   4390   4384   4474   4447   4447
- * tfft             7820   7729   4755   4476   4536   4543   4543
- * tstar            6139   5923   5519   4449   4550   4604   4604
- * tmap             8869   8774   4489   4541   4586   4592   4592
- * tshoot           5525   5447   5183   5055   5034   5034   5034
- * tform            5357   5348   5307   5316   5084   5095   5095
- * tstr      10.0   6880   6342   5488   5162   5180   5180   5180
- * tnum             6348   6013   5433   5396   5409   5423   5423
- * tgsl             8485   7802   6373   6282   6208   6193   6193
- * tari      15.0   13.0   12.7   6827   6543   6278   6278   6278
- * tlist     9219   7896   7546   6558   6240   6300   6300   6300
- * tset                                  6260   6364   6402   6402
- * trec      19.5   6936   6922   6521   6588   6583   6583   6583
- * tleft     11.1   10.4   10.2   7657   7479   7627   7622   7622
- * tlamb                                        7941   7941   7941
- * tgc              11.9   11.1   8177   7857   7986   8005   8005
- * tmisc                                 8488   7862   8041   8041
- * thash            11.8   11.7   9734   9479   9526   9542   9325
- * cb        12.9   11.2   11.0   9658   9564   9609   9635   9635
- * tmap-hash                                                  10.3
- * tgen             11.2   11.4   12.0   12.1   12.2   12.3   12.3
- * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1   15.1
- * calls            36.7   37.5   37.0   37.5   37.1   37.0   37.0
- * sg                             55.9   55.8   55.4   55.2   55.2
- * tbig            177.4  175.8  156.5  148.1  146.2  146.3  146.3
- * ---------------------------------------------------------------------
+/* --------------------------------------------------------------
+ *           19.9   20.9   21.0   22.0   23.0   24.0   24.2
+ * --------------------------------------------------------------
+ * tpeak      148    115    114    108    105    102    102
+ * tref      1081    691    687    463    459    464    466
+ * index            1026   1016    973    967    972    974
+ * tmock            1177   1165   1057   1019   1032   1037
+ * tvect     3408   2519   2464   1772   1669   1497   1452
+ * tauto                          2562   2048   1729   1704
+ * timp             2637   2575   1930   1694   1740   1738
+ * texit     1884                 1778   1741   1770   1771
+ * s7test           1873   1831   1818   1829   1830   1855
+ * lt        2222   2187   2172   2150   2185   1950   1950
+ * thook     7651                 2590   2030   2046   2046
+ * dup              3805   3788   2492   2239   2097   2064
+ * tcopy            8035   5546   2539   2375   2386   2386
+ * tread            2440   2421   2419   2408   2405   2402
+ * trclo     8031   2735   2574   2454   2445   2449   2470
+ * titer     3657   2865   2842   2641   2509   2449   2446
+ * tload                          3046   2404   2566   2444
+ * fbench    2933   2688   2583   2460   2430   2478   2559
+ * tmat             3065   3042   2524   2578   2590   2576
+ * tsort     3683   3105   3104   2856   2804   2858   2858
+ * tobj             4016   3970   3828   3577   3508   3502
+ * teq              4068   4045   3536   3486   3544   3537
+ * tio              3816   3752   3683   3620   3583   3601
+ * tmac             3950   3873   3033   3677   3677   3680
+ * tclo      6362   4787   4735   4390   4384   4474   4447
+ * tcase            4960   4793   4439   4430   4439   4467
+ * tlet      9166   7775   5640   4450   4427   4457   4466
+ * tfft             7820   7729   4755   4476   4536   4543
+ * tstar            6139   5923   5519   4449   4550   4604
+ * tmap             8869   8774   4489   4541   4586   4592
+ * tshoot           5525   5447   5183   5055   5034   5034
+ * tform            5357   5348   5307   5316   5084   5095
+ * tstr      10.0   6880   6342   5488   5162   5180   5180
+ * tnum             6348   6013   5433   5396   5409   5423
+ * tgsl             8485   7802   6373   6282   6208   6193
+ * tari      15.0   13.0   12.7   6827   6543   6278   6278
+ * tlist     9219   7896   7546   6558   6240   6300   6300
+ * tset                                  6260   6364   6402
+ * trec      19.5   6936   6922   6521   6588   6583   6583
+ * tleft     11.1   10.4   10.2   7657   7479   7627   7622
+ * tmisc                                 8142          7742
+ * tlamb                                 8003   7941   7941
+ * tgc              11.9   11.1   8177   7857   7986   8005
+ * thash            11.8   11.7   9734   9479   9526   9325
+ * cb        12.9   11.2   11.0   9658   9564   9609   9635
+ * tmap-hash                             1.5k          10.3
+ * tgen             11.2   11.4   12.0   12.1   12.2   12.3
+ * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1
+ * calls            36.7   37.5   37.0   37.5   37.1   37.0
+ * sg                             55.9   55.8   55.4   55.2
+ * tbig            177.4  175.8  156.5  148.1  146.2  146.3
+ * --------------------------------------------------------------
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * clear_all_opts infinite loop, also in pair_to_port (from '#1=(#1# . #1) but need more context (t678)) [clear collected first]
+ * tmv
+ * full-s7test free cell 9535 unlet slot value is let/free, alloc: inline_make_let_with_two_slots[9065], gc: inline_make_let_with_slot[9042]
+ *   checker T_perm? !in_heap, add_initial_slot cases are not immutable?? maybe not global??, check that initial_slot is never set after initialization
  */
