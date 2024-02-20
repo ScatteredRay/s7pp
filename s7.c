@@ -7547,7 +7547,7 @@ static int64_t gc(s7_scheme *sc)
 
   gc_mark(sc->code);
   if ((S7_DEBUGGING) && (!(sc->args))) {fprintf(stderr, "%d: sc->args is NULL\n", __LINE__); if (sc->stop_at_error) abort();}
-  if (sc->args) gc_mark(sc->args);
+  /* if (sc->args) */ gc_mark(sc->args);
   gc_mark(sc->curlet);   /* not mark_let because op_any_closure_3p uses sc->curlet as a temp!! */
   mark_current_code(sc); /* probably redundant if with_history */
   gc_mark(sc->value);
@@ -7561,7 +7561,7 @@ static int64_t gc(s7_scheme *sc)
   gc_mark(sc->autoload_table);        /* () or a hash-table */
   set_mark(sc->default_random_state); /* always a random_state object */
   if ((S7_DEBUGGING) && (!(sc->let_temp_hook))) {fprintf(stderr, "%d: sc->let_temp_hook is NULL\n", __LINE__); if (sc->stop_at_error) abort();}
-  if (sc->let_temp_hook) gc_mark(sc->let_temp_hook);
+  /* if (sc->let_temp_hook) */ gc_mark(sc->let_temp_hook);
 
   gc_mark(sc->w);
   gc_mark(sc->x);
@@ -9448,9 +9448,9 @@ s7_pointer s7_make_slot(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7_poi
 	{
 	  if ((!is_gensym(symbol)) &&
 	      (initial_slot(symbol) == sc->undefined) &&
-	      (!in_heap(value)) &&        /* else initial_slot value can be GC'd if symbol set! (initial != global, initial unprotected) */
+	      (!in_heap(value)) &&         /* else initial_slot value can be GC'd if symbol set! (initial != global, initial unprotected) */
 	       ((!sc->string_signature) || /* from init_signatures -- TODO: maybe need a boolean for this */
-	       (is_c_function(value))))   /* || (is_syntax(value)) -- we need 'else as a special case? */
+	       (is_c_function(value))))    /* || (is_syntax(value)) -- we need 'else as a special case? */
 	    /* the string_signature business means only the initial rootlet c_functions take part in unlet.  It would be neat if any
 	     *   cload library's c_functions could be there as well, but then (unlet) needs to know which envs are in the chain.
 	     *   The current shadow_rootlet could be saved in each initial_slot, these could be marked in some way, then the chain
@@ -34655,9 +34655,9 @@ static void write_closure_readably_1(s7_scheme *sc, s7_pointer obj, s7_pointer a
   if ((is_pair(arglist)) &&
       (allows_other_keys(arglist)))
     {
-      sc->temp9 = (is_null(cdr(arglist))) ?
-	set_plist_2(sc, car(arglist), sc->allow_other_keys_keyword) :
-	pair_append(sc, arglist, list_1(sc, sc->allow_other_keys_keyword));
+      sc->temp9 = (is_null(cdr(arglist))) ? set_plist_2(sc, car(arglist), sc->allow_other_keys_keyword) :
+	          ((is_null(cddr(arglist))) ? set_plist_3(sc, car(arglist), cadr(arglist), sc->allow_other_keys_keyword) :
+	                                      pair_append(sc, arglist, list_1(sc, sc->allow_other_keys_keyword)));
       object_to_port(sc, sc->temp9, port, P_WRITE, NULL);
       sc->temp9 = sc->unused;
     }
@@ -69345,7 +69345,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 {
   s7_pointer x;
   if (SHOW_EVAL_OPS)
-    safe_print(fprintf(stderr, "%s[%d]: splice %s %s\n", __func__, __LINE__,
+    safe_print(fprintf(stderr, "  %s[%d]: splice %s %s\n", __func__, __LINE__,
 		       (sc->stack_end > sc->stack_start) ? op_names[stack_top_op(sc)] : "no stack!", display_80(args)));
   if ((S7_DEBUGGING) && ((is_null(args)) || (is_null(cdr(args))))) fprintf(stderr, "%s: %s\n", __func__, display(args));
 
@@ -80379,7 +80379,7 @@ static goto_t set_implicit_vector(s7_scheme *sc, s7_pointer vect, s7_pointer ind
 	      return(goto_start);
 	    }}
       push_op_stack(sc, sc->vector_set_function); /* vector_setter(vect) has wrong args */
-      sc->code = (is_null(cdr(inds))) ? val : pair_append(sc, cdr(inds), T_Lst(val)); /* i.e. rest(args) + val */
+      sc->code = (is_null(cdr(inds))) ? val : ((is_null(cddr(inds))) ? cons(sc, cadr(inds), val) : pair_append(sc, cdr(inds), T_Lst(val))); /* i.e. rest(args) + val */
       push_stack(sc, OP_EVAL_ARGS4, list_1(sc, vect), sc->code);
       sc->code = car(inds);
       sc->cur_op = optimize_op(sc->code);
@@ -80448,7 +80448,7 @@ static goto_t set_implicit_c_object(s7_scheme *sc, s7_pointer c_obj, s7_pointer 
 	}
       else
 	{
-	  sc->code = pair_append(sc, cdr(inds), T_Lst(val));
+	  sc->code = (is_null(cdr(inds))) ? cons(sc, car(inds), val) : pair_append(sc, cdr(inds), T_Lst(val));
 	  push_stack(sc, OP_EVAL_ARGS4, list_1(sc, c_obj), sc->code);
 	  sc->code = car(inds);
 	}
@@ -80725,7 +80725,8 @@ static goto_t set_implicit_c_function(s7_scheme *sc, s7_pointer fnc)  /* (let ((
     {
       if (!is_any_macro(c_function_setter(fnc)))
 	no_setter_error_nr(sc, fnc);
-      sc->args = (is_null(cdar(sc->code))) ? cdr(sc->code) : pair_append(sc, cdar(sc->code), cdr(sc->code));
+      sc->args = (is_null(cdar(sc->code))) ? cdr(sc->code) : 
+                  ((is_null(cddar(sc->code))) ? cons(sc, cadar(sc->code), cdr(sc->code)) : pair_append(sc, cdar(sc->code), cdr(sc->code)));
       sc->code = c_function_setter(fnc);
       /* here multiple-values can't happen because we don't eval the new-value argument */
       return(goto_apply);
@@ -80761,7 +80762,8 @@ static goto_t set_implicit_closure(s7_scheme *sc, s7_pointer fnc)
     {
       if (!is_any_macro(setter))
 	no_setter_error_nr(sc, fnc);
-      sc->args = (is_null(cdar(sc->code))) ? cdr(sc->code) : pair_append(sc, cdar(sc->code), cdr(sc->code));
+      sc->args = (is_null(cdar(sc->code))) ? cdr(sc->code) : 
+                  ((is_null(cddar(sc->code))) ? cons(sc, cadar(sc->code), cdr(sc->code)) : pair_append(sc, cdar(sc->code), cdr(sc->code)));
       sc->code = setter;
       return(goto_apply);
     }
@@ -88843,7 +88845,16 @@ static void op_safe_c_ps_1(s7_scheme *sc)
 
 static void op_safe_c_ps_mv(s7_scheme *sc)  /* (define (hi a) (+ (values 1 2) a))  from safe_c_ps_1 */
 {
-  sc->args = pair_append(sc, sc->value, list_1(sc, lookup(sc, caddr(sc->code)))); /* don't assume sc->value can be used as sc->args here! */
+  /* old form: sc->args = pair_append(sc, sc->value, list_1(sc, lookup(sc, caddr(sc->code)))); */ /* don't assume sc->value can be used as sc->args here! */
+  s7_pointer p = cddr(sc->value), val = lookup(sc, caddr(sc->code));
+  if (is_null(p)) 
+    sc->args = set_plist_3(sc, car(sc->value), cadr(sc->value), val);
+  else
+    {
+      if (is_null(cdr(p)))
+	sc->args = set_plist_4(sc, car(sc->value), cadr(sc->value), caddr(sc->value), val);
+      else sc->args = pair_append(sc, sc->value, list_1(sc, val)); /* not plist! sc->value is not reusable */
+    }
   sc->code = c_function_base(opt1_cfunc(sc->code));
   /* we know it's a c function here, but there are 3 choices (c_function, c_function_star, no_rst_no_req_function)
    *    sc->value = fn_proc(sc->code)(sc, sc->args) might not check argnum
@@ -88894,7 +88905,17 @@ static void op_safe_c_pc(s7_scheme *sc)
 
 static void op_safe_c_pc_mv(s7_scheme *sc)
 {
-  sc->args = pair_append(sc, sc->value, list_1(sc, sc->args)); /* not plist! sc->value is not reusable */
+  /* sc->value = mv vals from e.g. safe_c_pc_1 below, fn_proc = splice_in_values via values chooser synonym sc->values_uncopied */
+  /* sc->args is the trailing constant arg (the "c" in "pc") */
+  s7_pointer p = cddr(sc->value);
+  if (is_null(p)) 
+    sc->args = set_plist_3(sc, car(sc->value), cadr(sc->value), sc->args);
+  else
+    {
+      if (is_null(cdr(p)))
+	sc->args = set_plist_4(sc, car(sc->value), cadr(sc->value), caddr(sc->value), sc->args);
+      else sc->args = pair_append(sc, sc->value, list_1(sc, sc->args)); /* not plist! sc->value is not reusable */
+    }
   sc->code = c_function_base(opt1_cfunc(sc->code));
 }
 
@@ -89313,13 +89334,30 @@ static void op_safe_c_pa_1(s7_scheme *sc)
 
 static void op_safe_c_pa_mv(s7_scheme *sc)
 {
-  s7_pointer p, val = copy_proper_list(sc, sc->value); /* this is necessary since the fx_proc below can clobber sc->value */
-  gc_protect_via_stack(sc, val);
-  for (p = val; is_pair(cdr(p)); p = cdr(p));          /* must be more than 1 member of list or it's not mv */
-  sc->args = fx_call(sc, cddr(sc->code));
-  set_cdr(p, set_plist_1(sc, sc->args));               /* do we need to copy sc->args if it is immutable (i.e. plist)? */
+  s7_pointer val, val1 = car(sc->value), val2 = cadr(sc->value);
+  s7_pointer p = cddr(sc->value);
+  if (is_null(p))
+    {
+      s7_pointer val3 = fx_call(sc, cddr(sc->code)); /* is plist3 ever clobbered by fx_call? plist_1|2 are set */
+      val = set_plist_3(sc, val1, val2, val3);
+    }
+  else
+    {
+      if (is_null(cdr(p)))
+	{
+	  s7_pointer val3 = caddr(sc->value);
+	  s7_pointer val4 = fx_call(sc, cddr(sc->code));
+	  val = set_plist_4(sc, val1, val2, val3, val4);
+	}
+      else
+	{
+	  val = copy_proper_list(sc, sc->value);            /* this is necessary since the fx_proc below can clobber sc->value */
+	  gc_protect_via_stack(sc, val);
+	  for (p = cdr(val); is_pair(cdr(p)); p = cdr(p));  /* must be more than 1 member of list or it's not mv */
+	  set_cdr(p, set_plist_1(sc, fx_call(sc, cddr(sc->code))));
+	  unstack_gc_protect(sc);
+	}}
   sc->args = val;
-  unstack_gc_protect(sc);
   sc->code = c_function_base(opt1_cfunc(sc->code));
 }
 
@@ -97865,6 +97903,5 @@ int main(int argc, char **argv)
  *   lots of is_global(sc->quote_symbol)
  * clear_all_opts infinite loop, also in pair_to_port (from '#1=(#1# . #1) but need more context (t678)) [clear collected first]
  * tmv
- * full-s7test free cell 9535 unlet slot value is let/free, alloc: inline_make_let_with_two_slots[9065], gc: inline_make_let_with_slot[9042]
- *   checker T_perm? !in_heap, add_initial_slot cases are not immutable?? maybe not global??, check that initial_slot is never set after initialization
+ * g_apply_values + known proper list
  */
