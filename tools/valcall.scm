@@ -52,6 +52,7 @@
 		     ("tlamb.scm" . "v-lamb")
 		     ("thook.scm" . "v-hook")
 		     ("tstar.scm" . "v-star")
+		     ("tmv.scm" . "v-mv")
 		     ))
 
 (define (last-callg)
@@ -127,6 +128,7 @@
 	 (list "repl" "tmisc.scm")
 	 (list "repl" "tlamb.scm")
 	 (list "repl" "tgc.scm")
+	 (list "repl" "tmv.scm")
 	 (list "repl" "thash.scm")
 	 (list "repl" "cb.scm")
 	 (list "repl" "tmap-hash.scm")

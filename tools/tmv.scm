@@ -1,4 +1,6 @@
+;;; multiple-values timing tests
 
+#|
 (define (ok? otst ola oexp)
   (let ((result (catch #t ola
 		       (lambda (type info)
@@ -9,7 +11,7 @@
 	(format #t "~A: ~A got ~S but expected ~S~%~%" (port-line-number) otst result oexp))))
 
 (define-macro (test tst expected) `(ok? ',tst (#_let () (define (_s7_) ,tst)) ,expected))
-
+|#
 
 ;;; -------- multiple values from tmisc --------
 (define (mv1)
@@ -76,13 +78,13 @@
 
 (define len 1000000)
 
-(define (fadd) ; [607] -> [508 (no pair_append)]
+(define (faddc) ; [607] -> [508 (no pair_append)]
   (do ((i 0 (+ i 1)))
       ((= i len))
     (unless (= (+ (values 1 2 3) 4) 10)
-      (display "fadd oops\n" *stderr*))))
+      (display "faddc oops\n" *stderr*))))
 
-;(fadd)
+;(faddc)
 
 
 (define (fadds) ; [620] -> [523]
@@ -106,15 +108,6 @@
 ;(fadda)
 
 
-(define (fadd0) ; 509
-  (do ((i 0 (+ i 1)))
-      ((= i len))
-    (unless (= (+ 4 (values 1 2 3)) 10) ; safe_c_cp -> safe_c_sp_mv which uses cons(args, value)
-      (display "fadd0 oops\n" *stderr*))))
-
-;(fadd0)
-
-
 (define (fadd1) ; [834] -> [736 (no pair_append)]
   (do ((i 0 (+ i 1)))
       ((= i len))
@@ -124,6 +117,34 @@
 ;(fadd1)
 
 
+(define (fadda6) ; [1127 gc copy_proper_list make_list op_safe_c_pa_mv fx_c_opcsq_c] -> [1041]
+  (do ((i 0 (+ i 1)))
+      ((= i len))
+    (unless (= (+ (values i (+ i 1) 2 3 4 5) (* 2 3)) (+ (* 2 i) 21)) ; op_safe_c_pa_mv > 3 mv vals
+      (display "fadda6 oops\n" *stderr*))))
+
+;(fadda6)
+
+
+(define (fadds6) ; [1010 after]
+  (let ((three 3))
+    (do ((i 0 (+ i 1)))
+	((= i len))
+      (unless (= (+ (values i (+ i 1) 2 3 4 5) three) (+ (* 2 i) 18))
+	(display "fadds6 oops\n" *stderr*)))))
+
+;(fadds6)
+
+
+(define (faddc6) ; [997 after]
+  (do ((i 0 (+ i 1)))
+      ((= i len))
+    (unless (= (+ (values i (+ i 1) 2 3 4 5) 3) (+ (* 2 i) 18))
+      (display "faddc6 oops\n" *stderr*))))
+
+;(faddc6)
+
+
 (define (fadd2-mv) (values 1 2 3))
 (define (fadd2) ; [649] -> [550 (no pair_append)]
   (do ((i 0 (+ i 1)))
@@ -131,19 +152,61 @@
     (unless (= (+ (fadd2-mv) 4) 10)
       (display "fadd2 oops\n" *stderr*)))) ; op_c_na calls make_list (op_c_nc?) [op_safe_c_pc_mv? so the make_list can be side-stepped?]
 
-(fadd2)
+;(fadd2)
 
 
+(define (faddc0) ; [509]
+  (do ((i 0 (+ i 1)))
+      ((= i len))
+    (unless (= (+ 4 (values 1 2 3)) 10) ; safe_c_cp -> safe_c_sp_mv which uses cons(args, value)
+      (display "faddc0 oops\n" *stderr*))))
+
+;(faddc0)
+
+
+(define (fadds0) ; [522]
+  (let ((four 4))
+    (do ((i 0 (+ i 1)))
+	((= i len))
+      (unless (= (+ four (values 1 2 3)) 10) ; to sp_mv
+	(display "fadds0 oops\n" *stderr*)))))
+
+;(fadds0)
+
+
+(define (fadda0) ; [559]
+  (let ((four 2))
+    (do ((i 0 (+ i 1)))
+	((= i len))
+      (unless (= (+ (* 2 four) (values 1 2 3)) 10) ; also goes to sp_mv
+	(display "fadda0 oops\n" *stderr*)))))
+
+;(fadda0)
+
+
+(define (strv) ; [611 op_safe_c_p -> op_c_p_mv?] -> [525]
+  (do ((i 0 (+ i 1)))
+      ((= i len))
+    (unless (string=? (string (values #\a #\b #\c)) "abc")
+      (display "strv oops\n" *stderr*))))
+
+;(strv)
 
 
 (define (all-tests)
   (mvtest)
-  (fadd)
+  (faddc)
   (fadds)
   (fadda)
-  (fadd0)
   (fadd1)
   (fadd2)
+  (faddc6)
+  (fadds6)
+  (fadda6)
+  (faddc0)
+  (fadds0)
+  (fadda0)
+  (strv)
   )
 
-;(all-tests)
+(all-tests)
