@@ -151,8 +151,8 @@
 	    )))
     
 
-(format *stderr* "~%~NC lint ~NC~%" 20 #\- 20 #\-)
-(catch #t (lambda () (lint "snd-test.scm" #f)) (lambda (type info) (apply format #t info)))
+;(format *stderr* "~%~NC lint ~NC~%" 20 #\- 20 #\-)
+;(catch #t (lambda () (lint "snd-test.scm" #f)) (lambda (type info) (apply format #t info)))
 
 ;(format *stderr* "~%~NC local s7test ~NC~%" 20 #\- 20 #\-)
 ;(system "./snd -e '(let () (catch #t (lambda () (load \"s7test.scm\" (curlet))) (lambda args #f)) (exit))'")
@@ -171,6 +171,9 @@
 
 (format *stderr* "~NC tmap ~NC~%" 20 #\- 20 #\-)
 (system "./repl tmap.scm")
+
+(format *stderr* "~NC tmv ~NC~%" 20 #\- 20 #\-)
+(system "./repl tmv.scm")
 
 (format *stderr* "~NC tmat ~NC~%" 20 #\- 20 #\-)
 (system "./repl tmat.scm")

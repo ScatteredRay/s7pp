@@ -1405,6 +1405,9 @@ struct s7_scheme {
   #define NUM_SAFE_LISTS 32               /* 36 is the biggest normally (lint.scm), 49 in s7test, 57 in snd-test, > 16 doesn't happen much */
   s7_pointer safe_lists[NUM_SAFE_LISTS];
   int32_t current_safe_list;
+#if S7_DEBUGGING
+  s7_int safe_list_uses[NUM_SAFE_LISTS];
+#endif
 
   s7_pointer autoload_table, s7_starlet, s7_starlet_symbol, let_temp_hook;
   const char ***autoload_names;
@@ -3439,7 +3442,7 @@ static s7_pointer slot_expression(s7_pointer p)    \
 #define port_read_sharp(p)             port_port(p)->pf->read_sharp
 #define port_close(p)                  port_port(p)->pf->close_port
 
-#define is_c_function(f)               (type(f) >= T_C_FUNCTION)
+#define is_c_function(f)               (type(f) >= T_C_FUNCTION) /* does not include T_C_FUNCTION_STAR */
 #define is_c_function_star(f)          (type(f) == T_C_FUNCTION_STAR)
 #define is_any_c_function(f)           (type(f) >= T_C_FUNCTION_STAR)
 #define is_safe_c_function(f)          ((is_c_function(f)) && (is_safe_procedure(f)))
@@ -4362,7 +4365,7 @@ enum {OP_UNOPT, OP_GC_PROTECT, /* must be an even number of ops here, op_gc_prot
       OP_DO_NO_VARS, OP_DO_NO_VARS_NO_OPT, OP_DO_NO_VARS_NO_OPT_1,
       OP_DO_NO_BODY_NA_VARS, OP_DO_NO_BODY_NA_VARS_STEP, OP_DO_NO_BODY_NA_VARS_STEP_1,
 
-      OP_SAFE_C_P_1, OP_SAFE_C_P_MV, OP_SAFE_C_PP_1, OP_SAFE_C_PP_3_MV, OP_SAFE_C_PP_5, OP_SAFE_C_PP_6_MV,
+      OP_SAFE_C_P_1, OP_SAFE_C_PP_1, OP_SAFE_C_PP_3_MV, OP_SAFE_C_PP_5, OP_SAFE_C_PP_6_MV,
       OP_SAFE_C_3P_1, OP_SAFE_C_3P_2, OP_SAFE_C_3P_3, OP_SAFE_C_3P_1_MV, OP_SAFE_C_3P_2_MV, OP_SAFE_C_3P_3_MV,
       OP_SAFE_C_SP_1, OP_SAFE_C_SP_MV, OP_SAFE_CONS_SP_1, OP_SAFE_ADD_SP_1, OP_SAFE_MULTIPLY_SP_1,
       OP_SAFE_C_PS_1, OP_SAFE_C_PC_1, OP_SAFE_C_PS_MV, OP_SAFE_C_PC_MV,
@@ -4578,7 +4581,7 @@ static const char* op_names[NUM_OPS] =
       "do_no_vars", "do_no_vars_no_opt", "do_no_vars_no_opt_1",
       "do_no_body_na_vars", "do_no_body_na_vars_step", "do_no_body_na_vars_step_1",
 
-      "safe_c_p_1", "safe_c_p_mv", "safe_c_pp_1", "safe_c_pp_3_mv", "safe_c_pp_5", "safe_c_pp_6_mv",
+      "safe_c_p_1", "safe_c_pp_1", "safe_c_pp_3_mv", "safe_c_pp_5", "safe_c_pp_6_mv",
       "safe_c_3p_1", "safe_c_3p_2", "safe_c_3p_3", "safe_c_3p_1_mv", "safe_c_3p_2_mv", "safe_c_3p_3_mv",
       "safe_c_sp_1", "safe_c_sp_mv", "safe_cons_sp_1", "safe_add_sp_1", "safe_multiply_sp_1",
       "safe_c_ps_1", "safe_c_pc_1", "safe_c_ps_mv", "safe_c_pc_mv",
@@ -39482,6 +39485,9 @@ static s7_pointer safe_list_1(s7_scheme *sc)
     {
       sc->current_safe_list = 1;
       set_list_in_use(sc->safe_lists[1]);
+#if S7_DEBUGGING
+      sc->safe_list_uses[1]++;
+#endif
       return(sc->safe_lists[1]);
     }
   return(cons(sc, sc->nil, sc->nil));
@@ -39493,6 +39499,9 @@ static s7_pointer safe_list_2(s7_scheme *sc)
     {
       sc->current_safe_list = 2;
       set_list_in_use(sc->safe_lists[2]);
+#if S7_DEBUGGING
+      sc->safe_list_uses[2]++;
+#endif
       return(sc->safe_lists[2]);
     }
   return(cons_unchecked(sc, sc->nil, list_1(sc, sc->nil)));
@@ -39508,9 +39517,11 @@ static s7_pointer make_safe_list(s7_scheme *sc, s7_int num_args)
       if (!list_is_in_use(sc->safe_lists[num_args]))
 	{
 	  set_list_in_use(sc->safe_lists[num_args]);
+#if S7_DEBUGGING
+	  sc->safe_list_uses[num_args]++;
+#endif
 	  return(sc->safe_lists[num_args]);
 	}}
-  /* if ((S7_DEBUGGING) && (num_args >= 16)) fprintf(stderr, "sl: %" ld64 "\n", num_args); */
   return(make_big_list(sc, num_args, sc->nil));
 }
 
@@ -39521,6 +39532,9 @@ static inline s7_pointer safe_list_if_possible(s7_scheme *sc, s7_int num_args)
     {
       sc->current_safe_list = num_args;
       set_list_in_use(sc->safe_lists[num_args]);
+#if S7_DEBUGGING
+      sc->safe_list_uses[num_args]++;
+#endif
       return(sc->safe_lists[num_args]);
     }
   return(make_safe_list(sc, num_args));
@@ -69346,6 +69360,33 @@ static Inline void inline_op_map_gather(s7_scheme *sc) /* called thrice in eval,
 /* #define stack_top4_let(Sc)         (Sc->stack_end[-7]) */
 /* #define stack_top4_code(Sc)        (Sc->stack_end[-8]) */
 
+static void apply_c_rst_no_req_function(s7_scheme *sc);
+static Inline void op_safe_c_p_mv(s7_scheme *sc)
+{
+  /* this could be the same as op_c_p_mv and not be very much slower (611 vs 574 callgrind). Surely this is too much code for so little gain,
+   *   but calling safe_list_if_possible has too much overhead -- perhaps a macro?
+   */
+  s7_int num_args = proper_list_length(sc->value);
+  bool use_safe = ((num_args < NUM_SAFE_PRELISTS) && (!list_is_in_use(sc->safe_lists[num_args])));
+  sc->code = c_function_base(opt1_cfunc(sc->code));
+  if (use_safe)
+    {
+      sc->args = sc->safe_lists[num_args];
+      sc->current_safe_list = num_args;
+      set_list_in_use(sc->safe_lists[num_args]);
+#if S7_DEBUGGING
+      sc->safe_list_uses[num_args]++;
+#endif
+    }
+  else sc->args = copy_proper_list(sc, sc->value);
+  for (s7_pointer op = sc->value, np = sc->args; is_pair(op); op = cdr(op), np = cdr(np))
+    set_car(np, car(op));
+  if (type(sc->code) == T_C_FUNCTION)
+    sc->value = apply_c_function(sc, sc->code, sc->args);
+  else apply_c_rst_no_req_function(sc);
+  if (use_safe) clear_list_in_use(sc->safe_lists[num_args]);
+}
+
 static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 {
   s7_pointer x;
@@ -69442,8 +69483,10 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
       return(args);
 
     case OP_SAFE_C_P_1:      /* (string (values #\a #\b #\c)) */
-      set_stack_top_op(sc, OP_SAFE_C_P_MV);
-      return(args);
+      sc->value = args;
+      pop_stack(sc);
+      op_safe_c_p_mv(sc);
+      return(sc->value);
 
     case OP_C_P_1:           /* (let () (define (ho a) (values a 1)) (define (hi) (- (ho 2))) (hi)) */ 
       set_stack_top_op(sc, OP_C_P_MV);
@@ -79118,10 +79161,15 @@ static bool op_cond1(s7_scheme *sc)
 	      sc->cur_op = optimize_op(sc->code);
 	      return(true);
 	    }
+#if 0
 	  /* sc->code is () */
-	  if (is_multiple_value(sc->value))                             /* (+ 1 (cond ((values 2 3)))) */
-	    sc->value = splice_in_values(sc, multiple_value(sc->value));
+	  if (is_multiple_value(sc->value)) /* this can't happen since splicer returns car now */
+	    {
+	      if (S7_DEBUGGING) fprintf(stderr, "cond1 mv case %s\n", display(sc->value));
+	      sc->value = splice_in_values(sc, multiple_value(sc->value));
+	    }
 	  /* no result clause, so return test, (cond (#t)) -> #t, (cond ((+ 1 2))) -> 3 */
+#endif
 	  pop_stack(sc);
 	  return(true);
 	}
@@ -79153,8 +79201,13 @@ static bool op_cond1_simple(s7_scheme *sc)
 	  sc->code = T_Lst(cdar(sc->code));
 	  if (is_null(sc->code))
 	    {
+#if 0
 	      if (is_multiple_value(sc->value))
-		sc->value = splice_in_values(sc, multiple_value(sc->value));
+		{
+		  if (S7_DEBUGGING) fprintf(stderr, "cond1_simple mv case %s\n", display(sc->value));
+		  sc->value = splice_in_values(sc, multiple_value(sc->value));
+		}
+#endif
 	      pop_stack(sc);
 	      return(true);
 	    }
@@ -79942,7 +79995,7 @@ static bool set_pair4(s7_scheme *sc, s7_pointer obj, s7_pointer index1, s7_point
       return(set_pair3(sc, sc->value, index2, value));
 
     case T_C_RST_NO_REQ_FUNCTION: case T_C_FUNCTION:
-    case T_C_FUNCTION_STAR:      /* obj here is a c_function, but its setter could be a closure and vice versa below */
+    case T_C_FUNCTION_STAR:      /* obj here is any_c_function, but its setter could be a closure and vice versa below */
       if (is_c_function(c_function_setter(obj)))
 	return(pair4_cfunc(sc, obj, c_function_setter(obj), index1, index2, value));
       sc->code = c_function_setter(obj); /* closure|macro */
@@ -84028,6 +84081,7 @@ static inline s7_pointer apply_c_function(s7_scheme *sc, s7_pointer func, s7_poi
 
 static void apply_c_rst_no_req_function(s7_scheme *sc)      /* -------- C-based function that can take any number of arguments -------- */
 {
+  if ((S7_DEBUGGING) && (type(sc->code) == T_C_FUNCTION_STAR)) fprintf(stderr, "%s: c_func*!\n", __func__);
   sc->value = c_function_call(sc->code)(sc, sc->args);
 }
 
@@ -88676,12 +88730,6 @@ static void op_safe_c_p(s7_scheme *sc)
 
 static void op_safe_c_p_1(s7_scheme *sc) {sc->value = fn_proc(sc->code)(sc, with_list_t1(sc->value));}
 
-static void op_safe_c_p_mv(s7_scheme *sc)
-{
-  sc->code = c_function_base(opt1_cfunc(sc->code));
-  sc->args = copy_proper_list(sc, sc->value);
-}
-
 static void op_safe_c_ssp(s7_scheme *sc)
 {
   check_stack_size(sc);
@@ -88701,6 +88749,9 @@ static void op_safe_c_ssp_mv(s7_scheme *sc)
 {
   sc->args = cons_unchecked(sc, lookup(sc, cadr(sc->code)), cons(sc, lookup(sc, caddr(sc->code)), sc->value)); /* not ulist here */
   sc->code = c_function_base(opt1_cfunc(sc->code));
+  if (type(sc->code) == T_C_FUNCTION)
+    sc->value = apply_c_function(sc, sc->code, sc->args);
+  else apply_c_rst_no_req_function(sc);
 }
 
 static void op_s(s7_scheme *sc)
@@ -88878,7 +88929,7 @@ static void op_safe_c_ps_mv(s7_scheme *sc)  /* (define (hi a) (+ (values 1 2) a)
 	  if (!in_heap(sc->args)) clear_list_in_use(sc->args);
 	}}
   sc->code = c_function_base(opt1_cfunc(sc->code));
-  /* we know it's a c function here, but there are 3 choices (c_function, c_function_star, no_rst_no_req_function)
+  /* we know it's a c function here, but there are 3 choices (c_function, c_function_star???, no_rst_no_req_function)
    *    sc->value = fn_proc(sc->code)(sc, sc->args) might not check argnum
    */
 }
@@ -89422,6 +89473,9 @@ static void op_c_p_mv(s7_scheme *sc) /* op_c_p_1 -> mv case: (define (hi) (forma
 {
   sc->code = c_function_base(opt1_cfunc(sc->code)); /* see comment above */
   sc->args = copy_proper_list(sc, sc->value);
+  if (type(sc->code) == T_C_FUNCTION)
+    sc->value = apply_c_function(sc, sc->code, sc->args);
+  else apply_c_rst_no_req_function(sc);
 }
 
 static inline void op_c_ss(s7_scheme *sc)
@@ -91765,7 +91819,6 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	case OP_SAFE_C_P: if (!c_function_is_ok(sc, sc->code)) break;
 	case HOP_SAFE_C_P: op_safe_c_p(sc); goto EVAL;
 	case OP_SAFE_C_P_1: op_safe_c_p_1(sc); continue;
-	case OP_SAFE_C_P_MV: op_safe_c_p_mv(sc); goto APPLY;
 
 	case OP_ANY_C_NP:    if (!c_function_is_ok(sc, sc->code))  {if (op_unknown_np(sc)) goto EVAL; continue;}
 	case HOP_ANY_C_NP:   if (op_any_c_np(sc)) goto EVAL; continue;
@@ -91776,7 +91829,7 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	case OP_SAFE_C_SSP:    if (!c_function_is_ok(sc, sc->code)) break;
 	case HOP_SAFE_C_SSP:   op_safe_c_ssp(sc); goto EVAL;
 	case OP_SAFE_C_SSP_1:  op_safe_c_ssp_1(sc); continue;
-	case OP_SAFE_C_SSP_MV: op_safe_c_ssp_mv(sc); goto APPLY;
+	case OP_SAFE_C_SSP_MV: op_safe_c_ssp_mv(sc); continue;
 
 	case OP_SAFE_C_A: if (!c_function_is_ok(sc, sc->code)) {if (op_unknown_a(sc)) goto EVAL; continue;}
 	case HOP_SAFE_C_A: sc->value = fx_c_a(sc, sc->code); continue;
@@ -92044,7 +92097,7 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	case OP_C_P: if (!c_function_is_ok(sc, sc->code)) break;
 	case HOP_C_P: op_c_p(sc); goto EVAL;
 	case OP_C_P_1: sc->value = fn_proc(sc->code)(sc, list_1(sc, sc->value)); continue;
-	case OP_C_P_MV: op_c_p_mv(sc); goto APPLY;
+	case OP_C_P_MV: op_c_p_mv(sc); continue;
 
 	case OP_C_SS: if (!c_function_is_ok(sc, sc->code)) break;
 	case HOP_C_SS: op_c_ss(sc); continue;
@@ -94113,6 +94166,27 @@ static s7_pointer memory_usage(s7_scheme *sc)
   for (gc_obj_t *g = sc->semipermanent_lets; g; i++, g = (gc_obj_t *)(g->nxt));
   add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "permanent_lets", 14), make_integer(sc, i));
 
+  /* safe_lists */
+  {
+    s7_int live = 0, in_use = 0;
+    for (i = 1; i < NUM_SAFE_LISTS; i++)
+      if (is_pair(sc->safe_lists[i]))
+	{
+	  live++;
+	  if (list_is_in_use(sc->safe_lists[i])) in_use++;
+	}
+    sc->w = sc->nil;
+#if S7_DEBUGGING
+    for (i = NUM_SAFE_LISTS - 1; i > 0; i--)
+      sc->w = cons(sc, make_integer(sc, sc->safe_list_uses[i]), sc->w);
+#endif
+    add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "safe-lists", 10), 
+			       list_3(sc, make_integer(sc, live), make_integer(sc, in_use), sc->w));
+#if S7_DEBUGGING
+    sc->w = sc->unused;
+#endif
+  }
+
   /* show how many active cells there are of each type (this is where all the memory_usage cpu time goes) */
   for (i = 0; i < NUM_TYPES; i++) ts[i] = 0;
   for (k = 0; k < sc->heap_size; k++)
@@ -94293,6 +94367,7 @@ static s7_pointer memory_usage(s7_scheme *sc)
 				   ((2 * sc->heap_size + SYMBOL_TABLE_SIZE + sc->stack_size) * sizeof(s7_pointer)) +
 				   len + all_len));
   }
+
   s7_gc_unprotect_at(sc, gc_loc);
   return(mu_let);
 }
@@ -97045,6 +97120,9 @@ s7_scheme *s7_init(void)
   for (i = NUM_SAFE_PRELISTS; i < NUM_SAFE_LISTS; i++)
     sc->safe_lists[i] = sc->nil;
   sc->current_safe_list = 0;
+#if S7_DEBUGGING
+  local_memset((void *)(sc->safe_list_uses), 0, NUM_SAFE_LISTS);
+#endif
 
   sc->input_port_stack_size = INPUT_PORT_STACK_INITIAL_SIZE;
   sc->input_port_stack = (s7_pointer *)Malloc(sc->input_port_stack_size * sizeof(s7_pointer));
@@ -97505,7 +97583,7 @@ s7_scheme *s7_init(void)
   s7_define_function(sc, "report-missed-calls", g_report_missed_calls, 0, 0, false, NULL); /* tc/recur tests in s7test.scm */
   if (strcmp(op_names[HOP_SAFE_C_PP], "h_safe_c_pp") != 0) fprintf(stderr, "c op_name: %s\n", op_names[HOP_SAFE_C_PP]);
   if (strcmp(op_names[OP_SET_WITH_LET_2], "set_with_let_2") != 0) fprintf(stderr, "set op_name: %s\n", op_names[OP_SET_WITH_LET_2]);
-  if (NUM_OPS != 934) fprintf(stderr, "size: cell: %d, block: %d, max op: %d, opt: %d\n", (int)sizeof(s7_cell), (int)sizeof(block_t), NUM_OPS, (int)sizeof(opt_info));
+  if (NUM_OPS != 933) fprintf(stderr, "size: cell: %d, block: %d, max op: %d, opt: %d\n", (int)sizeof(s7_cell), (int)sizeof(block_t), NUM_OPS, (int)sizeof(opt_info));
   /* cell size: 48, 120 if debugging, block size: 40, opt: 128 or 280 */
 #endif
   return(sc);
@@ -97923,7 +98001,7 @@ int main(int argc, char **argv)
  * tmisc                                 8142          7742
  * tlamb                                 8003   7941   7941
  * tgc              11.9   11.1   8177   7857   7986   8005
- * tmv                     9515   9101   9158          8300
+ * tmv                     9515   9101   9158          8338
  * thash            11.8   11.7   9734   9479   9526   9325
  * cb        12.9   11.2   11.0   9658   9564   9609   9635
  * tmap-hash                             1.2k          10.3
@@ -97943,5 +98021,11 @@ int main(int argc, char **argv)
  * g_apply_values + known proper list
  * could (safe-c-func (values ...)) mark the values as direct? and closure_np_mv
  *
- * t718 reuse_as_slot from op_safe_c_p_mv: try copy_to_safe_list rather than copy_proper_list?
+ * t718 try copy_to_safe_list rather than copy_proper_list?
+ *   TODO: check that no built-in uses safe_lists as a temp
+ *   TODO: clean up clear_list_in_use checks (!in_heap?)
+ *   TODO: check goto APPLY where branch is known
+ *   TODO: most mv ops can be folded into splicer and removed
+ *   TODO: (list (values (int-vector (values 1 2)) (int-vector (values 1 2)))) and the like for safe_list checks
+ *      (define (f) (list (values (int-vector (values 1 2)) (int-vector (values 1 2))))) (f) (#i(1 2) #i(1 2))
  */

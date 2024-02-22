@@ -13,6 +13,7 @@
 (define-macro (test tst expected) `(ok? ',tst (#_let () (define (_s7_) ,tst)) ,expected))
 |#
 
+
 ;;; -------- multiple values from tmisc --------
 (define (mv1)
   (+ (values 1 2 3)))
@@ -184,7 +185,10 @@
 ;(fadda0)
 
 
-(define (strv) ; [611 op_safe_c_p -> op_c_p_mv?] -> [525]
+(define (strv) 
+  ;; [611 op_safe_c_p -> op_c_p_mv? (copied)] -> [525 (uncopied -- buggy)] -> 
+  ;; [679 if safe_list_is_possible (no cancellation)] -> [547 if direct safe_list] ->
+  ;; [567 checked safe_list used direct] -> [574 if in_use set] -> [564 if Inline op_safe_c_p_mv and embed that func]
   (do ((i 0 (+ i 1)))
       ((= i len))
     (unless (string=? (string (values #\a #\b #\c)) "abc")
@@ -210,3 +214,8 @@
   )
 
 (all-tests)
+
+(when (provided? 'debugging)
+  (display ((*s7* 'memory-usage) 'safe-lists))
+  (newline))
+

@@ -319,6 +319,7 @@
 		     ("tlet.scm" . "/home/bil/motif-snd/v-let85")
 		     ("thash.scm" . "/home/bil/motif-snd/v-hash85")
 		     ("tmap-hash.scm" . "/home/bil/motif-snd/v-map-hash85")
+                     ("tmv.scm" . "/home/bil/motif-snd/v-mv85")
 		     ("tgen.scm" . "/home/bil/motif-snd/v-gen85")
 		     ("tall.scm" . "/home/bil/motif-snd/v-all85")
 		     ("snd-test.scm" . "/home/bil/motif-snd/v-call85")
