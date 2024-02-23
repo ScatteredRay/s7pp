@@ -147,7 +147,7 @@
 
 
 (define (fadd2-mv) (values 1 2 3))
-(define (fadd2) ; [649] -> [550 (no pair_append)]
+(define (fadd2) ; [649] -> [550 (no pair_append)] -> [546 if no goto]
   (do ((i 0 (+ i 1)))
       ((= i len))
     (unless (= (+ (fadd2-mv) 4) 10)
@@ -197,6 +197,16 @@
 ;(strv)
 
 
+(define (faddssp) ; [573]
+  (let ((four 4))
+    (do ((i 0 (+ i 1)))
+	((= i len))
+      (unless (= (+ four four (values 1 2 3)) 14)
+	(display "faddssp oops\n" *stderr*)))))
+
+(faddssp)
+
+
 (define (all-tests)
   (mvtest)
   (faddc)
@@ -213,7 +223,7 @@
   (strv)
   )
 
-(all-tests)
+;(all-tests)
 
 (when (provided? 'debugging)
   (display ((*s7* 'memory-usage) 'safe-lists))
