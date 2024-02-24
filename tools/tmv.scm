@@ -55,8 +55,8 @@
   (unless (= (mv5 2) 6) (format *stderr* "(mv5 2): ~S~%" (mv5 2)))
   (unless (= (mv6 5) 6) (format *stderr* "(mv6 5): ~S~%" (mv6 5)))
   (unless (= (mv7 5) 6) (format *stderr* "(mv7 5): ~S~%" (mv7 5)))
-  (unless (= (mv8) 6) (format *stderr* "mv8: ~S~%" (mv8)))
-  (unless (= (mv9) 6) (format *stderr* "mv9: ~S~%" (mv9)))
+  (unless (= (mv8) 6) (format *stderr* "mv8: ~S~%" (mv8))) ; op_safe_c_pp_3|6_mv
+  (unless (= (mv9) 6) (format *stderr* "mv9: ~S~%" (mv9))) ; op_safe_c_3p_2|3_mv
   (unless (= (mv11) 6) (format *stderr* "mv11: ~S~%" (mv11)))
   (unless (= (mv12 -1 -2) 6) (format *stderr* "(mv12 -1 -2): ~S~%" (mv12 -1 -2)))
   (do ((i 0 (+ i 1)))
@@ -74,7 +74,7 @@
     (mv12 -2 -1)
     ))
 
-;(mvtest) ; [321] -> [289]
+;(mvtest) ; [321] -> [289] -> [281]
 
 
 (define len 1000000)
@@ -156,7 +156,7 @@
 ;(fadd2)
 
 
-(define (faddc0) ; [509]
+(define (faddc0) ; [509] -> [504 plist_4 (lose for extra if, gain in gc)]
   (do ((i 0 (+ i 1)))
       ((= i len))
     (unless (= (+ 4 (values 1 2 3)) 10) ; safe_c_cp -> safe_c_sp_mv which uses cons(args, value)
@@ -165,7 +165,17 @@
 ;(faddc0)
 
 
-(define (fadds0) ; [522]
+(define (fadds02) ; [422 plist_3]
+  (let ((four 4))
+    (do ((i 0 (+ i 1)))
+	((= i len))
+      (unless (= (+ four (values 1 2)) 7) ; to sp_mv
+	(display "fadds02 oops\n" *stderr*)))))
+
+;(fadds02)
+
+
+(define (fadds0) ; [522] -> [516 plist_4 -- still has make_list]
   (let ((four 4))
     (do ((i 0 (+ i 1)))
 	((= i len))
@@ -175,7 +185,7 @@
 ;(fadds0)
 
 
-(define (fadda0) ; [559]
+(define (fadda0) ; [559] -> [552 plist_4]
   (let ((four 2))
     (do ((i 0 (+ i 1)))
 	((= i len))
@@ -188,7 +198,8 @@
 (define (strv) 
   ;; [611 op_safe_c_p -> op_c_p_mv? (copied)] -> [525 (uncopied -- buggy)] -> 
   ;; [679 if safe_list_is_possible (no cancellation)] -> [547 if direct safe_list] ->
-  ;; [567 checked safe_list used direct] -> [574 if in_use set] -> [564 if Inline op_safe_c_p_mv and embed that func]
+  ;; [567 checked safe_list used direct] -> [574 if in_use set] -> [563 if no goto apply]
+  ;; [540 if plist]
   (do ((i 0 (+ i 1)))
       ((= i len))
     (unless (string=? (string (values #\a #\b #\c)) "abc")
@@ -197,14 +208,51 @@
 ;(strv)
 
 
-(define (faddssp) ; [573]
+(define (faddssp2) ; [485] -> [478 if plist]
+  (let ((four 4))
+    (do ((i 0 (+ i 1)))
+	((= i len))
+      (unless (= (+ four four (values 1 2)) 11)
+	(display "faddssp2 oops\n" *stderr*)))))
+
+;(faddssp2)
+
+
+(define (faddssp3) ; [573]
   (let ((four 4))
     (do ((i 0 (+ i 1)))
 	((= i len))
       (unless (= (+ four four (values 1 2 3)) 14)
-	(display "faddssp oops\n" *stderr*)))))
+	(display "faddssp3 oops\n" *stderr*)))))
 
-(faddssp)
+;(faddssp3)
+
+
+(define (faddp) ; [662]
+  (do ((i 0 (+ i 1)))
+      ((= i len))
+    (unless (= (apply (values + '(1 2))) 3) ; op_c_p_mv
+      (display "faddp oops\n" *stderr*))))
+
+;(faddp)
+
+
+(define (faddap) ; [524]
+  (do ((i 0 (+ i 1)))
+      ((= i len))
+    (unless (= (apply + (values 5 '(1 2))) 8) ; op_c_ap_mv
+      (display "faddap oops\n" *stderr*))))
+
+;(faddap)
+
+
+
+; op_safe_c_pp_3|6_mv
+;(let () (define (hi) (+ (values 1 2) (values 3 4))) (hi)) -> 10
+;(define (mv8) (+ (values 1 2 3) (values 3 -2 -1)))
+;op_safe_c_3p_2|3_mv
+;(define (mv9) (+ 1 (values 2 3 4) -4))
+; (values 2 3 4) can involve op_c_na! -> op_c_nc|ns? tmv hits nc case?
 
 
 (define (all-tests)
@@ -218,9 +266,14 @@
   (fadds6)
   (fadda6)
   (faddc0)
+  (fadds02)
   (fadds0)
   (fadda0)
   (strv)
+  (faddssp2)
+  (faddssp3)
+  (faddp)
+  (faddap)
   )
 
 ;(all-tests)
