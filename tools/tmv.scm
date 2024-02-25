@@ -246,13 +246,33 @@
 ;(faddap)
 
 
+(define (faddpp) ; [625]
+  (do ((i 0 (+ i 1)))
+      ((= i len))
+    (unless (= (+ (values 1 2) (values 3 4)) 10) ; op_safe_c_pp_3|6_mv, also (+ (values 1 2 3) (values 3 -2 -1))
+      (display "faddpp oops\n" *stderr*))))
 
-; op_safe_c_pp_3|6_mv
-;(let () (define (hi) (+ (values 1 2) (values 3 4))) (hi)) -> 10
-;(define (mv8) (+ (values 1 2 3) (values 3 -2 -1)))
-;op_safe_c_3p_2|3_mv
-;(define (mv9) (+ 1 (values 2 3 4) -4))
-; (values 2 3 4) can involve op_c_na! -> op_c_nc|ns? tmv hits nc case?
+;(faddpp)
+
+
+(define (fadd3p) ; [784]
+  (do ((i 0 (+ i 1)))
+      ((= i len))
+    (unless (= (+ 1 (values 2 3 4) -4) 6) ; op_safe_c_3p_2|3_mv
+      (display "fadd3p oops\n" *stderr*))))
+
+;(fadd3p)
+
+
+(define (faddnp) ; [964]
+  (do ((i 0 (+ i 1)))
+      ((= i len))
+    (unless (= (apply (values + 1 2) '(3)) 6) ; op_any_c_mv (and op_c_na)
+      (display "faddnp oops\n" *stderr*))))
+
+;(faddnp)
+
+
 
 
 (define (all-tests)
@@ -274,9 +294,12 @@
   (faddssp3)
   (faddp)
   (faddap)
+  (faddpp)
+  (fadd3p)
+  (faddnp)
   )
 
-;(all-tests)
+(all-tests)
 
 (when (provided? 'debugging)
   (display ((*s7* 'memory-usage) 'safe-lists))

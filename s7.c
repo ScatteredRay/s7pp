@@ -2992,11 +2992,9 @@ static void init_types(void)
 
 #if WITH_GCC
 #define fx_call(Sc, F)                 ({s7_pointer _P_; _P_ = F; fx_proc(_P_)(Sc, car(_P_));})
-#define fc_call(Sc, F)                 ({s7_pointer _P_; _P_ = F; fn_proc(_P_)(Sc, cdr(_P_));})
 #define fn_call(Sc, F)                 ({s7_pointer _P_; _P_ = F; fn_proc(_P_)(Sc, cdr(_P_));})
 #else
 #define fx_call(Sc, F)                 fx_proc(F)(Sc, car(F))
-#define fc_call(Sc, F)                 fn_proc(F)(Sc, cdr(F))
 #define fn_call(Sc, F)                 fn_proc(F)(Sc, cdr(F))
 #endif
 /* fx_call can affect the stack and sc->value */
@@ -4363,9 +4361,9 @@ enum {OP_UNOPT, OP_GC_PROTECT, /* must be an even number of ops here, op_gc_prot
       OP_DO_NO_VARS, OP_DO_NO_VARS_NO_OPT, OP_DO_NO_VARS_NO_OPT_1,
       OP_DO_NO_BODY_NA_VARS, OP_DO_NO_BODY_NA_VARS_STEP, OP_DO_NO_BODY_NA_VARS_STEP_1,
 
-      OP_SAFE_C_P_1, OP_SAFE_C_PP_1, OP_SAFE_C_PP_3_MV, OP_SAFE_C_PP_5, OP_SAFE_C_PP_6_MV,
+      OP_SAFE_C_P_1, OP_SAFE_C_PP_1, OP_SAFE_C_PP_3_MV, OP_SAFE_C_PP_5,
       OP_SAFE_C_3P_1, OP_SAFE_C_3P_2, OP_SAFE_C_3P_3, OP_SAFE_C_3P_1_MV, OP_SAFE_C_3P_2_MV, OP_SAFE_C_3P_3_MV,
-      OP_SAFE_C_SP_1, OP_SAFE_CONS_SP_1, OP_SAFE_ADD_SP_1, OP_SAFE_MULTIPLY_SP_1, OP_SAFE_C_PS_1, OP_SAFE_C_PC_1, 
+      OP_SAFE_C_SP_1, OP_SAFE_CONS_SP_1, OP_SAFE_ADD_SP_1, OP_SAFE_MULTIPLY_SP_1, OP_SAFE_C_PS_1, OP_SAFE_C_PC_1,
       OP_EVAL_MACRO_MV, OP_MACROEXPAND_1, OP_APPLY_LAMBDA,
       OP_ANY_C_NP_1, OP_ANY_C_NP_MV, OP_SAFE_C_SSP_1, OP_C_P_1, OP_C_AP_1, OP_ANY_C_NP_2, OP_SAFE_C_PA_1,
       OP_SET_WITH_LET_1, OP_SET_WITH_LET_2,
@@ -4577,7 +4575,7 @@ static const char* op_names[NUM_OPS] =
       "do_no_vars", "do_no_vars_no_opt", "do_no_vars_no_opt_1",
       "do_no_body_na_vars", "do_no_body_na_vars_step", "do_no_body_na_vars_step_1",
 
-      "safe_c_p_1", "safe_c_pp_1", "safe_c_pp_3_mv", "safe_c_pp_5", "safe_c_pp_6_mv",
+      "safe_c_p_1", "safe_c_pp_1", "safe_c_pp_3_mv", "safe_c_pp_5",
       "safe_c_3p_1", "safe_c_3p_2", "safe_c_3p_3", "safe_c_3p_1_mv", "safe_c_3p_2_mv", "safe_c_3p_3_mv",
       "safe_c_sp_1", "safe_cons_sp_1", "safe_add_sp_1", "safe_multiply_sp_1", "safe_c_ps_1", "safe_c_pc_1",
       "eval_macro_mv", "macroexpand_1", "apply_lambda",
@@ -37673,7 +37671,7 @@ static bool is_proper_list_4(s7_scheme *unused_sc, s7_pointer p) {return(proper_
 
 /* -------------------------------- make-list -------------------------------- */
 static s7_pointer make_big_list(s7_scheme *sc, s7_int len, s7_pointer init)
-{ 
+{
   s7_pointer res;                    /* expanding and using free_heap pointers as a block here is 10% faster */
   check_free_heap_size(sc, len + 1); /* using cons_unchecked below, +1 in case we are on the trigger at the end */
   sc->temp6 = sc->nil;               /* sc->temp6 used only here currently */
@@ -45017,7 +45015,7 @@ static void init_hash_maps(void)
   char_ci_eq_hash_map[T_CHARACTER] =  hash_map_ci_char;
 #endif
 
-  for (int32_t i = 0; i < NUM_TYPES; i++) 
+  for (int32_t i = 0; i < NUM_TYPES; i++)
     equivalent_hash_map[i] = default_hash_map[i];
 
   equal_hash_checks[T_SYNTAX] =       hash_equal_syntax;
@@ -54042,7 +54040,7 @@ static s7_pointer fx_v(s7_scheme *sc, s7_pointer arg) {return(v_lookup(sc, T_Sym
 static s7_pointer fx_T(s7_scheme *sc, s7_pointer arg) {return(T_lookup(sc, T_Sym(arg), arg));}
 static s7_pointer fx_U(s7_scheme *sc, s7_pointer arg) {return(U_lookup(sc, T_Sym(arg), arg));}
 static s7_pointer fx_V(s7_scheme *sc, s7_pointer arg) {return(V_lookup(sc, T_Sym(arg), arg));}
-static s7_pointer fx_c_nc(s7_scheme *sc, s7_pointer arg) {return(fc_call(sc, arg));}
+static s7_pointer fx_c_nc(s7_scheme *sc, s7_pointer arg) {return(fn_call(sc, arg));}
 static s7_pointer fx_c_0c(s7_scheme *sc, s7_pointer arg) {return(fn_proc(arg)(sc, sc->nil));}
 static s7_pointer fx_cons_cc(s7_scheme *sc, s7_pointer arg) {return(cons(sc, cadr(arg), caddr(arg)));}
 static s7_pointer fx_curlet(s7_scheme *sc, s7_pointer arg) {return(s7_curlet(sc));}
@@ -55223,7 +55221,7 @@ fx_c_ssc_any(fx_c_tuc, t_lookup, u_lookup)
 
 static s7_pointer fx_c_opncq(s7_scheme *sc, s7_pointer arg)
 {
-  return(fn_proc(arg)(sc, with_list_t1(fc_call(sc, cadr(arg)))));
+  return(fn_proc(arg)(sc, with_list_t1(fn_call(sc, cadr(arg)))));
 }
 
 #define fx_c_opsq_any(Name, Lookup) \
@@ -69349,20 +69347,234 @@ static Inline void inline_op_map_gather(s7_scheme *sc) /* called thrice in eval,
 
 
 /* -------------------------------- multiple-values -------------------------------- */
+
 #define stack_top4_op(Sc)             ((opcode_t)T_Op(Sc->stack_end[-5])) /* top4 == top - 4 */
 #define stack_top4_args(Sc)           (Sc->stack_end[-6])
 /* #define stack_top4_let(Sc)         (Sc->stack_end[-7]) */
 /* #define stack_top4_code(Sc)        (Sc->stack_end[-8]) */
 
 static void apply_c_rst_no_req_function(s7_scheme *sc);
-static void op_safe_c_p_mv(s7_scheme *sc);
-static void op_safe_c_pc_mv(s7_scheme *sc);
-static void op_safe_c_ps_mv(s7_scheme *sc);
-static void op_safe_c_pa_mv(s7_scheme *sc);
-static void op_safe_c_ssp_mv(s7_scheme *sc);
-static void op_c_p_mv(s7_scheme *sc);
-static void op_c_ap_mv(s7_scheme *sc);
-static void op_safe_c_sp_mv(s7_scheme *sc);
+
+static s7_pointer op_safe_c_p_mv(s7_scheme *sc, s7_pointer args)
+{
+  /* this could be the same as op_c_p_mv and not be very much slower (611 vs 574 callgrind). Surely this is too much code for so little gain,
+   *   but calling safe_list_if_possible has too much overhead -- perhaps a macro?
+   */
+  bool use_safe = false;
+  s7_int num_args;
+  sc->value = args;
+  pop_stack_no_op(sc);
+  num_args = proper_list_length(sc->value);
+  if (num_args == 2)
+    sc->args = set_plist_2(sc, car(sc->value), cadr(sc->value));
+  else
+    if (num_args == 3)
+      sc->args = set_plist_3(sc, car(sc->value), cadr(sc->value), caddr(sc->value));
+    else
+      {
+	use_safe = ((num_args < NUM_SAFE_PRELISTS) && (!list_is_in_use(sc->safe_lists[num_args])));
+	if (use_safe)
+	  {
+	    sc->args = sc->safe_lists[num_args];
+	    sc->current_safe_list = num_args;
+	    set_list_in_use(sc->safe_lists[num_args]);
+#if S7_DEBUGGING
+	    sc->safe_list_uses[num_args]++;
+#endif
+	  }
+	else sc->args = copy_proper_list(sc, sc->value);
+	for (s7_pointer op = sc->value, np = sc->args; is_pair(op); op = cdr(op), np = cdr(np))
+	  set_car(np, car(op));
+      }
+  sc->code = c_function_base(opt1_cfunc(sc->code));
+  if (type(sc->code) == T_C_FUNCTION)
+    sc->value = apply_c_function_unopt(sc, sc->code, sc->args);
+  else apply_c_rst_no_req_function(sc);
+  if (use_safe) clear_list_in_use(sc->safe_lists[num_args]);
+  return(sc->value);
+}
+
+static s7_pointer op_safe_c_pc_mv(s7_scheme *sc, s7_pointer args)
+{
+  /* sc->value = mv vals from e.g. safe_c_pc_1 below, fn_proc = splice_in_values via values chooser synonym sc->values_uncopied */
+  /* sc->args is the trailing constant arg (the "c" in "pc") */
+  s7_pointer p;
+  bool use_safe = false;
+  sc->value = args;
+  pop_stack_no_op(sc);
+  p = cddr(sc->value);
+  if (is_null(p))
+    sc->args = set_plist_3(sc, car(sc->value), cadr(sc->value), sc->args);
+  else
+    {
+      if (is_null(cdr(p)))
+	sc->args = set_plist_4(sc, car(sc->value), cadr(sc->value), car(p), sc->args);
+      else             /* sc->args = pair_append(sc, sc->value, list_1(sc, sc->args)); */ /* not plist! sc->value is not reusable */
+	{
+	  s7_pointer lst, val = sc->args;
+	  s7_int len = proper_list_length(sc->value);
+	  sc->args = safe_list_if_possible(sc, len + 1);
+	  use_safe = (!in_heap(sc->args));
+	  lst = sc->args;
+	  for (s7_pointer p = sc->value; is_pair(p); p = cdr(p), lst = cdr(lst)) set_car(lst, car(p));
+	  set_car(lst, val);
+	}}
+  sc->code = c_function_base(opt1_cfunc(sc->code));
+  if (type(sc->code) == T_C_FUNCTION)
+    sc->value = apply_c_function_unopt(sc, sc->code, sc->args);
+  else apply_c_rst_no_req_function(sc);
+  if (use_safe) clear_list_in_use(sc->args);
+  return(sc->value);
+}
+
+static s7_pointer op_safe_c_ps_mv(s7_scheme *sc, s7_pointer args)  /* (define (hi a) (+ (values 1 2) a))  from safe_c_ps_1 */
+{
+  /* old form: sc->args = pair_append(sc, sc->value, list_1(sc, lookup(sc, caddr(sc->code)))); */ /* don't assume sc->value can be used as sc->args here! */
+  s7_pointer p, val;
+  bool use_safe = false;
+  sc->value = args;
+  pop_stack_no_op(sc);
+  p = cddr(sc->value);
+  val = lookup(sc, caddr(sc->code));
+  if (is_null(p))
+    sc->args = set_plist_3(sc, car(sc->value), cadr(sc->value), val);
+  else
+    {
+      if (is_null(cdr(p)))
+	sc->args = set_plist_4(sc, car(sc->value), cadr(sc->value), car(p), val);
+      else                   /* sc->args = pair_append(sc, sc->value, list_1(sc, val)); */
+	{
+	  s7_pointer lst;
+	  s7_int len = proper_list_length(sc->value);
+	  sc->args = safe_list_if_possible(sc, len + 1); /* sc->args is not clobbered by fx_call (below) */
+	  use_safe = (!in_heap(sc->args));
+	  lst = sc->args;
+	  for (s7_pointer p = sc->value; is_pair(p); p = cdr(p), lst = cdr(lst)) set_car(lst, car(p));
+	  set_car(lst, val);
+	}}
+  sc->code = c_function_base(opt1_cfunc(sc->code));
+  if (type(sc->code) == T_C_FUNCTION)
+    sc->value = apply_c_function_unopt(sc, sc->code, sc->args);
+  else apply_c_rst_no_req_function(sc);
+  if (use_safe) clear_list_in_use(sc->args);
+  return(sc->value);
+}
+
+static s7_pointer op_safe_c_pa_mv(s7_scheme *sc, s7_pointer args)
+{ /* (let () (define (func) (do ((x 0.0 (+ x 0.1)) (i 0 (+ i 1))) ((>= x 0.1) (#_with-baffle (inlet (values 1 2) (symbol? x)))))) (func)) */
+  s7_pointer p;
+  bool use_safe = false;
+  sc->value = args;
+  pop_stack_no_op(sc);
+  p = cddr(sc->value);
+  if (is_null(p))
+    {
+      s7_pointer val1 = car(sc->value), val2 = cadr(sc->value);
+      s7_pointer val3 = fx_call(sc, cddr(sc->code)); /* is plist3 ever clobbered by fx_call? plist_1|2 are set */
+      sc->args = set_plist_3(sc, val1, val2, val3);
+    }
+  else
+    {
+      if (is_null(cdr(p)))
+	{
+	  s7_pointer val1 = car(sc->value), val2 = cadr(sc->value), val3 = car(p);
+	  s7_pointer val4 = fx_call(sc, cddr(sc->code));
+	  sc->args = set_plist_4(sc, val1, val2, val3, val4);
+	}
+      else
+	{
+	  s7_pointer lst;
+	  s7_int len = proper_list_length(sc->value);
+	  sc->args = safe_list_if_possible(sc, len + 1); /* sc->args is not clobbered by fx_call (below) */
+	  use_safe = (!in_heap(sc->args));
+	  lst = sc->args;
+	  for (s7_pointer p = sc->value; is_pair(p); p = cdr(p), lst = cdr(lst)) set_car(lst, car(p));
+	  set_car(lst, fx_call(sc, cddr(sc->code)));
+	}}
+  sc->code = c_function_base(opt1_cfunc(sc->code));
+  if (type(sc->code) == T_C_FUNCTION)
+    sc->value = apply_c_function_unopt(sc, sc->code, sc->args);
+  else apply_c_rst_no_req_function(sc);
+  if (use_safe) clear_list_in_use(sc->args);
+  return(sc->value);
+}
+
+static s7_pointer op_safe_c_sp_mv(s7_scheme *sc, s7_pointer args)
+{ /* (let () (define (ho a) (+ a 2)) (define (hi) (+ (ho 1) (values 3 4))) (hi)) safe_add_sp_1 */
+  s7_pointer p;
+  sc->value = args;
+  clear_multiple_value(args); /* see op_safe_c_sp_mv in s7test */
+  pop_stack_no_op(sc);
+  p = cddr(sc->value);
+  if (is_null(p))
+    sc->args = set_plist_3(sc, sc->args, car(sc->value), cadr(sc->value));
+  else
+    if (is_null(cdr(p)))
+      sc->args = set_plist_4(sc, sc->args, car(sc->value), cadr(sc->value), car(p));
+    else sc->args = cons(sc, sc->args, sc->value); /* not ulist */
+  sc->code = c_function_base(opt1_cfunc(sc->code));
+  if (type(sc->code) == T_C_FUNCTION)
+    sc->value = apply_c_function_unopt(sc, sc->code, sc->args);
+  else apply_c_rst_no_req_function(sc);
+  return(sc->value);
+}
+
+static s7_pointer op_safe_c_ssp_mv(s7_scheme *sc, s7_pointer args) /*sc->code: (+ pi pi (values 1 2))  sc->value: '(1 2) */
+{
+  sc->value = args;
+  pop_stack_no_op(sc);
+  if (is_null(cddr(sc->value)))
+    sc->args = set_plist_4(sc, lookup(sc, cadr(sc->code)), lookup(sc, caddr(sc->code)), car(sc->value), cadr(sc->value));
+  else sc->args = cons_unchecked(sc, lookup(sc, cadr(sc->code)), cons(sc, lookup(sc, caddr(sc->code)), sc->value)); /* not ulist here */
+  sc->code = c_function_base(opt1_cfunc(sc->code));
+  if (type(sc->code) == T_C_FUNCTION)
+    sc->value = apply_c_function_unopt(sc, sc->code, sc->args);
+  else apply_c_rst_no_req_function(sc);
+  return(sc->value);
+}
+
+static s7_pointer op_c_p_mv(s7_scheme *sc, s7_pointer args) /* (values (values 1 2)) or (apply (values + '(2))) */
+{
+  sc->value = args;
+  pop_stack_no_op(sc);
+  sc->code = c_function_base(opt1_cfunc(sc->code));
+  sc->args = copy_proper_list(sc, sc->value);
+  if (type(sc->code) == T_C_FUNCTION)
+    sc->value = apply_c_function_unopt(sc, sc->code, sc->args);
+  else apply_c_rst_no_req_function(sc);
+  return(sc->value);
+}
+
+static s7_pointer op_c_ap_mv(s7_scheme *sc, s7_pointer args) /* (values 2 (values 3 4)) or (apply + (values 5 '(1 2))) */
+{
+  sc->value = args;
+  pop_stack_no_op(sc);
+  clear_multiple_value(sc->value); /* sc->value not copied? */
+  sc->args = cons(sc, sc->args, sc->value);
+  sc->code = c_function_base(opt1_cfunc(sc->code));
+  if (type(sc->code) == T_C_FUNCTION)
+    sc->value = apply_c_function_unopt(sc, sc->code, sc->args);
+  else apply_c_rst_no_req_function(sc);
+  return(sc->value);
+}
+
+static s7_pointer op_safe_c_pp_6_mv(s7_scheme *sc, s7_pointer args) /* both args mv */
+{
+  s7_pointer p;
+  sc->value = args;
+  pop_stack_no_op(sc);
+  for (p = cdr(sc->args); is_pair(cdr(p)); p = cdr(p)); /* we used to copy here: sc->args = pair_append(sc, sc->args, sc->value); */
+  set_cdr(p, sc->value);
+  /* fn_proc(sc->code) here is g_add_2, but we have any number of args from a values call
+   *   the original (unoptimized) function is c_function_base(opt1_cfunc(sc->code))
+   *   (let () (define (hi) (+ (values 1 2) (values 3 4))) (hi)) -> 10
+   */
+  sc->code = c_function_base(opt1_cfunc(sc->code));
+  if (type(sc->code) == T_C_FUNCTION)
+    sc->value = apply_c_function_unopt(sc, sc->code, sc->args);
+  else apply_c_rst_no_req_function(sc);
+  return(sc->value);
+}
 
 static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 {
@@ -69381,7 +69593,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
        *   setting stacked args to cdr of reversed-args and returning car because the list (args)
        *   can be some variable's value in a macro expansion via ,@ and reversing it in place
        *   (all this to avoid consing), clobbers the variable's value.
-       * (let ((g-1 (lambda (x a b c) (x (+ a 1) (- b 1) (values c 2))))) (g-1 (lambda (b c d e) (+ b c d e)) 2 3 5)) eval_args2 
+       * (let ((g-1 (lambda (x a b c) (x (+ a 1) (- b 1) (values c 2))))) (g-1 (lambda (b c d e) (+ b c d e)) 2 3 5)) eval_args2
        */
       sc->w = args;
       for (x = args; is_not_null(cdr(x)); x = cdr(x))
@@ -69425,7 +69637,6 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 
     case OP_ANY_C_NP_1: case OP_ANY_CLOSURE_NP_1: /* ((eval-string (object->string mac5 :readable)) 1 5 3 4) */
       set_stack_top_op(sc, stack_top_op(sc) + 1); /* replace with mv version */
-
     case OP_ANY_C_NP_MV: case OP_ANY_CLOSURE_NP_MV:
     FP_MV:
       if ((is_immutable(args)) || /* (let () (define (func) (with-output-to-string (lambda () (apply-values (write '(1 2)))))) (func) (func)) */
@@ -69437,55 +69648,26 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
       set_multiple_value(args);
       return(args);
 
-    case OP_SAFE_C_SSP_1:
-      sc->value = args;
-      pop_stack(sc);
-      op_safe_c_ssp_mv(sc);
-      return(sc->value);
-
     case OP_SAFE_C_SP_1: case OP_SAFE_CONS_SP_1: case OP_SAFE_ADD_SP_1: case OP_SAFE_MULTIPLY_SP_1:
-      /* (let () (define (ho a) (+ a 2)) (define (hi) (+ (ho 1) (values 3 4))) (hi)) safe_add_sp_1 */
-      sc->value = args;
-      clear_multiple_value(args); /* see op_safe_c_sp_mv in s7test */
-      pop_stack(sc);
-      op_safe_c_sp_mv(sc);
-      return(sc->value);
+      return(op_safe_c_sp_mv(sc, args));
 
-    case OP_SAFE_C_PS_1:     /* (define (f) (let ((d #\d)) (string (values #\a #\b #\c) d))) (f) */
-      sc->value = args;
-      pop_stack(sc);
-      op_safe_c_ps_mv(sc);
-      return(sc->value); /* args?? */
+    case OP_SAFE_C_PS_1:  return(op_safe_c_ps_mv(sc, args));    /* (define (f) (let ((d #\d)) (string (values #\a #\b #\c) d))) (f) */
+    case OP_SAFE_C_PC_1:  return(op_safe_c_pc_mv(sc, args));    /* (define (f) (string (values #\a #\b #\c) #\d)) (f) */
+    case OP_SAFE_C_PA_1:  return(op_safe_c_pa_mv(sc, args));
+    case OP_SAFE_C_SSP_1: return(op_safe_c_ssp_mv(sc, args));
+    case OP_SAFE_C_P_1:   return(op_safe_c_p_mv(sc, args));     /* (string (values #\a #\b #\c)) */
+    case OP_C_P_1:        return(op_c_p_mv(sc, args));          /* (let () (define (ho a) (values a 1)) (define (hi) (- (ho 2))) (hi)) */
+    case OP_C_AP_1:       return(op_c_ap_mv(sc, args));
+    case OP_SAFE_C_PP_5:  return(op_safe_c_pp_6_mv(sc, args));  /* (let () (define (hi) (+ (values 1 2) (values 3 4))) (hi)) (also safe_c_pp_1) */
 
-    case OP_SAFE_C_PC_1:     /* (define (f) (string (values #\a #\b #\c) #\d)) (f) */
-      sc->value = args;
-      pop_stack(sc);
-      op_safe_c_pc_mv(sc);
-      return(sc->value); /* args?? */
+    case OP_SAFE_C_PP_1:     /* (let () (define (ho a) (+ a 2)) (define (hi) (+ (ho 1) (values 3 4))) (hi)) */
+      set_stack_top_op(sc, OP_SAFE_C_PP_3_MV);
+      return(args);
 
-    case OP_SAFE_C_PA_1:     /* (let () (define (func) (do ((x 0.0 (+ x 0.1)) (i 0 (+ i 1))) ((>= x 0.1) (#_with-baffle (inlet (values 1 2) (symbol? x)))))) (func)) */
-      sc->value = args;
-      pop_stack(sc);
-      op_safe_c_pa_mv(sc);
-      return(sc->value);
-
-    case OP_SAFE_C_P_1:      /* (string (values #\a #\b #\c)) */
-      sc->value = args;
-      pop_stack(sc);
-      op_safe_c_p_mv(sc);
-      return(sc->value);
-
-    case OP_C_P_1:           /* (let () (define (ho a) (values a 1)) (define (hi) (- (ho 2))) (hi)) */
-      sc->value = args;
-      pop_stack(sc);
-      op_c_p_mv(sc);
-      return(sc->value);
-
-    case OP_C_AP_1:
-      sc->value = args;
-      pop_stack(sc);
-      op_c_ap_mv(sc);
-      return(sc->value);
+    case OP_SAFE_C_3P_1: case OP_SAFE_C_3P_2: case OP_SAFE_C_3P_3:          /* (let ((g-1 (lambda (x a b c) (x (+ a 1) (- b 1) (values c 2))))) (g-1 + 2 3 5)) */
+      set_stack_top_op(sc, stack_top_op(sc) +  3); /* change op to parallel mv case */
+    case OP_SAFE_C_3P_1_MV: case OP_SAFE_C_3P_2_MV: case OP_SAFE_C_3P_3_MV: /* (list-values '+ 1 (apply-values (list 2 3))) */
+      return(cons(sc, sc->unused, copy_proper_list(sc, args)));
 
     case OP_SAFE_CLOSURE_P_1:  case OP_CLOSURE_P_1: case OP_SAFE_CLOSURE_P_A_1:
     case OP_SAFE_CLOSURE_AP_1: case OP_CLOSURE_AP_1:
@@ -69496,21 +69678,6 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
       /* (let () (define (func) (do ((x 0.0 (+ x 0.1)) (i 0 (+ i 1))) ((>= x 0.1) (#_with-baffle (inlet (values 1 2) (symbol? x)))))) (func)) */
       if (is_multiple_value(sc->value)) clear_multiple_value(sc->value);
       error_nr(sc, sc->wrong_number_of_args_symbol, set_elist_3(sc, too_many_arguments_string, stack_top_code(sc), sc->value));
-
-    case OP_SAFE_C_PP_1:     /* (let () (define (ho a) (+ a 2)) (define (hi) (+ (ho 1) (values 3 4))) (hi)) */
-      set_stack_top_op(sc, OP_SAFE_C_PP_3_MV);
-      return(args);
-
-    case OP_SAFE_C_PP_5:     /* (let () (define (hi) (+ (values 1 2) (values 3 4))) (hi)) (also safe_c_pp_1) */
-      set_stack_top_op(sc, OP_SAFE_C_PP_6_MV);
-      return(args);
-
-    case OP_SAFE_C_3P_1: case OP_SAFE_C_3P_2: case OP_SAFE_C_3P_3:
-      /* (let ((g-1 (lambda (x a b c) (x (+ a 1) (- b 1) (values c 2))))) (g-1 + 2 3 5)) */
-      set_stack_top_op(sc, stack_top_op(sc) +  3); /* change op to parallel mv case */
-    case OP_SAFE_C_3P_1_MV: case OP_SAFE_C_3P_2_MV: case OP_SAFE_C_3P_3_MV:
-      /* (list-values '+ 1 (apply-values (list 2 3))) */
-      return(cons(sc, sc->unused, copy_proper_list(sc, args)));
 
       /* look for errors here rather than glomming up the set! and let code */
     case OP_SET_SAFE:                         /* symbol is sc->code after pop */
@@ -69608,7 +69775,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
       }
 
     case OP_BARRIER:
-      pop_stack(sc);
+      pop_stack_no_op(sc);
       return(splice_in_values(sc, args));
 
     case OP_GC_PROTECT:
@@ -69629,7 +69796,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
       call_exit_active(stack_top_args(sc)) = false; /* stack_top_args(sc) is the goto */
 
     case OP_CATCH: case OP_CATCH_1: case OP_CATCH_2: case OP_CATCH_ALL: /* (+ (catch #t (lambda () (values 3 4)) (lambda args args))) */
-      pop_stack(sc);
+      pop_stack_no_op(sc);
       return(splice_in_values(sc, args));
 
     case OP_EVAL_MACRO_MV: /* perhaps reader-cond expansion at eval-time (not at run-time) via ((let () reader-cond) ...)? */
@@ -69683,7 +69850,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 	}
       for (x = args; is_not_null(cdr(x)); x = cdr(x))
 	stack_top4_args(sc) = cons(sc, car(x), stack_top4_args(sc));
-      pop_stack(sc);               /* need GC protection in loop above, so do this afterwards */
+      pop_stack_no_op(sc);         /* need GC protection in loop above, so do this afterwards */
       return(car(x));              /* sc->value from OP_READ_LIST point of view */
 
     case OP_EVAL_DONE:    /* ((lambda (w) 1) (char-ready? (open-input-function (lambda (x) (values 1 2 3 4 5 6 7))))) */
@@ -80784,7 +80951,7 @@ static goto_t set_implicit_c_function(s7_scheme *sc, s7_pointer fnc)  /* (let ((
     {
       if (!is_any_macro(c_function_setter(fnc)))
 	no_setter_error_nr(sc, fnc);
-      sc->args = (is_null(cdar(sc->code))) ? cdr(sc->code) : 
+      sc->args = (is_null(cdar(sc->code))) ? cdr(sc->code) :
                   ((is_null(cddar(sc->code))) ? cons(sc, cadar(sc->code), cdr(sc->code)) : pair_append(sc, cdar(sc->code), cdr(sc->code)));
       sc->code = c_function_setter(fnc);
       /* here multiple-values can't happen because we don't eval the new-value argument */
@@ -80821,7 +80988,7 @@ static goto_t set_implicit_closure(s7_scheme *sc, s7_pointer fnc)
     {
       if (!is_any_macro(setter))
 	no_setter_error_nr(sc, fnc);
-      sc->args = (is_null(cdar(sc->code))) ? cdr(sc->code) : 
+      sc->args = (is_null(cdar(sc->code))) ? cdr(sc->code) :
                   ((is_null(cddar(sc->code))) ? cons(sc, cadar(sc->code), cdr(sc->code)) : pair_append(sc, cdar(sc->code), cdr(sc->code)));
       sc->code = setter;
       return(goto_apply);
@@ -88740,41 +88907,6 @@ static void op_safe_c_p(s7_scheme *sc)
 
 static void op_safe_c_p_1(s7_scheme *sc) {sc->value = fn_proc(sc->code)(sc, with_list_t1(sc->value));}
 
-static void op_safe_c_p_mv(s7_scheme *sc)
-{
-  /* this could be the same as op_c_p_mv and not be very much slower (611 vs 574 callgrind). Surely this is too much code for so little gain,
-   *   but calling safe_list_if_possible has too much overhead -- perhaps a macro?
-   */
-  bool use_safe = false;
-  s7_int num_args = proper_list_length(sc->value);
-  if (num_args == 2)
-    sc->args = set_plist_2(sc, car(sc->value), cadr(sc->value));
-  else
-    if (num_args == 3)
-      sc->args = set_plist_3(sc, car(sc->value), cadr(sc->value), caddr(sc->value));
-    else
-      {
-	use_safe = ((num_args < NUM_SAFE_PRELISTS) && (!list_is_in_use(sc->safe_lists[num_args])));
-	if (use_safe)
-	  {
-	    sc->args = sc->safe_lists[num_args];
-	    sc->current_safe_list = num_args;
-	    set_list_in_use(sc->safe_lists[num_args]);
-#if S7_DEBUGGING
-	    sc->safe_list_uses[num_args]++;
-#endif
-	  }
-	else sc->args = copy_proper_list(sc, sc->value);
-	for (s7_pointer op = sc->value, np = sc->args; is_pair(op); op = cdr(op), np = cdr(np))
-	  set_car(np, car(op));
-      }
-  sc->code = c_function_base(opt1_cfunc(sc->code));
-  if (type(sc->code) == T_C_FUNCTION)
-    sc->value = apply_c_function_unopt(sc, sc->code, sc->args);
-  else apply_c_rst_no_req_function(sc);
-  if (use_safe) clear_list_in_use(sc->safe_lists[num_args]);
-}
-
 static void op_safe_c_ssp(s7_scheme *sc)
 {
   check_stack_size(sc);
@@ -88788,17 +88920,6 @@ static void op_safe_c_ssp_1(s7_scheme *sc)
   set_car(sc->t3_1, lookup(sc, cadr(sc->code)));
   set_car(sc->t3_2, lookup(sc, caddr(sc->code)));
   sc->value = fn_proc(sc->code)(sc, sc->t3_1);
-}
-
-static void op_safe_c_ssp_mv(s7_scheme *sc) /*sc->code: (+ pi pi (values 1 2))  sc->value: '(1 2) */
-{
-  if (is_null(cddr(sc->value)))
-    sc->args = set_plist_4(sc, lookup(sc, cadr(sc->code)), lookup(sc, caddr(sc->code)), car(sc->value), cadr(sc->value));
-  else sc->args = cons_unchecked(sc, lookup(sc, cadr(sc->code)), cons(sc, lookup(sc, caddr(sc->code)), sc->value)); /* not ulist here */
-  sc->code = c_function_base(opt1_cfunc(sc->code));
-  if (type(sc->code) == T_C_FUNCTION)
-    sc->value = apply_c_function_unopt(sc, sc->code, sc->args);
-  else apply_c_rst_no_req_function(sc);
 }
 
 static void op_s(s7_scheme *sc)
@@ -88955,34 +89076,6 @@ static void op_safe_c_ps_1(s7_scheme *sc)
   sc->value = fn_proc(sc->code)(sc, sc->t2_1);
 }
 
-static void op_safe_c_ps_mv(s7_scheme *sc)  /* (define (hi a) (+ (values 1 2) a))  from safe_c_ps_1 */
-{
-  /* old form: sc->args = pair_append(sc, sc->value, list_1(sc, lookup(sc, caddr(sc->code)))); */ /* don't assume sc->value can be used as sc->args here! */
-  s7_pointer p = cddr(sc->value), val = lookup(sc, caddr(sc->code));
-  bool use_safe = false;
-  if (is_null(p)) 
-    sc->args = set_plist_3(sc, car(sc->value), cadr(sc->value), val);
-  else
-    {
-      if (is_null(cdr(p)))
-	sc->args = set_plist_4(sc, car(sc->value), cadr(sc->value), car(p), val);
-      else                   /* sc->args = pair_append(sc, sc->value, list_1(sc, val)); */
-	{
-	  s7_pointer lst;
-	  s7_int len = proper_list_length(sc->value);
-	  sc->args = safe_list_if_possible(sc, len + 1); /* sc->args is not clobbered by fx_call (below) */
-	  use_safe = (!in_heap(sc->args));
-	  lst = sc->args;
-	  for (s7_pointer p = sc->value; is_pair(p); p = cdr(p), lst = cdr(lst)) set_car(lst, car(p));
-	  set_car(lst, val);
-	}}
-  sc->code = c_function_base(opt1_cfunc(sc->code));
-  if (type(sc->code) == T_C_FUNCTION)
-    sc->value = apply_c_function_unopt(sc, sc->code, sc->args);
-  else apply_c_rst_no_req_function(sc);
-  if (use_safe) clear_list_in_use(sc->args);
-}
-
 static void op_safe_c_sp(s7_scheme *sc)
 {
   s7_pointer args = cdr(sc->code);
@@ -88995,21 +89088,6 @@ static void op_safe_c_sp_1(s7_scheme *sc)
 {
   /* we get here from many places (op_safe_c_sp for example), but all are safe */
   sc->value = fn_proc(sc->code)(sc, with_list_t2(sc->args, sc->value));
-}
-
-static void op_safe_c_sp_mv(s7_scheme *sc)
-{
-  s7_pointer p = cddr(sc->value);
-  if (is_null(p))
-    sc->args = set_plist_3(sc, sc->args, car(sc->value), cadr(sc->value));
-  else 
-    if (is_null(cdr(p)))
-      sc->args = set_plist_4(sc, sc->args, car(sc->value), cadr(sc->value), car(p));
-    else sc->args = cons(sc, sc->args, sc->value); /* not ulist */
-  sc->code = c_function_base(opt1_cfunc(sc->code));
-  if (type(sc->code) == T_C_FUNCTION)
-    sc->value = apply_c_function_unopt(sc, sc->code, sc->args);
-  else apply_c_rst_no_req_function(sc);
 }
 
 static void op_safe_add_sp_1(s7_scheme *sc)
@@ -89032,35 +89110,6 @@ static void op_safe_c_pc(s7_scheme *sc)
   check_stack_size(sc); /* b dyn */
   push_stack(sc, OP_SAFE_C_PC_1, opt3_con(args), sc->code);
   sc->code = car(args);
-}
-
-static void op_safe_c_pc_mv(s7_scheme *sc)
-{
-  /* sc->value = mv vals from e.g. safe_c_pc_1 below, fn_proc = splice_in_values via values chooser synonym sc->values_uncopied */
-  /* sc->args is the trailing constant arg (the "c" in "pc") */
-  s7_pointer p = cddr(sc->value);
-  bool use_safe = false;
-  if (is_null(p)) 
-    sc->args = set_plist_3(sc, car(sc->value), cadr(sc->value), sc->args);
-  else
-    {
-      if (is_null(cdr(p)))
-	sc->args = set_plist_4(sc, car(sc->value), cadr(sc->value), car(p), sc->args);
-      else             /* sc->args = pair_append(sc, sc->value, list_1(sc, sc->args)); */ /* not plist! sc->value is not reusable */
-	{
-	  s7_pointer lst, val = sc->args;
-	  s7_int len = proper_list_length(sc->value);
-	  sc->args = safe_list_if_possible(sc, len + 1);
-	  use_safe = (!in_heap(sc->args));
-	  lst = sc->args;
-	  for (s7_pointer p = sc->value; is_pair(p); p = cdr(p), lst = cdr(lst)) set_car(lst, car(p));
-	  set_car(lst, val);
-	}}
-  sc->code = c_function_base(opt1_cfunc(sc->code));
-  if (type(sc->code) == T_C_FUNCTION)
-    sc->value = apply_c_function_unopt(sc, sc->code, sc->args);
-  else apply_c_rst_no_req_function(sc);
-  if (use_safe) clear_list_in_use(sc->args);
 }
 
 static void op_safe_c_pc_1(s7_scheme *sc) {sc->value = fn_proc(sc->code)(sc, with_list_t2(sc->value, sc->args));}
@@ -89213,21 +89262,6 @@ static void op_safe_c_pp_5(s7_scheme *sc)
       for (p = sc->args; is_pair(cdr(p)); p = cdr(p));
       set_cdr(p, list_1(sc, sc->value));
     }
-  sc->code = c_function_base(opt1_cfunc(sc->code));
-  if (type(sc->code) == T_C_FUNCTION)
-    sc->value = apply_c_function_unopt(sc, sc->code, sc->args);
-  else apply_c_rst_no_req_function(sc);
-}
-
-static void op_safe_c_pp_6_mv(s7_scheme *sc) /* both args mv */
-{
-  s7_pointer p;
-  for (p = cdr(sc->args); is_pair(cdr(p)); p = cdr(p)); /* we used to copy here: sc->args = pair_append(sc, sc->args, sc->value); */
-  set_cdr(p, sc->value);
-  /* fn_proc(sc->code) here is g_add_2, but we have any number of args from a values call
-   *   the original (unoptimized) function is c_function_base(opt1_cfunc(sc->code))
-   *   (let () (define (hi) (+ (values 1 2) (values 3 4))) (hi)) -> 10
-   */
   sc->code = c_function_base(opt1_cfunc(sc->code));
   if (type(sc->code) == T_C_FUNCTION)
     sc->value = apply_c_function_unopt(sc, sc->code, sc->args);
@@ -89485,41 +89519,6 @@ static void op_safe_c_pa_1(s7_scheme *sc)
   sc->value = fn_proc(sc->code)(sc, sc->t2_1);
 }
 
-static void op_safe_c_pa_mv(s7_scheme *sc)
-{
-  s7_pointer p = cddr(sc->value);
-  bool use_safe = false;
-  if (is_null(p))
-    {
-      s7_pointer val1 = car(sc->value), val2 = cadr(sc->value);
-      s7_pointer val3 = fx_call(sc, cddr(sc->code)); /* is plist3 ever clobbered by fx_call? plist_1|2 are set */
-      sc->args = set_plist_3(sc, val1, val2, val3);
-    }
-  else
-    {
-      if (is_null(cdr(p)))
-	{
-	  s7_pointer val1 = car(sc->value), val2 = cadr(sc->value), val3 = car(p);
-	  s7_pointer val4 = fx_call(sc, cddr(sc->code));
-	  sc->args = set_plist_4(sc, val1, val2, val3, val4);
-	}
-      else
-	{
-	  s7_pointer lst;
-	  s7_int len = proper_list_length(sc->value);
-	  sc->args = safe_list_if_possible(sc, len + 1); /* sc->args is not clobbered by fx_call (below) */
-	  use_safe = (!in_heap(sc->args));
-	  lst = sc->args;
-	  for (s7_pointer p = sc->value; is_pair(p); p = cdr(p), lst = cdr(lst)) set_car(lst, car(p));
-	  set_car(lst, fx_call(sc, cddr(sc->code)));
-	}}
-  sc->code = c_function_base(opt1_cfunc(sc->code));
-  if (type(sc->code) == T_C_FUNCTION)
-    sc->value = apply_c_function_unopt(sc, sc->code, sc->args);
-  else apply_c_rst_no_req_function(sc);
-  if (use_safe) clear_list_in_use(sc->args);
-}
-
 static void op_c_na(s7_scheme *sc)  /* (set-cdr! lst ()) */
 {
   s7_pointer new_args = make_list(sc, opt3_arglen(cdr(sc->code)), sc->unused);
@@ -89545,15 +89544,6 @@ static void op_c_p(s7_scheme *sc)
   sc->code = T_Pair(cadr(sc->code));
 }
 
-static void op_c_p_mv(s7_scheme *sc) /* (values (values 1 2)) or (apply (values + '(2))) */
-{
-  sc->code = c_function_base(opt1_cfunc(sc->code));
-  sc->args = copy_proper_list(sc, sc->value);
-  if (type(sc->code) == T_C_FUNCTION)
-    sc->value = apply_c_function_unopt(sc, sc->code, sc->args);
-  else apply_c_rst_no_req_function(sc);
-}
-
 static inline void op_c_ss(s7_scheme *sc)
 {
   sc->args = list_2(sc, lookup(sc, cadr(sc->code)), lookup(sc, caddr(sc->code)));
@@ -89565,16 +89555,6 @@ static void op_c_ap(s7_scheme *sc)
   sc->args = fx_call(sc, cdr(sc->code));
   push_stack_direct(sc, OP_C_AP_1); /* op_c_ap_1 sends us to apply which calls check_stack_size I think */
   sc->code = caddr(sc->code);
-}
-
-static void op_c_ap_mv(s7_scheme *sc) /* (values 2 (values 3 4)) or (apply + (values 5 '(1 2))) */
-{
-  clear_multiple_value(sc->value); /* sc->value not copied? */
-  sc->args = cons(sc, sc->args, sc->value);
-  sc->code = c_function_base(opt1_cfunc(sc->code));
-  if (type(sc->code) == T_C_FUNCTION)
-    sc->value = apply_c_function_unopt(sc, sc->code, sc->args);
-  else apply_c_rst_no_req_function(sc);
 }
 
 static void op_c_aa(s7_scheme *sc)
@@ -91872,7 +91852,7 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	{
 	  /* safe c_functions */
 	case OP_SAFE_C_NC: if (!c_function_is_ok(sc, sc->code)) break;   /* break refers to the switch statement */
-	case HOP_SAFE_C_NC: sc->value = fc_call(sc, sc->code); continue; /* continue refers to the outer while loop -- unfortunate C ambiguity */
+	case HOP_SAFE_C_NC: sc->value = fn_call(sc, sc->code); continue; /* continue refers to the outer while loop -- unfortunate C ambiguity */
 
 	case OP_SAFE_C_S: if (!c_function_is_ok(sc, sc->code)) {if (op_unknown_s(sc)) goto EVAL; continue;} /* checking symbol_ctr(car(sc->code)) == 1 just slows us down */
 	case HOP_SAFE_C_S: inline_op_safe_c_s(sc); continue;
@@ -92050,7 +92030,6 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	case OP_SAFE_C_PP_1:    op_safe_c_pp_1(sc);    goto EVAL;
 	case OP_SAFE_C_PP_3_MV: op_safe_c_pp_3_mv(sc); goto EVAL;
 	case OP_SAFE_C_PP_5:    op_safe_c_pp_5(sc);    continue;
-	case OP_SAFE_C_PP_6_MV: op_safe_c_pp_6_mv(sc); continue;
 
 	case OP_SAFE_C_3P:      if (!c_function_is_ok(sc, sc->code)) break;
 	case HOP_SAFE_C_3P:     op_safe_c_3p(sc);      goto EVAL;
@@ -94253,7 +94232,7 @@ static s7_pointer memory_usage(s7_scheme *sc)
     for (i = NUM_SAFE_LISTS - 1; i > 0; i--)
       sc->w = cons(sc, make_integer(sc, sc->safe_list_uses[i]), sc->w);
 #endif
-    add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "safe-lists", 10), 
+    add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "safe-lists", 10),
 			       list_3(sc, make_integer(sc, live), make_integer(sc, in_use), sc->w));
 #if S7_DEBUGGING
     sc->w = sc->unused;
@@ -97653,7 +97632,7 @@ s7_scheme *s7_init(void)
   s7_define_function(sc, "report-missed-calls", g_report_missed_calls, 0, 0, false, NULL); /* tc/recur tests in s7test.scm */
   if (strcmp(op_names[HOP_SAFE_C_PP], "h_safe_c_pp") != 0) fprintf(stderr, "c op_name: %s\n", op_names[HOP_SAFE_C_PP]);
   if (strcmp(op_names[OP_SET_WITH_LET_2], "set_with_let_2") != 0) fprintf(stderr, "set op_name: %s\n", op_names[OP_SET_WITH_LET_2]);
-  if (NUM_OPS != 926) fprintf(stderr, "size: cell: %d, block: %d, max op: %d, opt: %d\n", (int)sizeof(s7_cell), (int)sizeof(block_t), NUM_OPS, (int)sizeof(opt_info));
+  if (NUM_OPS != 925) fprintf(stderr, "size: cell: %d, block: %d, max op: %d, opt: %d\n", (int)sizeof(s7_cell), (int)sizeof(block_t), NUM_OPS, (int)sizeof(opt_info));
   /* cell size: 48, 120 if debugging, block size: 40, opt: 128 or 280 */
 #endif
   return(sc);
@@ -98072,10 +98051,10 @@ int main(int argc, char **argv)
  * tlamb                                 8003   7941   7941
  * tgc              11.9   11.1   8177   7857   7986   8005
  * thash            11.8   11.7   9734   9479   9526   9329
- * tmv                                                 9545
  * cb        12.9   11.2   11.0   9658   9564   9609   9635
  * tmap-hash                             1.2k          10.3
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3
+ * tmv                     15.1   14.4   14.2          13.0
  * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1
  * calls            36.7   37.5   37.0   37.5   37.1   37.0
  * sg                             55.9   55.8   55.4   55.2
@@ -98086,12 +98065,11 @@ int main(int argc, char **argv)
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * clear_all_opts infinite loop, also in pair_to_port (from '#1=(#1# . #1) but need more context (t678)) [clear collected first]
- * tmv: where is make_list? op_c_na, other mv cases? op_any_c|closure_np_mv, various op_safe_c_pp|3p cases
+ * tmv: where is make_list? op_c_na -> op_c_nc|s from na (as in safe_c_nc etc)
  * g_apply_values + known proper list
  * could (safe-c-func (values ...)) mark the values as direct?
  * safe/mutable lists in opt?
  * check tlet changes above
  * (let ((*features* (cons 0 (lambda (a b . c) a))))...) gets through
- * op_c_nc|s from na (as in safe_c_nc etc)
  * do splice_in_values cases know available possibilities (so switch is unnecessary)?
  */
