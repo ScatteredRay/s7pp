@@ -74,12 +74,12 @@
     (mv12 -2 -1)
     ))
 
-;(mvtest) ; [321] -> [289] -> [281]
+;(mvtest) ; [321] -> [289] -> [281] -> [246]
 
 
 (define len 1000000)
 
-(define (faddc) ; [607] -> [508 (no pair_append)]
+(define (faddc) ; [607] -> [508 (no pair_append)] -> [384]
   (do ((i 0 (+ i 1)))
       ((= i len))
     (unless (= (+ (values 1 2 3) 4) 10)
@@ -88,7 +88,7 @@
 ;(faddc)
 
 
-(define (fadds) ; [620] -> [523]
+(define (fadds) ; [620] -> [523] -> [396]
   (let ((arg 4))
     (do ((i 0 (+ i 1)))
 	((= i len))
@@ -100,7 +100,7 @@
 
 ;(let () (define (func) (do ((x 0.0 (+ x 0.1)) (i 0 (+ i 1))) ((>= x 0.1) (#_with-baffle (inlet (values 1 2) (symbol? x)))))) (func)) */
 
-(define (fadda) ; [626] -> [554]
+(define (fadda) ; [626] -> [554] -> [415]
   (do ((i 0 (+ i 1)))
       ((= i len))
     (unless (= (+ (values 1 2 3) (if (integer? i) 4 0)) 10) ; safe_c_pa_mv
@@ -109,7 +109,7 @@
 ;(fadda)
 
 
-(define (fadd1) ; [834] -> [736 (no pair_append)]
+(define (fadd1) ; [834] -> [736 (no pair_append)] -> [718]
   (do ((i 0 (+ i 1)))
       ((= i len))
     (unless (= (+ (values i (+ i 1) (+ i 2)) 4) (+ 7 (* i 3)))
@@ -118,7 +118,7 @@
 ;(fadd1)
 
 
-(define (fadda6) ; [1127 gc copy_proper_list make_list op_safe_c_pa_mv fx_c_opcsq_c] -> [1041]
+(define (fadda6) ; [1127 gc copy_proper_list make_list op_safe_c_pa_mv fx_c_opcsq_c] -> [1041] -> [1010]
   (do ((i 0 (+ i 1)))
       ((= i len))
     (unless (= (+ (values i (+ i 1) 2 3 4 5) (* 2 3)) (+ (* 2 i) 21)) ; op_safe_c_pa_mv > 3 mv vals
@@ -127,7 +127,7 @@
 ;(fadda6)
 
 
-(define (fadds6) ; [1010 after]
+(define (fadds6) ; [1010 after] -> [990]
   (let ((three 3))
     (do ((i 0 (+ i 1)))
 	((= i len))
@@ -137,7 +137,7 @@
 ;(fadds6)
 
 
-(define (faddc6) ; [997 after]
+(define (faddc6) ; [997 after] -> [978]
   (do ((i 0 (+ i 1)))
       ((= i len))
     (unless (= (+ (values i (+ i 1) 2 3 4 5) 3) (+ (* 2 i) 18))
@@ -147,7 +147,7 @@
 
 
 (define (fadd2-mv) (values 1 2 3))
-(define (fadd2) ; [649] -> [550 (no pair_append)] -> [546 if no goto]
+(define (fadd2) ; [649] -> [550 (no pair_append)] -> [546 if no goto] -> [425]
   (do ((i 0 (+ i 1)))
       ((= i len))
     (unless (= (+ (fadd2-mv) 4) 10)
@@ -156,7 +156,7 @@
 ;(fadd2)
 
 
-(define (faddc0) ; [509] -> [504 plist_4 (lose for extra if, gain in gc)]
+(define (faddc0) ; [509] -> [504 plist_4 (lose for extra if, gain in gc)] -> [383]
   (do ((i 0 (+ i 1)))
       ((= i len))
     (unless (= (+ 4 (values 1 2 3)) 10) ; safe_c_cp -> safe_c_sp_mv which uses cons(args, value)
@@ -165,7 +165,7 @@
 ;(faddc0)
 
 
-(define (fadds02) ; [422 plist_3]
+(define (fadds02) ; [422 plist_3] -> [409]
   (let ((four 4))
     (do ((i 0 (+ i 1)))
 	((= i len))
@@ -175,7 +175,7 @@
 ;(fadds02)
 
 
-(define (fadds0) ; [522] -> [516 plist_4 -- still has make_list]
+(define (fadds0) ; [522] -> [516 plist_4 -- still has make_list] -> [395]
   (let ((four 4))
     (do ((i 0 (+ i 1)))
 	((= i len))
@@ -185,7 +185,7 @@
 ;(fadds0)
 
 
-(define (fadda0) ; [559] -> [552 plist_4]
+(define (fadda0) ; [559] -> [552 plist_4] -> [431]
   (let ((four 2))
     (do ((i 0 (+ i 1)))
 	((= i len))
@@ -199,7 +199,7 @@
   ;; [611 op_safe_c_p -> op_c_p_mv? (copied)] -> [525 (uncopied -- buggy)] -> 
   ;; [679 if safe_list_is_possible (no cancellation)] -> [547 if direct safe_list] ->
   ;; [567 checked safe_list used direct] -> [574 if in_use set] -> [563 if no goto apply]
-  ;; [540 if plist]
+  ;; [540 if plist] -> [434]
   (do ((i 0 (+ i 1)))
       ((= i len))
     (unless (string=? (string (values #\a #\b #\c)) "abc")
@@ -208,7 +208,7 @@
 ;(strv)
 
 
-(define (faddssp2) ; [485] -> [478 if plist]
+(define (faddssp2) ; [485] -> [478 if plist] -> [456]
   (let ((four 4))
     (do ((i 0 (+ i 1)))
 	((= i len))
@@ -218,7 +218,7 @@
 ;(faddssp2)
 
 
-(define (faddssp3) ; [573]
+(define (faddssp3) ; [573] -> [454]
   (let ((four 4))
     (do ((i 0 (+ i 1)))
 	((= i len))
@@ -228,7 +228,7 @@
 ;(faddssp3)
 
 
-(define (faddp) ; [662]
+(define (faddp) ; [662] -> [653]
   (do ((i 0 (+ i 1)))
       ((= i len))
     (unless (= (apply (values + '(1 2))) 3) ; op_c_p_mv
@@ -237,7 +237,7 @@
 ;(faddp)
 
 
-(define (faddap) ; [524]
+(define (faddap) ; [524] -> [506]
   (do ((i 0 (+ i 1)))
       ((= i len))
     (unless (= (apply + (values 5 '(1 2))) 8) ; op_c_ap_mv
@@ -255,7 +255,7 @@
 ;(faddpp)
 
 
-(define (fadd3p) ; [784]
+(define (fadd3p) ; [784] -> [676 no make_list op_c_nc]
   (do ((i 0 (+ i 1)))
       ((= i len))
     (unless (= (+ 1 (values 2 3 4) -4) 6) ; op_safe_c_3p_2|3_mv
@@ -305,3 +305,4 @@
   (display ((*s7* 'memory-usage) 'safe-lists))
   (newline))
 
+(exit)

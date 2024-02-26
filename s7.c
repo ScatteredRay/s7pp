@@ -4255,7 +4255,7 @@ enum {OP_UNOPT, OP_GC_PROTECT, /* must be an even number of ops here, op_gc_prot
       OP_SAFE_CLOSURE_STAR_NA_1, HOP_SAFE_CLOSURE_STAR_NA_1, OP_SAFE_CLOSURE_STAR_NA_2, HOP_SAFE_CLOSURE_STAR_NA_2,
 
       OP_C_SS, HOP_C_SS, OP_C_S, HOP_C_S, OP_READ_S, HOP_READ_S, OP_C_P, HOP_C_P, OP_C_AP, HOP_C_AP,
-      OP_C_A, HOP_C_A, OP_C_AA, HOP_C_AA, OP_C, HOP_C, OP_C_NA, HOP_C_NA,
+      OP_C_A, HOP_C_A, OP_C_AA, HOP_C_AA, OP_C, HOP_C, OP_C_NC, HOP_C_NC, OP_C_NA, HOP_C_NA,
 
       OP_CL_S, HOP_CL_S, OP_CL_SS, HOP_CL_SS, OP_CL_A, HOP_CL_A, OP_CL_AA, HOP_CL_AA,
       OP_CL_NA, HOP_CL_NA, OP_CL_FA, HOP_CL_FA, OP_CL_SAS, HOP_CL_SAS,
@@ -4473,7 +4473,7 @@ static const char* op_names[NUM_OPS] =
       "safe_closure*_na_1", "h_safe_closure*_na_1", "safe_closure*_na_2", "h_safe_closure*_na_2",
 
       "c_ss", "h_c_ss", "c_s", "h_c_s", "read_s", "h_read_s", "c_p", "h_c_p", "c_ap", "h_c_ap",
-      "c_a", "h_c_a", "c_aa", "h_c_aa", "c", "h_c", "c_na", "h_c_na",
+      "c_a", "h_c_a", "c_aa", "h_c_aa", "c", "h_c", "c_nc", "h_c_nc", "c_na", "h_c_na",
 
       "cl_s", "h_cl_s", "cl_ss", "h_cl_ss", "cl_a", "h_cl_a", "cl_aa", "h_cl_aa",
       "cl_na", "h_cl_na", "cl_fa", "h_cl_fa", "cl_sas", "h_cl_sas",
@@ -69774,6 +69774,10 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 	return(splice_in_values(sc, args));
       }
 
+    case OP_DEACTIVATE_GOTO:  /* (+ (call-with-exit (lambda (ret) (values 1 2 3)))) */
+      call_exit_active(stack_top_args(sc)) = false; /* stack_top_args(sc) is the goto */
+      /* fall through */
+    case OP_CATCH: case OP_CATCH_1: case OP_CATCH_2: case OP_CATCH_ALL: /* (+ (catch #t (lambda () (values 3 4)) (lambda args args))) */
     case OP_BARRIER:
       pop_stack_no_op(sc);
       return(splice_in_values(sc, args));
@@ -69791,13 +69795,6 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
        *              (let () (values 1 2 3) 4) but (+ (let () (values 1 2))) -> 3
        */
       return(args);
-
-    case OP_DEACTIVATE_GOTO:  /* (+ (call-with-exit (lambda (ret) (values 1 2 3)))) */
-      call_exit_active(stack_top_args(sc)) = false; /* stack_top_args(sc) is the goto */
-
-    case OP_CATCH: case OP_CATCH_1: case OP_CATCH_2: case OP_CATCH_ALL: /* (+ (catch #t (lambda () (values 3 4)) (lambda args args))) */
-      pop_stack_no_op(sc);
-      return(splice_in_values(sc, args));
 
     case OP_EVAL_MACRO_MV: /* perhaps reader-cond expansion at eval-time (not at run-time) via ((let () reader-cond) ...)? */
       {
@@ -69824,7 +69821,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
 		      display_80(sc->value), display_80(stack_top4_args(sc)), display_80(car(x)));
 	    return(car(x));
 	  }
-	/* fall through */
+	/* else fall through */
 	/* safe_c_p_1 also happens and currently drops trailing arg: ((let () reader-cond) (#t (values 1 2) (iv)))
 	 *   op_eval_macro (not op_expansion) is called and can be included below (except it segfaults in s7test...), but trailing arg
 	 *   is still dropped because optimizer sees (reader-cond ...) -- one arg!
@@ -72502,7 +72499,10 @@ static opt_t optimize_func_three_args(s7_scheme *sc, s7_pointer expr, s7_pointer
 	  set_opt3_arglen(cdr(expr), 3);
 	  if (is_semisafe(func))
 	    set_optimize_op(expr, hop + (((is_normal_symbol(arg1)) && (is_normal_symbol(arg3))) ? OP_CL_SAS : OP_CL_NA));
-	  else set_optimize_op(expr, hop + OP_C_NA);
+	  else 
+	    if ((fx_proc(cdr(expr)) == fx_c) && (fx_proc(cddr(expr)) == fx_c) && (fx_proc(cdddr(expr)) == fx_c))
+	      set_optimize_op(expr, hop + OP_C_NC);
+	    else set_optimize_op(expr, hop + OP_C_NA);
 	  choose_c_function(sc, expr, func, 3);
 	  set_unsafe(expr);
 	  return(OPT_F);
@@ -72796,9 +72796,9 @@ static opt_t optimize_func_many_args(s7_scheme *sc, s7_pointer expr, s7_pointer 
       /* c_func is not safe */
       if (fx_count(sc, expr) == args) /* trigger_size doesn't matter for unsafe funcs */
 	{
-	  set_unsafe_optimize_op(expr, hop + ((is_semisafe(func)) ? OP_CL_NA : OP_C_NA));
 	  fx_annotate_args(sc, cdr(expr), e);
 	  set_opt3_arglen(cdr(expr), args);
+	  set_unsafe_optimize_op(expr, hop + ((is_semisafe(func)) ? OP_CL_NA : OP_C_NA));
 	  choose_c_function(sc, expr, func, args);
 	  return(OPT_F);
 	}
@@ -89519,6 +89519,23 @@ static void op_safe_c_pa_1(s7_scheme *sc)
   sc->value = fn_proc(sc->code)(sc, sc->t2_1);
 }
 
+static void op_c_nc(s7_scheme *sc)
+{
+  if (car(sc->code) != sc->values_symbol)
+    {
+      s7_pointer new_args = make_list(sc, opt3_arglen(cdr(sc->code)), sc->unused);
+      for (s7_pointer args = cdr(sc->code), p = new_args; is_pair(args); args = cdr(args), p = cdr(p)) set_car(p, car(args));
+      sc->temp3 = new_args; /* desperation? */
+      sc->value = fn_proc(sc->code)(sc, new_args);
+      sc->temp3 = sc->unused;
+    }
+  else
+    { /* is this safe? */
+      set_needs_copied_args(cdr(sc->code));
+      sc->value = splice_in_values(sc, cdr(sc->code));
+    }
+}
+
 static void op_c_na(s7_scheme *sc)  /* (set-cdr! lst ()) */
 {
   s7_pointer new_args = make_list(sc, opt3_arglen(cdr(sc->code)), sc->unused);
@@ -92162,6 +92179,8 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	case OP_C_AA: if (!c_function_is_ok(sc, sc->code)) break;
 	case HOP_C_AA: op_c_aa(sc); continue;
 
+	case OP_C_NC: if (!c_function_is_ok(sc, sc->code)) break;
+	case HOP_C_NC: op_c_nc(sc); continue;
 	case OP_C_NA: if (!c_function_is_ok(sc, sc->code)) break;
 	case HOP_C_NA: op_c_na(sc); continue;
 
@@ -97632,7 +97651,7 @@ s7_scheme *s7_init(void)
   s7_define_function(sc, "report-missed-calls", g_report_missed_calls, 0, 0, false, NULL); /* tc/recur tests in s7test.scm */
   if (strcmp(op_names[HOP_SAFE_C_PP], "h_safe_c_pp") != 0) fprintf(stderr, "c op_name: %s\n", op_names[HOP_SAFE_C_PP]);
   if (strcmp(op_names[OP_SET_WITH_LET_2], "set_with_let_2") != 0) fprintf(stderr, "set op_name: %s\n", op_names[OP_SET_WITH_LET_2]);
-  if (NUM_OPS != 925) fprintf(stderr, "size: cell: %d, block: %d, max op: %d, opt: %d\n", (int)sizeof(s7_cell), (int)sizeof(block_t), NUM_OPS, (int)sizeof(opt_info));
+  if (NUM_OPS != 927) fprintf(stderr, "size: cell: %d, block: %d, max op: %d, opt: %d\n", (int)sizeof(s7_cell), (int)sizeof(block_t), NUM_OPS, (int)sizeof(opt_info));
   /* cell size: 48, 120 if debugging, block size: 40, opt: 128 or 280 */
 #endif
   return(sc);
@@ -98053,8 +98072,8 @@ int main(int argc, char **argv)
  * thash            11.8   11.7   9734   9479   9526   9329
  * cb        12.9   11.2   11.0   9658   9564   9609   9635
  * tmap-hash                             1.2k          10.3
+ * tmv                     15.1   14.4   14.2          11.9
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3
- * tmv                     15.1   14.4   14.2          13.0
  * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1
  * calls            36.7   37.5   37.0   37.5   37.1   37.0
  * sg                             55.9   55.8   55.4   55.2
@@ -98065,11 +98084,11 @@ int main(int argc, char **argv)
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * clear_all_opts infinite loop, also in pair_to_port (from '#1=(#1# . #1) but need more context (t678)) [clear collected first]
- * tmv: where is make_list? op_c_na -> op_c_nc|s from na (as in safe_c_nc etc)
+ * rest of op_c_na->nc, extend reach of op_c_nc no make_list cases
  * g_apply_values + known proper list
- * could (safe-c-func (values ...)) mark the values as direct?
  * safe/mutable lists in opt?
  * check tlet changes above
- * (let ((*features* (cons 0 (lambda (a b . c) a))))...) gets through
- * do splice_in_values cases know available possibilities (so switch is unnecessary)?
+ * tmock additions (do style)?
+ * tmv in the opt system?
+ * are there more places where push+continue (or jump-back known and avoidable)?
  */
