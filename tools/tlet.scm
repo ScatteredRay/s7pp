@@ -46,7 +46,7 @@
 	  (sum2 0.0)
 	  (sum3 0.0)
 	  (inc 0.0))
-      (do ((i 0 (#_+ i 1)))
+      (do ((i 0 (#_+ i 1))) ; these #_'s make this much faster despite random->g_random rather than random_i_7i -- why? c_function_is_ok! lookup do_step1 eval [global]
 	  ((#_= i size))
 	(set! inc (#_symbol->value (#_vector-ref symbols i)))
 	(set! sum1 (#_+ sum1 inc))
@@ -54,7 +54,6 @@
 	(set! sum3 (#_+ sum3 (#_symbol->value (#_vector-ref symbols (#_random i))))))
       (format *stderr* "~A ~A ~A ~A~%" (/ (- (* size size) size) 2) sum1 sum2 sum3))))
 (in-e)
-
 
 (define (with-biglet)
   (let ((biglet (inlet)))

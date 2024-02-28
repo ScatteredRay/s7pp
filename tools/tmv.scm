@@ -60,7 +60,7 @@
   (unless (= (mv11) 6) (format *stderr* "mv11: ~S~%" (mv11)))
   (unless (= (mv12 -1 -2) 6) (format *stderr* "(mv12 -1 -2): ~S~%" (mv12 -1 -2)))
   (do ((i 0 (+ i 1)))
-      ((= i 50000))
+      ((= i 100000))
     (mv1)
     (mv2)
     (mv3)
@@ -74,7 +74,7 @@
     (mv12 -2 -1)
     ))
 
-;(mvtest) ; [321] -> [289] -> [281] -> [246]
+;(mvtest) ; [642] -> [578] -> [562] -> [492]
 
 
 (define len 1000000)
@@ -165,7 +165,7 @@
 ;(faddc0)
 
 
-(define (fadds02) ; [422 plist_3] -> [409]
+(define (fadds02) ; [422 plist_3] -> [409] -> [357 aa->nc]
   (let ((four 4))
     (do ((i 0 (+ i 1)))
 	((= i len))
@@ -208,7 +208,7 @@
 ;(strv)
 
 
-(define (faddssp2) ; [485] -> [478 if plist] -> [456]
+(define (faddssp2) ; [485] -> [478 if plist] -> [456] -> [403 aa->nc]
   (let ((four 4))
     (do ((i 0 (+ i 1)))
 	((= i len))
@@ -231,7 +231,7 @@
 (define (faddp) ; [662] -> [653]
   (do ((i 0 (+ i 1)))
       ((= i len))
-    (unless (= (apply (values + '(1 2))) 3) ; op_c_p_mv
+    (unless (= (apply (values + '(1 2))) 3) ; op_c_p_mv + op_c_aa
       (display "faddp oops\n" *stderr*))))
 
 ;(faddp)
@@ -240,13 +240,13 @@
 (define (faddap) ; [524] -> [506]
   (do ((i 0 (+ i 1)))
       ((= i len))
-    (unless (= (apply + (values 5 '(1 2))) 8) ; op_c_ap_mv
+    (unless (= (apply + (values 5 '(1 2))) 8) ; op_c_ap_mv + op_c_aa
       (display "faddap oops\n" *stderr*))))
 
 ;(faddap)
 
 
-(define (faddpp) ; [625]
+(define (faddpp) ; [625] -> [519 aa->nc]
   (do ((i 0 (+ i 1)))
       ((= i len))
     (unless (= (+ (values 1 2) (values 3 4)) 10) ; op_safe_c_pp_3|6_mv, also (+ (values 1 2 3) (values 3 -2 -1))
@@ -271,7 +271,6 @@
       (display "faddnp oops\n" *stderr*))))
 
 ;(faddnp)
-
 
 
 
