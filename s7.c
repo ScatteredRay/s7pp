@@ -2189,7 +2189,7 @@ static void init_types(void)
 #define T_MULTIPLE_VALUE               (1 << (8 + 7))
 #define is_multiple_value(p)           has_low_type_bit(T_Exs(p), T_MULTIPLE_VALUE) /* not T_Ext -- can be a slot */
 #if S7_DEBUGGING
-#define set_multiple_value(p)          do {if (!in_heap(p)) {fprintf(stderr, "%s[%d]: mv\n", __func__, __LINE__); abort();} set_low_type_bit(T_Pair(p), T_MULTIPLE_VALUE);} while (0)
+#define set_multiple_value(p)          do {if (!in_heap(p)) {fprintf(stderr, "%s[%d] (from set_multiple_value): arg not in heap\n", __func__, __LINE__); abort();} set_low_type_bit(T_Pair(p), T_MULTIPLE_VALUE);} while (0)
 #else
 #define set_multiple_value(p)          set_low_type_bit(T_Pair(p), T_MULTIPLE_VALUE)
 #endif
@@ -33585,33 +33585,12 @@ static void simple_list_readable_display(s7_scheme *sc, s7_pointer lst, s7_int t
     }
 }
 
-#if S7_DEBUGGING
-static char *base = NULL, *min_char = NULL;
-#endif
-
 static void pair_to_port(s7_scheme *sc, s7_pointer lst, s7_pointer port, use_write_t use_write, shared_info_t *ci)
 {
   s7_pointer x;
   s7_int i, len;
   bool immutable = false;
   s7_int true_len = list_length_with_immutable_check(sc, lst, &immutable);
-
-#if S7_DEBUGGING
-  char xx;
-  if (!base) base = &xx;
-  else
-    if (&xx > base) base = &xx;
-    else
-      if ((!min_char) || (&xx < min_char))
-	{
-	  min_char = &xx;
-	  if ((base - min_char) > 1000000)
-	    {
-	      fprintf(stderr, "pair_to_port infinite recursion?\n");
-	      abort();
-	    }}
-#endif
-
   if (true_len < 0)                    /* a dotted list -- handle cars, then final cdr */
     len = (-true_len + 1);
   else len = (true_len == 0) ? circular_list_entries(lst) : true_len; /* circular list (nil is handled by unique_to_port) */
@@ -70002,7 +69981,7 @@ static s7_pointer g_apply_values(s7_scheme *sc, s7_pointer args)
   x = car(args);
   if (is_null(x)) return(sc->no_value);
   if (!s7_is_proper_list(sc, x)) apply_list_error_nr(sc, x);
-  if (is_null(cdr(x))) return(car(x));
+  if (is_null(cdr(x))) return(car(x)); /* needs to follow previous because it might not be a pair: (apply-values 2) */
   set_needs_copied_args(x);
   return(splice_in_values(sc, x));
   /* return(s7_values(sc, x)); *//* g_values == s7_values */
@@ -89524,8 +89503,8 @@ static void op_c_nc(s7_scheme *sc)
       sc->temp3 = sc->unused;
     }
   else
-    {
-      set_needs_copied_args(cdr(sc->code));
+    { /* opt2 = splice_in_values */
+      set_needs_copied_args(cdr(sc->code)); /* needed, see s7test, set_multiple_value which currently aborts if not a heap pointer */
       sc->value = splice_in_values(sc, cdr(sc->code));
     }
 }
@@ -89820,10 +89799,11 @@ static bool eval_car_pair(s7_scheme *sc)
     {
       if (!no_int_opt(code))
 	{
+	  /* lambda */
 	  if ((car(carc) == sc->lambda_symbol) &&                  /* ((lambda ...) expr) */
 	      (is_pair(cddr(carc))) && (s7_is_proper_list(sc, cddr(carc)))) /* not dotted! */
 	    {
-	      set_opt3_pair(code, cddr(carc));
+	      set_opt3_pair(code, cddr(carc));              /* lambda body */
 	      if ((is_null(cadr(carc))) && (is_null(cdr(code))))
 		{
 		  set_optimize_op(code, OP_F);    	           /* ((lambda () ...)) */
@@ -89834,7 +89814,7 @@ static bool eval_car_pair(s7_scheme *sc)
 		  if ((is_normal_symbol(caadr(carc))) && (!is_constant(sc, caadr(carc))) &&
 		      (is_pair(cdr(code))) && (is_fxable(sc, cadr(code))))
 		    {
-		      set_opt3_sym(cdr(code), caadr(carc));
+		      set_opt3_sym(cdr(code), caadr(carc)); /* new curlet symbol #1 (first arg of lambda) */
 		      if ((is_null(cdadr(carc))) && (is_null(cddr(code))))
 			{
 			  fx_annotate_args(sc, cdr(code), sc->curlet); /* ((lambda (x) ...) expr) */
@@ -89858,6 +89838,7 @@ static bool eval_car_pair(s7_scheme *sc)
       sc->code = carc;
       if (!no_cell_opt(carc))
 	{
+	  /* if */
 	  if ((car(carc) == sc->if_symbol) &&
 	      (is_pair(cdr(code))) &&       /* check that we got one or two args */
 	      ((is_null(cddr(code))) ||
@@ -89879,6 +89860,9 @@ static bool eval_car_pair(s7_scheme *sc)
       pair_set_syntax_op(sc->code, sc->cur_op);
       return(true);
     }
+
+  /* what about ((L 'abs) x 0.0001): code: ((L 'abs) x 0.0001), optimize_op(carc) is implicit_let_ref_c, but no fx_function[OP_IMPLICIT_LET_REF_C] */
+  /*   see s7_starlet_implicit_ref_s -- need hash-table/vector/list as well as let here */
   push_stack_no_args(sc, OP_EVAL_ARGS, code);
   if ((is_pair(cdr(code))) && (is_optimized(carc)))
     {
@@ -89893,7 +89877,7 @@ static bool eval_car_pair(s7_scheme *sc)
 	  sc->code = carc;
 	  return(false);  /* goto eval in trailers */
 	}
-      if ((is_null(cddr(code))) && (is_symbol(cadr(code)))) /* ((x 'f82) x) in tstar for example */
+      if ((is_null(cddr(code))) && (is_symbol(cadr(code))))
 	{
 	  set_optimize_op(code, OP_P_S);
 	  set_opt3_sym(code, cadr(code));
@@ -98073,10 +98057,8 @@ int main(int argc, char **argv)
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
- * clear_all_opts infinite loop, also in pair_to_port (from '#1=(#1# . #1) but need more context (t678)) [clear collected first]
- * g_apply_values + known proper list
  * safe/mutable lists in opt?
- * tmock additions (do style)? op_a_sc (or op_a_aa) should handle ((L 'abs) x 0.0001)
- * tlet: #_ not optimized
- * values chooser and op_c_nc_mv
+ * tmock additions op_a_sc (or op_a_aa op_x_aa) should handle ((L 'abs) x 0.0001) -- 89886
+ * t718
+ * why is t683 slower if not with-let?
  */

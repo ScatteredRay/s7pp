@@ -55,6 +55,23 @@
       (format *stderr* "~A ~A ~A ~A~%" (/ (- (* size size) size) 2) sum1 sum2 sum3))))
 (in-e)
 
+#|
+without the with-let vs with it (without is slower!):
+total: 55.001
+ 98.000    (0.000      98.000)         s7.c:fx_c_opssq_s
+ 65.000    (0.000      65.000)         s7.c:fx_c_s_opsq
+ 50.000    (0.000      50.000)         s7.c:fx_c_as
+ 34.715    (0.000      34.715)         s7.c:g_random_1
+ 14.000    (0.000      14.000)         s7.c:s7_symbol_local_value
+ 14.000    (32.000     46.000)         s7.c:g_symbol_to_value
+-10.000    (10.000     0.000)          s7.c:fx_unsafe_s
+-17.000    (17.000     0.000)          s7.c:fx_c_a
+-42.000    (42.000     0.000)          s7.c:s7_symbol_value
+-48.000    (48.000     0.000)          s7.c:fx_c_opssq
+-49.000    (49.000     0.000)          s7.c:fx_c_s_opaq
+-54.715    (54.715     0.000)          s7.c:g_random
+|#
+
 (define (with-biglet)
   (let ((biglet (inlet)))
     (do ((i 0 (+ i 1)))
