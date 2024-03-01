@@ -10316,6 +10316,14 @@ static bool op_implicit_let_ref_a(s7_scheme *sc)
   return(true);
 }
 
+static s7_pointer fx_implicit_let_ref_c(s7_scheme *sc, s7_pointer arg)
+{
+  s7_pointer s = lookup_checked(sc, car(arg));
+  if (!is_let(s))
+    return(s7_apply_function(sc, s, list_1(sc, opt3_con(arg))));
+  return(let_ref(sc, s, opt3_con(arg)));
+}
+
 
 /* -------------------------------- let-set! -------------------------------- */
 static s7_pointer let_set_1(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7_pointer value)
@@ -45098,6 +45106,14 @@ static bool op_implicit_hash_table_ref_a(s7_scheme *sc)
   return(true);
 }
 
+static s7_pointer fx_implicit_hash_table_ref_a(s7_scheme *sc, s7_pointer arg)
+{
+  s7_pointer s = lookup_checked(sc, car(arg));
+  if (!is_hash_table(s))
+    return(s7_apply_function(sc, s, list_1(sc, fx_call(sc, cdr(arg)))));
+  return(s7_hash_table_ref(sc, s, fx_call(sc, cdr(arg))));
+}
+
 static bool op_implicit_hash_table_ref_aa(s7_scheme *sc)
 {
   s7_pointer in_obj, out_key;
@@ -57902,7 +57918,8 @@ static s7_function fx_choose(s7_scheme *sc, s7_pointer holder, s7_pointer cur_en
 	  /* fall through */
 
 	default:
-	  /* if ((!fx_function[optimize_op(arg)]) && (is_h_optimized(arg))) fprintf(stderr, "fx_choose %s %s\n", op_names[optimize_op(arg)], display(arg)); */
+	  /* if ((S7_DEBUGGING) && (!fx_function[optimize_op(arg)]) && (is_h_optimized(arg))) fprintf(stderr, "fx_choose %s %s\n", op_names[optimize_op(arg)], display(arg)); */
+	  /* this includes unsafe c funcs (hop_c_a) and p-arg safe funcs (hop_safe_c_p) -- name needs "safe" and no "p" */
 	  return(fx_function[optimize_op(arg)]);
 	}} /* is_optimized */
 
@@ -71487,11 +71504,20 @@ static opt_t optimize_func_one_arg(s7_scheme *sc, s7_pointer expr, s7_pointer fu
       if (is_fxable(sc, arg1))
 	{
 	  set_unsafe_optimize_op(expr, OP_IMPLICIT_LET_REF_A);
-	  set_opt3_any(expr, arg1);
+	  /* set_opt3_any(expr, arg1); */
 	  fx_annotate_arg(sc, cdr(expr), e);
 	  set_opt3_arglen(cdr(expr), 1);
 	  return(OPT_T);
 	}}
+
+  if ((is_hash_table(func)) && (is_fxable(sc, arg1)))
+    {
+      set_unsafe_optimize_op(expr, OP_IMPLICIT_HASH_TABLE_REF_A);
+      /* set_opt3_any(expr, arg1); */
+      fx_annotate_arg(sc, cdr(expr), e);
+      set_opt3_arglen(cdr(expr), 1);
+      return(OPT_T);
+    }
 
   /* unknown_* for other cases is set later(? -- we're getting eval-args...) */
   /* op_safe_c_p for (< (values 1 2 3)) op_s_s for (op arg)
@@ -88962,9 +88988,18 @@ static bool op_x_a(s7_scheme *sc, s7_pointer f)
   return(false); /* goto APPLY */
 }
 
-static void op_x_aa(s7_scheme *sc, s7_pointer f)
+static bool op_x_aa(s7_scheme *sc, s7_pointer f)
 {
   s7_pointer code = sc->code;
+  if ((((type(f) == T_C_FUNCTION) &&
+	(c_function_is_aritable(f, 2))) ||
+       ((type(f) == T_C_RST_NO_REQ_FUNCTION) &&
+	(c_function_max_args(f) >= 2))) &&
+      (!needs_copied_args(f)))
+    {
+      sc->value = c_function_call(f)(sc, with_list_t2(fx_call(sc, cdr(code)), fx_call(sc, cddr(code))));
+      return(true);
+    }
   if (!is_applicable(f))
     apply_error_nr(sc, f, cdr(code));
   if (dont_eval_args(f))
@@ -88977,6 +89012,7 @@ static void op_x_aa(s7_scheme *sc, s7_pointer f)
       else sc->args = list_2(sc, sc->value = fx_call(sc, cdr(code)), sc->args);
     }
   sc->code = f;
+  return(false); /* goto APPLY */
 }
 
 static void op_p_s_1(s7_scheme *sc)
@@ -89862,7 +89898,7 @@ static bool eval_car_pair(s7_scheme *sc)
     }
 
   /* what about ((L 'abs) x 0.0001): code: ((L 'abs) x 0.0001), optimize_op(carc) is implicit_let_ref_c, but no fx_function[OP_IMPLICIT_LET_REF_C] */
-  /*   see s7_starlet_implicit_ref_s -- need hash-table/vector/list as well as let here */
+  /*   if L above can be set in the surrounding code, we can't back out gracefully in fx. */
   push_stack_no_args(sc, OP_EVAL_ARGS, code);
   if ((is_pair(cdr(code))) && (is_optimized(carc)))
     {
@@ -91158,7 +91194,7 @@ static bool op_unknown_a(s7_scheme *sc)
 	    set_opt3_con(code, cadadr(code));
 	    return(fixup_unknown_op(sc, code, f, OP_IMPLICIT_LET_REF_C));
 	  }
-	set_opt3_any(code, cadr(code));
+	/* set_opt3_any(code, cadr(code)); */
 	return(fixup_unknown_op(sc, code, f, OP_IMPLICIT_LET_REF_A));
       }
 
@@ -92192,13 +92228,13 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	case OP_F_NP_1: if (op_f_np_1(sc)) goto EVAL; goto BEGIN;
 
 	case OP_S:    op_s(sc); goto APPLY;
-	case OP_S_G:  if (op_s_g(sc)) continue; goto APPLY;
-	case OP_S_A:  if (op_x_a(sc, lookup_checked(sc, car(sc->code)))) continue; goto APPLY;
-	case OP_A_A:  if (op_x_a(sc, fx_call(sc, sc->code))) continue;             goto APPLY;
-	case OP_S_AA: op_x_aa(sc, lookup_checked(sc, car(sc->code)));              goto APPLY;
-	case OP_A_AA: op_x_aa(sc, fx_call(sc, sc->code));                          goto APPLY;
+	case OP_S_G:  if (op_s_g(sc)) continue;                                     goto APPLY;
+	case OP_S_A:  if (op_x_a(sc, lookup_checked(sc, car(sc->code)))) continue;  goto APPLY;
+	case OP_A_A:  if (op_x_a(sc, fx_call(sc, sc->code))) continue;              goto APPLY;
+	case OP_S_AA: if (op_x_aa(sc, lookup_checked(sc, car(sc->code)))) continue; goto APPLY;
+	case OP_A_AA: if (op_x_aa(sc, fx_call(sc, sc->code))) continue;             goto APPLY;
 	case OP_P_S:  push_stack_no_args_direct(sc, OP_P_S_1); sc->code = car(sc->code); goto EVAL;
-	case OP_P_S_1: op_p_s_1(sc);                                               goto APPLY;
+	case OP_P_S_1: op_p_s_1(sc); goto APPLY;
 
 	case OP_SAFE_C_STAR: if (!c_function_is_ok(sc, sc->code)) break;
 	case HOP_SAFE_C_STAR: op_safe_c_star(sc); continue;
@@ -95342,6 +95378,8 @@ static void init_fx_function(void)
   fx_function[OP_BEGIN_AA] = fx_begin_aa;
   fx_function[OP_LET_TEMP_A_A] = fx_let_temp_a_a;
   fx_function[OP_IMPLICIT_S7_STARLET_REF_S] = fx_implicit_s7_starlet_ref_s;
+  fx_function[OP_IMPLICIT_LET_REF_C] = fx_implicit_let_ref_c;
+  fx_function[OP_IMPLICIT_HASH_TABLE_REF_A] = fx_implicit_hash_table_ref_a;
   fx_function[OP_WITH_LET_S] = fx_with_let_s;
 
   /* these are ok even if a "z" branch is taken -- in that case the body does not have the is_optimized bit, so is_fxable returns false */
@@ -98016,7 +98054,7 @@ int main(int argc, char **argv)
  * tread            2440   2421   2419   2408   2405   2412
  * titer     3657   2865   2842   2641   2509   2449   2446
  * trclo     8031   2735   2574   2454   2445   2449   2470
- * tload                          3046   2404   2566   2536
+ * tload                          3046   2404   2566   2549
  * fbench    2933   2688   2583   2460   2430   2478   2559
  * tmat             3065   3042   2524   2578   2590   2576
  * tsort     3683   3105   3104   2856   2804   2858   2858
@@ -98025,7 +98063,7 @@ int main(int argc, char **argv)
  * tio              3816   3752   3683   3620   3583   3601
  * tmac             3950   3873   3033   3677   3677   3680
  * tclo      6362   4787   4735   4390   4384   4474   4339
- * tcase            4960   4793   4439   4430   4439   4467
+ * tcase            4960   4793   4439   4430   4439   4443
  * tlet      9166   7775   5640   4450   4427   4457   4504
  * tfft             7820   7729   4755   4476   4536   4543
  * tmap             8869   8774   4489   4541   4586   4592
@@ -98034,14 +98072,14 @@ int main(int argc, char **argv)
  * tform            5357   5348   5307   5316   5084   5095
  * tstr      10.0   6880   6342   5488   5162   5180   5197
  * tnum             6348   6013   5433   5396   5409   5423
- * tgsl             8485   7802   6373   6282   6208   6193
+ * tgsl             8485   7802   6373   6282   6208   6186
  * tari      15.0   13.0   12.7   6827   6543   6278   6278
  * tlist     9219   7896   7546   6558   6240   6300   6298
  * tset                                  6260   6364   6408
  * trec      19.5   6936   6922   6521   6588   6583   6583
  * tleft     11.1   10.4   10.2   7657   7479   7627   7622
- * tmisc                                 8142          7753
- * tlamb                                 8003   7941   7941
+ * tmisc                                 8142          7745
+ * tlamb                                 8003   7941   7936
  * tgc              11.9   11.1   8177   7857   7986   8005
  * thash            11.8   11.7   9734   9479   9526   9329
  * cb        12.9   11.2   11.0   9658   9564   9609   9635
@@ -98049,7 +98087,7 @@ int main(int argc, char **argv)
  * tmv                     15.4   14.7   14.5          11.9
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3
  * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1
- * calls            36.7   37.5   37.0   37.5   37.1   37.0
+ * calls            36.7   37.5   37.0   37.5   37.1   37.1
  * sg                             55.9   55.8   55.4   55.2
  * tbig            177.4  175.8  156.5  148.1  146.2  146.3
  * --------------------------------------------------------------
@@ -98058,7 +98096,9 @@ int main(int argc, char **argv)
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * safe/mutable lists in opt?
- * tmock additions op_a_sc (or op_a_aa op_x_aa) should handle ((L 'abs) x 0.0001) -- 89886
- * t718
- * why is t683 slower if not with-let?
+ * tmock additions op_a_sc (or op_a_aa op_x_aa) should handle 89886: pair/vector/c-object etc
+ * why is t683 slower if not with-let? checks in t682
+ * fx_function 7 cases -- need "p" and unsafe func filter 57905 95346
+ * doc kar/car setter distinctions, *features* set-cdr! etc [s7test show what is an error and so on]
+ * check sbcl log1p stuff
  */

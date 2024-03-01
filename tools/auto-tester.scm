@@ -33,6 +33,8 @@
 ;(when (provided? 'profiling) (load "profile.scm"))
 ;(set! (hook-functions *load-hook*) (list (lambda (hook) (format () "loading ~S...~%" (hook 'name)))))
 
+(define-constant %features% (copy *features*))
+
 (define (cycler size)
   (let ((cp-lst (make-list 3 #f))
 	(it-lst (make-list 3 #f)))
@@ -144,7 +146,7 @@
 (define error-code "")
 (define false #f)
 (define-constant _undef_ (car (with-input-from-string "(#_asdf 1 2)" read)))
-(define kar car)
+(define (kar x) (car x)) ; not the same as (define kar car) -- subsequent setter below affects car in the latter case
 (set! (setter kar) (lambda (sym e) (error 'oops "kar not settable: ~A" ostr)))
 (define-constant _1234_ 1234)
 (define-constant _dilambda_ (dilambda (lambda (x) (+ x 1)) (lambda (x y) (+ x y))))
@@ -934,7 +936,7 @@
 			  'vector-fill! 'vector-typer 'hash-table-key-typer 'hash-table-value-typer
 			  'peek-char
 			  'make-hash-table 'make-weak-hash-table 'weak-hash-table?
-			  'hash-code
+			  ;'hash-code ; too many uninteresting diffs
 			  'macro?
 			  'quasiquote
 			  'immutable? 'char-position 'string-position
@@ -1076,6 +1078,7 @@
 
 			  'block 'make-block 'block? 'block-ref 'block-set!
 			  'blocks 'unsafe-blocks 'blocks1 'unsafe-blocks1 'blocks3 'unsafe-blocks3 'blocks4 'unsafe-blocks4 'blocks5
+			  'values2 'unsafe-values2
 			  'block-reverse! 'subblock 'block-append 'block-let
 			  ;'simple-block? 'make-simple-block ;'make-c-tag ; -- uninteresting diffs
 			  'make-cycle
@@ -1159,6 +1162,7 @@
 		    "(values 1 2)" "(values)" "(values #\\c 3 1.2)" "(values \"ho\")" "(values 1 2 3 4 5 6 7 8 9 10)" "(values (define b1 3))"
 		    "(apply values (make-list 128 1/2))"
 		    "(values 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65)"
+		    "(values (values 1 2 3))"
 		    "0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24"
 		    "(log 1.0) (log 2.0)"
 		    "(log 1.0) (log 2.0) (log 3.0)"
@@ -1955,9 +1959,7 @@
 	(set! last-func outer-funcs))
 
       ;(unless (output-port? imfo) (format *stderr* "(new) imfo ~S -> ~S~%" estr imfo) (abort)) ; with-mock-data
-;      (when (infinite? (length *features*))
-;	(format *stderr* "*features*: ~S, estr: ~A~%" *features* estr)
-;	(abort))
+      (set! *features* (copy %features%))
       (set! error-info #f)
       (set! error-type 'no-error)
       (set! error-code "")
