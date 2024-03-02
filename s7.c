@@ -37785,6 +37785,14 @@ static bool op_implicit_pair_ref_a(s7_scheme *sc)
   return(true);
 }
 
+static s7_pointer fx_implicit_pair_ref_a(s7_scheme *sc, s7_pointer arg)
+{
+  s7_pointer s = lookup_checked(sc, car(arg));
+  if (!is_pair(s))
+    return(s7_apply_function(sc, s, list_1(sc, fx_call(sc, cdr(arg)))));
+  return(list_ref_1(sc, s, fx_call(sc, cdr(arg))));
+}
+
 static s7_pointer implicit_pair_index_checked(s7_scheme *sc, s7_pointer obj, s7_pointer in_obj, s7_pointer indices)
 {
   if (!is_applicable(in_obj))
@@ -46832,6 +46840,16 @@ static bool op_implicit_c_object_ref_a(s7_scheme *sc)
   set_car(sc->t2_1, c);        /* fx_call above might use sc->t2* */
   sc->value = (*(c_object_ref(sc, c)))(sc, sc->t2_1);
   return(true);
+}
+
+static s7_pointer fx_implicit_c_object_ref_a(s7_scheme *sc, s7_pointer arg)
+{
+  s7_pointer c = lookup_checked(sc, car(arg));
+  if (!is_c_object(c))
+    return(s7_apply_function(sc, c, list_1(sc, fx_call(sc, cdr(arg)))));
+  set_car(sc->t2_2, fx_call(sc, cdr(arg)));
+  set_car(sc->t2_1, c);        /* fx_call above might use sc->t2* */
+  return((*(c_object_ref(sc, c)))(sc, sc->t2_1));
 }
 
 
@@ -57141,6 +57159,8 @@ static s7_pointer fx_implicit_s7_starlet_print_length(s7_scheme *sc, s7_pointer 
 static s7_pointer fx_implicit_s7_starlet_safety(s7_scheme *sc, s7_pointer arg) {return(make_integer(sc, sc->safety));}
 
 static s7_function *fx_function = NULL;
+
+/* h_safe_closure_s|a|ss_o h_c_s|ss h_read_s h_c_a|aa|nc|na h_cl_s|ss|a|aa|na|sas apply_ss implicit_vector_ref_aa tc_when_la|laa? h_safe_thunk(19 tmisc) h_safe_closure_saa|agg */
 
 static bool is_fxable(s7_scheme *sc, s7_pointer p)
 {
@@ -71427,14 +71447,18 @@ static opt_t optimize_func_one_arg(s7_scheme *sc, s7_pointer expr, s7_pointer fu
 	}
       return(OPT_F);
     }
-  if ((is_c_function(func)) && (c_function_is_aritable(func, 1)))
-    return(optimize_c_function_one_arg(sc, expr, func, hop, pairs, symbols, quotes, bad_pairs, e));
 
-  if (is_closure(func))
-    return(optimize_closure_one_arg(sc, expr, func, hop, symbols, e));
-
-  if (is_closure_star(func))
+  switch (type(func))
     {
+    case T_C_FUNCTION: /* these two happen much more than everything else put together, but splitting them out to avoid the switch doesn't gain much */
+      if (!c_function_is_aritable(func, 1)) return(OPT_F);
+    case T_C_RST_NO_REQ_FUNCTION:
+      return(optimize_c_function_one_arg(sc, expr, func, hop, pairs, symbols, quotes, bad_pairs, e));
+
+    case T_CLOSURE:
+      return(optimize_closure_one_arg(sc, expr, func, hop, symbols, e));
+
+    case T_CLOSURE_STAR:
       if (is_null(closure_args(func)))
 	return(OPT_F);
       if (fx_count(sc, expr) == 1)
@@ -71458,43 +71482,42 @@ static opt_t optimize_func_one_arg(s7_scheme *sc, s7_pointer expr, s7_pointer fu
 	    else set_optimize_op(expr, hop + ((safe_case) ? OP_SAFE_CLOSURE_STAR_NA_1 : OP_CLOSURE_STAR_NA));
 	}
       return(OPT_F);
-    }
 
-  if ((is_c_function_star(func)) &&
-      (fx_count(sc, expr) == 1) &&
-      (c_function_max_args(func) >= 1) &&
-      (!is_symbol_and_keyword(arg1)))           /* the only arg should not be a keyword (needs error checks later) */
-    {
-      if ((hop == 0) && ((is_immutable(func)) || ((!sc->in_with_let) && (symbol_id(car(expr)) == 0)))) hop = 1;
-      set_safe_optimize_op(expr, hop + OP_SAFE_C_STAR_A);
-      fx_annotate_arg(sc, cdr(expr), e);
-      set_opt3_arglen(cdr(expr), 1);
-      set_c_function(expr, func);
-      return(OPT_T);
-    }
+      case T_C_FUNCTION_STAR:
+	if ((fx_count(sc, expr) == 1) &&
+	    (c_function_max_args(func) >= 1) &&
+	    (!is_symbol_and_keyword(arg1)))           /* the only arg should not be a keyword (needs error checks later) */
+	  {
+	    if ((hop == 0) && ((is_immutable(func)) || ((!sc->in_with_let) && (symbol_id(car(expr)) == 0)))) hop = 1;
+	    set_safe_optimize_op(expr, hop + OP_SAFE_C_STAR_A);
+	    fx_annotate_arg(sc, cdr(expr), e);
+	    set_opt3_arglen(cdr(expr), 1);
+	    set_c_function(expr, func);
+	    return(OPT_T);
+	  }
+	break;
 
-  if (((is_any_vector(func)) || (is_pair(func))) &&
-      (is_fxable(sc, arg1)))
-    {
-      set_unsafe_optimize_op(expr, (is_pair(func) ? OP_IMPLICIT_PAIR_REF_A : OP_IMPLICIT_VECTOR_REF_A));
-      fx_annotate_arg(sc, cdr(expr), e);
-      set_opt3_arglen(cdr(expr), 1);
-      return(OPT_T);
-    }
+    case T_PAIR: case T_VECTOR: case T_INT_VECTOR: case T_BYTE_VECTOR: case T_FLOAT_VECTOR: 
+      if (is_fxable(sc, arg1))
+	{
+	  set_unsafe_optimize_op(expr, (is_pair(func) ? OP_IMPLICIT_PAIR_REF_A : OP_IMPLICIT_VECTOR_REF_A));
+	  fx_annotate_arg(sc, cdr(expr), e);
+	  set_opt3_arglen(cdr(expr), 1);
+	  return(OPT_T);
+	}
+      break;
 
-  if ((func == sc->s7_starlet) &&         /* (*s7* ...) */
-      (((quotes == 1) && (is_symbol(cadr(arg1)))) ||
-       (is_symbol_and_keyword(arg1))))
-    {
-      s7_pointer sym = (quotes == 1) ? cadr(arg1) : arg1;
-      if (is_keyword(sym)) sym = keyword_symbol(sym); /* might even be ':print-length */
-      set_safe_optimize_op(expr, OP_IMPLICIT_S7_STARLET_REF_S);
-      set_opt3_int(expr, s7_starlet_symbol(sym));
-      return(OPT_T);
-    }
-
-  if (is_let(func))
-    {
+    case T_LET:
+      if ((func == sc->s7_starlet) &&         /* (*s7* ...), sc->s7_starlet is a let */
+	  (((quotes == 1) && (is_symbol(cadr(arg1)))) ||
+	   (is_symbol_and_keyword(arg1))))
+	{
+	  s7_pointer sym = (quotes == 1) ? cadr(arg1) : arg1;
+	  if (is_keyword(sym)) sym = keyword_symbol(sym); /* might even be ':print-length */
+	  set_safe_optimize_op(expr, OP_IMPLICIT_S7_STARLET_REF_S);
+	  set_opt3_int(expr, s7_starlet_symbol(sym));
+	  return(OPT_T);
+	}
       if (is_quoted_pair(arg1))
 	{
 	  set_opt3_con(expr, cadr(arg1));
@@ -71508,17 +71531,23 @@ static opt_t optimize_func_one_arg(s7_scheme *sc, s7_pointer expr, s7_pointer fu
 	  fx_annotate_arg(sc, cdr(expr), e);
 	  set_opt3_arglen(cdr(expr), 1);
 	  return(OPT_T);
-	}}
+	}
+      break;
 
-  if ((is_hash_table(func)) && (is_fxable(sc, arg1)))
-    {
-      set_unsafe_optimize_op(expr, OP_IMPLICIT_HASH_TABLE_REF_A);
-      /* set_opt3_any(expr, arg1); */
-      fx_annotate_arg(sc, cdr(expr), e);
-      set_opt3_arglen(cdr(expr), 1);
-      return(OPT_T);
+    case T_HASH_TABLE:
+      if (is_fxable(sc, arg1))
+	{
+	  set_unsafe_optimize_op(expr, OP_IMPLICIT_HASH_TABLE_REF_A);
+	  /* set_opt3_any(expr, arg1); */
+	  fx_annotate_arg(sc, cdr(expr), e);
+	  set_opt3_arglen(cdr(expr), 1);
+	  return(OPT_T);
+	}
+      break;
+
+    default:
+      break;
     }
-
   /* unknown_* for other cases is set later(? -- we're getting eval-args...) */
   /* op_safe_c_p for (< (values 1 2 3)) op_s_s for (op arg)
    *   but is it better to wait for unknown* ?  These are not hit often at this point (except in s7test).
@@ -80423,13 +80452,8 @@ static void op_decrement_by_1(s7_scheme *sc)  /* ([set!] ctr (- ctr 1)) */
 /* ---------------- implicit ref/set ---------------- */
 static Inline bool inline_op_implicit_vector_ref_a(s7_scheme *sc) /* called once in eval */
 {
-  s7_pointer x;
-  s7_pointer v = lookup_checked(sc, car(sc->code));
-  if (!is_any_vector(v))
-    {
-      sc->last_function = v;
-      return(false);
-    }
+  s7_pointer x, v = lookup_checked(sc, car(sc->code));
+  if (!is_any_vector(v)) {sc->last_function = v; return(false);}
   x = fx_call(sc, cdr(sc->code));
   if ((s7_is_integer(x)) &&
       (vector_rank(v) == 1))
@@ -80442,6 +80466,22 @@ static Inline bool inline_op_implicit_vector_ref_a(s7_scheme *sc) /* called once
 	}}
   sc->value = vector_ref_1(sc, v, set_plist_1(sc, x));
   return(true);
+}
+
+static s7_pointer fx_implicit_vector_ref_a(s7_scheme *sc, s7_pointer arg)
+{
+  s7_pointer x, v = lookup_checked(sc, car(arg));
+  if (!is_any_vector(v))
+    return(s7_apply_function(sc, v, list_1(sc, fx_call(sc, cdr(arg)))));
+  x = fx_call(sc, cdr(arg));
+  if ((s7_is_integer(x)) &&
+      (vector_rank(v) == 1))
+    {
+      s7_int index = s7_integer_clamped_if_gmp(sc, x);
+      if ((index < vector_length(v)) && (index >= 0))
+	return(vector_getter(v)(sc, v, index));
+    }
+  return(vector_ref_1(sc, v, set_plist_1(sc, x)));
 }
 
 static bool op_implicit_vector_ref_aa(s7_scheme *sc) /* if Inline 70 in concordance */
@@ -89897,8 +89937,6 @@ static bool eval_car_pair(s7_scheme *sc)
       return(true);
     }
 
-  /* what about ((L 'abs) x 0.0001): code: ((L 'abs) x 0.0001), optimize_op(carc) is implicit_let_ref_c, but no fx_function[OP_IMPLICIT_LET_REF_C] */
-  /*   if L above can be set in the surrounding code, we can't back out gracefully in fx. */
   push_stack_no_args(sc, OP_EVAL_ARGS, code);
   if ((is_pair(cdr(code))) && (is_optimized(carc)))
     {
@@ -95377,10 +95415,14 @@ static void init_fx_function(void)
   fx_function[OP_BEGIN_NA] = fx_begin_na;
   fx_function[OP_BEGIN_AA] = fx_begin_aa;
   fx_function[OP_LET_TEMP_A_A] = fx_let_temp_a_a;
-  fx_function[OP_IMPLICIT_S7_STARLET_REF_S] = fx_implicit_s7_starlet_ref_s;
-  fx_function[OP_IMPLICIT_LET_REF_C] = fx_implicit_let_ref_c;
-  fx_function[OP_IMPLICIT_HASH_TABLE_REF_A] = fx_implicit_hash_table_ref_a;
   fx_function[OP_WITH_LET_S] = fx_with_let_s;
+
+  fx_function[OP_IMPLICIT_S7_STARLET_REF_S] = fx_implicit_s7_starlet_ref_s;
+  fx_function[OP_IMPLICIT_LET_REF_C] =        fx_implicit_let_ref_c;
+  fx_function[OP_IMPLICIT_HASH_TABLE_REF_A] = fx_implicit_hash_table_ref_a;
+  fx_function[OP_IMPLICIT_PAIR_REF_A] =       fx_implicit_pair_ref_a;
+  fx_function[OP_IMPLICIT_C_OBJECT_REF_A] =   fx_implicit_c_object_ref_a;
+  fx_function[OP_IMPLICIT_VECTOR_REF_A] =     fx_implicit_vector_ref_a;
 
   /* these are ok even if a "z" branch is taken -- in that case the body does not have the is_optimized bit, so is_fxable returns false */
   fx_function[OP_TC_AND_A_OR_A_LA] = fx_tc_and_a_or_a_la;
@@ -98044,8 +98086,7 @@ int main(int argc, char **argv)
  * tmock            1177   1165   1057   1019   1032   1037
  * tvect     3408   2519   2464   1772   1669   1497   1452
  * tauto                          2562   2048   1729   1704
- * timp             2637   2575   1930   1694   1740   1738
- * texit     1884                 1778   1741   1770   1771
+ * texit     1884   1930   1950   1778   1741   1770   1771
  * s7test           1873   1831   1818   1829   1830   1855
  * lt        2222   2187   2172   2150   2185   1950   1950
  * thook     7651                 2590   2030   2046   2046
@@ -98062,6 +98103,7 @@ int main(int argc, char **argv)
  * teq              4068   4045   3536   3486   3544   3537
  * tio              3816   3752   3683   3620   3583   3601
  * tmac             3950   3873   3033   3677   3677   3680
+ * timp             5403   5243   4659   4449   4472   3966
  * tclo      6362   4787   4735   4390   4384   4474   4339
  * tcase            4960   4793   4439   4430   4439   4443
  * tlet      9166   7775   5640   4450   4427   4457   4504
@@ -98078,13 +98120,13 @@ int main(int argc, char **argv)
  * tset                                  6260   6364   6408
  * trec      19.5   6936   6922   6521   6588   6583   6583
  * tleft     11.1   10.4   10.2   7657   7479   7627   7622
- * tmisc                                 8142          7745
+ * tmisc                                 8142   7631   7745
  * tlamb                                 8003   7941   7936
  * tgc              11.9   11.1   8177   7857   7986   8005
  * thash            11.8   11.7   9734   9479   9526   9329
  * cb        12.9   11.2   11.0   9658   9564   9609   9635
- * tmap-hash                             1.2k          10.3
- * tmv                     15.4   14.7   14.5          11.9
+ * tmap-hash                           1671.0 1467.0   10.3
+ * tmv              16.0   15.4   14.7   14.5   14.4   11.9
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3
  * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1
  * calls            36.7   37.5   37.0   37.5   37.1   37.1
@@ -98096,9 +98138,8 @@ int main(int argc, char **argv)
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * safe/mutable lists in opt?
- * tmock additions op_a_sc (or op_a_aa op_x_aa) should handle 89886: pair/vector/c-object etc
- * why is t683 slower if not with-let? checks in t682
- * fx_function 7 cases -- need "p" and unsafe func filter 57905 95346
+ * why is t683 slower if not with-let? error checks in t682 + t682 -> tmock
+ * fx_function h_safe_closure_*?? 57163
  * doc kar/car setter distinctions, *features* set-cdr! etc [s7test show what is an error and so on]
  * check sbcl log1p stuff
  */

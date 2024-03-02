@@ -175,16 +175,16 @@
       (unless (= (table3 'b 1) 23.0) (format *stderr* "[18]"))
       (s4444 table3 1 23.0)
       (unless (= (table3 'b 1) 23.0) (format *stderr* "[19]"))
-#|
-      (s4 table4 23.0) ; set_implicit_closure -- now an error
-      (unless (= (table4 'b 1) 23.0) (format *stderr* "[20]"))
-      (s44 table4 23.0)
-      (unless (= (table4 'b 1) 23.0) (format *stderr* "[21]"))
-      (s444 table4 '(23.0))
-      (unless (= (table4 'b 1) 23.0) (format *stderr* "[22]"))
-      (s4444 table4 1 23.0)
-      (unless (= (table4 'b 1) 23.0) (format *stderr* "[23]"))
-|#
+
+;      (s4 table4 23.0) ; set_implicit_closure -- now an error
+;      (unless (= (table4 'b 1) 23.0) (format *stderr* "[20]"))
+;      (s44 table4 23.0)
+;      (unless (= (table4 'b 1) 23.0) (format *stderr* "[21]"))
+;      (s444 table4 '(23.0))
+;      (unless (= (table4 'b 1) 23.0) (format *stderr* "[22]"))
+;      (s4444 table4 1 23.0)
+;      (unless (= (table4 'b 1) 23.0) (format *stderr* "[23]"))
+
       (s5 table2 #\a) ; set_implicit_vector
       (unless (char=? (table2 0 1) #\a) (format *stderr* "[24]"))
       (s55 table2 #\a)
@@ -231,5 +231,60 @@
       )))
 
 (stest)
+
+
+(define len 1000000)
+;; tmock has some similar tests for openlets
+
+(define H (hash-table 'abs *))
+(define (fabsH x)
+  ((H 'abs) x 0.0001))
+
+(define (f6) ; [719] -> [515 if func_one_arg handles hash] -> [508]
+  (let ((sum 0.0))
+    (do ((i 0 (+ i 1)))
+	((= i len) sum)
+      (set! sum (+ sum (fabsH i))))))
+
+(f6)
+
+
+(define P (list + * -))
+(define (fabsP x)
+  ((P 1) x 0.0001))
+
+(define (f8) ; [700] -> [524 fx_implicit]
+  (let ((sum 0.0))
+    (do ((i 0 (+ i 1)))
+	((= i len) sum)
+      (set! sum (+ sum (fabsP i))))))
+
+(f8)
+
+
+(define V (vector + * -))
+(define (fabsV x)
+  ((V 1) x 0.0001))
+
+(define (f9) ; [685] -> [512 fx_implicit]
+  (let ((sum 0.0))
+    (do ((i 0 (+ i 1)))
+	((= i len) sum)
+      (set! sum (+ sum (fabsV i))))))
+
+(f9)
+
+
+(define C (make-cycle *))
+(define (fabsC x)
+  ((C) x 0.0001))
+
+(define (f10) ; [681] (there is no op_implicit_c_object_ref)
+  (let ((sum 0.0))
+    (do ((i 0 (+ i 1)))
+	((= i len) sum)
+      (set! sum (+ sum (fabsC i))))))
+
+(f10)
 
 (exit)
