@@ -287,4 +287,123 @@
 
 (f10)
 
+
+;;; implicit arg cases (also included elsewhere)
+(define B (block .001 .0001 .00001)) ; C-object as arg
+(define (fabsB x)
+  (* x (B 1)))
+
+(define (f11) ; [591] no fx_*_ref?? block_ref_p_pp -> [519] fx_implicit_c_object_ref_a -- why not opt?
+  (let ((sum 0.0))
+    (do ((i 0 (+ i 1)))
+	((= i len) sum)
+      (set! sum (+ sum (fabsB i))))))
+
+(f11)
+
+
+(define P2 (list (list + * -) (list .001 .0001 .00001)))
+(define (fabsP2 x)
+  ((P2 0 1) x 0.0001))
+
+(define (f12) ; [797]
+  (let ((sum 0.0))
+    (do ((i 0 (+ i 1)))
+	((= i len) sum)
+      (set! sum (+ sum (fabsP2 i))))))
+
+(f12)
+
+
+(define V2 #2d((#_+ #_* #_-) (.001 .0001 .00001)))
+(define (fabsV2 x)
+  ((V2 0 1) x 0.0001))
+
+(define (f13) ; [778]
+  (let ((sum 0.0))
+    (do ((i 0 (+ i 1)))
+	((= i len) sum)
+      (set! sum (+ sum (fabsV2 i))))))
+
+(f13)
+
+
+(define (f14) ; [492]
+  (let ((sum 0.0))
+    (do ((i 0 (+ i 1)))
+	((= i len) sum)
+      (set! sum (+ sum (* i (P2 1 1)))))))
+
+(f14)
+
+
+(define (f15) ; [185] -- [738] if (vector (vector ...))
+  (let ((sum 0.0))
+    (do ((i 0 (+ i 1)))
+	((= i len) sum)
+      (set! sum (+ sum (* i (V2 1 1)))))))
+
+(f15)
+
+
+(define H2 (hash-table 'a .0001))
+(define (f16) ; [169] -- this is fully optimized!? -> [160] p_pp_sf_href!
+  (let ((sum 0.0))
+    (do ((i 0 (+ i 1)))
+	((= i len) sum)
+      (set! sum (+ sum (* i (H2 'a)))))))
+
+(f16)
+
+
+(define L2 (inlet 'a .0001))
+(define (f17) ; [173] (no lref) -> [167] lref
+  (let ((sum 0.0))
+    (do ((i 0 (+ i 1)))
+	((= i len) sum)
+      (set! sum (+ sum (* i (L2 'a)))))))
+
+(f17)
+
+
+(define V3 (vector .0001))
+(define (f18) ; [148] (opt_p_pi_sc(t_vector_ref_p_pi_unchecked))
+  (let ((sum 0.0))
+    (do ((i 0 (+ i 1)))
+	((= i len) sum)
+      (set! sum (+ sum (* i (V3 0)))))))
+
+(f18)
+
+
+(define P3 (list .0001))
+(define (f19) ; [157] opt_p_pi_sc(list_ref_p_pi_unchecked)
+  (let ((sum 0.0))
+    (do ((i 0 (+ i 1)))
+	((= i len) sum)
+      (set! sum (+ sum (* i (P3 0)))))))
+
+(f19)
+
+
+(define B3 (block .0001))
+(define (f20) ; [114] d_7pi_sf(block_ref_d_7pi)
+  (let ((sum 0.0))
+    (do ((i 0 (+ i 1)))
+	((= i len) sum)
+      (set! sum (+ sum (* i (B3 0)))))))
+
+(f20)
+
+
+(define V4 #2d((.0001)))
+(define (f21) ; [185] opt_p_pii_sff(vector_ref_p_pii_direct)
+  (let ((sum 0.0))
+    (do ((i 0 (+ i 1)))
+	((= i len) sum)
+      (set! sum (+ sum (* i (V4 0 0)))))))
+
+(f21)
+
+
 (exit)

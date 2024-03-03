@@ -10347,7 +10347,8 @@ static s7_pointer let_set_1(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7
       if (is_syntax(slot_value(slot)))
 	wrong_type_error_nr(sc, sc->let_set_symbol, 2, symbol, wrap_string(sc, "a non-syntactic symbol", 22));
       if (is_immutable(slot))
-	immutable_object_error_nr(sc, set_elist_4(sc, wrap_string(sc, "~S is immutable in (let-set! (rootlet) '~S ~S)", 46), symbol, symbol, value)); /* also (set! (with-let...)...) */
+	immutable_object_error_nr(sc, set_elist_4(sc, wrap_string(sc, "~S is immutable in (let-set! (rootlet) '~S ~S)", 46), 
+						  symbol, symbol, value)); /* also (set! (with-let...)...) */
       symbol_increment_ctr(symbol);
       slot_set_value(slot, (slot_has_setter(slot)) ? call_setter(sc, slot, value) : value);
       return(slot_value(slot));
@@ -57160,8 +57161,6 @@ static s7_pointer fx_implicit_s7_starlet_safety(s7_scheme *sc, s7_pointer arg) {
 
 static s7_function *fx_function = NULL;
 
-/* h_safe_closure_s|a|ss_o h_c_s|ss h_read_s h_c_a|aa|nc|na h_cl_s|ss|a|aa|na|sas apply_ss implicit_vector_ref_aa tc_when_la|laa? h_safe_thunk(19 tmisc) h_safe_closure_saa|agg */
-
 static bool is_fxable(s7_scheme *sc, s7_pointer p)
 {
   if (!is_pair(p)) return(true);
@@ -63840,6 +63839,7 @@ static s7_pointer opt_p_pp_sf_mul(opt_info *o) {return(multiply_p_pp(o->sc, slot
 static s7_pointer opt_p_pp_sf_set_car(opt_info *o) {return(inline_set_car(o->sc, slot_value(o->v[1].p), o->v[5].fp(o->v[4].o1)));}
 static s7_pointer opt_p_pp_sf_set_cdr(opt_info *o) {return(inline_set_cdr(o->sc, slot_value(o->v[1].p), o->v[5].fp(o->v[4].o1)));}
 static s7_pointer opt_p_pp_sf_href(opt_info *o) {return(s7_hash_table_ref(o->sc, slot_value(o->v[1].p), o->v[5].fp(o->v[4].o1)));}
+static s7_pointer opt_p_pp_sf_lref(opt_info *o) {return(let_ref(o->sc, slot_value(o->v[1].p), o->v[5].fp(o->v[4].o1)));}
 static s7_pointer opt_p_pp_fs_vref(opt_info *o) {return(vector_ref_p_pp(o->sc, o->v[5].fp(o->v[4].o1), slot_value(o->v[1].p)));}
 static s7_pointer opt_p_pp_fs_cons(opt_info *o) {return(cons(o->sc, o->v[5].fp(o->v[4].o1), slot_value(o->v[1].p)));}
 static s7_pointer opt_p_pp_fs_add(opt_info *o) {return(add_p_pp(o->sc, o->v[5].fp(o->v[4].o1), slot_value(o->v[1].p)));}
@@ -64984,8 +64984,8 @@ static bool p_implicit_ok(s7_scheme *sc, s7_pointer s_slot, s7_pointer car_x, in
 	      return_true(sc, car_x);
 	    }
 	  if (cell_optimize(sc, cdr(car_x)))
-	    {
-	      opc->v[0].fp = opt_p_pp_sf;
+	    { /* opc->v[3].p_pp_f == s7_hash_table_ref if hash_table */
+	      opc->v[0].fp = (is_hash_table(obj)) ? opt_p_pp_sf_href : ((is_let(obj)) ? opt_p_pp_sf_lref :  opt_p_pp_sf);
 	      opc->v[4].o1 = sc->opts[start];
 	      opc->v[5].fp = sc->opts[start]->v[0].fp;
 	      return_true(sc, car_x);
@@ -71424,6 +71424,8 @@ static opt_t optimize_func_one_arg(s7_scheme *sc, s7_pointer expr, s7_pointer fu
 				   int32_t hop, int32_t pairs, int32_t symbols, int32_t quotes, int32_t bad_pairs, s7_pointer e)
 {
   s7_pointer arg1;
+  if (SHOW_EVAL_OPS) fprintf(stderr, "  %s[%d]: expr: %s, func: %s, hop: %d, pairs: %d, symbols: %d, quotes: %d, bad_pairs: %d, e: %s\n",
+			     __func__, __LINE__, display_80(expr), display(func), hop, pairs, symbols, quotes, bad_pairs, display_80(e));
   /* very often, expr is already optimized, quoted stuff is counted under "bad_pairs"! as well as quotes */
   if (quotes > 0)
     {
@@ -71518,27 +71520,19 @@ static opt_t optimize_func_one_arg(s7_scheme *sc, s7_pointer expr, s7_pointer fu
 	  set_opt3_int(expr, s7_starlet_symbol(sym));
 	  return(OPT_T);
 	}
-      if (is_quoted_pair(arg1))
+      if ((is_quoted_symbol(arg1)) || (is_symbol_and_keyword(arg1)))
 	{
-	  set_opt3_con(expr, cadr(arg1));
+	  set_opt3_con(expr, (is_symbol_and_keyword(arg1)) ? keyword_symbol(arg1) : cadr(arg1));
 	  set_unsafe_optimize_op(expr, OP_IMPLICIT_LET_REF_C);
 	  return(OPT_T);
 	}
-      if (is_fxable(sc, arg1))
-	{
-	  set_unsafe_optimize_op(expr, OP_IMPLICIT_LET_REF_A);
-	  /* set_opt3_any(expr, arg1); */
-	  fx_annotate_arg(sc, cdr(expr), e);
-	  set_opt3_arglen(cdr(expr), 1);
-	  return(OPT_T);
-	}
-      break;
+      /* fall through */
 
-    case T_HASH_TABLE:
+    case T_HASH_TABLE: case T_C_OBJECT:
       if (is_fxable(sc, arg1))
 	{
-	  set_unsafe_optimize_op(expr, OP_IMPLICIT_HASH_TABLE_REF_A);
-	  /* set_opt3_any(expr, arg1); */
+	  set_unsafe_optimize_op(expr, (type(func) == T_LET) ? OP_IMPLICIT_LET_REF_A : 
+				 ((type(func) == T_HASH_TABLE) ? OP_IMPLICIT_HASH_TABLE_REF_A : OP_IMPLICIT_C_OBJECT_REF_A));
 	  fx_annotate_arg(sc, cdr(expr), e);
 	  set_opt3_arglen(cdr(expr), 1);
 	  return(OPT_T);
@@ -71548,11 +71542,6 @@ static opt_t optimize_func_one_arg(s7_scheme *sc, s7_pointer expr, s7_pointer fu
     default:
       break;
     }
-  /* unknown_* for other cases is set later(? -- we're getting eval-args...) */
-  /* op_safe_c_p for (< (values 1 2 3)) op_s_s for (op arg)
-   *   but is it better to wait for unknown* ?  These are not hit often at this point (except in s7test).
-   *   do they end up in op_s_a or whatever after unknown*?
-   */
   return((is_optimized(expr)) ? OPT_T : OPT_F);
 }
 
@@ -91227,9 +91216,9 @@ static bool op_unknown_a(s7_scheme *sc)
     case T_LET:
       {
 	s7_pointer arg1 = cadr(code);
-	if (is_quoted_pair(arg1))
+	if ((is_quoted_symbol(arg1)) || (is_symbol_and_keyword(arg1)))
 	  {
-	    set_opt3_con(code, cadadr(code));
+	    set_opt3_con(code, (is_symbol_and_keyword(arg1)) ? keyword_symbol(arg1) : cadadr(code));
 	    return(fixup_unknown_op(sc, code, f, OP_IMPLICIT_LET_REF_C));
 	  }
 	/* set_opt3_any(code, cadr(code)); */
@@ -98103,7 +98092,6 @@ int main(int argc, char **argv)
  * teq              4068   4045   3536   3486   3544   3537
  * tio              3816   3752   3683   3620   3583   3601
  * tmac             3950   3873   3033   3677   3677   3680
- * timp             5403   5243   4659   4449   4472   3966
  * tclo      6362   4787   4735   4390   4384   4474   4339
  * tcase            4960   4793   4439   4430   4439   4443
  * tlet      9166   7775   5640   4450   4427   4457   4504
@@ -98120,6 +98108,7 @@ int main(int argc, char **argv)
  * tset                                  6260   6364   6408
  * trec      19.5   6936   6922   6521   6588   6583   6583
  * tleft     11.1   10.4   10.2   7657   7479   7627   7622
+ * timp             12.4   12.0   8325   8205   8205   7672
  * tmisc                                 8142   7631   7745
  * tlamb                                 8003   7941   7936
  * tgc              11.9   11.1   8177   7857   7986   8005
@@ -98139,7 +98128,7 @@ int main(int argc, char **argv)
  *   lots of is_global(sc->quote_symbol)
  * safe/mutable lists in opt?
  * why is t683 slower if not with-let? error checks in t682 + t682 -> tmock
- * fx_function h_safe_closure_*?? 57163
+ * fx_function:
+ *   h_safe_closure_s|a|ss_o h_c_s|ss h_c_a|aa|nc|na h_cl_s|ss|a|aa|na|sas apply_ss implicit_vector_ref_aa tc_when_la|laa? h_safe_thunk(19 tmisc) h_safe_closure_saa|agg
  * doc kar/car setter distinctions, *features* set-cdr! etc [s7test show what is an error and so on]
- * check sbcl log1p stuff
  */
