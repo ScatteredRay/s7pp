@@ -71629,6 +71629,8 @@ static int32_t check_lambda(s7_scheme *sc, s7_pointer form, bool optl);
 static opt_t optimize_func_two_args(s7_scheme *sc, s7_pointer expr, s7_pointer func, int32_t hop,
 				    int32_t pairs, int32_t symbols, int32_t quotes, int32_t bad_pairs, s7_pointer e)
 {
+  if (SHOW_EVAL_OPS) fprintf(stderr, "  %s[%d]: expr: %s, func: %s, hop: %d, pairs: %d, symbols: %d, quotes: %d, bad_pairs: %d, e: %s\n",
+			     __func__, __LINE__, display_80(expr), display(func), hop, pairs, symbols, quotes, bad_pairs, display_80(e));
   s7_pointer arg1 = cadr(expr), arg2 = caddr(expr);
   if (quotes > 0)
     {
@@ -86895,6 +86897,13 @@ static void op_tc_when_la(s7_scheme *sc, s7_pointer code)
   sc->value = sc->unspecified;
 }
 
+static s7_pointer fx_tc_when_la(s7_scheme *sc, s7_pointer arg)
+{
+  tick_tc(sc, OP_TC_WHEN_LA);
+  op_tc_when_la(sc, arg);
+  return(sc->value);
+}
+
 static void op_tc_when_laa(s7_scheme *sc, s7_pointer code)
 {
   s7_pointer if_test = cadr(code), body = cddr(code), la, laa, laa_slot, la_call, la_slot = let_slots(sc->curlet);
@@ -86912,6 +86921,13 @@ static void op_tc_when_laa(s7_scheme *sc, s7_pointer code)
     }
   sc->rec_p1 = sc->unused;
   sc->value = sc->unspecified;
+}
+
+static s7_pointer fx_tc_when_laa(s7_scheme *sc, s7_pointer arg)
+{
+  tick_tc(sc, OP_TC_WHEN_LAA);
+  op_tc_when_laa(sc, arg);
+  return(sc->value);
 }
 
 static void op_tc_when_l3a(s7_scheme *sc, s7_pointer code)
@@ -86935,6 +86951,13 @@ static void op_tc_when_l3a(s7_scheme *sc, s7_pointer code)
     }
   sc->rec_p1 = sc->unused;
   sc->value = sc->unspecified;
+}
+
+static s7_pointer fx_tc_when_l3a(s7_scheme *sc, s7_pointer arg)
+{
+  tick_tc(sc, OP_TC_WHEN_L3A);
+  op_tc_when_l3a(sc, arg);
+  return(sc->value);
 }
 
 static bool op_tc_if_a_z_l3a(s7_scheme *sc, s7_pointer code, bool z_first)
@@ -91873,7 +91896,7 @@ static noreturn void eval_apply_error_nr(s7_scheme *sc)
 /* ---------------- eval ---------------- */
 static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 {
-  if (SHOW_EVAL_OPS) safe_print(fprintf(stderr, "eval[%d]:, %s %s %s\n", __LINE__, op_names[first_op], display_80(sc->code), display_80(sc->args)));
+  if (SHOW_EVAL_OPS) safe_print(fprintf(stderr, "  eval[%d]:, %s %s %s\n", __LINE__, op_names[first_op], display_80(sc->code), display_80(sc->args)));
   sc->cur_op = first_op;
   goto TOP_NO_POP;
 
@@ -95452,6 +95475,9 @@ static void init_fx_function(void)
   fx_function[OP_TC_LET_UNLESS_LAA] = fx_tc_let_unless_laa;
   fx_function[OP_TC_LET_COND] = fx_tc_let_cond;
   fx_function[OP_TC_COND_A_Z_A_LAA_LAA] = fx_tc_cond_a_z_a_laa_laa;
+  fx_function[OP_TC_WHEN_LA] = fx_tc_when_la;
+  fx_function[OP_TC_WHEN_LAA] = fx_tc_when_laa;
+  fx_function[OP_TC_WHEN_L3A] = fx_tc_when_l3a;
 
   fx_function[OP_RECUR_IF_A_A_opA_LAq] = fx_recur_if_a_a_opa_laq;
   fx_function[OP_RECUR_IF_A_opA_LAq_A] = fx_recur_if_a_opa_laq_a;
@@ -98108,13 +98134,13 @@ int main(int argc, char **argv)
  * tset                                  6260   6364   6408
  * trec      19.5   6936   6922   6521   6588   6583   6583
  * tleft     11.1   10.4   10.2   7657   7479   7627   7622
- * timp             12.4   12.0   8325   8205   8205   7672
  * tmisc                                 8142   7631   7745
  * tlamb                                 8003   7941   7936
  * tgc              11.9   11.1   8177   7857   7986   8005
  * thash            11.8   11.7   9734   9479   9526   9329
  * cb        12.9   11.2   11.0   9658   9564   9609   9635
  * tmap-hash                           1671.0 1467.0   10.3
+ * timp             16.4   15.8   11.8   11.7   11.7   10.5
  * tmv              16.0   15.4   14.7   14.5   14.4   11.9
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3
  * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1
@@ -98126,9 +98152,5 @@ int main(int argc, char **argv)
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
- * safe/mutable lists in opt?
- * why is t683 slower if not with-let? error checks in t682 + t682 -> tmock
- * fx_function:
- *   h_safe_closure_s|a|ss_o h_c_s|ss h_c_a|aa|nc|na h_cl_s|ss|a|aa|na|sas apply_ss implicit_vector_ref_aa tc_when_la|laa? h_safe_thunk(19 tmisc) h_safe_closure_saa|agg
- * doc kar/car setter distinctions, *features* set-cdr! etc [s7test show what is an error and so on]
+ * safe/mutable lists in opt? savable mutable ints?
  */

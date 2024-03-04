@@ -234,7 +234,6 @@
 
 
 (define len 1000000)
-;; tmock has some similar tests for openlets
 
 (define H (hash-table 'abs *))
 (define (fabsH x)
@@ -404,6 +403,85 @@
       (set! sum (+ sum (* i (V4 0 0)))))))
 
 (f21)
+
+
+;;; let cases
+(define L (inlet 'abs *))
+(define L_abs (L 'abs))
+
+(define (fabs x)
+  ((L 'abs) x 0.0001))
+  ;((if (integer? x) * /) x 0.0001))
+
+(define (fLabs x)
+  (L_abs x 0.0001))
+
+(define (frefabs x)
+  ((let-ref L 'abs) x 0.0001))
+
+
+(define (f1) ; [729] -> [507 fx_implicit_let_ref_c]
+  (let ((sum 0.0))
+    (do ((i 0 (+ i 1)))
+	((= i len) sum)
+      (set! sum (+ sum (fabs i))))))
+
+(f1)
+
+
+(define (f2) ; [298]
+  (let ((sum 0.0))
+    (do ((i 0 (+ i 1)))
+	((= i len) sum)
+      (set! sum (+ sum (fLabs i))))))
+
+(f2)
+
+
+(define (f3) ; [510]
+  (let ((sum 0.0))
+    (do ((i 0 (+ i 1)))
+	((= i len) sum)
+      (set! sum (+ sum (frefabs i))))))
+
+(f3)
+
+
+(define f4 ; [559]
+  (let ((L (openlet (inlet '+ (lambda (arg obj)
+				(#_+ arg (obj 'value)))
+			   'value 3))))
+    (lambda ()
+      (do ((i 0 (+ i 1)))
+	  ((= i len))
+	(unless (= (+ 1 L 2) 6)
+	  (display "f4 oops\n"))))))
+
+(f4)
+
+
+(define (fabsL x)
+  ((L 'abs) x 0.0001))
+
+(define (f5) ; [512, 723 if set L to H in the loop, 693 if int *??] -> [503?]
+  (let ((sum 0.0))
+    (do ((i 0 (+ i 1)))
+	((= i len) sum)
+      (set! sum (+ sum (fabsL i))))))
+
+(f5)
+
+
+(define (fabs:L x)
+  ((L :abs) x 0.0001))
+
+(define (f22) ; [721] -> [504] (added keyword check)
+  (let ((sum 0.0))
+    (do ((i 0 (+ i 1)))
+	((= i len) sum)
+      (set! sum (+ sum (fabs:L i))))))
+
+(f22)
 
 
 (exit)
