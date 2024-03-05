@@ -1376,7 +1376,7 @@ struct s7_scheme {
              list_0, list_1, list_2, list_3, list_4, list_set_i, hash_table_ref_2, hash_table_2, list_ref_at_0, list_ref_at_1, list_ref_at_2,
              format_f, format_no_column, format_just_control_string, format_as_objstr, values_uncopied, int_log2,
              memq_2, memq_3, memq_4, memq_any, tree_set_memq_syms, simple_inlet, sublet_curlet, profile_out, simple_list_values,
-             lint_let_ref, lint_let_set, geq_2, add_i_random, is_defined_in_rootlet;
+             simple_let_ref, simple_let_set, geq_2, add_i_random, is_defined_in_rootlet;
 
   s7_pointer multiply_2, invert_1, invert_x, divide_2, divide_by_2, max_2, min_2, max_3, min_3,
              num_eq_2, num_eq_xi, num_eq_ix, less_xi, less_xf, less_x0, less_2, greater_xi, greater_xf, greater_2,
@@ -10260,28 +10260,30 @@ static s7_pointer slot_in_let(s7_scheme *sc, s7_pointer e, const s7_pointer sym)
   return(sc->undefined);
 }
 
-static s7_pointer lint_let_ref_p_pp(s7_scheme *sc, s7_pointer lt, s7_pointer sym)
+static s7_pointer let_ref_p_pp(s7_scheme *sc, s7_pointer lt, s7_pointer sym)
 {
+  if (lt == sc->rootlet) /* op_implicit_let_ref_c can pass rootlet */
+    return((is_slot(global_slot(sym))) ? global_value(sym) : sc->undefined);
   for (s7_pointer x = lt; x; x = let_outlet(x))
     for (s7_pointer y = let_slots(x); tis_slot(y); y = next_slot(y))
       if (slot_symbol(y) == sym)
 	return(slot_value(y));
-
   if ((lt != sc->nil) && (has_let_ref_fallback(lt)))
     return(call_let_ref_fallback(sc, lt, sym));
-
   return((is_slot(global_slot(sym))) ? global_value(sym) : sc->undefined);
 }
 
-static inline s7_pointer g_lint_let_ref(s7_scheme *sc, s7_pointer args)
+static inline s7_pointer g_simple_let_ref(s7_scheme *sc, s7_pointer args)
 {
   s7_pointer lt = car(args), sym = cadr(args);
-  if ((!is_let(lt)) || (lt == sc->rootlet))
+  if (!is_let(lt))
     wrong_type_error_nr(sc, sc->let_ref_symbol, 1, lt, a_let_string);
+  if (lt == sc->rootlet)
+    return((is_slot(global_slot(sym))) ? global_value(sym) : sc->undefined);  
   for (s7_pointer y = let_slots(lt); tis_slot(y); y = next_slot(y))
     if (slot_symbol(y) == sym)
       return(slot_value(y));
-  return(lint_let_ref_p_pp(sc, let_outlet(lt), sym));
+  return(let_ref_p_pp(sc, let_outlet(lt), sym));
 }
 
 static s7_pointer let_ref_chooser(s7_scheme *sc, s7_pointer f, int32_t unused_args, s7_pointer expr, bool ops)
@@ -10295,33 +10297,36 @@ static s7_pointer let_ref_chooser(s7_scheme *sc, s7_pointer f, int32_t unused_ar
 	  (!is_possibly_constant(cadr(arg2))))
 	{
 	  set_opt3_sym(cdr(expr), cadr(arg2));
-	  return(sc->lint_let_ref);
+	  return(sc->simple_let_ref);
 	}}
   return(f);
 }
 
 static bool op_implicit_let_ref_c(s7_scheme *sc)
 {
-  s7_pointer s = lookup_checked(sc, car(sc->code));
-  if (!is_let(s)) {sc->last_function = s; return(false);}
-  sc->value = let_ref(sc, T_Ext(s), opt3_con(sc->code));
+  s7_pointer let = lookup_checked(sc, car(sc->code));
+  if (!is_let(let)) {sc->last_function = let; return(false);}
+  sc->value = let_ref_p_pp(sc, let, opt3_con(sc->code));
   return(true);
 }
 
 static bool op_implicit_let_ref_a(s7_scheme *sc)
 {
-  s7_pointer s = lookup_checked(sc, car(sc->code));
-  if (!is_let(s)) {sc->last_function = s; return(false);}
-  sc->value = let_ref(sc, s, fx_call(sc, cdr(sc->code)));
+  s7_pointer sym, let = lookup_checked(sc, car(sc->code));
+  if (!is_let(let)) {sc->last_function = let; return(false);}
+  sym = fx_call(sc, cdr(sc->code));
+  if (is_symbol(sym))
+    sc->value = let_ref_p_pp(sc, let, (is_keyword(sym)) ? keyword_symbol(sym) : sym);
+  else sc->value = let_ref(sc, let, sym);
   return(true);
 }
 
 static s7_pointer fx_implicit_let_ref_c(s7_scheme *sc, s7_pointer arg)
 {
-  s7_pointer s = lookup_checked(sc, car(arg));
-  if (!is_let(s))
-    return(s7_apply_function(sc, s, list_1(sc, opt3_con(arg))));
-  return(let_ref(sc, s, opt3_con(arg)));
+  s7_pointer let = lookup_checked(sc, car(arg));
+  if (!is_let(let))
+    return(s7_apply_function(sc, let, list_1(sc, opt3_con(arg))));
+  return(let_ref_p_pp(sc, let, opt3_con(arg)));
 }
 
 
@@ -10414,7 +10419,7 @@ static s7_pointer let_set_p_ppp_2(s7_scheme *sc, s7_pointer p1, s7_pointer p2, s
   return(let_set_1(sc, p1, p2, p3));
 }
 
-static s7_pointer g_lint_let_set(s7_scheme *sc, s7_pointer args)
+static s7_pointer g_simple_let_set(s7_scheme *sc, s7_pointer args)
 {
   s7_pointer y, lt = car(args), sym = cadr(args), val = caddr(args);
 
@@ -10449,7 +10454,7 @@ static s7_pointer let_set_chooser(s7_scheme *sc, s7_pointer f, int32_t unused_ar
 	  (is_quoted_pair(arg2)) &&
 	  (!is_possibly_constant(cadr(arg2))) &&
 	  (!is_possibly_constant(arg3)))
-	return(sc->lint_let_set);
+	return(sc->simple_let_set);
     }
   return(f);
 }
@@ -30718,9 +30723,9 @@ static s7_pointer load_shared_object(s7_scheme *sc, const char *fname, s7_pointe
       if (!library)
 	s7_warn(sc, 512, "load %s failed: %s\n", (pname) ? pwd_name : fname, dlerror());
       else
-	if (let) /* look for 'init_func in let */
+	if (let) /* look for 'init_func in let -- let has been checked by caller that it actuallis a let */
 	  {
-	    s7_pointer init = let_ref(sc, let, make_symbol(sc, "init_func", 9));
+	    s7_pointer init = let_ref_p_pp(sc, let, make_symbol(sc, "init_func", 9));
 	    /* init is a symbol (surely not a gensym?), so it should not need to be protected */
 	    if (!is_symbol(init))
 	      s7_warn(sc, 512, "can't load %s: no init function\n", fname);
@@ -30738,7 +30743,7 @@ static s7_pointer load_shared_object(s7_scheme *sc, const char *fname, s7_pointe
 		  {
 		    typedef void (*dl_func)(s7_scheme *sc);
 		    typedef s7_pointer (*dl_func_with_args)(s7_scheme *sc, s7_pointer args);
-		    s7_pointer init_args = let_ref(sc, let, make_symbol(sc, "init_args", 9));
+		    s7_pointer init_args = let_ref_p_pp(sc, let, make_symbol(sc, "init_args", 9));
 		    s7_pointer p;
 		    gc_protect_via_stack(sc, init_args);
 		    if (is_pair(init_args))
@@ -30824,7 +30829,7 @@ s7_pointer s7_load_with_environment(s7_scheme *sc, const char *filename, s7_poin
   TRACK(sc);
   if (e == sc->s7_starlet) return(NULL);
   if (e == sc->nil) e = sc->rootlet; /* PERHAPS: this is a leftover from the days when () -> rootlet -- remove? */
-
+  if (!is_let(e)) s7_warn(sc, 128, "third argument (the let) to s7_load_with_environment is not a let");
 #if WITH_C_LOADER
   port = load_shared_object(sc, filename, e);
   if (port) return(port);
@@ -34374,7 +34379,7 @@ static void let_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, use_writ
 		    }
 		  else
 		    {
-		      s7_pointer name = let_ref(sc, obj, sc->class_name_symbol);
+		      s7_pointer name = let_ref_p_pp(sc, obj, sc->class_name_symbol);
 		      if (is_symbol(name))
 			symbol_to_port(sc, name, port, P_DISPLAY, NULL);
 		      else let_to_port(sc, let_outlet(obj), port, use_write, ci);
@@ -55099,7 +55104,7 @@ static s7_pointer fx_hash_table_increment(s7_scheme *sc, s7_pointer arg)
 }
 
 
-static s7_pointer fx_lint_let_ref_s(s7_scheme *sc, s7_pointer arg)
+static s7_pointer fx_simple_let_ref_s(s7_scheme *sc, s7_pointer arg)
 {
   s7_pointer sym;
   s7_pointer lt = s_lookup(sc, opt2_sym(arg), arg);  /* (var-ref local-var) -> local-var, opt_sym2(arg) == cadr(arg) */
@@ -55112,7 +55117,7 @@ static s7_pointer fx_lint_let_ref_s(s7_scheme *sc, s7_pointer arg)
   for (s7_pointer y = let_slots(lt); tis_slot(y); y = next_slot(y))
     if (slot_symbol(y) == sym)
       return(slot_value(y));
-  return(lint_let_ref_p_pp(sc, let_outlet(lt), sym));
+  return(let_ref_p_pp(sc, let_outlet(lt), sym));
 }
 
 static s7_pointer fx_memq_sq_2(s7_scheme *sc, s7_pointer arg)
@@ -57894,11 +57899,11 @@ static s7_function fx_choose(s7_scheme *sc, s7_pointer holder, s7_pointer cur_en
 		  }
 		if (optimize_op(body) == HOP_SAFE_C_opSq_C)
 		  {
-		    if ((fn_proc(body) == g_lint_let_ref) &&
+		    if ((fn_proc(body) == g_simple_let_ref) &&
 			(cadadr(body) == car(closure_args(opt1_lambda(arg)))))
 		      {
 			set_opt2_sym(cdr(arg), cadaddr(body));
-			return(fx_lint_let_ref_s); /* (var-ref local-var) -> (let-ref (cdr v=local_var) 'ref) */
+			return(fx_simple_let_ref_s); /* (var-ref local-var) -> (let-ref (cdr v=local_var) 'ref) */
 		      }}}
 	    return((fx_proc(closure_body(opt1_lambda(arg))) == fx_sqr_t) ? fx_safe_closure_s_sqr : fx_safe_closure_s_a);
 	  }
@@ -58540,7 +58545,7 @@ static bool fx_tree_in(s7_scheme *sc, s7_pointer tree, s7_pointer var1, s7_point
 	  if (fx_proc(tree) == fx_is_eq_car_sq) return(with_fx(tree, fx_is_eq_car_tq));
 	  if ((fx_proc(tree) == fx_c_opsq_c) || (fx_proc(tree) == fx_c_optq_c))
 	    {
-	      if (fn_proc(p) != g_lint_let_ref) /* don't step on opt3_sym */
+	      if (fn_proc(p) != g_simple_let_ref) /* don't step on opt3_sym */
 		{
 		  if ((is_global_and_has_func(car(p), s7_p_pp_function)) &&
 		      (is_global_and_has_func(caadr(p), s7_p_p_function)))
@@ -70516,11 +70521,11 @@ static void init_choosers(s7_scheme *sc)
 
   /* let-ref */
   f = set_function_chooser(sc->let_ref_symbol, let_ref_chooser);
-  sc->lint_let_ref = make_function_with_class(sc, f, "let-ref", g_lint_let_ref, 2, 0, false);
+  sc->simple_let_ref = make_function_with_class(sc, f, "let-ref", g_simple_let_ref, 2, 0, false);
 
   /* let-set */
   f = set_function_chooser(sc->let_set_symbol, let_set_chooser);
-  sc->lint_let_set = make_function_with_class(sc, f, "let-set!", g_lint_let_set, 3, 0, false);
+  sc->simple_let_set = make_function_with_class(sc, f, "let-set!", g_simple_let_set, 3, 0, false);
 
   /* values */
   f = set_function_chooser(sc->values_symbol, values_chooser);
@@ -70647,7 +70652,7 @@ static s7_pointer check_autoload_and_error_hook(s7_scheme *sc, s7_pointer sym)
 		   *   has an autoload?  I think I'll just assume rootlet, even though that is not very elegant.  Actually in the
 		   *   libgsl case, we're trying to export a name from *libgsl* -- should that be done with define rather than autoload?
 		   */
-		  result = let_ref(sc, e, sym);  /* add '(sym . result) to current_let (was sc->nil, s7_load can set sc->curlet to sc->nil) */
+		  result = let_ref_p_pp(sc, e, sym);  /* add '(sym . result) to current_let (was sc->nil, s7_load can set sc->curlet to sc->nil) */
 		  if (result != sc->undefined)
 		    s7_define(sc, sc->nil /* current_let */, sym, result);
 		}}}
@@ -70680,7 +70685,7 @@ static s7_pointer check_autoload_and_error_hook(s7_scheme *sc, s7_pointer sym)
 	      result = s7_symbol_value(sc, sym);                   /* calls lookup, does not trigger unbound_variable search */
 	      if ((result == sc->undefined) && (e) && (is_let(e))) /* added 31-Mar-23 to match sc->autoload_names case above */
 		{
-		  result = let_ref(sc, e, sym);
+		  result = let_ref_p_pp(sc, e, sym);
 		  if (result != sc->undefined)
 		    s7_define(sc, sc->nil /* current_let */, sym, result); /* as above, was sc->nil -- s7_load above can set sc->curlet to sc->nil */
 		}}
@@ -89980,6 +89985,7 @@ static bool eval_car_pair(s7_scheme *sc)
 static goto_t trailers(s7_scheme *sc)
 {
   s7_pointer code = T_Ext(sc->code);
+  /* fprintf(stderr, "%s\n", display(sc->code)); */
   if (SHOW_EVAL_OPS) fprintf(stderr, "  trailers %s\n", display_80(code));
   set_current_code(sc, code);
   if (is_pair(code))
@@ -98107,7 +98113,7 @@ int main(int argc, char **argv)
  * thook     7651                 2590   2030   2046   2046
  * dup              3805   3788   2492   2239   2097   2064
  * tcopy            8035   5546   2539   2375   2386   2386
- * tread            2440   2421   2419   2408   2405   2412
+ * tread            2440   2421   2419   2408   2405   2412  2260
  * titer     3657   2865   2842   2641   2509   2449   2446
  * trclo     8031   2735   2574   2454   2445   2449   2470
  * tload                          3046   2404   2566   2549
@@ -98140,7 +98146,7 @@ int main(int argc, char **argv)
  * thash            11.8   11.7   9734   9479   9526   9329
  * cb        12.9   11.2   11.0   9658   9564   9609   9635
  * tmap-hash                           1671.0 1467.0   10.3
- * timp             16.4   15.8   11.8   11.7   11.7   10.5
+ * timp             16.4   15.8   11.8   11.7   11.7   10.4
  * tmv              16.0   15.4   14.7   14.5   14.4   11.9
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3
  * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1
@@ -98152,5 +98158,12 @@ int main(int argc, char **argv)
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
- * safe/mutable lists in opt? savable mutable ints?
+ * safe/mutable lists in opt? savable mutable ints? (wrappers+in-use-flag?) second-layer of base safe_lists? need counts of fallbacks
+ * timing: setter, safe_list possibilities, tc_when* can't end points be saved ahead of call?
+ *         check op_s|a|x_* and trailers -- what is currently unopt'd, pair_sym etc
+ * need to clarify what env a method body is referred to: t682
+ * if fx_* et al return a mutable number, caller could notice and mutate it rather than make a new one?
+ *   would need to be sure original never used afterwards
+ *   or.. if all exprs are simple, just use wrappers, but that requires copied funcs
+ * fixup remaining let_refs (rootlet check in p_pp?)
  */
