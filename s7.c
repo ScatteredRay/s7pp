@@ -10264,6 +10264,8 @@ static s7_pointer let_ref_p_pp(s7_scheme *sc, s7_pointer lt, s7_pointer sym)
 {
   if (lt == sc->rootlet) /* op_implicit_let_ref_c can pass rootlet */
     return((is_slot(global_slot(sym))) ? global_value(sym) : sc->undefined);
+  if (let_id(lt) == symbol_id(sym))
+    return(local_value(sym)); /* see add in tlet! */
   for (s7_pointer x = lt; x; x = let_outlet(x))
     for (s7_pointer y = let_slots(x); tis_slot(y); y = next_slot(y))
       if (slot_symbol(y) == sym)
@@ -10280,6 +10282,8 @@ static inline s7_pointer g_simple_let_ref(s7_scheme *sc, s7_pointer args)
     wrong_type_error_nr(sc, sc->let_ref_symbol, 1, lt, a_let_string);
   if (lt == sc->rootlet)
     return((is_slot(global_slot(sym))) ? global_value(sym) : sc->undefined);  
+  if (let_id(lt) == symbol_id(sym))
+    return(local_value(sym));
   for (s7_pointer y = let_slots(lt); tis_slot(y); y = next_slot(y))
     if (slot_symbol(y) == sym)
       return(slot_value(y));
@@ -30723,7 +30727,7 @@ static s7_pointer load_shared_object(s7_scheme *sc, const char *fname, s7_pointe
       if (!library)
 	s7_warn(sc, 512, "load %s failed: %s\n", (pname) ? pwd_name : fname, dlerror());
       else
-	if (let) /* look for 'init_func in let -- let has been checked by caller that it actuallis a let */
+	if (let) /* look for 'init_func in let -- let has been checked by caller that it actually is a let */
 	  {
 	    s7_pointer init = let_ref_p_pp(sc, let, make_symbol(sc, "init_func", 9));
 	    /* init is a symbol (surely not a gensym?), so it should not need to be protected */
@@ -63844,11 +63848,26 @@ static s7_pointer opt_p_pp_sf_mul(opt_info *o) {return(multiply_p_pp(o->sc, slot
 static s7_pointer opt_p_pp_sf_set_car(opt_info *o) {return(inline_set_car(o->sc, slot_value(o->v[1].p), o->v[5].fp(o->v[4].o1)));}
 static s7_pointer opt_p_pp_sf_set_cdr(opt_info *o) {return(inline_set_cdr(o->sc, slot_value(o->v[1].p), o->v[5].fp(o->v[4].o1)));}
 static s7_pointer opt_p_pp_sf_href(opt_info *o) {return(s7_hash_table_ref(o->sc, slot_value(o->v[1].p), o->v[5].fp(o->v[4].o1)));}
-static s7_pointer opt_p_pp_sf_lref(opt_info *o) {return(let_ref(o->sc, slot_value(o->v[1].p), o->v[5].fp(o->v[4].o1)));}
 static s7_pointer opt_p_pp_fs_vref(opt_info *o) {return(vector_ref_p_pp(o->sc, o->v[5].fp(o->v[4].o1), slot_value(o->v[1].p)));}
 static s7_pointer opt_p_pp_fs_cons(opt_info *o) {return(cons(o->sc, o->v[5].fp(o->v[4].o1), slot_value(o->v[1].p)));}
 static s7_pointer opt_p_pp_fs_add(opt_info *o) {return(add_p_pp(o->sc, o->v[5].fp(o->v[4].o1), slot_value(o->v[1].p)));}
 static s7_pointer opt_p_pp_fs_sub(opt_info *o) {return(subtract_p_pp(o->sc, o->v[5].fp(o->v[4].o1), slot_value(o->v[1].p)));}
+
+static s7_pointer opt_p_pp_ss_lref(opt_info *o) 
+{
+  s7_pointer sym = slot_value(o->v[2].p);
+  if (is_symbol(sym))
+    return(let_ref_p_pp(o->sc, slot_value(o->v[1].p), (is_keyword(sym)) ? keyword_symbol(sym) : sym));
+  return(let_ref(o->sc, slot_value(o->v[1].p), sym));
+}
+
+static s7_pointer opt_p_pp_sf_lref(opt_info *o) 
+{
+  s7_pointer sym = o->v[5].fp(o->v[4].o1);
+  if (is_symbol(sym))
+    return(let_ref_p_pp(o->sc, slot_value(o->v[1].p), (is_keyword(sym)) ? keyword_symbol(sym) : sym));
+  return(let_ref(o->sc, slot_value(o->v[1].p), sym));
+}
 
 static s7_pointer opt_p_pp_ff(opt_info *o)
 {
@@ -63932,7 +63951,9 @@ static bool p_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	  opc->v[2].p = opt_simple_symbol(sc, caddr(car_x));
 	  if (opc->v[2].p)
 	    {
-	      opc->v[0].fp = (func == set_car_p_pp) ? opt_set_car_pp_ss : ((opc->v[3].p_pp_f == s7_hash_table_ref) ? opt_p_pp_ss_href : opt_p_pp_ss);
+	      opc->v[0].fp = (func == set_car_p_pp) ? opt_set_car_pp_ss : 
+		((is_hash_table(slot_value(slot))) ? opt_p_pp_ss_href : 
+		 ((is_let(slot_value(slot))) ? opt_p_pp_ss_lref : opt_p_pp_ss));
 	      return_true(sc, car_x);
 	    }
 	  sc->pc = pstart;
@@ -64965,7 +64986,7 @@ static bool p_implicit_ok(s7_scheme *sc, s7_pointer s_slot, s7_pointer car_x, in
 		  fixup_p_pi_ss(opc);
 		  return_true(sc, car_x);
 		}
-	      opc->v[0].fp = opt_p_pp_ss;
+	      opc->v[0].fp = (is_hash_table(obj)) ? opt_p_pp_ss_href : ((is_let(obj)) ? opt_p_pp_ss_lref : opt_p_pp_ss);
 	      return_true(sc, car_x);
 	    }}
       else
@@ -83858,7 +83879,7 @@ static bool do_let(s7_scheme *sc, s7_pointer step_slot, s7_pointer scc)
   return(true);
 }
 
-static bool dotimes(s7_scheme *sc, s7_pointer code, bool one_expr)
+static bool do_let_or_dotimes(s7_scheme *sc, s7_pointer code, bool one_expr)
 {
   s7_pointer body = caddr(code);   /* here we assume one expr in body?? */
   if (((is_syntactic_pair(body)) ||
@@ -83915,7 +83936,7 @@ static goto_t op_safe_dotimes(s7_scheme *sc)
 		{
 		  if (!is_unsafe_do(code))
 		    {
-		      if (dotimes(sc, code, true))
+		      if (do_let_or_dotimes(sc, code, true))
 			return(goto_safe_do_end_clauses);
 		      set_unsafe_do(code);
 		    }
@@ -84101,7 +84122,7 @@ static goto_t op_dotimes_p(s7_scheme *sc)
       set_loop_end(sc->args, integer(let_dox2_value(sc->curlet)));
       set_has_loop_end(sc->args);                  /* dotimes step is by 1 */
       sc->code = cdr(sc->code);
-      if (dotimes(sc, code, false))
+      if (do_let_or_dotimes(sc, code, false))
 	return(goto_do_end_clauses); /* not safe_do here */
       slot_set_value(sc->args, old_init);
       set_curlet(sc, old_e); /* free_cell(sc, sc->curlet) beforehand is not safe */
@@ -98104,21 +98125,21 @@ int main(int argc, char **argv)
  * tpeak      148    115    114    108    105    102    102
  * tref      1081    691    687    463    459    464    466
  * index            1026   1016    973    967    972    973
- * tmock            1177   1165   1057   1019   1032   1037
+ * tmock            1177   1165   1057   1019   1032   1031
  * tvect     3408   2519   2464   1772   1669   1497   1452
  * tauto                          2562   2048   1729   1704
  * texit     1884   1930   1950   1778   1741   1770   1771
  * s7test           1873   1831   1818   1829   1830   1855
  * lt        2222   2187   2172   2150   2185   1950   1950
- * thook     7651                 2590   2030   2046   2046
- * dup              3805   3788   2492   2239   2097   2064
+ * thook     7651                 2590   2030   2046   2008
+ * dup              3805   3788   2492   2239   2097   2076
  * tcopy            8035   5546   2539   2375   2386   2386
- * tread            2440   2421   2419   2408   2405   2412  2260
+ * tread            2440   2421   2419   2408   2405   2259
  * titer     3657   2865   2842   2641   2509   2449   2446
  * trclo     8031   2735   2574   2454   2445   2449   2470
  * tload                          3046   2404   2566   2549
  * fbench    2933   2688   2583   2460   2430   2478   2559
- * tmat             3065   3042   2524   2578   2590   2576
+ * tmat             3065   3042   2524   2578   2590   2573
  * tsort     3683   3105   3104   2856   2804   2858   2858
  * tobj             4016   3970   3828   3577   3508   3515
  * teq              4068   4045   3536   3486   3544   3537
@@ -98126,10 +98147,10 @@ int main(int argc, char **argv)
  * tmac             3950   3873   3033   3677   3677   3680
  * tclo      6362   4787   4735   4390   4384   4474   4339
  * tcase            4960   4793   4439   4430   4439   4443
- * tlet      9166   7775   5640   4450   4427   4457   4504
+ * tlet      9166   7775   5640   4450   4427   4457   4483
  * tfft             7820   7729   4755   4476   4536   4543
  * tmap             8869   8774   4489   4541   4586   4592
- * tstar            6139   5923   5519   4449   4550   4604
+ * tstar            6139   5923   5519   4449   4550   4570
  * tshoot           5525   5447   5183   5055   5034   5034
  * tform            5357   5348   5307   5316   5084   5095
  * tstr      10.0   6880   6342   5488   5162   5180   5197
@@ -98139,18 +98160,18 @@ int main(int argc, char **argv)
  * tlist     9219   7896   7546   6558   6240   6300   6298
  * tset                                  6260   6364   6408
  * trec      19.5   6936   6922   6521   6588   6583   6583
- * tleft     11.1   10.4   10.2   7657   7479   7627   7622
+ * tleft     11.1   10.4   10.2   7657   7479   7627   7614
  * tmisc                                 8142   7631   7745
  * tlamb                                 8003   7941   7936
  * tgc              11.9   11.1   8177   7857   7986   8005
- * thash            11.8   11.7   9734   9479   9526   9329
+ * thash            11.8   11.7   9734   9479   9526   9260
  * cb        12.9   11.2   11.0   9658   9564   9609   9635
  * tmap-hash                           1671.0 1467.0   10.3
  * timp             16.4   15.8   11.8   11.7   11.7   10.4
  * tmv              16.0   15.4   14.7   14.5   14.4   11.9
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3
  * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1
- * calls            36.7   37.5   37.0   37.5   37.1   37.1
+ * calls            36.7   37.5   37.0   37.5   37.1   37.0
  * sg                             55.9   55.8   55.4   55.2
  * tbig            177.4  175.8  156.5  148.1  146.2  146.3
  * --------------------------------------------------------------
@@ -98165,5 +98186,4 @@ int main(int argc, char **argv)
  * if fx_* et al return a mutable number, caller could notice and mutate it rather than make a new one?
  *   would need to be sure original never used afterwards
  *   or.. if all exprs are simple, just use wrappers, but that requires copied funcs
- * fixup remaining let_refs (rootlet check in p_pp?)
  */
