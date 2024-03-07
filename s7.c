@@ -10327,7 +10327,7 @@ static bool op_implicit_let_ref_a(s7_scheme *sc)
 
 static s7_pointer fx_implicit_let_ref_c(s7_scheme *sc, s7_pointer arg)
 {
-  s7_pointer let = lookup_checked(sc, car(arg));
+  s7_pointer let = lookup_checked(sc, car(arg)); /* the let */
   if (!is_let(let))
     return(s7_apply_function(sc, let, list_1(sc, opt3_con(arg))));
   return(let_ref_p_pp(sc, let, opt3_con(arg)));
@@ -71536,19 +71536,18 @@ static opt_t optimize_func_one_arg(s7_scheme *sc, s7_pointer expr, s7_pointer fu
       break;
 
     case T_LET:
-      if ((func == sc->s7_starlet) &&         /* (*s7* ...), sc->s7_starlet is a let */
-	  (((quotes == 1) && (is_symbol(cadr(arg1)))) ||
-	   (is_symbol_and_keyword(arg1))))
+      if (((quotes == 1) && (is_symbol(cadr(arg1)))) || /* (e 'a) or (e ':a) */
+	  (is_symbol_and_keyword(arg1)))                /* (e :a) */
 	{
 	  s7_pointer sym = (quotes == 1) ? cadr(arg1) : arg1;
-	  if (is_keyword(sym)) sym = keyword_symbol(sym); /* might even be ':print-length */
-	  set_safe_optimize_op(expr, OP_IMPLICIT_S7_STARLET_REF_S);
-	  set_opt3_int(expr, s7_starlet_symbol(sym));
-	  return(OPT_T);
-	}
-      if ((is_quoted_symbol(arg1)) || (is_symbol_and_keyword(arg1)))
-	{
-	  set_opt3_con(expr, (is_symbol_and_keyword(arg1)) ? keyword_symbol(arg1) : cadr(arg1));
+	  if (is_keyword(sym)) sym = keyword_symbol(sym); 
+	  if (func == sc->s7_starlet)                   /* (*s7* ...), sc->s7_starlet is a let */
+	    {
+	      set_safe_optimize_op(expr, OP_IMPLICIT_S7_STARLET_REF_S);
+	      set_opt3_int(expr, s7_starlet_symbol(sym));
+	      return(OPT_T);
+	    }
+	  set_opt3_con(expr, sym);
 	  set_unsafe_optimize_op(expr, OP_IMPLICIT_LET_REF_C);
 	  return(OPT_T);
 	}
@@ -74726,6 +74725,7 @@ static bool check_tc_when(s7_scheme *sc, const s7_pointer name, int32_t vars, s7
 	  (caar(p) == name))
 	{
 	  s7_pointer laa = car(p);
+	  set_opt3_pair(body, p);
 	  if ((is_pair(cdr(laa))) && (is_fxable(sc, cadr(laa))))
 	    {
 	      if (is_null(cddr(laa)))
@@ -86913,7 +86913,8 @@ static void op_tc_when_la(s7_scheme *sc, s7_pointer code)
 {
   s7_pointer if_test = cadr(code), body = cddr(code), la_call, la, la_slot = let_slots(sc->curlet);
   s7_function tf = fx_proc(cdr(code));
-  for (la_call = body; is_pair(cdr(la_call)); la_call = cdr(la_call));
+  /* for (la_call = body; is_pair(cdr(la_call)); la_call = cdr(la_call)); */
+  la_call = opt3_pair(code);
   la = cdar(la_call);
   while (tf(sc, if_test) != sc->F)
     {
@@ -86934,7 +86935,8 @@ static void op_tc_when_laa(s7_scheme *sc, s7_pointer code)
 {
   s7_pointer if_test = cadr(code), body = cddr(code), la, laa, laa_slot, la_call, la_slot = let_slots(sc->curlet);
   s7_function tf = fx_proc(cdr(code));
-  for (la_call = body; is_pair(cdr(la_call)); la_call = cdr(la_call));
+  /* for (la_call = body; is_pair(cdr(la_call)); la_call = cdr(la_call)); */
+  la_call = opt3_pair(code);
   la = cdar(la_call);
   laa = cdr(la);
   laa_slot = next_slot(la_slot);
@@ -86960,7 +86962,8 @@ static void op_tc_when_l3a(s7_scheme *sc, s7_pointer code)
 {
   s7_pointer if_test = cadr(code), body = cddr(code), la, laa, l3a, laa_slot, l3a_slot, la_call, la_slot = let_slots(sc->curlet);
   s7_function tf = fx_proc(cdr(code));
-  for (la_call = body; is_pair(cdr(la_call)); la_call = cdr(la_call));
+  /* for (la_call = body; is_pair(cdr(la_call)); la_call = cdr(la_call)); */
+  la_call = opt3_pair(code);
   la = cdar(la_call);
   laa = cdr(la);
   l3a = cdr(laa);
@@ -90006,7 +90009,6 @@ static bool eval_car_pair(s7_scheme *sc)
 static goto_t trailers(s7_scheme *sc)
 {
   s7_pointer code = T_Ext(sc->code);
-  /* fprintf(stderr, "%s\n", display(sc->code)); */
   if (SHOW_EVAL_OPS) fprintf(stderr, "  trailers %s\n", display_80(code));
   set_current_code(sc, code);
   if (is_pair(code))
@@ -91268,11 +91270,12 @@ static bool op_unknown_a(s7_scheme *sc)
 	s7_pointer arg1 = cadr(code);
 	if ((is_quoted_symbol(arg1)) || (is_symbol_and_keyword(arg1)))
 	  {
-	    set_opt3_con(code, (is_symbol_and_keyword(arg1)) ? keyword_symbol(arg1) : cadadr(code));
+	    s7_pointer sym = (is_pair(arg1)) ? cadr(arg1) : arg1;
+	    if (is_keyword(sym)) sym = keyword_symbol(sym); 
+	    set_opt3_con(code, sym);
 	    return(fixup_unknown_op(sc, code, f, OP_IMPLICIT_LET_REF_C));
 	  }
-	/* set_opt3_any(code, cadr(code)); */
-	return(fixup_unknown_op(sc, code, f, OP_IMPLICIT_LET_REF_A));
+	return(fixup_unknown_op(sc, code, f, OP_IMPLICIT_LET_REF_A)); /* "A" might be a symbol */
       }
 
     default: break;
@@ -98180,10 +98183,5 @@ int main(int argc, char **argv)
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * safe/mutable lists in opt? savable mutable ints? (wrappers+in-use-flag?) second-layer of base safe_lists? need counts of fallbacks
- * timing: setter, safe_list possibilities, tc_when* can't end points be saved ahead of call?
- *         check op_s|a|x_* and trailers -- what is currently unopt'd, pair_sym etc
- * need to clarify what env a method body is referred to: t682
- * if fx_* et al return a mutable number, caller could notice and mutate it rather than make a new one?
- *   would need to be sure original never used afterwards
- *   or.. if all exprs are simple, just use wrappers, but that requires copied funcs
+ * timing: setter, check op_s|a|x_* and trailers -- what is currently unopt'd
  */
