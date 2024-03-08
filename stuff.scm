@@ -76,12 +76,9 @@
 	     (set! lines (cons (and (pair? (car x)) (pair-line-number (car x))) lines))
 	     (set! files (cons (and (pair? (car x)) (pair-filename (car x))) files)))))
 
-       ;; show the enclosing contexts
-       (let ((old-print-length (*s7* 'print-length)))
-	 (set! (*s7* 'print-length) 8)
+       (let-temporarily (((*s7* 'print-length) 8))
 	 (do ((e (outlet ow) (outlet e)))
-	     ((memq e elist)
-	      (set! (*s7* 'print-length) old-print-length))
+	     ((memq e elist))
 	   (if (and (number? (length e)) ; with-let + mock-data + length method?
 		    (> (length e) 0))
 	       (format p "~%~{~A~| ~}~%" e)

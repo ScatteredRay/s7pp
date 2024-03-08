@@ -65072,7 +65072,7 @@ static bool p_implicit_ok(s7_scheme *sc, s7_pointer s_slot, s7_pointer car_x, in
 	       *   what the implicit call will do, and in the opt_* context, everything must be "safe" (i.e. no defines or
 	       *   hidden multiple-values, etc).
 	       */
-	      if ((!is_any_vector(obj)) || (vector_rank(obj) != (len - 1))) return_false(sc, car_x);
+	      if ((!is_any_vector(obj)) || (vector_rank(obj) != (len - 1))) return_false(sc, car_x); /* (* i (P2 1 1)) in timp.scm where P2 is a list */
 	      opc->v[0].fp = opt_p_call_any;
 	      switch (type(obj))     /* string can't happen here (no multidimensional strings), for pair/hash/let see above */
 		{
@@ -67793,14 +67793,43 @@ static bool cell_optimize_1(s7_scheme *sc, s7_pointer expr)
       s_func = slot_value(s_slot);
     }
   else
-    if (is_c_function(head))
+    if (is_c_function(head)) /* (#_abs -1) I think */
       s_func = head;
     else
-      {
+      { /* ((let-ref L 'mult) 1 2) or 'a etc */
+	/* fprintf(stderr, "%d: car_x: %s, head: %s\n", __LINE__, display(car_x), display(head)); */
 	if ((head == sc->quote_function) &&
 	    ((is_pair(cdr(car_x))) && (is_null(cddr(car_x)))))
 	  return(opt_cell_quote(sc, car_x));
-	return_false(sc, car_x);
+
+	/* if head is ([let-ref] L 'multiply), it should be accessible now, so we could do the lookup, set up s_func and go on */	
+	if (is_pair(head))
+	  {
+	    s7_pointer let, slot, sym;
+	    if ((car(head) == sc->let_ref_symbol) && (s7_list_length(sc, head) == 3))
+	      {
+		let = cadr(head); 
+		sym = caddr(head);
+	      }
+	    else 
+	      if (s7_list_length(sc, head) == 2) 
+		{
+		  let = car(head); 
+		  sym = cadr(head);
+		}
+	      else return_false(sc, car_x);
+	    if ((is_symbol(let)) && ((is_symbol_and_keyword(sym)) || (is_quoted_symbol(sym))))
+	      {
+		slot = s7_slot(sc, let);
+		if (!is_slot(slot)) return_false(sc, car_x);
+		let = slot_value(slot);
+		if ((!is_let(let)) || (has_let_ref_fallback(let))) return_false(sc, car_x);
+		sym = (is_pair(sym)) ? cadr(sym) : keyword_symbol(sym);
+		s_func = let_ref_p_pp(sc, let, sym);
+	      }
+	    else return_false(sc, car_x);
+	  }
+	else return_false(sc, car_x);
       }
   if (is_c_function(s_func))
     {
@@ -98184,4 +98213,6 @@ int main(int argc, char **argv)
  *   lots of is_global(sc->quote_symbol)
  * safe/mutable lists in opt? savable mutable ints? (wrappers+in-use-flag?) second-layer of base safe_lists? need counts of fallbacks
  * timing: setter, check op_s|a|x_* and trailers -- what is currently unopt'd
+ *   t683 extended -> timp?
+ * t725 with do->print-length case
  */
