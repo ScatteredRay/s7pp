@@ -6101,8 +6101,11 @@ static s7_pointer find_let(s7_scheme *sc, s7_pointer obj)
     case T_CONTINUATION: case T_GOTO:
     case T_C_MACRO: case T_C_FUNCTION_STAR: case T_C_FUNCTION: case T_C_RST_NO_REQ_FUNCTION:
       return(sc->rootlet);
-      /* TODO: what about cload into local?
+      /* what about cload into local? there's no way for a c-func to get its definition env? (s7_define sets global from local_slot if env==shadow_rootlet)
        *   (*libc* 'memcpy): memcpy, ((rootlet) 'memcpy): #<undefined>, (with-let (rootlet) memcpy): error (undefined), (with-let *libc* memcpy): memcpy
+       *   but how to get *libc* from (funclet (*libc* 'memcpy))
+       *   currently (*libc* 'sqrt) is #_sqrt (i.e. s7's) whereas (*libm* 'sqrt) is libm's (i.e. s7__sqrt in libm_s7.c) -- confusing
+       *   perhaps add a funclet field to c_proc_t?
        */
     }
   return(sc->nil);
@@ -8499,9 +8502,12 @@ static inline uint64_t raw_string_hash(const uint8_t *key, s7_int len) /* used i
       memcpy((void *)xs, (const void *)key, len);
       return(xs[0]);
     }
-  uint64_t xs[2] = {0, 0};
-  memcpy((void *)xs, (const void *)key, (len > 16) ? 16 : len);  /* compiler complaint here is bogus */
-  return(xs[0] + xs[1]);
+  else
+    {
+      uint64_t xs[2] = {0, 0};
+      memcpy((void *)xs, (const void *)key, (len > 16) ? 16 : len);  /* compiler complaint here is bogus */
+      return(xs[0] + xs[1]);
+    }
 }
 
 static uint8_t *alloc_symbol(s7_scheme *sc)
@@ -11398,7 +11404,7 @@ void s7_define(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7_pointer valu
   else
     {
       s7_make_slot(sc, let, symbol, value); /* I think this means C code can override "constant" defs */
-      /* if let is sc->nil or rootlet, s7_make_slot makes a semipermanent_slot */
+      /* if let is rootlet, s7_make_slot makes a semipermanent_slot */
       if ((let == sc->shadow_rootlet) &&
 	  (!is_slot(global_slot(symbol))))
 	{
@@ -45832,7 +45838,7 @@ static s7_pointer let_to_function(s7_scheme *sc, s7_pointer e)
 
 static s7_pointer g_function(s7_scheme *sc, s7_pointer args)
 {
-  #define H_function "(*function* (emv field)) returns the current function.  (*function*) is like __func__ in C. \
+  #define H_function "(*function* env field) returns the current function.  (*function*) is like __func__ in C. \
 If 'env is specified, *function* looks for the current function in the environment 'e.  If 'field (a symbol) is given \
 a function-specific value is returned.  The fields are 'name (the name of the current function), 'signature, 'arity,\
  'documentation, 'value (the function itself), 'line and 'file (the function's definition location), 'funclet, 'source, \
@@ -63683,9 +63689,9 @@ static s7_pointer opt_p_pi_ss_fvref_direct(opt_info *o) {return(float_vector_ref
 static s7_pointer opt_p_pi_ss_ivref_direct(opt_info *o) {return(int_vector_ref_p_pi_direct(o->sc, slot_value(o->v[1].p), integer(slot_value(o->v[2].p))));}
 static s7_pointer opt_p_pi_ss_fvref_direct_wrapped(opt_info *o) {return(float_vector_ref_p_pi_direct_wrapped(o->sc, slot_value(o->v[1].p), integer(slot_value(o->v[2].p))));}
 static s7_pointer opt_p_pi_ss_ivref_direct_wrapped(opt_info *o) {return(int_vector_ref_p_pi_direct_wrapped(o->sc, slot_value(o->v[1].p), integer(slot_value(o->v[2].p))));}
-static s7_pointer opt_p_pi_ss_lref(opt_info *o) {return(list_ref_p_pi_unchecked(o->sc, slot_value(o->v[1].p), integer(slot_value(o->v[2].p))));}
+static s7_pointer opt_p_pi_ss_pref(opt_info *o) {return(list_ref_p_pi_unchecked(o->sc, slot_value(o->v[1].p), integer(slot_value(o->v[2].p))));}
 static s7_pointer opt_p_pi_sc(opt_info *o) {return(o->v[3].p_pi_f(o->sc, slot_value(o->v[1].p), o->v[2].i));}
-static s7_pointer opt_p_pi_sc_lref(opt_info *o) {return(list_ref_p_pi_unchecked(o->sc, slot_value(o->v[1].p), o->v[2].i));}
+static s7_pointer opt_p_pi_sc_pref(opt_info *o) {return(list_ref_p_pi_unchecked(o->sc, slot_value(o->v[1].p), o->v[2].i));}
 static s7_pointer opt_p_pi_sf(opt_info *o) {return(o->v[3].p_pi_f(o->sc, slot_value(o->v[1].p), o->v[5].fi(o->v[4].o1)));}
 static s7_pointer opt_p_pi_sf_sref(opt_info *o) {return(string_ref_p_pi_unchecked(o->sc, slot_value(o->v[1].p), o->v[5].fi(o->v[4].o1)));}
 static s7_pointer opt_p_pi_sf_sref_direct(opt_info *o) {return(string_ref_p_pi_direct(o->sc, slot_value(o->v[1].p), o->v[5].fi(o->v[4].o1)));}
@@ -63746,7 +63752,7 @@ static void fixup_p_pi_ss(opt_info *opc)
       ((opc->v[3].p_pi_f == float_vector_ref_p_pi_direct) ? opt_p_pi_ss_fvref_direct :
        ((opc->v[3].p_pi_f == int_vector_ref_p_pi_direct) ? opt_p_pi_ss_ivref_direct :
 	((opc->v[3].p_pi_f == t_vector_ref_p_pi_direct) ? opt_p_pi_ss_vref_direct :
-	 ((opc->v[3].p_pi_f == list_ref_p_pi_unchecked) ? opt_p_pi_ss_lref : opt_p_pi_ss))))));
+	 ((opc->v[3].p_pi_f == list_ref_p_pi_unchecked) ? opt_p_pi_ss_pref : opt_p_pi_ss))))));
 }
 
 static bool p_pi_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer sig, s7_pointer car_x)
@@ -63797,7 +63803,7 @@ static bool p_pi_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
   if (is_t_integer(caddr(car_x)))
     {
       opc->v[2].i = integer(caddr(car_x));
-      opc->v[0].fp = (opc->v[3].p_pi_f == list_ref_p_pi_unchecked) ? opt_p_pi_sc_lref : opt_p_pi_sc;
+      opc->v[0].fp = (opc->v[3].p_pi_f == list_ref_p_pi_unchecked) ? opt_p_pi_sc_pref : opt_p_pi_sc;
       return_true(sc, car_x);
     }
   o1 = sc->opts[sc->pc];
@@ -63952,8 +63958,8 @@ static bool p_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	  if (opc->v[2].p)
 	    {
 	      opc->v[0].fp = (func == set_car_p_pp) ? opt_set_car_pp_ss : 
-		((is_hash_table(slot_value(slot))) ? opt_p_pp_ss_href : 
-		 ((is_let(slot_value(slot))) ? opt_p_pp_ss_lref : opt_p_pp_ss));
+		((func == hash_table_ref_p_pp) ? opt_p_pp_ss_href :  /* can't use is_hash_table(slot_value(slot)) -- func might be e.g. string-ref! */
+		 ((func == let_ref) ? opt_p_pp_ss_lref : opt_p_pp_ss));
 	      return_true(sc, car_x);
 	    }
 	  sc->pc = pstart;
@@ -63970,7 +63976,8 @@ static bool p_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	{
 	  opc->v[0].fp = (func == add_p_pp) ? opt_p_pp_sf_add : ((func == subtract_p_pp) ? opt_p_pp_sf_sub : ((func == multiply_p_pp) ? opt_p_pp_sf_mul :
                            ((func == set_car_p_pp) ? opt_p_pp_sf_set_car : ((func == set_cdr_p_pp) ? opt_p_pp_sf_set_cdr :
-                            ((opc->v[3].p_pp_f == s7_hash_table_ref) ? opt_p_pp_sf_href : opt_p_pp_sf)))));
+                            ((opc->v[3].p_pp_f == s7_hash_table_ref) ? opt_p_pp_sf_href : 
+			     ((opc->v[3].p_pp_f == let_ref) ? opt_p_pp_sf_lref : opt_p_pp_sf))))));
 	  opc->v[4].o1 = sc->opts[pstart];
 	  opc->v[5].fp = sc->opts[pstart]->v[0].fp;
 	  if (opc->v[5].fp == opt_p_pi_ss_ivref_direct) opc->v[5].fp = opt_p_pi_ss_ivref_direct_wrapped;
@@ -64223,7 +64230,7 @@ static bool p_pip_ssf_combinable(s7_scheme *sc, opt_info *opc, int32_t start)
       if ((o1->v[0].fp == opt_p_pi_ss) || (o1->v[0].fp == opt_p_pi_ss_sref) || (o1->v[0].fp == opt_p_pi_ss_vref) ||
 	  (o1->v[0].fp == opt_p_pi_ss_sref_direct) || (o1->v[0].fp == opt_p_pi_ss_vref_direct) ||
 	  (o1->v[0].fp == opt_p_pi_ss_fvref_direct) || (o1->v[0].fp == opt_p_pi_ss_ivref_direct) ||
-	  (o1->v[0].fp == opt_p_pi_ss_lref))
+	  (o1->v[0].fp == opt_p_pi_ss_pref))
 	{
 	  opc->v[5].p_pip_f = opc->v[3].p_pip_f;
 	  opc->v[6].p_pi_f = o1->v[3].p_pi_f;
@@ -65011,7 +65018,8 @@ static bool p_implicit_ok(s7_scheme *sc, s7_pointer s_slot, s7_pointer car_x, in
 	    }
 	  if (cell_optimize(sc, cdr(car_x)))
 	    { /* opc->v[3].p_pp_f == s7_hash_table_ref if hash_table */
-	      opc->v[0].fp = (is_hash_table(obj)) ? opt_p_pp_sf_href : ((is_let(obj)) ? opt_p_pp_sf_lref :  opt_p_pp_sf);
+	      opc->v[0].fp = (opc->v[3].p_pp_f == s7_hash_table_ref) ? opt_p_pp_sf_href :  /* can't use is_hash_table here */
+		               ((opc->v[3].p_pp_f == let_ref) ? opt_p_pp_sf_lref :  opt_p_pp_sf);
 	      opc->v[4].o1 = sc->opts[start];
 	      opc->v[5].fp = sc->opts[start]->v[0].fp;
 	      return_true(sc, car_x);
@@ -71683,9 +71691,9 @@ static int32_t check_lambda(s7_scheme *sc, s7_pointer form, bool optl);
 static opt_t optimize_func_two_args(s7_scheme *sc, s7_pointer expr, s7_pointer func, int32_t hop,
 				    int32_t pairs, int32_t symbols, int32_t quotes, int32_t bad_pairs, s7_pointer e)
 {
+  s7_pointer arg1 = cadr(expr), arg2 = caddr(expr);
   if (SHOW_EVAL_OPS) fprintf(stderr, "  %s[%d]: expr: %s, func: %s, hop: %d, pairs: %d, symbols: %d, quotes: %d, bad_pairs: %d, e: %s\n",
 			     __func__, __LINE__, display_80(expr), display(func), hop, pairs, symbols, quotes, bad_pairs, display_80(e));
-  s7_pointer arg1 = cadr(expr), arg2 = caddr(expr);
   if (quotes > 0)
     {
       if (direct_memq(sc->quote_symbol, e))
@@ -98214,5 +98222,5 @@ int main(int argc, char **argv)
  * safe/mutable lists in opt? savable mutable ints? (wrappers+in-use-flag?) second-layer of base safe_lists? need counts of fallbacks
  * timing: setter, check op_s|a|x_* and trailers -- what is currently unopt'd
  *   t683 extended -> timp?
- * t725 with do->print-length case
+ *   op_x_aa: ss star, sc|cc imp,
  */
