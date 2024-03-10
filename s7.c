@@ -65015,8 +65015,9 @@ static bool p_implicit_ok(s7_scheme *sc, s7_pointer s_slot, s7_pointer car_x, in
 		  fixup_p_pi_ss(opc);
 		  return_true(sc, car_x);
 		}
-	      opc->v[0].fp = ((is_hash_table(obj)) && (opc->v[3].p_pp_f == s7_hash_table_ref)) ? opt_p_pp_sf_href :
-		              (((is_let(obj)) && (opc->v[3].p_pp_f == let_ref)) ? opt_p_pp_sf_lref :  opt_p_pp_sf);
+	      opc->v[0].fp = ((is_hash_table(obj)) && (opc->v[3].p_pp_f == s7_hash_table_ref)) ? opt_p_pp_ss_href :
+		              (((is_let(obj)) && (opc->v[3].p_pp_f == let_ref)) ? opt_p_pp_ss_lref :  opt_p_pp_ss);
+	      /* if (opc->v[0].fp != opt_p_pp_ss) abort(); */
 	      return_true(sc, car_x);
 	    }}
       else
@@ -98248,5 +98249,6 @@ int main(int argc, char **argv)
  *   op_x_aa: ss star, sc|cc imp
  *   strings, format individual tests
  *   let-temp in opt*, save slot (let), hash-entry (hash+resize check), maybe also for set! in opt*
+ * time.make freed in t725
  * infinite loop?  odd equal messages in t101-aux-*
  */
