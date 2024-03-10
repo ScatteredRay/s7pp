@@ -35,6 +35,14 @@
 
 (define-constant %features% (copy *features*))
 
+(define (daytime)
+  (with-let (sublet *libc*)
+    (let ((timestr (make-string 64))) 
+      (let ((len (strftime timestr 64 "%H:%M"
+			   (localtime 
+			    (time.make (time (c-pointer 0)))))))
+	(substring timestr 0 len)))))
+
 (define (cycler size)
   (let ((cp-lst (make-list 3 #f))
 	(it-lst (make-list 3 #f)))
@@ -89,12 +97,6 @@
 ;; #t is the default for print-cycles
 (require case.scm)
 (define match?  ((funclet 'case*) 'case*-match?))
-
-#|
-(when (provided? 'pure-s7)
-  (define (set-current-input-port port) (set! (current-input-port) port))
-  (define (set-current-output-port port) (set! (current-output-port) port)))
-|#
 
 (when with-mock-data
   (load "mockery.scm")
@@ -518,20 +520,6 @@
 
 (define-expansion (t725-comment . strs) (values)) ; this must be at the top-level, "comment" used as local var in lint.scm
 
-#|
-;; infinite loop if cyclic
-(define lint-no-read-error #t)
-(define linter (let ()
-		 (let-temporarily (((*s7* 'autoloading?) #t))
-		   (load "lint.scm"))
-		 (lambda (str)
-		   (call-with-output-string
-		    (lambda (op)
-		      (call-with-input-string str
-			(lambda (ip)
-			  (lint ip op))))))))
-|#
-
 (define-expansion (_dw_ . args)
   `(dynamic-wind #f (lambda () ,@args) #f))
 
@@ -653,42 +641,6 @@
        (object->string (car (list ,@args)))
      read-line))
 
-#|
-(define-expansion (_rd7_ . args)
-  `(with-input-from-file "/home/bil/cl/all-lg-results"
-     (lambda ()
-       ,@args)))
-
-(define-expansion (_rd8_ . args)
-  `(let ((old-port (current-input-port)))
-     (dynamic-wind
-	 (lambda ()
-	   (set! (current-input-port) (open-input-file "/home/bil/cl/all-lg-results")))
-	 (lambda ()
-	   ,@args)
-	 (lambda ()
-	   (unless (port-closed? (current-input-port))
-	     (close-input-port (current-input-port)))
-	   (set! (current-input-port) old-port)))))
-|#
-#|
-(define-expansion (_wr1_ . args)
-  `(let ((port #f))
-     (dynamic-wind
-	 (lambda ()
-	   (set! port (open-output-string)))
-	 (lambda ()
-	   (format port "~S" (car (list ,@args)))
-	   (get-output-string port #t))
-	 (lambda ()
-	   (close-output-port port)))))
-
-(define-expansion (_wr2_ . args)
-  `(call-with-output-string
-     (lambda (port)
-       (write (car (list ,@args)) port))))
-|#
-
 (define-expansion (_wr3_ . args)
   `(format #f "~W" (car (list ,@args))))
 
@@ -733,48 +685,6 @@
 	   'error)))
      (lambda (t i)
        'error)))
-
-#|
-(define-expansion (_fe1_ . args)
-  `(for-each (lambda (n) (n 0)) (list ,@args)))
-
-(define-expansion (_fe2_ . args)
-  `(do ((x (list ,@args) (cdr x)))
-       ((null? x) #unspscified>)
-     ((car x) 0)))
-
-(define-expansion (_fe3_ . args)
-  `(for-each (lambda (n) (set! (n) 0)) (list ,@args)))
-
-(define-expansion (_fe4_ . args)
-  `(do ((x (list ,@args) (cdr x)))
-       ((null? x) #unspscified>)
-     (set! ((car x)) 0)))
-
-(define-macro (trace f)
-  (let ((old-f (gensym "trace")))
-    `(define ,f
-       (let ((,old-f ,f))
-	 (apply lambda 'args
-		`((format () "(~S ~{~S~^ ~}) -> " ',',f args)
-		  (let ((val (apply ,,old-f args)))
-		    (format () "~S~%" val)
-		    val)))))))
-
-(define-expansion (_tr1_ . args)
-  `(with-output-to-string
-     (lambda ()
-       (define (tracy . pars) pars)
-       (trace tracy)
-       (apply tracy ,@args ()))))
-
-(define-expansion (_tr2_ . args)
-  `(with-output-to-string
-     (lambda ()
-       ((lambda pars
-	  (format () "(tracy ~{~S~^ ~}) -> ~S~%" pars pars))
-	,@args))))
-|#
 
 (define last-stable-f #f)
 (define-constant (_stable1_ . args)
@@ -1223,11 +1133,12 @@
 					    (lambda (p) (return 'oops))))))"))
 
 		    "#<eof>" "#<undefined>" "#<unspecified>" "#unknown" "___lst" "#<bignum: 3>"
-		    "#<>" "#<label:>" "#<...>" "..."
+		    "#<>" "#<label:>" "#<...>" "..." "(cons #_quote call-with-exit)" ; "(#_quote . call-with-exit)"
 		    "#_and" "'#_or" "#_abs" "#_+"
 		    "#o123" "#b101" "#\\newline" "#\\alarm" "#\\delete" "#_cons" "#x123.123" "#\\x65"
 		    "#i(60 0 0 0 0 1 0 0 0 1 1 0 0 1 0 1 0 0 1 1 1 0 1 1 0 1 0 0 0 0 0 0 0 0 0 0 1 1 0 1 0 1 0 0 0 1 0 1 1 0 0 0 1 1 1 1 1 0 0 1 1)"
 		    "#r(0.000000 0.303100 0.261228 0.917131 0.691793 -0.677124 0.027342 -0.014801 1.166154 0.416979 0.851167 1.410955 0.139409 -0.306122 1.416862 1.054300 0.792442 0.062922 1.507148 0.118287 1.375215 1.459904 1.620963 0.828106 -0.237368 0.987982 0.753194 0.096604 1.712227 1.239483 0.673351 0.871862 0.125962 0.260000 0.626286 0.147473 0.131774 0.201212 -0.194457 0.538798 0.418147 1.292448 0.871870 0.794549 0.988888 1.131816 -0.166311 0.052304 0.543793 -0.229410 0.113585 0.733683 0.271039 1.008427 1.788452 0.654055 0.106430 0.828086 0.097436 0.376461)"
+		    "(let ((x 0.0) (y 1.0)) (do ((.i 0 (+ .i 1))) ((= .i 2) (set! x (+ x y))) (set! x (* .i .1))))"
 
 		    "(call-with-exit (lambda (goto) goto))"
 		    "(symbol->string 'x)" "(symbol \"a b\")" "(symbol \"(\\\")\")"
@@ -1272,7 +1183,8 @@
 		    "(let ((a 1)) (set! (setter 'a) integer?) (curlet))"
 
 		    "bigi0" "bigi1" "bigi2" "bigrat" "bigflt" "bigcmp" "bigf2" "Hk"
-		    "(ims 1)" "(imbv 1)" "(imv 1)" "(imb 1)" "(imh 'a)" "V_1" "V_2" "H_1" "H_2" "H_3" "H_4" "H_5" "H_6" "L_6"
+		    "(ims 1)" "(imbv 1)" "(imv 1)" "(imb 1)" "(imh 'a)" "(imi 'a)"
+		    "V_1" "V_2" "H_1" "H_2" "H_3" "H_4" "H_5" "H_6" "L_6"
 
 		    "(make-iterator (block 1 2 3))"
 		    "(vector-dimensions (block))"
@@ -1386,7 +1298,7 @@
 		    "(let loop ((i 2)) (if (> i 0) (loop (- i 1)) i))"
 
 		    ;"(rootlet)" ; why was this commented out? -- very verbose useless diffs
-		    "(unlet)"
+		    ;"(unlet)"
 		    "(let? (curlet))"
 		    ;"*s7*"     ;variable
 
@@ -1461,6 +1373,8 @@
 		    (lambda (s) (string-append "(let ((v (vector 0))) (set! (v 0) " s "))")))
 	      (list (lambda (s) (string-append "(let ((x 1)) (immutable! 'x) (begin " s "))"))
                     (lambda (s) (string-append "((lambda* ((x 1)) (immutable! 'x) " s "))")))
+	      (list (lambda (s) (string-append "(let ((f (lambda* (a (b 1)) (+ a b)))) (f :a " s "))"))
+		    (lambda (s) (string-append "(let ((f (lambda* (a (b 1)) (+ a b)))) (f a: " s "))")))
 	      (list (lambda (s) (string-append "(do ((i 0 (+ i 1))) ((= i 1)) (do ((j 0 (+ j 1))) ((= j 1)) (with-immutable (i j) " s ")))"))
                     (lambda (s) (string-append "(do ((i 0 (+ i 1))) ((= i 1)) (let ((j 0)) (with-immutable (i j) " s ")))")))
 	      (list (lambda (s) (string-append "(or (_cop1_ " s "))"))
@@ -1701,7 +1615,8 @@
 
       (let ((tree (catch #t
 		    (lambda () ; try to catch read errors
-		      (eval-string (string-append "'" str))) ;(with-input-from-string str read) -- causes missing close paren troubles with eval-time reader-cond (read error not caught)
+		      (eval-string (string-append "'" str))) 
+		    ;;(with-input-from-string str read) -- causes missing close paren troubles with eval-time reader-cond (read error not caught)
 		    (lambda (t i)
 		      ()))))
 	(let walker ((p tree))
@@ -1974,19 +1889,19 @@
 	(when (string-position "H_6" str) (fill! H_6 #f) (hash-table-set! H_6 'a H_6)))
       )
 
-    (define dots (vector "." "-" "+" "-"))
+    (define dots (vector "." "-" "+" "-" "." "-" "+" "-"))
     (define (test-it)
       (do ((m 0 (+ m 1))
-	   (n 0)
-	   ;(p 0 (+ p 1))
-	   )
-	  (#f ;(= p fuzzies)
+	   (n 0))
+	  (#f
 	   (format *stderr* "reached end of loop??~%"))
 
 	(when (= m 100000)
 	  (set! m 0)
 	  (set! n (+ n 1))
-	  (if (= n 4) (set! n 0))
+	  (when (= n 8) 
+	    (set! n 0)
+	    (format *stderr* " ~A " (daytime)))
 	  (format *stderr* "~A" (vector-ref dots n)))
 
 	(catch #t
@@ -1994,19 +1909,8 @@
 	    (try-both (make-expr (+ 1 (random both-ran))))) ; min 1 here not 0, was 6
 	  (lambda (type info)
 	    (apply format *stderr* info)
-	    ))
-	))
-#|
-    (define (vmemq f v)
-      (call-with-exit
-       (lambda (g)
-	 (do ((i 0 (+ i 1)))
-	     ((= i (length v)))
-	   (if (eq? (v i) 'call/cc)
-	       (g #t)))
-	 #f)))
-    (display "call: " *stderr*) (display (vmemq 'call/cc functions) *stderr*) (newline *stderr*)
-|#
+	    ))))
+
     (test-it)))
 )
 

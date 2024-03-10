@@ -33609,12 +33609,33 @@ static void simple_list_readable_display(s7_scheme *sc, s7_pointer lst, s7_int t
     }
 }
 
+#if S7_DEBUGGING
+static char *base = NULL, *min_char = NULL;
+#endif
+
 static void pair_to_port(s7_scheme *sc, s7_pointer lst, s7_pointer port, use_write_t use_write, shared_info_t *ci)
 {
   s7_pointer x;
   s7_int i, len;
   bool immutable = false;
   s7_int true_len = list_length_with_immutable_check(sc, lst, &immutable);
+
+#if S7_DEBUGGING
+  char xx;
+  if (!base) base = &xx;
+  else
+    if (&xx > base) base = &xx;
+    else
+      if ((!min_char) || (&xx < min_char))
+	{
+	  min_char = &xx;
+	  if ((base - min_char) > 1000000)
+	    {
+	      fprintf(stderr, "pair_to_port infinite recursion?\n");
+	      abort();
+	    }}
+#endif
+
   if (true_len < 0)                    /* a dotted list -- handle cars, then final cdr */
     len = (-true_len + 1);
   else len = (true_len == 0) ? circular_list_entries(lst) : true_len; /* circular list (nil is handled by unique_to_port) */
@@ -63935,21 +63956,22 @@ static bool p_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
   opc->v[3].p_pp_f = func;
   if (is_symbol(cadr(car_x)))
     {
+      s7_pointer obj;
       slot = opt_simple_symbol(sc, cadr(car_x));
       if (!slot)
 	{
 	  sc->pc = pstart;
 	  return_false(sc, car_x);
 	}
-      if ((is_any_vector(slot_value(slot))) &&
-	  (vector_rank(slot_value(slot)) > 1))
+      obj = slot_value(slot);
+      if ((is_any_vector(obj)) && (vector_rank(obj) > 1))
 	{
 	  sc->pc = pstart;
 	  return_false(sc, car_x);
 	}
       opc->v[1].p = slot;
 
-      if ((func == hash_table_ref_p_pp) && (is_hash_table(slot_value(slot))))
+      if ((func == hash_table_ref_p_pp) && (is_hash_table(obj)))
 	opc->v[3].p_pp_f = s7_hash_table_ref;
 
       if (is_symbol(caddr(car_x)))
@@ -63958,8 +63980,8 @@ static bool p_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	  if (opc->v[2].p)
 	    {
 	      opc->v[0].fp = (func == set_car_p_pp) ? opt_set_car_pp_ss : 
-		((func == hash_table_ref_p_pp) ? opt_p_pp_ss_href :  /* can't use is_hash_table(slot_value(slot)) -- func might be e.g. string-ref! */
-		 ((func == let_ref) ? opt_p_pp_ss_lref : opt_p_pp_ss));
+		(((is_hash_table(obj)) && (func == hash_table_ref_p_pp)) ? opt_p_pp_ss_href :
+		 (((is_let(obj)) && (func == let_ref)) ? opt_p_pp_ss_lref : opt_p_pp_ss));
 	      return_true(sc, car_x);
 	    }
 	  sc->pc = pstart;
@@ -63976,8 +63998,8 @@ static bool p_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	{
 	  opc->v[0].fp = (func == add_p_pp) ? opt_p_pp_sf_add : ((func == subtract_p_pp) ? opt_p_pp_sf_sub : ((func == multiply_p_pp) ? opt_p_pp_sf_mul :
                            ((func == set_car_p_pp) ? opt_p_pp_sf_set_car : ((func == set_cdr_p_pp) ? opt_p_pp_sf_set_cdr :
-                            ((opc->v[3].p_pp_f == s7_hash_table_ref) ? opt_p_pp_sf_href : 
-			     ((opc->v[3].p_pp_f == let_ref) ? opt_p_pp_sf_lref : opt_p_pp_sf))))));
+                            (((is_hash_table(obj)) && (opc->v[3].p_pp_f == s7_hash_table_ref)) ? opt_p_pp_sf_href : 
+			     (((is_let(obj)) && (opc->v[3].p_pp_f == let_ref)) ? opt_p_pp_sf_lref : opt_p_pp_sf))))));
 	  opc->v[4].o1 = sc->opts[pstart];
 	  opc->v[5].fp = sc->opts[pstart]->v[0].fp;
 	  if (opc->v[5].fp == opt_p_pi_ss_ivref_direct) opc->v[5].fp = opt_p_pi_ss_ivref_direct_wrapped;
@@ -64993,7 +65015,8 @@ static bool p_implicit_ok(s7_scheme *sc, s7_pointer s_slot, s7_pointer car_x, in
 		  fixup_p_pi_ss(opc);
 		  return_true(sc, car_x);
 		}
-	      opc->v[0].fp = (is_hash_table(obj)) ? opt_p_pp_ss_href : ((is_let(obj)) ? opt_p_pp_ss_lref : opt_p_pp_ss);
+	      opc->v[0].fp = ((is_hash_table(obj)) && (opc->v[3].p_pp_f == s7_hash_table_ref)) ? opt_p_pp_sf_href :
+		              (((is_let(obj)) && (opc->v[3].p_pp_f == let_ref)) ? opt_p_pp_sf_lref :  opt_p_pp_sf);
 	      return_true(sc, car_x);
 	    }}
       else
@@ -65017,9 +65040,9 @@ static bool p_implicit_ok(s7_scheme *sc, s7_pointer s_slot, s7_pointer car_x, in
 	      return_true(sc, car_x);
 	    }
 	  if (cell_optimize(sc, cdr(car_x)))
-	    { /* opc->v[3].p_pp_f == s7_hash_table_ref if hash_table */
-	      opc->v[0].fp = (opc->v[3].p_pp_f == s7_hash_table_ref) ? opt_p_pp_sf_href :  /* can't use is_hash_table here */
-		               ((opc->v[3].p_pp_f == let_ref) ? opt_p_pp_sf_lref :  opt_p_pp_sf);
+	    { /* need both type check and func check! (hash-table-ref or 123) */
+	      opc->v[0].fp = ((is_hash_table(obj)) && (opc->v[3].p_pp_f == s7_hash_table_ref)) ? opt_p_pp_sf_href :
+		              (((is_let(obj)) && (opc->v[3].p_pp_f == let_ref)) ? opt_p_pp_sf_lref :  opt_p_pp_sf);
 	      opc->v[4].o1 = sc->opts[start];
 	      opc->v[5].fp = sc->opts[start]->v[0].fp;
 	      return_true(sc, car_x);
@@ -98222,5 +98245,8 @@ int main(int argc, char **argv)
  * safe/mutable lists in opt? savable mutable ints? (wrappers+in-use-flag?) second-layer of base safe_lists? need counts of fallbacks
  * timing: setter, check op_s|a|x_* and trailers -- what is currently unopt'd
  *   t683 extended -> timp?
- *   op_x_aa: ss star, sc|cc imp,
+ *   op_x_aa: ss star, sc|cc imp
+ *   strings, format individual tests
+ *   let-temp in opt*, save slot (let), hash-entry (hash+resize check), maybe also for set! in opt*
+ * infinite loop?  odd equal messages in t101-aux-*
  */
