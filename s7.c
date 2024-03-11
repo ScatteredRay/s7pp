@@ -98249,6 +98249,5 @@ int main(int argc, char **argv)
  *   op_x_aa: ss star, sc|cc imp
  *   strings, format individual tests
  *   let-temp in opt*, save slot (let), hash-entry (hash+resize check), maybe also for set! in opt*
- * time.make freed in t725
- * infinite loop?  odd equal messages in t101-aux-*
+ * odd equal messages in t101-aux-*, t718 snd-test troubles, pair_to_port free cell
  */
