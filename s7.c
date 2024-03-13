@@ -64014,6 +64014,15 @@ static bool p_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	      opc->v[0].fp = (func == set_car_p_pp) ? opt_set_car_pp_ss : 
 		(((is_hash_table(obj)) && (func == hash_table_ref_p_pp)) ? opt_p_pp_ss_href :
 		 (((is_let(obj)) && (func == let_ref)) ? opt_p_pp_ss_lref : opt_p_pp_ss));
+	      /* if ss = s+k use slot_ref */
+	      if ((opc->v[0].fp == opt_p_pp_ss_lref) && (is_keyword(arg2)))
+		{
+		  slot = symbol_to_local_slot(sc, keyword_symbol(arg2), obj);
+		  if (is_slot(slot))
+		    {
+		      opc->v[2].p = slot;
+		      opc->v[0].fp = opt_p_pp_sc_slot_ref;
+		    }}
 	      return_true(sc, car_x);
 	    }
 	  sc->pc = pstart;
@@ -65004,6 +65013,7 @@ static bool p_fx_any_ok(s7_scheme *sc, opt_info *opc, s7_pointer x)
 static bool p_implicit_ok(s7_scheme *sc, s7_pointer s_slot, s7_pointer car_x, int32_t len)
 {
   s7_pointer obj = slot_value(s_slot);
+  s7_pointer arg1 = (len > 1) ? cadr(car_x) : sc->F;
   opt_info *opc;
   int32_t start;
 
@@ -65041,9 +65051,9 @@ static bool p_implicit_ok(s7_scheme *sc, s7_pointer s_slot, s7_pointer car_x, in
 	  return_false(sc, car_x);
 	}
       /* now v3.p_pi|pp.f is set */
-      if (is_symbol(cadr(car_x)))
+      if (is_symbol(arg1))
 	{
-	  s7_pointer slot = s7_slot(sc, cadr(car_x));
+	  s7_pointer slot = s7_slot(sc, arg1); /* not the desired slot if let+keyword, see below */
 	  if (is_slot(slot))
 	    {
 	      opc->v[2].p = slot;
@@ -65060,17 +65070,26 @@ static bool p_implicit_ok(s7_scheme *sc, s7_pointer s_slot, s7_pointer car_x, in
 		}
 	      opc->v[0].fp = ((is_hash_table(obj)) && (opc->v[3].p_pp_f == s7_hash_table_ref)) ? opt_p_pp_ss_href :
 		              (((is_let(obj)) && (opc->v[3].p_pp_f == let_ref)) ? opt_p_pp_ss_lref :  opt_p_pp_ss);
+	      if ((opc->v[0].fp == opt_p_pp_ss_lref) && (is_keyword(arg1)))
+		{
+		  /* if keyword, slot is: (L3 :x) -> #<slot: :x :x> */
+		  slot = symbol_to_local_slot(sc, keyword_symbol(arg1), obj);
+		  if (is_slot(slot))
+		    {
+		      opc->v[2].p = slot;
+		      opc->v[0].fp = opt_p_pp_sc_slot_ref;
+		    }}
 	      return_true(sc, car_x);
 	    }}
-      else
+      else /* arg1 not a symbol */
 	{
 	  if ((!is_hash_table(obj)) &&
 	      (!is_let(obj)))
 	    {
 	      opt_info *o1;
-	      if (is_t_integer(cadr(car_x)))
+	      if (is_t_integer(arg1))
 		{
-		  opc->v[2].i = integer(cadr(car_x));
+		  opc->v[2].i = integer(arg1);
 		  opc->v[0].fp = opt_p_pi_sc;
 		  return_true(sc, car_x);
 		}
@@ -65086,6 +65105,16 @@ static bool p_implicit_ok(s7_scheme *sc, s7_pointer s_slot, s7_pointer car_x, in
 	    { /* need both type check and func check! (hash-table-ref or 123) */
 	      opc->v[0].fp = ((is_hash_table(obj)) && (opc->v[3].p_pp_f == s7_hash_table_ref)) ? opt_p_pp_sf_href :
 		              (((is_let(obj)) && (opc->v[3].p_pp_f == let_ref)) ? opt_p_pp_sf_lref :  opt_p_pp_sf);
+
+	      if ((opc->v[0].fp == opt_p_pp_sf_lref) && (is_quoted_symbol(arg1)))
+		{
+		  s7_pointer slot = symbol_to_local_slot(sc, cadr(arg1), obj);
+		  if (is_slot(slot))
+		    {
+		      opc->v[2].p = slot;
+		      opc->v[0].fp = opt_p_pp_sc_slot_ref;
+		    }}
+
 	      opc->v[4].o1 = sc->opts[start];
 	      opc->v[5].fp = sc->opts[start]->v[0].fp;
 	      return_true(sc, car_x);
@@ -65098,7 +65127,7 @@ static bool p_implicit_ok(s7_scheme *sc, s7_pointer s_slot, s7_pointer car_x, in
 	  if (slot)
 	    {
 	      opc->v[3].p = slot;
-	      slot = opt_integer_symbol(sc, cadr(car_x));
+	      slot = opt_integer_symbol(sc, arg1);
 	      if (slot)
 		{
 		  opc->v[2].p = slot;
@@ -98290,9 +98319,11 @@ int main(int argc, char **argv)
  *   t683 extended -> timp?
  *   op_x_aa: ss star, sc|cc imp
  *   strings, format individual tests
- *   let-temp in opt*, save slot (let), hash-entry (hash+resize check), maybe also for set! in opt*
- *                        see opt_p_pp_sc_slot_ref [save let slot and check using fallbacks from _lref]
+ *   let-temp in opt*, save slot (let), hash-entry (hash+resize check), maybe also for let|hash-set! in opt*
+ *                        see opt_p_pp_sc_slot_ref [save let slot and check using fallbacks from _lref?]
+ *     fx lref: save L fixup if set?
  * odd equal messages in t101-aux-*, t718 snd-test troubles: gc trouble only if optimized?
  *   let|pair_to_port -- let case missed cycle
  * (define print-length (list 1 2)) (define (f) (with-let *s7* (+ print-length 1))) (display (f)) (newline) -- need a placeholder-let (or actual let) for *s7*?
+ * test/smsg
  */

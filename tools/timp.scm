@@ -1,7 +1,6 @@
 ;;; implicit ref/set -- tmisc.scm and tread.scm also have some
 
 (set! (*s7* 'heap-size) 1024000)
-
 (load "s7test-block.so" (sublet (curlet) (cons 'init_func 'block_init)))
 
 (define size 50000)
@@ -356,7 +355,7 @@
 
 
 (define L2 (inlet 'a .0001))
-(define (f17) ; [173] (no lref) -> [167] lref
+(define (f17) ; [173] (no lref) -> [167] lref -> [131 slot_ref]
   (let ((sum 0.0))
     (do ((i 0 (+ i 1)))
 	((= i len) sum)
