@@ -755,7 +755,9 @@
 ;(display "f35a ") (display (f35a)) (newline)
 
 
-(define (f35b) ; [66] -> [32] opt_p_ppc_slot_set -- twice as slow as f35i due to make_integer in opt_dotimes
+(define (f35b) ; [66] -> [32] opt_p_ppc_slot_set -- twice as slow as f35i due to make_integer in opt_dotimes (set! is op_safe_do, let-set! is op_safe_dotimes in check_do)
+               ;      -> [14] if sequence allows op_safe_dotimes (set! (L :x) val) as opposed to (let-set! L :x val)
+               ;         but set! lacks has_fn and op_simple_do (the fallback) expects has_fn, so we lose
   (let ((L3 (inlet 'x 0)))
     (do ((i 0 (+ i 1)))
 	((= i size) (L3 :x))

@@ -3665,9 +3665,9 @@ const char *display(s7_pointer obj)
   return(res);
 }
 #else
-#define display(Obj)    string_value(s7_object_to_string(sc, Obj, false))
+#define display(Obj)    string_value(s7_object_to_string(cur_sc, Obj, false))
 #endif
-#define display_80(Obj) string_value(object_to_truncated_string(sc, Obj, 80))
+#define display_80(Obj) string_value(object_to_truncated_string(cur_sc, Obj, 80))
 
 #if S7_DEBUGGING
 #if WITH_ALLOC_COUNTERS
@@ -5604,9 +5604,9 @@ static void set_opt1_hash_1(s7_pointer p, uint64_t x)
 static void show_opt2_bits(s7_pointer p, const char *func, int32_t line, uint64_t role)
 {
   char *bits = show_debugger_bits(p);
-  fprintf(stderr, "%s%s[%d]%s: opt2: %p->%p wants %s, debugger bits are %" PRIx64 "%s but expects %" ld64 " %s",
+  fprintf(stderr, "%s%s[%d]%s: %s opt2: %p->%p wants %s, debugger bits are %" PRIx64 "%s but expects %" ld64 " %s",
 	  bold_text, func, line, unbold_text,
-	  p, p->object.cons.o2.opt2, opt2_role_name(role), p->debugger_bits, bits, (s7_int)role, opt2_role_name(role));
+	  display(p), p, p->object.cons.o2.opt2, opt2_role_name(role), p->debugger_bits, bits, (s7_int)role, opt2_role_name(role));
   free(bits);
 }
 
@@ -63976,6 +63976,16 @@ static void check_opc_vector_wraps(opt_info *opc)
   if (opc->v[11].fp == opt_p_pi_ss_fvref_direct) opc->v[11].fp = opt_p_pi_ss_fvref_direct_wrapped;
 }
 
+static void use_slot_ref(s7_scheme *sc, opt_info *opc, s7_pointer let, s7_pointer symbol)
+{
+  s7_pointer slot = symbol_to_local_slot(sc, symbol, let);
+  if (is_slot(slot))
+    {
+      opc->v[2].p = slot;
+      opc->v[0].fp = opt_p_pp_slot_ref;
+    }
+}
+
 static bool p_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer car_x, int32_t pstart)
 {
   s7_pointer slot, arg1, arg2;
@@ -64016,13 +64026,7 @@ static bool p_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 		 (((is_let(obj)) && (func == let_ref)) ? opt_p_pp_ss_lref : opt_p_pp_ss));
 	      /* if ss = s+k use slot_ref */
 	      if ((opc->v[0].fp == opt_p_pp_ss_lref) && (is_keyword(arg2)))
-		{
-		  slot = symbol_to_local_slot(sc, keyword_symbol(arg2), obj);
-		  if (is_slot(slot))
-		    {
-		      opc->v[2].p = slot;
-		      opc->v[0].fp = opt_p_pp_slot_ref;
-		    }}
+		use_slot_ref(sc, opc, obj, keyword_symbol(arg2));
 	      return_true(sc, car_x);
 	    }
 	  sc->pc = pstart;
@@ -64037,13 +64041,7 @@ static bool p_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	  opc->v[2].p = (!is_pair(arg2)) ? arg2 : cadr(arg2);
 	  opc->v[0].fp = opt_p_pp_sc;
 	  if ((is_pair(arg2)) && (is_symbol(opc->v[2].p)) && (is_let(obj)) && (opc->v[3].p_pp_f == let_ref)) /* car_x: (let-ref L 'a) */
-	    {
-	      slot = symbol_to_local_slot(sc, opc->v[2].p, obj);
-	      if (is_slot(slot))
-		{
-		  opc->v[2].p = slot;
-		  opc->v[0].fp = opt_p_pp_slot_ref;
-		}}
+	    use_slot_ref(sc, opc, obj, opc->v[2].p);
 	  return_true(sc, car_x);
 	}
       if (cell_optimize(sc, cddr(car_x)))
@@ -65129,14 +65127,7 @@ static bool p_implicit_ok(s7_scheme *sc, s7_pointer s_slot, s7_pointer car_x, in
 	      opc->v[0].fp = ((is_hash_table(obj)) && (opc->v[3].p_pp_f == s7_hash_table_ref)) ? opt_p_pp_ss_href :
 		              (((is_let(obj)) && (opc->v[3].p_pp_f == let_ref)) ? opt_p_pp_ss_lref :  opt_p_pp_ss);
 	      if ((opc->v[0].fp == opt_p_pp_ss_lref) && (is_keyword(arg1)))
-		{
-		  /* if keyword, slot is: (L3 :x) -> #<slot: :x :x> */
-		  slot = symbol_to_local_slot(sc, keyword_symbol(arg1), obj);
-		  if ((is_slot(slot)) && (!is_immutable(slot)))
-		    {
-		      opc->v[2].p = slot;
-		      opc->v[0].fp = opt_p_pp_slot_ref;
-		    }}
+		use_slot_ref(sc, opc, obj, keyword_symbol(arg1));  /* if keyword, slot is: (L3 :x) -> #<slot: :x :x> */
 	      return_true(sc, car_x);
 	    }}
       else /* arg1 not a symbol */
@@ -65165,14 +65156,7 @@ static bool p_implicit_ok(s7_scheme *sc, s7_pointer s_slot, s7_pointer car_x, in
 		              (((is_let(obj)) && (opc->v[3].p_pp_f == let_ref)) ? opt_p_pp_sf_lref :  opt_p_pp_sf);
 
 	      if ((opc->v[0].fp == opt_p_pp_sf_lref) && (is_quoted_symbol(arg1)))
-		{
-		  s7_pointer slot = symbol_to_local_slot(sc, cadr(arg1), obj);
-		  if ((is_slot(slot)) && (!is_immutable(slot)))
-		    {
-		      opc->v[2].p = slot;
-		      opc->v[0].fp = opt_p_pp_slot_ref;
-		    }}
-
+		use_slot_ref(sc, opc, obj, cadr(arg1));
 	      opc->v[4].o1 = sc->opts[start];
 	      opc->v[5].fp = sc->opts[start]->v[0].fp;
 	      return_true(sc, car_x);
@@ -81671,6 +81655,9 @@ static bool do_is_safe(s7_scheme *sc, s7_pointer body, s7_pointer stepper, s7_po
 			       ((is_c_function(setv)) &&
 				(is_safe_procedure(c_function_setter(setv)))))))
 			  return(false);
+
+			/* if ((has_set) && (!is_sequence(setv))) (*has_set) = true; */
+			/*    ^ trouble in tmock.scm (opt2_fn not set) -- apparently op_simple_do assumes has_fn which set! lacks */
 			if (has_set) (*has_set) = true;
 		      }
 		    else
@@ -83681,10 +83668,10 @@ static /* inline */ bool op_dotimes_step_o(s7_scheme *sc) /* called once in eval
   return(false);
 }
 
-static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool one_expr)
+static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool loop_end_ok)
 {
   s7_pointer step_val;
-  if (one_expr)
+  if (loop_end_ok)
     set_safe_stepper(sc->args);
   else set_safe_stepper(let_dox_slot1(sc->curlet));
 
@@ -83698,7 +83685,7 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool one
 	  set_no_cell_opt(code);
 	  return(false);
 	}
-      if (one_expr)
+      if (loop_end_ok)
 	{
 	  s7_int end = loop_end(sc->args);
 	  s7_pointer stepper = make_mutable_integer(sc, integer(slot_value(sc->args)));
@@ -83792,7 +83779,7 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool one
 		func(sc);
 	  clear_mutable_integer(stepper);
 	}
-      else /* not one_expr so use dox_slot1 ?? maybe also has return */
+      else
 	{
 	  s7_pointer step_slot = let_dox_slot1(sc->curlet);
 	  s7_pointer end_slot = let_dox_slot2(sc->curlet);
@@ -83909,7 +83896,7 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool one
 	  }
 	else
 	  {
-	    if (one_expr)
+	    if (loop_end_ok)
 	      { /* (do ((i start (+ i 1))) ((= i end)) (outa i (* ampa (ina i *reverb*))) (outb i (* ampb (inb i *reverb*)))) */
 		s7_int end = loop_end(sc->args);
 		s7_pointer stepper = make_mutable_integer(sc, integer(slot_value(sc->args)));
@@ -83947,8 +83934,8 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool one
 
     if (is_null(p))
       {
-	if ((S7_DEBUGGING) && (one_expr) && (!has_loop_end(sc->args))) fprintf(stderr, "%s[%d]: one_expr but not has_loop_end\n", __func__, __LINE__);
-	if (one_expr)
+	if ((S7_DEBUGGING) && (loop_end_ok) && (!has_loop_end(sc->args))) fprintf(stderr, "%s[%d]: loop_end_ok but not has_loop_end\n", __func__, __LINE__);
+	if (loop_end_ok)
 	  { /* (do ((i 0 (+ i 1))) ((= i 1) strs) (copy (vector-ref strs i) (make-string 1)) (copy (vector-ref strs i) (make-string 0))) */
 	    s7_int end = loop_end(sc->args);
 	    s7_pointer stepper = make_mutable_integer(sc, integer(slot_value(sc->args)));
@@ -84136,7 +84123,7 @@ static bool do_let(s7_scheme *sc, s7_pointer step_slot, s7_pointer scc)
   return(true);
 }
 
-static bool do_let_or_dotimes(s7_scheme *sc, s7_pointer code, bool one_expr)
+static bool do_let_or_dotimes(s7_scheme *sc, s7_pointer code, bool loop_end_ok)
 {
   s7_pointer body = caddr(code);   /* here we assume one expr in body?? */
   if (((is_syntactic_pair(body)) ||
@@ -84144,7 +84131,7 @@ static bool do_let_or_dotimes(s7_scheme *sc, s7_pointer code, bool one_expr)
       ((symbol_syntax_op_checked(body) == OP_LET) ||
        (symbol_syntax_op(car(body)) == OP_LET_STAR)))
     return(do_let(sc, sc->args, code));
-  return(opt_dotimes(sc, cddr(code), code, one_expr));
+  return(opt_dotimes(sc, cddr(code), code, loop_end_ok));
 }
 
 static goto_t op_safe_dotimes(s7_scheme *sc)
@@ -84275,6 +84262,7 @@ static goto_t op_safe_do(s7_scheme *sc)
       sc->code = cdadr(code);
       return(goto_safe_do_end_clauses);
     }
+
   if (is_symbol(end))
     let_set_dox_slot2(sc->curlet, s7_slot(sc, end));
   else let_set_dox_slot2(sc->curlet, make_slot(sc, caaar(code), end));
@@ -84282,22 +84270,22 @@ static goto_t op_safe_do(s7_scheme *sc)
 
   {
     s7_pointer step_slot = let_dox_slot1(sc->curlet);
-    set_has_loop_end(step_slot);
     slot_set_value(step_slot, make_mutable_integer(sc, integer(slot_value(step_slot))));
     set_loop_end(step_slot, s7_integer_clamped_if_gmp(sc, end_val));
+    set_has_loop_end(step_slot);
   }
 
   if (!is_unsafe_do(sc->code))
     {
       s7_pointer old_let = sc->curlet;
       sc->temp7 = old_let;
-      if (opt_dotimes(sc, cddr(sc->code), sc->code, false)) /* iv2 -- false means not one expr in body */
+      if (opt_dotimes(sc, cddr(sc->code), sc->code, false))
 	return(goto_safe_do_end_clauses);
       set_curlet(sc, old_let);  /* apparently s7_optimize can step on sc->curlet? */
       sc->temp7 = sc->unused;
     }
 
-  if (is_null(cdddr(sc->code)))                     /* do body has one expr, (do ((k 0 (+ k 1))) ((= k 2)) (set! sum (+ sum 1))) */
+  if (is_null(cdddr(sc->code))) /* (do ((k 0 (+ k 1))) ((= k 2)) (set! sum (+ sum 1))) */
     {
       s7_pointer body = caddr(sc->code);
       if ((car(body) == sc->set_symbol) &&
@@ -98439,13 +98427,12 @@ int main(int argc, char **argv)
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
- * safe/mutable lists in opt? savable mutable ints? (wrappers+in-use-flag?) second-layer of base safe_lists? need counts of fallbacks
+ * safe/mutable lists in opt? savable mutable ints? (wrappers+in-use-flag?)
  * timing: setter, check op_s|a|x_* and trailers -- what is currently unopt'd
- *   op_x_aa: ss star, sc|cc imp
- *   strings, format individual tests
- *   let-temp in opt*, fx lref: save L fixup if set?
+ *   op_x_aa: ss star, sc|cc imp, strings, format individual tests, fx lref: save L fixup if set?
  * odd equal messages in t101-aux-*, t718 snd-test troubles: gc trouble only if optimized?
  *   let|pair_to_port -- let case missed cycle
  * (define print-length (list 1 2)) (define (f) (with-let *s7* (+ print-length 1))) (display (f)) (newline) -- need a placeholder-let (or actual let) for *s7*?
  * check out FICLONE -- libc.scm? /usr/include/linux/fs.h has ioctl constants like FICLONE
+ * fixup let-set changes (12)
  */
