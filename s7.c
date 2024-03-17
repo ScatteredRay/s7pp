@@ -64024,9 +64024,11 @@ static bool p_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	      opc->v[0].fp = (func == set_car_p_pp) ? opt_set_car_pp_ss : 
 		(((is_hash_table(obj)) && (func == hash_table_ref_p_pp)) ? opt_p_pp_ss_href :
 		 (((is_let(obj)) && (func == let_ref)) ? opt_p_pp_ss_lref : opt_p_pp_ss));
+
 	      /* if ss = s+k use slot_ref */
 	      if ((opc->v[0].fp == opt_p_pp_ss_lref) && (is_keyword(arg2)))
 		use_slot_ref(sc, opc, obj, keyword_symbol(arg2));
+
 	      return_true(sc, car_x);
 	    }
 	  sc->pc = pstart;
@@ -64035,13 +64037,10 @@ static bool p_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
       if ((!is_pair(arg2)) ||
 	  (is_proper_quote(sc, arg2)))
 	{
-	  /* here (also if keyword) if is_let(obj), we should be able to save the slot as opc->v[2].p and add opt_slot_value(v[2]) or opt_p_pp_sc_lref? 
-	   *   also hash entry access
-	   */
 	  opc->v[2].p = (!is_pair(arg2)) ? arg2 : cadr(arg2);
 	  opc->v[0].fp = opt_p_pp_sc;
-	  if ((is_pair(arg2)) && (is_symbol(opc->v[2].p)) && (is_let(obj)) && (opc->v[3].p_pp_f == let_ref)) /* car_x: (let-ref L 'a) */
-	    use_slot_ref(sc, opc, obj, opc->v[2].p);
+	  if ((is_pair(arg2)) && (is_symbol(opc->v[2].p)) && (is_let(obj)) && (opc->v[3].p_pp_f == let_ref))
+	    use_slot_ref(sc, opc, obj, cadr(arg2));          /* car_x: (let-ref L 'a), can't be keyword here (handled above) */
 	  return_true(sc, car_x);
 	}
       if (cell_optimize(sc, cddr(car_x)))
@@ -64678,6 +64677,44 @@ static s7_pointer opt_p_ppc_slot_set(opt_info *o) {slot_set_value(o->v[2].p, o->
 static s7_pointer opt_p_pps_slot_set(opt_info *o) {slot_set_value(o->v[2].p, slot_value(o->v[4].p)); return(slot_value(o->v[4].p));}
 static s7_pointer opt_p_ppf_slot_set(opt_info *o) {slot_set_value(o->v[2].p, o->v[5].fp(o->v[4].o1)); return(slot_value(o->v[2].p));}
 
+static bool use_ppc_slot_set(s7_scheme *sc, opt_info *opc, s7_pointer let, s7_pointer symbol, s7_pointer value)
+{
+  s7_pointer slot = symbol_to_local_slot(sc, symbol, let);
+  if ((is_slot(slot)) && (!is_immutable(slot)))
+    {
+      opc->v[2].p = slot;
+      opc->v[4].p = value;
+      opc->v[0].fp = opt_p_ppc_slot_set;
+      return(true);
+    }
+  return(false);
+}
+
+static bool use_pps_slot_set(s7_scheme *sc, opt_info *opc, s7_pointer let, s7_pointer symbol, s7_pointer val_slot)
+{
+  s7_pointer slot = symbol_to_local_slot(sc, symbol, let);
+  if ((is_slot(slot)) && (!is_immutable(slot)))
+    {
+      opc->v[2].p = slot;
+      opc->v[4].p = val_slot;
+      opc->v[0].fp = opt_p_pps_slot_set;
+      return(true);
+    }
+  return(false);
+}
+
+static bool use_ppf_slot_set(s7_scheme *sc, opt_info *opc, s7_pointer let, s7_pointer symbol)
+{
+  s7_pointer slot = symbol_to_local_slot(sc, symbol, let);
+  if ((is_slot(slot)) && (!is_immutable(slot)))
+    {
+      opc->v[2].p = slot;
+      opc->v[0].fp = opt_p_ppf_slot_set;
+      return(true);
+    }
+  return(false);
+}
+
 static bool p_ppp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer car_x)
 {
   s7_pointer arg1 = cadr(car_x);
@@ -64719,20 +64756,12 @@ static bool p_ppp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 
       if (is_symbol(arg2))
 	{
-	  if ((is_keyword(arg2)) && (is_symbol(arg3)) &&
-	      (is_let(obj)) && (opc->v[3].p_ppp_f == let_set_2))
+	  if ((is_keyword(arg2)) && (is_symbol(arg3)) && (is_let(obj)) && (opc->v[3].p_ppp_f == let_set_2))
 	    {
 	      s7_pointer val_slot = opt_simple_symbol(sc, arg3);
-	      if (slot)
-		{
-		  slot = symbol_to_local_slot(sc, keyword_symbol(arg2), obj);
-		  if ((is_slot(slot)) && (!is_immutable(slot)))
-		    {
-		      opc->v[2].p = slot;
-		      opc->v[4].p = val_slot;
-		      opc->v[0].fp = opt_p_pps_slot_set;
-		      return_true(sc, car_x);
-		    }}}
+	      if ((val_slot) && (use_pps_slot_set(sc, opc, obj, keyword_symbol(arg2), val_slot)))
+		return_true(sc, car_x);
+	    }
 	  slot = opt_simple_symbol(sc, arg2);
 	  if (slot)
 	    {
@@ -64755,13 +64784,7 @@ static bool p_ppp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 		    opc->v[4].p = (is_pair(arg3)) ? cadr(arg3) : arg3;
 		    opc->v[0].fp = opt_p_ppp_ssc;
 		    if ((is_let(obj)) && (opc->v[3].p_ppp_f == let_set_2)) /* (let-set! L3 :x 0) */
-		    {
-		      slot = symbol_to_local_slot(sc, (is_keyword(arg2)) ? keyword_symbol(arg2) : cadr(arg2), obj);
-		      if ((is_slot(slot)) && (!is_immutable(slot)))
-			{
-			  opc->v[2].p = slot;
-			  opc->v[0].fp = opt_p_ppc_slot_set;
-			}}
+		      use_ppc_slot_set(sc, opc, obj, (is_keyword(arg2)) ? keyword_symbol(arg2) : cadr(arg2), opc->v[4].p);
 		    return_true(sc, car_x);
 		  }
 	      if (optimize_op(car_x) == HOP_HASH_TABLE_INCREMENT)
@@ -64776,13 +64799,7 @@ static bool p_ppp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 		  opc->v[5].fp = opc->v[4].o1->v[0].fp;
 		  opc->v[0].fp = opt_p_ppp_ssf;
 		  if ((is_let(obj)) && (is_keyword(arg2)) && (opc->v[3].p_ppp_f == let_set_2)) /* (let-set! L3 :x (+ (L3 'x) 1)) */
-		    {
-		      slot = symbol_to_local_slot(sc, keyword_symbol(arg2), obj); /* 'x happens below */
-		      if ((is_slot(slot)) && (!is_immutable(slot)))
-			{
-			  opc->v[2].p = slot;
-			  opc->v[0].fp = opt_p_ppf_slot_set;
-			}}
+		    use_ppf_slot_set(sc, opc, obj, keyword_symbol(arg2));
 		  return_true(sc, car_x);
 		}
 	      sc->pc = start;
@@ -64797,13 +64814,7 @@ static bool p_ppp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 	      opc->v[4].p = val_slot;
 	      opc->v[0].fp = opt_p_ppp_scs;
 	      if ((is_let(obj)) && (opc->v[3].p_ppp_f == let_set_2) && (is_symbol(cadr(arg2))))
-		{
-		  slot = symbol_to_local_slot(sc, cadr(arg2), obj);
-		  if ((is_slot(slot)) && (!is_immutable(slot)))
-		    {
-		      opc->v[2].p = slot;
-		      opc->v[0].fp = opt_p_pps_slot_set;
-		    }}
+		use_pps_slot_set(sc, opc, obj, cadr(arg2), val_slot);
 	      return_true(sc, car_x);
 	    }}
       o1 = sc->opts[sc->pc];
@@ -64821,31 +64832,20 @@ static bool p_ppp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 		  opc->v[5].fp = o1->v[0].fp;
 		  return_true(sc, car_x);
 		}}
-	  if (!is_pair(arg3))
-	    {
-	      if ((is_let(obj)) && (is_quoted_symbol(arg2)) && (opc->v[3].p_ppp_f == let_set_2)) /* (let-set! L3 'x 0) */
-		{
-		  slot = symbol_to_local_slot(sc, cadr(arg2), obj);
-		  if ((is_slot(slot)) && (!is_immutable(slot)))
-		    {
-		      opc->v[2].p = slot;
-		      opc->v[0].fp = opt_p_ppc_slot_set;
-		      opc->v[4].p = arg3;
-		      return_true(sc, car_x);
-		    }}}
+	  if ((!is_pair(arg3)) && (is_let(obj)) && (is_quoted_symbol(arg2)) && 
+	      (opc->v[3].p_ppp_f == let_set_2) &&                   /* (let-set! L3 'x 0) */
+	      (use_ppc_slot_set(sc, opc, obj, cadr(arg2), arg3)))
+	    return_true(sc, car_x);
+
 	  if (cell_optimize(sc, cdddr(car_x)))
 	    {
-	      if ((is_let(obj)) && (is_quoted_symbol(arg2)) && (opc->v[3].p_ppp_f == let_set_2)) /* (let-set! L3 'x (+ (L3 'x) 1)) */
+	      if ((is_let(obj)) && (is_quoted_symbol(arg2)) && (opc->v[3].p_ppp_f == let_set_2) && /* (let-set! L3 'x (+ (L3 'x) 1)) */
+		  (use_ppf_slot_set(sc, opc, obj, cadr(arg2))))
 		{
-		  slot = symbol_to_local_slot(sc, cadr(arg2), obj);
-		  if ((is_slot(slot)) && (!is_immutable(slot)))
-		    {
-		      opc->v[2].p = slot;
-		      opc->v[0].fp = opt_p_ppf_slot_set;
-		      opc->v[4].o1 = o2;
-		      opc->v[5].fp = opc->v[4].o1->v[0].fp;
-		      return_true(sc, car_x);
-		    }}
+		  opc->v[4].o1 = o2;
+		  opc->v[5].fp = opc->v[4].o1->v[0].fp;
+		  return_true(sc, car_x);
+		}
 	      opc->v[0].fp = opt_p_ppp_sff;
 	      opc->v[10].o1 = o1;
 	      opc->v[11].fp = o1->v[0].fp;
@@ -65150,13 +65150,21 @@ static bool p_implicit_ok(s7_scheme *sc, s7_pointer s_slot, s7_pointer car_x, in
 	      opc->v[5].fi = o1->v[0].fi;
 	      return_true(sc, car_x);
 	    }
+
+	  if ((!is_pair(arg1)) ||
+	      (is_proper_quote(sc, arg1)))
+	    {
+	      opc->v[2].p = (!is_pair(arg1)) ? arg1 : cadr(arg1);
+	      opc->v[0].fp = opt_p_pp_sc;
+	      if ((is_pair(arg1)) && (is_symbol(opc->v[2].p)) && (is_let(obj)) && (opc->v[3].p_pp_f == let_ref))
+		use_slot_ref(sc, opc, obj, cadr(arg1));
+	      return_true(sc, car_x);
+	    }
+
 	  if (cell_optimize(sc, cdr(car_x)))
 	    { /* need both type check and func check! (hash-table-ref or 123) */
 	      opc->v[0].fp = ((is_hash_table(obj)) && (opc->v[3].p_pp_f == s7_hash_table_ref)) ? opt_p_pp_sf_href :
 		              (((is_let(obj)) && (opc->v[3].p_pp_f == let_ref)) ? opt_p_pp_sf_lref :  opt_p_pp_sf);
-
-	      if ((opc->v[0].fp == opt_p_pp_sf_lref) && (is_quoted_symbol(arg1)))
-		use_slot_ref(sc, opc, obj, cadr(arg1));
 	      opc->v[4].o1 = sc->opts[start];
 	      opc->v[5].fp = sc->opts[start]->v[0].fp;
 	      return_true(sc, car_x);
@@ -65798,18 +65806,9 @@ static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_sy
 			  opc->v[0].fp = opt_p_pip_sss;
 			  return_true(sc, car_x);
 			}
-
-		      if ((is_let(obj)) && (is_keyword(index)) && (opc->v[3].p_ppp_f == let_set_1)) /* (set! (L3 :x) i) */
-			{
-			  s7_pointer slot = symbol_to_local_slot(sc, keyword_symbol(index), obj);
-			  if ((is_slot(slot)) && (!is_immutable(slot)))
-			    {
-			      opc->v[0].fp = opt_p_pps_slot_set;
-			      opc->v[2].p = slot;
-			      opc->v[4].p = val_slot;
-			      return_true(sc, car_x);
-			    }}
-
+		      if ((is_let(obj)) && (is_keyword(index)) && (opc->v[3].p_ppp_f == let_set_1) && /* (set! (L3 :x) i) */
+			  (use_pps_slot_set(sc, opc, obj, keyword_symbol(index), val_slot)))
+			return_true(sc, car_x);
 		      func1 = opc->v[3].p_ppp_f;
 		      opc->v[4].p_ppp_f = func1;
 		      opc->v[3].p = val_slot;
@@ -65831,17 +65830,9 @@ static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_sy
 			opc->v[0].fp = opt_p_pip_ssc;
 			return_true(sc, car_x);
 		      }
-
-		    if ((is_let(obj)) && (is_keyword(index)) && (opc->v[3].p_ppp_f == let_set_1)) /* (set! (L3 :x) 0) */
-			{
-			  s7_pointer slot = symbol_to_local_slot(sc, keyword_symbol(index), obj);
-			  if ((is_slot(slot)) && (!is_immutable(slot)))
-			    {
-			      opc->v[0].fp = opt_p_ppc_slot_set;
-			      opc->v[2].p = slot;
-			      return_true(sc, car_x);
-			    }}
-		      
+		    if ((is_let(obj)) && (is_keyword(index)) && (opc->v[3].p_ppp_f == let_set_1) && /* (set! (L3 :x) 0) */
+			(use_ppc_slot_set(sc, opc, obj, keyword_symbol(index), opc->v[4].p)))
+		      return_true(sc, car_x);
 		    opc->v[0].fp = opt_p_ppp_ssc;
 		    return_true(sc, car_x);
 		  }
@@ -65858,16 +65849,9 @@ static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_sy
 		      opc->v[0].fp = opt_p_pip_ssf;
 		      return_true(sc, car_x);
 		    }
-
-		  if ((is_let(obj)) && (is_keyword(index)) && (opc->v[3].p_ppp_f == let_set_1)) /* (set! (L3 :x) (+ (L3 'x) 1)) */
-		    {
-		      s7_pointer slot = symbol_to_local_slot(sc, keyword_symbol(index), obj);
-		      if ((is_slot(slot)) && (!is_immutable(slot)))
-			{
-			  opc->v[0].fp = opt_p_ppf_slot_set;
-			  opc->v[2].p = slot;
-			  return_true(sc, car_x);
-			}}
+		  if ((is_let(obj)) && (is_keyword(index)) && (opc->v[3].p_ppp_f == let_set_1) && /* (set! (L3 :x) (+ (L3 'x) 1)) */
+		      (use_ppf_slot_set(sc, opc, obj, keyword_symbol(index))))
+		    return_true(sc, car_x);
 
 		  opc->v[0].fp = opt_p_ppp_ssf;
 		  return_true(sc, car_x);
@@ -65903,28 +65887,13 @@ static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_sy
 		      opc->v[4].p = val_slot;
 		      opc->v[0].fp = opt_p_ppp_scs;
 		      if ((is_let(obj)) && (opc->v[3].p_ppp_f == let_set_1))
-			{
-			  s7_pointer slot = symbol_to_local_slot(sc, cadadr(target), obj);
-			  if ((is_slot(slot)) && (!is_immutable(slot)))
-			    {
-			      opc->v[2].p = slot;
-			      opc->v[0].fp = opt_p_pps_slot_set;
-			    }}
+			use_pps_slot_set(sc, opc, obj, cadadr(target), val_slot);
 		      return_true(sc, car_x);
 		    }}
-	      if (!is_pair(value))
-		{
-		  if ((is_let(obj)) && (opc->v[3].p_ppp_f == let_set_1))
-		    {
-		      s7_pointer slot = symbol_to_local_slot(sc, cadadr(target), obj);
-		      if ((is_slot(slot)) && (!is_immutable(slot)))
-			{
-			  opc->v[2].p = slot;
-			  opc->v[0].fp = opt_p_ppc_slot_set;
-			  opc->v[4].p = value;
-			  return_true(sc, car_x);
-			}}}}
-
+	      if ((!is_pair(value)) && (is_let(obj)) && (opc->v[3].p_ppp_f == let_set_1) &&
+		  (use_ppc_slot_set(sc, opc, obj, cadadr(target), value)))
+		return_true(sc, car_x);
+	    }
 	  o1 = sc->opts[sc->pc];
 	  if (cell_optimize(sc, cdr(target)))
 	    {
@@ -65944,18 +65913,13 @@ static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_sy
 	      if (cell_optimize(sc, cddr(car_x)))
 		{
 		  opc->v[0].fp = opt_p_ppp_sff;
-		  if ((is_let(obj)) && (is_quoted_symbol(cadr(target))) && (opc->v[3].p_ppp_f == let_set_1)) /* (set! (L3 'x) (+ (L3 'x) 1)) */
+		  if ((is_let(obj)) && (is_quoted_symbol(cadr(target))) && (opc->v[3].p_ppp_f == let_set_1) && /* (set! (L3 'x) (+ (L3 'x) 1)) */
+		      (use_ppf_slot_set(sc, opc, obj, cadadr(target))))
 		    {
-		      s7_pointer slot = symbol_to_local_slot(sc, cadadr(target), obj);
-		      if ((is_slot(slot)) && (!is_immutable(slot)))
-			{
-			  opc->v[2].p = slot;
-			  opc->v[0].fp = opt_p_ppf_slot_set;
-			  opc->v[4].o1 = o2;
-			  opc->v[5].fp = opc->v[4].o1->v[0].fp;
-			  return_true(sc, car_x);
-			}}
-
+		      opc->v[4].o1 = o2;
+		      opc->v[5].fp = opc->v[4].o1->v[0].fp;
+		      return_true(sc, car_x);
+		    }
 		  opc->v[10].o1 = o1;
 		  opc->v[11].fp = o1->v[0].fp;
 		  opc->v[8].o1 = o2;
@@ -98371,7 +98335,7 @@ int main(int argc, char **argv)
  *           19.9   20.9   21.0   22.0   23.0   24.0   24.2
  * --------------------------------------------------------------
  * tpeak      148    115    114    108    105    102    102
- * tref      1081    691    687    463    459    464    466
+ * tref      1081    691    687    463    459    464    410
  * index            1026   1016    973    967    972    973
  * tmock            1177   1165   1057   1019   1032   1031
  * tvect     3408   2519   2464   1772   1669   1497   1452
@@ -98380,13 +98344,13 @@ int main(int argc, char **argv)
  * s7test           1873   1831   1818   1829   1830   1855
  * lt        2222   2187   2172   2150   2185   1950   1950
  * thook     7651                 2590   2030   2046   2008
- * dup              3805   3788   2492   2239   2097   2076
+ * dup              3805   3788   2492   2239   2097   2034
  * tcopy            8035   5546   2539   2375   2386   2386
  * tread            2440   2421   2419   2408   2405   2259
  * titer     3657   2865   2842   2641   2509   2449   2446
  * trclo     8031   2735   2574   2454   2445   2449   2470
- * tload                          3046   2404   2566   2549
- * fbench    2933   2688   2583   2460   2430   2478   2559
+ * tload                          3046   2404   2566   2538
+ * fbench    2933   2688   2583   2460   2430   2478   2557
  * tmat             3065   3042   2524   2578   2590   2573
  * tsort     3683   3105   3104   2856   2804   2858   2858
  * tobj             4016   3970   3828   3577   3508   3515
@@ -98395,33 +98359,33 @@ int main(int argc, char **argv)
  * tmac             3950   3873   3033   3677   3677   3680
  * tclo      6362   4787   4735   4390   4384   4474   4339
  * tcase            4960   4793   4439   4430   4439   4443
- * tlet      9166   7775   5640   4450   4427   4457   4483
+ * tlet      9166   7775   5640   4450   4427   4457   4470
  * tfft             7820   7729   4755   4476   4536   4543
  * tmap             8869   8774   4489   4541   4586   4592
  * tstar            6139   5923   5519   4449   4550   4570
- * tshoot           5525   5447   5183   5055   5034   5034
- * tform            5357   5348   5307   5316   5084   5095
+ * tshoot           5525   5447   5183   5055   5034   5031
+ * tform            5357   5348   5307   5316   5084   5091
  * tstr      10.0   6880   6342   5488   5162   5180   5197
  * tnum             6348   6013   5433   5396   5409   5423
- * tgsl             8485   7802   6373   6282   6208   6186
+ * tgsl             8485   7802   6373   6282   6208   6182
  * tari      15.0   13.0   12.7   6827   6543   6278   6278
  * tlist     9219   7896   7546   6558   6240   6300   6298
- * tset                                  6260   6364   6408
+ * tset                                  6260   6364   6389
  * trec      19.5   6936   6922   6521   6588   6583   6583
  * tleft     11.1   10.4   10.2   7657   7479   7627   7614
- * tmisc                                 8142   7631   7745
+ * tmisc                                 8142   7631   7674
  * tlamb                                 8003   7941   7936
  * tgc              11.9   11.1   8177   7857   7986   8005
  * thash            11.8   11.7   9734   9479   9526   9260
- * cb        12.9   11.2   11.0   9658   9564   9609   9635
- * tmap-hash                           1671.0 1467.0   10.3
+ * cb        12.9   11.2   11.0   9658   9564   9609   9628
+ * tmap-hash                           1671.0 1467.0   10.4
  * tmv              16.0   15.4   14.7   14.5   14.4   11.9
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3
  * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1
  * timp             25.4   24.4   20.0   19.6   19.7   15.8
  * calls            36.7   37.5   37.0   37.5   37.1   37.0
  * sg                             55.9   55.8   55.4   55.2
- * tbig            177.4  175.8  156.5  148.1  146.2  146.3
+ * tbig            177.4  175.8  156.5  148.1  146.2  146.2
  * --------------------------------------------------------------
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
@@ -98434,5 +98398,5 @@ int main(int argc, char **argv)
  *   let|pair_to_port -- let case missed cycle
  * (define print-length (list 1 2)) (define (f) (with-let *s7* (+ print-length 1))) (display (f)) (newline) -- need a placeholder-let (or actual let) for *s7*?
  * check out FICLONE -- libc.scm? /usr/include/linux/fs.h has ioctl constants like FICLONE
- * fixup let-set changes (12)
+ * check cutlet t683
  */
