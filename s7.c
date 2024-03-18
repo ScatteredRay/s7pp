@@ -62707,6 +62707,11 @@ static s7_pointer opt_arg_type(s7_scheme *sc, s7_pointer argp)
 			    }
 			  sc->pc = start;
 			}
+		      
+		      /* TODO: this is problematic until I clean up a zillion nits */
+		      if (S7_DEBUGGING)
+			if ((car(arg) == sc->format_symbol) && (is_boolean(cadr(arg)))) return(sc->is_string_symbol);
+
 		      if (((car(arg) == sc->vector_ref_symbol) || (car(arg) == sc->hash_table_ref_symbol)) &&
 			  (is_pair(cdr(arg))) && (is_normal_symbol(cadr(arg)))) /* (vector-ref) -> is_pair check */
 			{
@@ -64754,15 +64759,21 @@ static bool p_ppp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
       if ((func == hash_table_set_p_ppp) && (is_hash_table(obj)))
 	opc->v[3].p_ppp_f = s7_hash_table_set;
 
-      if (is_symbol(arg2))
+      if (((is_symbol_and_keyword(arg2)) || (is_quoted_symbol(arg2))) && (is_let(obj)) && (opc->v[3].p_ppp_f == let_set_2))
 	{
-	  if ((is_keyword(arg2)) && (is_symbol(arg3)) && (is_let(obj)) && (opc->v[3].p_ppp_f == let_set_2))
+	  s7_pointer val_slot, sym = (is_pair(arg2)) ? cadr(arg2) : keyword_symbol(arg2);
+	  if ((is_symbol(arg3)) || (is_quoted_symbol(arg3)))
 	    {
-	      s7_pointer val_slot = opt_simple_symbol(sc, arg3);
-	      if ((val_slot) && (use_pps_slot_set(sc, opc, obj, keyword_symbol(arg2), val_slot)))
+	      if ((is_pair(arg3)) || (is_keyword(arg3)))
+		return(use_ppc_slot_set(sc, opc, obj, sym, is_pair(arg3) ? cadr(arg3) : arg3));
+	      val_slot = opt_simple_symbol(sc, arg3);
+	      if ((val_slot) && (use_pps_slot_set(sc, opc, obj, sym, val_slot)))
 		return_true(sc, car_x);
 	    }
-	  slot = opt_simple_symbol(sc, arg2);
+	  else
+	    if (!is_pair(arg3))
+	      return(use_ppc_slot_set(sc, opc, obj, sym, arg3));
+	  slot = opt_simple_symbol(sc, sym);
 	  if (slot)
 	    {
 	      opc->v[2].p = slot;
@@ -64777,16 +64788,6 @@ static bool p_ppp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 		      opc->v[0].fp = (func1 == multiply_p_ppp) ? opt_p_ppp_sss_mul : ((func1 == s7_hash_table_set) ? opt_p_ppp_sss_hset : opt_p_ppp_sss);
 		      return_true(sc, car_x);
 		    }}
-	      else
-		if ((!is_pair(arg3)) ||
-		    (is_proper_quote(sc, arg3)))
-		  {
-		    opc->v[4].p = (is_pair(arg3)) ? cadr(arg3) : arg3;
-		    opc->v[0].fp = opt_p_ppp_ssc;
-		    if ((is_let(obj)) && (opc->v[3].p_ppp_f == let_set_2)) /* (let-set! L3 :x 0) */
-		      use_ppc_slot_set(sc, opc, obj, (is_keyword(arg2)) ? keyword_symbol(arg2) : cadr(arg2), opc->v[4].p);
-		    return_true(sc, car_x);
-		  }
 	      if (optimize_op(car_x) == HOP_HASH_TABLE_INCREMENT)
 		{
 		  opc->v[0].fp = opt_p_ppp_hash_table_increment;
@@ -64798,14 +64799,14 @@ static bool p_ppp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 		  opc->v[4].o1 = sc->opts[start];
 		  opc->v[5].fp = opc->v[4].o1->v[0].fp;
 		  opc->v[0].fp = opt_p_ppp_ssf;
-		  if ((is_let(obj)) && (is_keyword(arg2)) && (opc->v[3].p_ppp_f == let_set_2)) /* (let-set! L3 :x (+ (L3 'x) 1)) */
-		    use_ppf_slot_set(sc, opc, obj, keyword_symbol(arg2));
+		  if ((is_let(obj)) && (is_keyword(sym)) && (opc->v[3].p_ppp_f == let_set_2)) /* (let-set! L3 :x (+ (L3 'x) 1)) */
+		    use_ppf_slot_set(sc, opc, obj, keyword_symbol(sym));
 		  return_true(sc, car_x);
 		}
 	      sc->pc = start;
 	    }}
       if ((is_proper_quote(sc, arg2)) &&
-	  (is_symbol(arg3)))
+  	  (is_symbol(arg3)))
 	{
 	  s7_pointer val_slot = opt_simple_symbol(sc, arg3);
 	  if (val_slot)
@@ -64839,8 +64840,8 @@ static bool p_ppp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 
 	  if (cell_optimize(sc, cdddr(car_x)))
 	    {
-	      if ((is_let(obj)) && (is_quoted_symbol(arg2)) && (opc->v[3].p_ppp_f == let_set_2) && /* (let-set! L3 'x (+ (L3 'x) 1)) */
-		  (use_ppf_slot_set(sc, opc, obj, cadr(arg2))))
+	      if ((is_let(obj)) && ((is_quoted_symbol(arg2)) || (is_symbol_and_keyword(arg2))) && (opc->v[3].p_ppp_f == let_set_2) && /* (let-set! L3 'x (+ (L3 'x) 1)) */
+		  (use_ppf_slot_set(sc, opc, obj, (is_pair(arg2)) ? cadr(arg2) : keyword_symbol(arg2))))
 		{
 		  opc->v[4].o1 = o2;
 		  opc->v[5].fp = opc->v[4].o1->v[0].fp;
@@ -98332,7 +98333,7 @@ int main(int argc, char **argv)
 #endif
 
 /* --------------------------------------------------------------
- *           19.9   20.9   21.0   22.0   23.0   24.0   24.2
+ *           19.9   20.9   21.0   22.0   23.0   24.0   24.3
  * --------------------------------------------------------------
  * tpeak      148    115    114    108    105    102    102
  * tref      1081    691    687    463    459    464    410
@@ -98394,9 +98395,8 @@ int main(int argc, char **argv)
  * safe/mutable lists in opt? savable mutable ints? (wrappers+in-use-flag?)
  * timing: setter, check op_s|a|x_* and trailers -- what is currently unopt'd
  *   op_x_aa: ss star, sc|cc imp, strings, format individual tests, fx lref: save L fixup if set?
- * odd equal messages in t101-aux-*, t718 snd-test troubles: gc trouble only if optimized?
- *   let|pair_to_port -- let case missed cycle
+ * t718 snd-test troubles: gc trouble only if optimized? let|pair_to_port -- let case missed cycle
+ * 17: :no-value != unspec?
  * (define print-length (list 1 2)) (define (f) (with-let *s7* (+ print-length 1))) (display (f)) (newline) -- need a placeholder-let (or actual let) for *s7*?
  * check out FICLONE -- libc.scm? /usr/include/linux/fs.h has ioctl constants like FICLONE
- * check cutlet t683
  */

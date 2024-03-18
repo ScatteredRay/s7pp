@@ -3,7 +3,7 @@
 (define aux-counter 0)
 (system "make-repl")
 
-(let ((aux-file (format #f "t101-aux-~D.scm" (set! aux-counter (+ aux-counter 1)))))
+(let ((aux-file (format #f "t101-~D.scm" (set! aux-counter (+ aux-counter 1)))))
   (call-with-output-file aux-file
     (lambda (p)
       (format p "(define aux-counter ~D)\n" aux-counter)
@@ -12,7 +12,7 @@
   (format *stderr* "~%~NC~%test: safety=1~%" 80 #\-)
   (system (string-append "./repl " aux-file)))
 
-(let ((aux-file (format #f "t101-aux-~D.scm" (set! aux-counter (+ aux-counter 1)))))
+(let ((aux-file (format #f "t101-~D.scm" (set! aux-counter (+ aux-counter 1)))))
   (call-with-output-file aux-file
     (lambda (p)
       (format p "(define aux-counter ~D)\n" aux-counter)
@@ -23,7 +23,7 @@
 
 (for-each
  (lambda (test-case)
-   (let ((aux-file (format #f "t101-aux-~D.scm" (set! aux-counter (+ aux-counter 1)))))
+   (let ((aux-file (format #f "t101-~D.scm" (set! aux-counter (+ aux-counter 1)))))
      (call-with-output-file aux-file
        (lambda (p)
 	 (format p "(define aux-counter ~D)\n" aux-counter)
@@ -79,7 +79,7 @@
   ;;               "`(ok? ',tst (lambda () (let ((!x 0)) (let-temporarily ((!x ,tst)) !x))) ,expected)"
   ))
 
-(let ((aux-file (format #f "t101-aux-~D.scm" (set! aux-counter (+ aux-counter 1)))))
+(let ((aux-file (format #f "t101-~D.scm" (set! aux-counter (+ aux-counter 1)))))
   (call-with-output-file aux-file
     (lambda (p)
       (format p "(define aux-counter ~D)\n" aux-counter)
@@ -88,7 +88,7 @@
   (format *stderr* "~%~NC~%test: debug=1~%" 80 #\-)
   (system (string-append "./repl " aux-file)))
 
-(let ((aux-file (format #f "t101-aux-~D.scm" (set! aux-counter (+ aux-counter 1)))))
+(let ((aux-file (format #f "t101-~D.scm" (set! aux-counter (+ aux-counter 1)))))
   (call-with-output-file aux-file
     (lambda (p)
       (format p "(define aux-counter ~D)\n" aux-counter)
@@ -97,7 +97,7 @@
   (format *stderr* "~%~NC~%test: debug=2~%" 80 #\-)
   (system (string-append "./repl " aux-file)))
 
-(let ((aux-file (format #f "t101-aux-~D.scm" (set! aux-counter (+ aux-counter 1)))))
+(let ((aux-file (format #f "t101-~D.scm" (set! aux-counter (+ aux-counter 1)))))
   (call-with-output-file aux-file
     (lambda (p)
       (format p "(define aux-counter ~D)\n" aux-counter)
