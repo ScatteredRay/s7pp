@@ -48,7 +48,7 @@
   ;;  "`(ok? ',tst (lambda () (#_let ((__x__ #f)) (define (__f__) (do ((__i__ 0 (+ __i__ 1))) ((= __i__ 2) __x__) (set! __x__ ,tst))) (__f__))) ,expected)"
   "`(ok? ',tst (lambda () (define (!f!) (#_let ((!v! (vector #f))) (do ((!i! 0 (+ !i! 1))) ((= !i! 1) (!v! 0)) (vector-set! !v! 0 ,tst)))) (!f!)) ,expected)"
   "`(ok? ',tst (lambda () (define (!f!) (#_let ((!v! #f)) (do ((!i! 0 (+ !i! 1))) ((= !i! 1) !v!) (set! !v! ,tst)))) (!f!)) ,expected)"
-  "`(ok? ',tst (lambda () (define (!f!) (#_let ((!x! (map (lambda (!a!) ,tst) '(0)))) (if (pair? !x!) (car !x!) :no-value))) (!f!)) ,expected)"
+  "`(ok? ',tst (lambda () (define (!f!) (#_let ((!x! (map (lambda (!a!) ,tst) '(0)))) (if (pair? !x!) (car !x!) #<no-value>))) (!f!)) ,expected)"
   "`(ok? ',tst (lambda () (define (!f!) (#_let ((!x! #f)) (for-each (lambda (!a!) (set! !x! ,tst)) '(0)) !x!)) (!f!)) ,expected)"
   "`(ok? ',tst (lambda () (call-with-exit (lambda (!a!) (!a! ,tst)))) ,expected)"
   "`(ok? ',tst (lambda () (call/cc (lambda (!a!) (!a! ,tst)))) ,expected)"
