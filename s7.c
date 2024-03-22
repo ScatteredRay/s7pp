@@ -10037,7 +10037,6 @@ static s7_pointer internal_inlet(s7_scheme *sc, s7_int num_args, ...)
     {
       s7_pointer symbol = va_arg(ap, s7_pointer);
       s7_pointer value = va_arg(ap, s7_pointer);
-      if ((S7_DEBUGGING) && (is_keyword(symbol))) fprintf(stderr, "internal_inlet key: %s??\n", display(symbol));
       if (!sp)
 	{
 	  add_slot_unchecked(sc, new_e, symbol, value, id);
@@ -64172,8 +64171,8 @@ static bool p_call_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_poi
       if ((is_code_constant(sc, arg1)) && (is_code_constant(sc, arg2)))
 	{
 	  opc->v[0].fp = opt_p_call_cc;
-	  opc->v[1].p = arg1;
-	  opc->v[2].p = arg2;
+	  opc->v[1].p = (is_pair(arg1)) ? cadr(arg1) : arg1;
+	  opc->v[2].p = (is_pair(arg2)) ? cadr(arg2) : arg2;
 	  return_true(sc, car_x);
 	}
       if (is_symbol(arg1))
@@ -98400,10 +98399,8 @@ int main(int argc, char **argv)
  * safe/mutable lists in opt? savable mutable ints? (wrappers+in-use-flag?)
  * timing: setter, check op_s|a|x_* and trailers -- what is currently unopt'd
  *   op_x_aa: ss star, sc|cc imp, strings, format individual tests, fx lref: save L fixup if set?
- * t718 snd-test troubles: gc trouble only if optimized? etc
- * let|pair_to_port -- let case missed cycle (quote #1=(1 . #1))?? look for nil or built-ins
+ * t718 snd-test 22 segfault in GC mark_let, let_slots is a C double?, only if with-gmp/no-debugging, caused by 4Jan24 ()->rootlet change, but where?
+ * let|pair_to_port -- let case missed cycle (quote #1=(1 . #1))?? can't get it to happen out of (ridiculous) context
  * (define print-length (list 1 2)) (define (f) (with-let *s7* (+ print-length 1))) (display (f)) (newline) -- need a placeholder-let (or actual let) for *s7*?
  * check out FICLONE -- libc.scm? /usr/include/linux/fs.h has ioctl constants like FICLONE
- * t685 format cases
- * update CLM tarball
  */
