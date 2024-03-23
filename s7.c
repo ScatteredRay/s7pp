@@ -8310,9 +8310,13 @@ static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer
 #define push_stack_no_let_no_code(Sc, Op, Args) \
   do { \
       stack_end_args(sc) = Args; \
+      stack_end_let(sc) = Sc->unused; \
       stack_end_op(sc) = (s7_pointer)(opcode_t)(Op); \
       Sc->stack_end += 4; \
   } while (0)
+/* snd-test 22 segfault in GC mark_let|stack, let_slots is a C double, only if with-gmp/no-debugging, caused by 4Jan24 push_stack change
+ *   push_stack_no_let_no_code (gc_protect_2_via stack) setting stack_let to #<unused> appears to fix it (an intermittent bug)
+ */
 
 #define push_stack_no_args(Sc, Op, Code) \
   do { \
@@ -64362,6 +64366,7 @@ static bool p_pip_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
   if (is_symbol(caddr(car_x)))
     {
       int32_t start = sc->pc;
+      s7_pointer arg3 = cadddr(car_x); /* see val_type above */
       s7_pointer slot2 = opt_integer_symbol(sc, caddr(car_x));
       if (slot2)
 	{
@@ -64394,9 +64399,9 @@ static bool p_pip_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 		break;
 	      } /* T_PAIR here would require list_length check which sort of defeats the purpose */
 
-	  if (is_symbol(cadddr(car_x)))
+	  if (is_symbol(arg3))
 	    {
-	      s7_pointer val_slot = opt_simple_symbol(sc, cadddr(car_x));
+	      s7_pointer val_slot = opt_simple_symbol(sc, arg3);
 	      /* TODO: for int|byte|float-vector and string need opt_arg_type check?? see val_type above, if vector-set! but have int-vector sig is wrong */
 	      if (val_slot)
 		{
@@ -64406,10 +64411,10 @@ static bool p_pip_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer
 		  return_true(sc, car_x);
 		}}
 	  else
-	    if ((!is_pair(cadddr(car_x))) ||
-		(is_proper_quote(sc, cadddr(car_x))))
+	    if ((!is_pair(arg3)) ||
+		(is_proper_quote(sc, arg3)))
 	      {
-		opc->v[4].p = (is_pair(cadddr(car_x))) ? cadr(cadddr(car_x)) : cadddr(car_x);
+		opc->v[4].p = (is_pair(arg3)) ? cadr(arg3) : arg3;
 		opc->v[0].fp = opt_p_pip_ssc;
 		return_true(sc, car_x);
 	      }
@@ -98396,11 +98401,8 @@ int main(int argc, char **argv)
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
- * safe/mutable lists in opt? savable mutable ints? (wrappers+in-use-flag?)
  * timing: setter, check op_s|a|x_* and trailers -- what is currently unopt'd
- *   op_x_aa: ss star, sc|cc imp, strings, format individual tests, fx lref: save L fixup if set?
- * t718 snd-test 22 segfault in GC mark_let, let_slots is a C double?, only if with-gmp/no-debugging, caused by 4Jan24 ()->rootlet change, but where?
- * let|pair_to_port -- let case missed cycle (quote #1=(1 . #1))?? can't get it to happen out of (ridiculous) context
+ *   op_x_aa: ss star, sc|cc imp, strings, fx lref: save L fixup if set?
  * (define print-length (list 1 2)) (define (f) (with-let *s7* (+ print-length 1))) (display (f)) (newline) -- need a placeholder-let (or actual let) for *s7*?
  * check out FICLONE -- libc.scm? /usr/include/linux/fs.h has ioctl constants like FICLONE
  */
