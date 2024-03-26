@@ -8460,7 +8460,7 @@ s7_pointer s7_gc_protect_via_stack(s7_scheme *sc, s7_pointer x)
 s7_pointer s7_gc_protect_2_via_stack(s7_scheme *sc, s7_pointer x, s7_pointer y)
 {
   check_stack_size(sc);
-  push_stack_no_let(sc, OP_GC_PROTECT, x, y);
+  push_stack(sc, OP_GC_PROTECT, x, y);
   return(x);
 }
 
@@ -41445,13 +41445,13 @@ static s7_pointer g_make_vector_1(s7_scheme *sc, s7_pointer args, s7_pointer cal
 	      {
 		if (typf == global_value(sc->is_float_symbol))
 		  {
-		    if (!is_real(fill)) wrong_type_error_nr(sc, caller, 3, fill, sc->type_names[T_REAL]);
+		    if (!is_real(fill)) wrong_type_error_nr(sc, caller, 2, fill, sc->type_names[T_REAL]);
 		    result_type = T_FLOAT_VECTOR;
 		  }
 		else
 		  if (typf == global_value(sc->is_integer_symbol))
 		    {
-		      if (!s7_is_integer(fill)) wrong_type_error_nr(sc, caller, 3, fill, sc->type_names[T_INTEGER]);
+		      if (!s7_is_integer(fill)) wrong_type_error_nr(sc, caller, 2, fill, sc->type_names[T_INTEGER]);
 		      result_type = (WITH_GMP) ? T_VECTOR : T_INT_VECTOR;
 		    }
 		  else
@@ -41470,7 +41470,7 @@ static s7_pointer g_make_vector_1(s7_scheme *sc, s7_pointer args, s7_pointer cal
       (s7_apply_function(sc, typf, set_plist_1(sc, fill)) == sc->F))
     {
       const char *tstr = make_type_name(sc, (is_c_function(typf)) ? c_function_name(typf) : symbol_name(find_closure(sc, typf, closure_let(typf))), INDEFINITE_ARTICLE);
-      wrong_type_error_nr(sc, sc->make_vector_symbol, 3, fill, wrap_string(sc, tstr, safe_strlen(tstr)));
+      wrong_type_error_nr(sc, sc->make_vector_symbol, 2, fill, wrap_string(sc, tstr, safe_strlen(tstr)));
     }
 
   vec = make_vector_1(sc, len, NOT_FILLED, result_type);
@@ -96834,8 +96834,8 @@ static void init_rootlet(s7_scheme *sc)
   sc->symbol_to_keyword_symbol =     defun("symbol->keyword",	symbol_to_keyword,	1, 0, false);
   sc->keyword_to_symbol_symbol =     defun("keyword->symbol",	keyword_to_symbol,	1, 0, false);
 
-  sc->outlet_symbol =                /* unsafe_ */ defun("outlet",	outlet,		1, 0, false);
-  sc->rootlet_symbol =               /* unsafe_ */ defun("rootlet",    rootlet,		0, 0, false);
+  sc->outlet_symbol =                defun("outlet",	        outlet,		        1, 0, false);
+  sc->rootlet_symbol =               defun("rootlet",           rootlet,		0, 0, false);
   sc->curlet_symbol =                unsafe_defun("curlet",     curlet,			0, 0, false); /* (define (f a) (curlet)) exports the funclet, see s7test 50215 */
   set_func_is_definer(sc->curlet_symbol);
   sc->unlet_symbol =                 defun("unlet",		unlet,			0, 0, false);
@@ -97763,19 +97763,20 @@ s7_scheme *s7_init(void)
   sc->tree_pointers = NULL;
   sc->tree_pointers_size = 0;
   sc->tree_pointers_top = 0;
+  sc->objstr_max_len = S7_INT64_MAX;
+  sc->let_temp_hook = sc->nil;
 
   sc->rootlet = alloc_pointer(sc);
   set_full_type(sc->rootlet, T_LET | T_SAFE_PROCEDURE | T_UNHEAP);
   let_set_id(sc->rootlet, -1);
   let_set_outlet(sc->rootlet, NULL);
   let_set_slots(sc->rootlet, slot_end);
-  add_semipermanent_let_or_slot(sc, sc->rootlet); /* need to mark outlet and maybe slot values */
+  add_semipermanent_let_or_slot(sc, sc->rootlet);
+
   sc->rootlet_slots = slot_end;
   set_curlet(sc, sc->rootlet);
   sc->shadow_rootlet = sc->rootlet;
   sc->unlet_slots = slot_end;
-  sc->objstr_max_len = S7_INT64_MAX;
-  sc->let_temp_hook = sc->nil;
 
   init_wrappers(sc);
   init_standard_ports(sc);
@@ -97786,35 +97787,37 @@ s7_scheme *s7_init(void)
     s7_pointer p;
     new_cell(sc, p, T_RANDOM_STATE); /* s7_set_default_random_state might set sc->default_random_state, so this shouldn't be permanent */
     sc->default_random_state = p;
-
-    sc->bignum_precision = DEFAULT_BIGNUM_PRECISION;
 #if WITH_GMP
-    sc->bigints = NULL;
-    sc->bigrats = NULL;
-    sc->bigflts = NULL;
-    sc->bigcmps = NULL;
-
-    mpfr_set_default_prec((mp_prec_t)DEFAULT_BIGNUM_PRECISION);
-    mpc_set_default_precision((mp_prec_t)DEFAULT_BIGNUM_PRECISION);
-
-    mpz_inits(sc->mpz_1, sc->mpz_2, sc->mpz_3, sc->mpz_4, NULL);
-    mpq_inits(sc->mpq_1, sc->mpq_2, sc->mpq_3, NULL);
-    mpfr_inits2(DEFAULT_BIGNUM_PRECISION, sc->mpfr_1, sc->mpfr_2, sc->mpfr_3, NULL);
-    mpc_init(sc->mpc_1);
-    mpc_init(sc->mpc_2);
-
     mpz_set_ui(sc->mpz_1, (uint64_t)my_clock());
     gmp_randinit_default(random_gmp_state(p));
     gmp_randseed(random_gmp_state(p), sc->mpz_1);
-
-    sc->pi_symbol = s7_define_constant(sc, "pi", big_pi(sc)); /* not actually a constant because it changes with bignum-precision */
-    s7_provide(sc, "gmp");
 #else
     random_seed(p) = (uint64_t)my_clock(); /* used to be time(NULL), but that means separate threads can get the same random number sequence */
     random_carry(p) = 1675393560;
-    sc->pi_symbol = s7_define_constant(sc, "pi", real_pi);
 #endif
   }
+
+  sc->bignum_precision = DEFAULT_BIGNUM_PRECISION;
+#if WITH_GMP
+  sc->bigints = NULL;
+  sc->bigrats = NULL;
+  sc->bigflts = NULL;
+  sc->bigcmps = NULL;
+  
+  mpfr_set_default_prec((mp_prec_t)DEFAULT_BIGNUM_PRECISION);
+  mpc_set_default_precision((mp_prec_t)DEFAULT_BIGNUM_PRECISION);
+  mpz_inits(sc->mpz_1, sc->mpz_2, sc->mpz_3, sc->mpz_4, NULL);
+  mpq_inits(sc->mpq_1, sc->mpq_2, sc->mpq_3, NULL);
+  mpfr_inits2(DEFAULT_BIGNUM_PRECISION, sc->mpfr_1, sc->mpfr_2, sc->mpfr_3, NULL);
+  mpc_init(sc->mpc_1);
+  mpc_init(sc->mpc_2);
+  
+  sc->pi_symbol = s7_define_constant(sc, "pi", big_pi(sc)); /* not actually a constant because it changes with bignum-precision */
+  s7_provide(sc, "gmp");
+#else
+  sc->pi_symbol = s7_define_constant(sc, "pi", real_pi);
+#endif
+
   for (i = 0; i < 10; i++) sc->singletons[(uint8_t)'0' + i] = small_int(i);
   sc->singletons[(uint8_t)'+'] = sc->add_symbol;
   sc->singletons[(uint8_t)'-'] = sc->subtract_symbol;
@@ -98404,5 +98407,4 @@ int main(int argc, char **argv)
  * timing: setter, check op_s|a|x_* and trailers -- what is currently unopt'd
  *   op_x_aa: ss star, sc|cc imp, strings, fx lref: save L fixup if set?
  * (define print-length (list 1 2)) (define (f) (with-let *s7* (+ print-length 1))) (display (f)) (newline) -- need a placeholder-let (or actual let) for *s7*?
- * check out FICLONE -- libc.scm? /usr/include/linux/fs.h has ioctl constants like FICLONE
  */
