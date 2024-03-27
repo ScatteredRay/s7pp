@@ -5526,7 +5526,7 @@
 							    (if (null? (cdr new-plus))
 								`(- ,(car new-plus) ,@new-minus)          ; (- (+ x z) x y) -> (- z y)
 								`(- (+ ,@new-plus) ,@new-minus))))))))    ; (- (+ x z w) x y) -> (- (+ w z) y)
-				       
+
 				       (if (len=3? new-form)
 					   (let ((arg1 (cadr new-form))
 						 (arg2 (caddr new-form)))
@@ -9467,7 +9467,7 @@
 						 (unless (or (char-numeric? (string-ref str k))
 							     (char=? (string-ref str k) #\,))
 						   ;(format *stderr* "~C ~C~%" (string-ref str k) c)
-						   (return (or (char=? (string-ref str k) #\') ; ~12,'-T 
+						   (return (or (char=? (string-ref str k) #\') ; ~12,'-T
 							       (char-ci=? (string-ref str k) #\t)))))))))
 			      ;; the possibilities are endless, so I'll stick to the simplest
 			      (if (not (vector-ref format-control-char (char->integer c))) ; (format #f "~H" 1)
@@ -10387,7 +10387,7 @@
 		    (if (pair? (cdr p))  ; not (inlet 'a 1 'b)
 			(set! p (cdr p))
 			(lint-format "no value for last entry ~S in ~S" caller (car p) form)))))))
-		    
+
 	  (hash-special 'inlet sp-inlet)
 	  )
 
@@ -12576,14 +12576,14 @@
 				    (eq? desired-type #t)
 				    (pair? desired-type)))
 			   (error 'wrong-type-arg "~S signature ~S is invalid" func sig))
-			  
+
 			  ((not (or (eq? desired-type #t)
 				    (any-compatible? vtype desired-type)))
 			   (lint-format "~A is ~A, but ~A in ~A wants ~A" caller
 					vname (prettify-checker-unq vtype)
 					func (truncated-list->string call)
 					(prettify-checker desired-type)))
-			  
+
 			  ((and (memq vtype '(float-vector? int-vector?))
 				(memq func '(vector-set! vector-ref)))
 			   (lint-format "~A is ~A, so perhaps use ~A, not ~A" caller
@@ -12592,13 +12592,13 @@
 					    (if (eq? func 'vector-set!) 'float-vector-set! 'float-vector-ref)
 					    (if (eq? func 'vector-set!) 'int-vector-set! 'int-vector-ref))
 					func))
-			  
+
 			  ((and (eq? vtype 'float-vector?)
 				(eq? func 'equal?)
 				(or (eq? (cadr call) vname)
 				    (not (symbol? (cadr call))))) ; don't repeat the suggestion when we hit the second vector
 			   (lint-format "perhaps use equivalent? in ~A" caller (truncated-list->string call)))
-			  
+
 			  ((and (eq? vtype 'vector?)
 				(memq func '(float-vector-set! float-vector-ref int-vector-set! int-vector-ref byte-vector-set! byte-vector-ref)))
 			   (lint-format "~A is ~A, so use ~A, not ~A" caller
@@ -12913,7 +12913,7 @@
 			   (unless vtype
 			     (set! vtype (or (eq? caller top-level:) ; might be a global var where init value is largely irrelevant
 					     (->lint-type (var-initial-value local-var)))))
-			   
+
 			   (let ((lit? (and (code-constant? (var-initial-value local-var))
 					    (not (quoted-null? (var-initial-value local-var)))))) ; something fishy is going on...
 

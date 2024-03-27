@@ -1609,7 +1609,7 @@ int main(int argc, char **argv)
     {fprintf(stderr, "%d: %s is not 4?\n", __LINE__, s1 = TO_STR(p)); free(s1);}
   {
     s7_int val;
-    val = s7_integer(s7_apply_function_star(sc, s7_name_to_value(sc, "plus"), 
+    val = s7_integer(s7_apply_function_star(sc, s7_name_to_value(sc, "plus"),
 					    s7_list(sc, 2, s7_make_integer(sc, 1), s7_make_integer(sc, 2))));
     if (val != 4)
       fprintf(stderr, "%d: plus: %" ld64 "\n", __LINE__, val);
@@ -2826,20 +2826,20 @@ int main(int argc, char **argv)
   { /* check realloc'd large block handling in s7_free */
     int i;
     s7_int addrs[20000];
-    
+
     for (i = 0; i < 20000; i++)   /* gc_protected_objects */
       addrs[i] = s7_gc_protect(sc, s7_cons(sc, s7_f(sc), s7_t(sc)));
-    
-    for (i = 19999; i >= 0; i--)  
+
+    for (i = 19999; i >= 0; i--)
       s7_gc_unprotect_at(sc, addrs[i]);
-    
+
     for (i = 0; i < 10000; i++)   /* rootlet */
       {
 	char buf[128];
 	snprintf(buf, 128, "sym-%d", i);
 	s7_define(sc, s7_nil(sc), s7_make_symbol(sc, (const char *)buf), s7_make_integer(sc, i));
       }
-    
+
     for (i = 0; i < 10000; i++)   /* stack */
       {
 	s7_pointer p = s7_make_vector(sc, 3);

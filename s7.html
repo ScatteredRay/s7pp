@@ -2201,8 +2201,19 @@ variable named '+iterator+ with a non-#f value:
 </pre>
 <p>The +iterator+ variable is similar to the '+documentation+ variable used by documentation.
 It gives make-iterator some hope of catching inadvertent bogus function arguments that would
-otherwise cause an infinite loop. 
+otherwise cause an infinite loop.  But unfortunately it can escape and infect 
+other functions:
 </p>
+<pre class="indented">
+(with-let (let ((<em class="red">+iterator+</em> #t)) 
+            (lambda () #&lt;eof&gt;))             ; we intended this to be our iterator
+  (concatenate vector (lambda a (copy a)))) ; from stuff.scm
+  ;; (lambda a (copy a)) is also considered an iterator by map (in sequences-&gt;list) because 
+  ;; the local +iterator+ is #t. "a" is () because there are no further arguments to
+  ;; concatenate, so (lambda a (copy a)) is generating infinitely many ()'s and this 
+  ;; code eventually dies with a heap overflow!
+</pre>
+
 
 
 <div class="header" id="multidimensionalvectors"><h4>multidimensional vectors</h4></div>

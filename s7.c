@@ -55634,7 +55634,7 @@ static s7_pointer fx_href_s_vref(s7_scheme *sc, s7_pointer arg)
   return(hash_table_ref_p_pp(sc, lookup(sc, cadr(arg)), vector_ref_p_pp(sc, lookup(sc, car(opt3_pair(arg))), lookup(sc, opt2_sym(opt3_pair(arg))))));
 }
 
-static s7_pointer fx_lref_s_vref(s7_scheme *sc, s7_pointer arg)
+static s7_pointer fx_lref_s_vref(s7_scheme *sc, s7_pointer arg) /* tbig */
 {
   return(let_ref(sc, lookup(sc, cadr(arg)), vector_ref_p_pp(sc, lookup(sc, car(opt3_pair(arg))), lookup(sc, opt2_sym(opt3_pair(arg))))));
 }
@@ -85363,7 +85363,6 @@ static inline bool op_safe_closure_star_na(s7_scheme *sc, s7_pointer code) /* ca
   sc->args = arglist;
   for (s7_pointer p = arglist, old_args = cdr(code); is_pair(p); p = cdr(p), old_args = cdr(old_args))
     set_car(p, fx_call(sc, old_args));
-  if ((S7_DEBUGGING) && (sc->args != arglist)) fprintf(stderr, "%s[%d]: lost gc\n", __func__, __LINE__);
   return(call_lambda_star(sc, code, arglist));   /* clears list_in_use */
 }
 
@@ -89290,12 +89289,10 @@ static bool op_x_a(s7_scheme *sc, s7_pointer f)
 static bool op_x_aa(s7_scheme *sc, s7_pointer f)
 {
   s7_pointer code = sc->code;
-  if ((((type(f) == T_C_FUNCTION) &&
-	(c_function_is_aritable(f, 2))) ||
-       ((type(f) == T_C_RST_NO_REQ_FUNCTION) &&
-	(c_function_max_args(f) >= 2))) &&
+  if ((((type(f) == T_C_FUNCTION) && (c_function_is_aritable(f, 2))) ||
+       ((type(f) == T_C_RST_NO_REQ_FUNCTION) &&	(c_function_max_args(f) >= 2))) &&
       (!needs_copied_args(f)))
-    {
+    { /* ((L 'abs) x 0.0001) where 'abs is '* in timp.scm */
       sc->value = c_function_call(f)(sc, with_list_t2(fx_call(sc, cdr(code)), fx_call(sc, cddr(code))));
       return(true);
     }
@@ -94556,7 +94553,7 @@ static s7_pointer memory_usage(s7_scheme *sc)
 	}
     sc->w = sc->nil;
 #if S7_DEBUGGING
-    for (i = NUM_SAFE_LISTS - 1; i > 0; i--)
+    for (i = NUM_SAFE_LISTS - 1; i > 0; i--) /* omit safe_lists[0]=() since it is never used */
       sc->w = cons(sc, make_integer(sc, sc->safe_list_uses[i]), sc->w);
 #endif
     add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "safe-lists", 10),
@@ -98404,7 +98401,6 @@ int main(int argc, char **argv)
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
- * timing: setter, check op_s|a|x_* and trailers -- what is currently unopt'd
- *   op_x_aa: ss star, sc|cc imp, strings, fx lref: save L fixup if set?
+ * timing: setter, check op_a|x_* and trailers -- what is currently unopt'd, op_x_aa: ss star, sc|cc imp, strings
  * (define print-length (list 1 2)) (define (f) (with-let *s7* (+ print-length 1))) (display (f)) (newline) -- need a placeholder-let (or actual let) for *s7*?
  */
