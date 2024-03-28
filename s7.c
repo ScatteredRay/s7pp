@@ -4263,7 +4263,7 @@ enum {OP_UNOPT, OP_GC_PROTECT, /* must be an even number of ops here, op_gc_prot
 
       OP_APPLY_SS, OP_APPLY_SA, OP_APPLY_SL, OP_MACRO_D, OP_MACRO_STAR_D,
       OP_WITH_IO, OP_WITH_IO_1, OP_WITH_OUTPUT_TO_STRING, OP_WITH_IO_C, OP_CALL_WITH_OUTPUT_STRING,
-      OP_S, OP_S_G, OP_S_A, OP_S_AA, OP_A_A, OP_A_AA, OP_P_S, OP_P_S_1, OP_MAP_FOR_EACH_FA, OP_MAP_FOR_EACH_FAA,
+      OP_S, OP_S_G, OP_S_A, OP_S_AA, OP_A_A, OP_A_AA, OP_A_SC, OP_P_S, OP_P_S_1, OP_MAP_FOR_EACH_FA, OP_MAP_FOR_EACH_FAA,
       OP_F, OP_F_A, OP_F_AA, OP_F_NP, OP_F_NP_1,
 
       OP_IMPLICIT_GOTO, OP_IMPLICIT_GOTO_A, OP_IMPLICIT_CONTINUATION_A, OP_IMPLICIT_ITERATE,
@@ -4480,7 +4480,7 @@ static const char* op_names[NUM_OPS] =
 
       "apply_ss", "apply_sa", "apply_sl", "macro_d", "macro*_d",
       "with_input_from_string", "with_input_from_string_1", "with_output_to_string", "with_input_from_string_c", "call_with_output_string",
-      "s", "s_g", "s_a", "s_aa", "a_a", "a_aa", "p_s", "p_s_1", "map_for_each_fa", "map_for_each_faa",
+      "s", "s_g", "s_a", "s_aa", "a_a", "a_aa", "a_sc", "p_s", "p_s_1", "map_for_each_fa", "map_for_each_faa",
       "f", "f_a", "f_aa", "f_np", "f_np_1",
 
       "implicit_goto", "implicit_goto_a", "implicit_continuation_a","implicit_iterate",
@@ -8310,13 +8310,9 @@ static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer
 #define push_stack_no_let_no_code(Sc, Op, Args) \
   do { \
       stack_end_args(sc) = Args; \
-      stack_end_let(sc) = Sc->unused; \
       stack_end_op(sc) = (s7_pointer)(opcode_t)(Op); \
       Sc->stack_end += 4; \
   } while (0)
-/* snd-test 22 segfault in GC mark_let|stack, let_slots is a C double, only if with-gmp/no-debugging, caused by 4Jan24 push_stack change
- *   push_stack_no_let_no_code (gc_protect_2_via stack) setting stack_let to #<unused> appears to fix it (an intermittent bug)
- */
 
 #define push_stack_no_args(Sc, Op, Code) \
   do { \
@@ -8453,7 +8449,7 @@ static void resize_stack(s7_scheme *sc)
 s7_pointer s7_gc_protect_via_stack(s7_scheme *sc, s7_pointer x)
 {
   check_stack_size(sc); /* this can be called externally, so we need to be careful about this */
-  push_stack_no_let_no_code(sc, OP_GC_PROTECT, x);
+  push_stack_no_code(sc, OP_GC_PROTECT, x);
   return(x);
 }
 
@@ -8492,9 +8488,9 @@ s7_pointer s7_gc_unprotect_via_stack(s7_scheme *sc, s7_pointer x)
   #define set_stack_protected3_with(Sc, Val, Op) stack_protected3(Sc) = Val
 #endif
 
-#define gc_protect_via_stack(Sc, Obj) push_stack_no_let_no_code(Sc, OP_GC_PROTECT, Obj)
-#define gc_protect_2_via_stack(Sc, X, Y) do {push_stack_no_let_no_code(Sc, OP_GC_PROTECT, X); stack_protected2(Sc) = Y;} while (0) /* often X and Y are fx_calls, so push X, then set Y */
-/* #define gc_protect_3_via_stack(Sc, X, Y, Z) do {push_stack_no_let_no_code(Sc, OP_GC_PROTECT, X); stack_protected2(Sc) = Y; stack_protected3(sc) = Z;} while (0) */
+#define gc_protect_via_stack(Sc, Obj) push_stack_no_code(Sc, OP_GC_PROTECT, Obj)
+#define gc_protect_2_via_stack(Sc, X, Y) do {gc_protect_via_stack(Sc, X); stack_protected2(Sc) = Y;} while (0) /* often X and Y are fx_calls, so push X, then set Y */
+/* #define gc_protect_3_via_stack(Sc, X, Y, Z) do {gc_protect_via_stack(Sc, X); stack_protected2(Sc) = Y; stack_protected3(sc) = Z;} while (0) */
 
 
 /* -------------------------------- symbols -------------------------------- */
@@ -69311,7 +69307,7 @@ a list of the results.  Its arguments can be lists, vectors, strings, hash-table
 		  if (fp)
 		    {
 		      val = list_1_unchecked(sc, sc->nil);
-		      push_stack_no_let_no_code(sc, OP_GC_PROTECT, val);
+		      gc_protect_via_stack(sc, val);
 		      for (s7_pointer fast = cadr(args), slow = cadr(args); is_pair(fast); fast = cdr(fast), slow = cdr(slow))
 			{
 			  s7_pointer z = fp(sc, car(fast));
@@ -69332,7 +69328,7 @@ a list of the results.  Its arguments can be lists, vectors, strings, hash-table
 		  if (fp)
 		    {
 		      val = list_1_unchecked(sc, sc->nil);
-		      push_stack_no_let_no_code(sc, OP_GC_PROTECT, val);
+		      gc_protect_via_stack(sc, val);
 		      for (s7_pointer fast1 = cadr(args), slow1 = cadr(args), fast2 = caddr(args), slow2 = caddr(args);
 			   (is_pair(fast1)) && (is_pair(fast2));
 			   fast1 = cdr(fast1), slow1 = cdr(slow1), fast2 = cdr(fast2), slow2 = cdr(slow2))
@@ -69359,7 +69355,7 @@ a list of the results.  Its arguments can be lists, vectors, strings, hash-table
 		  s7_pointer str = cadr(args);
 		  const char *s = string_value(str);
 		  val = list_1_unchecked(sc, sc->nil);
-		  push_stack_no_let_no_code(sc, OP_GC_PROTECT, val);
+		  gc_protect_via_stack(sc, val);
 		  len = string_length(str);
 		  for (s7_int i = 0; i < len; i++)
 		    {
@@ -69376,7 +69372,7 @@ a list of the results.  Its arguments can be lists, vectors, strings, hash-table
 		{
 		  s7_pointer vec = cadr(args);
 		  val = list_1_unchecked(sc, sc->nil);
-		  push_stack_no_let_no_code(sc, OP_GC_PROTECT, val);
+		  gc_protect_via_stack(sc, val);
 		  len = vector_length(vec);
 		  for (s7_int i = 0; i < len; i++)
 		    {
@@ -84420,7 +84416,7 @@ static bool op_do_init(s7_scheme *sc)
 
 static void op_do_unchecked(s7_scheme *sc)
 {
-  push_stack_no_code(sc, OP_GC_PROTECT, sc->code);
+  gc_protect_via_stack(sc, sc->code);
   sc->code = cdr(sc->code);
 }
 
@@ -89286,15 +89282,48 @@ static bool op_x_a(s7_scheme *sc, s7_pointer f)
   return(false); /* goto APPLY */
 }
 
+static bool op_x_sc(s7_scheme *sc, s7_pointer f)
+{
+  s7_pointer code = sc->code;
+  if (((type(f) == T_C_FUNCTION) && (c_function_is_aritable(f, 2))) ||
+      ((type(f) == T_C_RST_NO_REQ_FUNCTION) &&	(c_function_max_args(f) >= 2)))
+    { /* ((L 'abs) x 0.0001) where 'abs is '* in timp.scm */
+      if (!needs_copied_args(f))
+	{ 
+	  sc->value = c_function_call(f)(sc, set_plist_2(sc, lookup(sc, cadr(code)), caddr(code)));
+	  return(true);
+	}
+      sc->args = list_2(sc, lookup(sc, cadr(code)), caddr(code));
+      sc->code = f;
+      return(false); /* goto APPLY */
+    }
+  if (!is_applicable(f))
+    apply_error_nr(sc, f, cdr(code));
+  if (dont_eval_args(f))
+    sc->args = list_2(sc, cadr(code), caddr(code));
+  else
+    if (!needs_copied_args(f))
+      sc->args = set_plist_2(sc, lookup(sc, cadr(code)), caddr(code));
+    else sc->args = list_2(sc, lookup(sc, cadr(code)), caddr(code));
+  sc->code = f;
+  return(false); /* goto APPLY */
+}
+
 static bool op_x_aa(s7_scheme *sc, s7_pointer f)
 {
   s7_pointer code = sc->code;
-  if ((((type(f) == T_C_FUNCTION) && (c_function_is_aritable(f, 2))) ||
-       ((type(f) == T_C_RST_NO_REQ_FUNCTION) &&	(c_function_max_args(f) >= 2))) &&
-      (!needs_copied_args(f)))
+  if (((type(f) == T_C_FUNCTION) && (c_function_is_aritable(f, 2))) ||
+      ((type(f) == T_C_RST_NO_REQ_FUNCTION) &&	(c_function_max_args(f) >= 2)))
     { /* ((L 'abs) x 0.0001) where 'abs is '* in timp.scm */
-      sc->value = c_function_call(f)(sc, with_list_t2(fx_call(sc, cdr(code)), fx_call(sc, cddr(code))));
-      return(true);
+      if (!needs_copied_args(f))
+	{ 
+	  sc->value = c_function_call(f)(sc, with_list_t2(fx_call(sc, cdr(code)), fx_call(sc, cddr(code))));
+	  return(true);
+	}
+      sc->args = fx_call(sc, cddr(code));
+      sc->args = list_2(sc, sc->value = fx_call(sc, cdr(code)), sc->args);
+      sc->code = f;
+      return(false); /* goto APPLY */
     }
   if (!is_applicable(f))
     apply_error_nr(sc, f, cdr(code));
@@ -90183,7 +90212,9 @@ static bool eval_car_pair(s7_scheme *sc)
 		{
 		  fx_annotate_args(sc, cdr(code), sc->curlet);
 		  set_fx_direct(code, fx_function[optimize_op(carc)]);
-		  set_optimize_op(code, (is_null(cddr(code))) ? OP_A_A : OP_A_AA);
+		  if (is_null(cddr(code)))
+		    set_optimize_op(code, OP_A_A);
+		  else set_optimize_op(code, ((is_symbol(cadr(code))) && (!is_pair(caddr(code))) && (!is_normal_symbol(caddr(code)))) ? OP_A_SC : OP_A_AA);
 		  return(false);  /* goto eval in trailers */
 		}}
 	  set_no_cell_opt(carc);
@@ -90203,7 +90234,9 @@ static bool eval_car_pair(s7_scheme *sc)
 	{
 	  fx_annotate_args(sc, cdr(code), sc->curlet);
 	  set_fx_direct(code, fx_function[optimize_op(carc)]);
-	  set_optimize_op(code, (is_null(cddr(code))) ? OP_A_A : OP_A_AA);
+	  if (is_null(cddr(code)))
+	    set_optimize_op(code, OP_A_A);
+	  else set_optimize_op(code, ((is_symbol(cadr(code))) && (!is_pair(caddr(code))) && (!is_normal_symbol(caddr(code)))) ? OP_A_SC : OP_A_AA);
 	  sc->code = carc;
 	  return(false);  /* goto eval in trailers */
 	}
@@ -92528,6 +92561,7 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	case OP_A_A:  if (op_x_a(sc, fx_call(sc, sc->code))) continue;              goto APPLY;
 	case OP_S_AA: if (op_x_aa(sc, lookup_checked(sc, car(sc->code)))) continue; goto APPLY;
 	case OP_A_AA: if (op_x_aa(sc, fx_call(sc, sc->code))) continue;             goto APPLY;
+	case OP_A_SC: if (op_x_sc(sc, fx_call(sc, sc->code))) continue;             goto APPLY;
 	case OP_P_S:  push_stack_no_args_direct(sc, OP_P_S_1); sc->code = car(sc->code); goto EVAL;
 	case OP_P_S_1: op_p_s_1(sc); goto APPLY;
 
@@ -94544,12 +94578,12 @@ static s7_pointer memory_usage(s7_scheme *sc)
 
   /* safe_lists */
   {
-    s7_int live = 0, in_use = 0;
+    s7_int live = 0, in_use = 0, line_used = 0;
     for (i = 1; i < NUM_SAFE_LISTS; i++)
       if (is_pair(sc->safe_lists[i]))
 	{
 	  live++;
-	  if (list_is_in_use(sc->safe_lists[i])) in_use++;
+	  if (list_is_in_use(sc->safe_lists[i])) {in_use++; line_used = i;}
 	}
     sc->w = sc->nil;
 #if S7_DEBUGGING
@@ -94557,7 +94591,8 @@ static s7_pointer memory_usage(s7_scheme *sc)
       sc->w = cons(sc, make_integer(sc, sc->safe_list_uses[i]), sc->w);
 #endif
     add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "safe-lists", 10),
-			       list_3(sc, make_integer(sc, live), make_integer(sc, in_use), sc->w));
+			       (in_use == 0) ? list_3(sc, small_int(live), int_zero, sc->w) : 
+			                       list_4(sc, small_int(live), small_int(in_use), small_int(line_used), sc->w));
 #if S7_DEBUGGING
     sc->w = sc->unused;
 #endif
@@ -97969,7 +98004,7 @@ s7_scheme *s7_init(void)
   s7_define_function(sc, "report-missed-calls", g_report_missed_calls, 0, 0, false, NULL); /* tc/recur tests in s7test.scm */
   if (strcmp(op_names[HOP_SAFE_C_PP], "h_safe_c_pp") != 0) fprintf(stderr, "c op_name: %s\n", op_names[HOP_SAFE_C_PP]);
   if (strcmp(op_names[OP_SET_WITH_LET_2], "set_with_let_2") != 0) fprintf(stderr, "set op_name: %s\n", op_names[OP_SET_WITH_LET_2]);
-  if (NUM_OPS != 926) fprintf(stderr, "size: cell: %d, block: %d, max op: %d, opt: %d\n", (int)sizeof(s7_cell), (int)sizeof(block_t), NUM_OPS, (int)sizeof(opt_info));
+  if (NUM_OPS != 927) fprintf(stderr, "size: cell: %d, block: %d, max op: %d, opt: %d\n", (int)sizeof(s7_cell), (int)sizeof(block_t), NUM_OPS, (int)sizeof(opt_info));
   /* cell size: 48, 120 if debugging, block size: 40, opt: 128 or 280 */
 #endif
   return(sc);
@@ -98364,7 +98399,7 @@ int main(int argc, char **argv)
  * tmat             3065   3042   2524   2578   2590   2570
  * tsort     3683   3105   3104   2856   2804   2858   2858
  * tobj             4016   3970   3828   3577   3508   3515
- * teq              4068   4045   3536   3486   3544   3537
+ * teq              4068   4045   3536   3486   3544   3527
  * tio              3816   3752   3683   3620   3583   3601
  * tmac             3950   3873   3033   3677   3677   3680
  * tclo      6362   4787   4735   4390   4384   4474   4339
@@ -98372,13 +98407,13 @@ int main(int argc, char **argv)
  * tlet      9166   7775   5640   4450   4427   4457   4470
  * tfft             7820   7729   4755   4476   4536   4543
  * tmap             8869   8774   4489   4541   4586   4592
- * tstar            6139   5923   5519   4449   4550   4570
+ * tstar            6139   5923   5519   4449   4550   4570 op_set_opsaq_a 4581
  * tshoot           5525   5447   5183   5055   5034   5031
  * tform            5357   5348   5307   5316   5084   5091
  * tstr      10.0   6880   6342   5488   5162   5180   5197
  * tnum             6348   6013   5433   5396   5409   5423
  * tgsl             8485   7802   6373   6282   6208   6182
- * tari      15.0   13.0   12.7   6827   6543   6278   6278
+ * tari      15.0   13.0   12.7   6827   6543   6278   6278 opt_p_pp_ff and in tlist (from opt_p_pp_call_ff) 6283
  * tlist     9219   7896   7546   6558   6240   6300   6298
  * tset                                  6260   6364   6389
  * trec      19.5   6936   6922   6521   6588   6583   6583
@@ -98392,8 +98427,8 @@ int main(int argc, char **argv)
  * tmv              16.0   15.4   14.7   14.5   14.4   11.9
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3
  * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1
- * timp             25.4   24.4   20.0   19.6   19.7   15.8
- * calls            36.7   37.5   37.0   37.5   37.1   37.2
+ * timp             25.4   24.4   20.0   19.6   19.7   15.7
+ * calls            36.7   37.5   37.0   37.5   37.1   37.1
  * sg                             55.9   55.8   55.4   55.2
  * tbig            177.4  175.8  156.5  148.1  146.2  146.2
  * --------------------------------------------------------------
