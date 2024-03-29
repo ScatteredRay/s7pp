@@ -56574,7 +56574,9 @@ static s7_pointer fx_c_opaaq(s7_scheme *sc, s7_pointer arg)
   gc_protect_via_stack(sc, fx_call(sc, cdr(p)));
   set_car(sc->t2_2, fx_call(sc, cddr(p)));
   set_car(sc->t2_1, stack_protected1(sc));
-  res = fn_proc(arg)(sc, with_list_t1(fn_proc(p)(sc, sc->t2_1)));
+  res = fn_proc(p)(sc, sc->t2_1);
+  stack_protected2(sc) = res; /* might be a big list etc (see s7test.scm fx_c_opaaq test) */
+  res = fn_proc(arg)(sc, with_list_t1(res));
   unstack_gc_protect(sc);
   return(res);
 }
@@ -89953,11 +89955,8 @@ static void op_apply_sl(s7_scheme *sc)
 
 static bool op_pair_pair(s7_scheme *sc)
 {
-  if (!is_pair(car(sc->code)))
-    {
-      clear_optimize_op(sc->code);
-      return(false);
-    }
+  /* fprintf(stderr, "%s[%d]: %s\n", __func__, __LINE__, display(sc->code)); */
+  if ((S7_DEBUGGING) && (!is_pair(car(sc->code)))) fprintf(stderr, "%s[%d] unexpected trailer: %s\n", __func__, __LINE__, display(sc->code));
   if (sc->stack_end >= (sc->stack_resize_trigger - 8))
     check_for_cyclic_code(sc, sc->code);       /* calls resize_stack */
   push_stack_no_args_direct(sc, OP_EVAL_ARGS); /* eval args goes immediately to cdr(sc->code) */
@@ -89969,11 +89968,7 @@ static bool op_pair_pair(s7_scheme *sc)
 
 static bool op_pair_sym(s7_scheme *sc)
 {
-  if (!is_symbol(car(sc->code)))
-    {
-      clear_optimize_op(sc->code);
-      return(false);
-    }
+  if ((S7_DEBUGGING) && (!is_symbol(car(sc->code)))) fprintf(stderr, "%s[%d] unexpected trailer: %s\n", __func__, __LINE__, display(sc->code));
   sc->value = lookup_global(sc, car(sc->code));
   return(true);
 }
@@ -90290,10 +90285,10 @@ static goto_t trailers(s7_scheme *sc)
       sc->value = carc;
       return(goto_eval_args_top);
     }
-  if (is_symbol(code))
+  if (is_normal_symbol(code))
     {
       sc->value = lookup_checked(sc, code);
-      set_optimize_op(code, (is_keyword(code)) ? OP_CONSTANT : OP_SYMBOL);
+      set_optimize_op(code, OP_SYMBOL);
     }
   else
     {
@@ -98407,13 +98402,13 @@ int main(int argc, char **argv)
  * tlet      9166   7775   5640   4450   4427   4457   4470
  * tfft             7820   7729   4755   4476   4536   4543
  * tmap             8869   8774   4489   4541   4586   4592
- * tstar            6139   5923   5519   4449   4550   4570 op_set_opsaq_a 4581
+ * tstar            6139   5923   5519   4449   4550   4570
  * tshoot           5525   5447   5183   5055   5034   5031
  * tform            5357   5348   5307   5316   5084   5091
  * tstr      10.0   6880   6342   5488   5162   5180   5197
  * tnum             6348   6013   5433   5396   5409   5423
  * tgsl             8485   7802   6373   6282   6208   6182
- * tari      15.0   13.0   12.7   6827   6543   6278   6278 opt_p_pp_ff and in tlist (from opt_p_pp_call_ff) 6283
+ * tari      15.0   13.0   12.7   6827   6543   6278   6278
  * tlist     9219   7896   7546   6558   6240   6300   6298
  * tset                                  6260   6364   6389
  * trec      19.5   6936   6922   6521   6588   6583   6583
@@ -98436,6 +98431,6 @@ int main(int argc, char **argv)
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
- * timing: setter, check op_a|x_* and trailers -- what is currently unopt'd, op_x_aa: ss star, sc|cc imp, strings
  * (define print-length (list 1 2)) (define (f) (with-let *s7* (+ print-length 1))) (display (f)) (newline) -- need a placeholder-let (or actual let) for *s7*?
+ * pair_to_port problem, t_pair op_pair*
  */
