@@ -3,10 +3,10 @@
 (define-constant stable (symbol-table))
 (define-constant stable-len (length stable))
 
-(define with-mock-data #f)
+(define with-mock-data #t)
 ;(set! (*s7* 'profile) 1)
 (when (provided? 'number-separator) (set! (*s7* 'number-separator) #\,))
-;(set! (*s7* 'gc-stats) 4) ; heap-stats
+;(set! (*s7* 'gc-stats) 4) ; stack-stats
 
 (unless (defined? 'fuzzies)
   (define fuzzies 100000))
@@ -715,7 +715,7 @@
 (define-constant imfv2 (immutable! #r2d((1 2 3) (4 5 6))))
 (define-constant imfv3 (immutable! #r3d(((1 2 3) (1 2 4)) ((1 2 5) (1 2 6)) ((1 2 7) (1 2 8)))))
 (define-constant imi (immutable! (inlet 'a 3 'b 2)))
-(define-constant ilt (immutable! (openlet (inlet 'a 1 'let-ref-fallback (lambda (e sym) #<undefined>)))))
+(define-constant ilt (immutable! (openlet (inlet 'let-ref-fallback (lambda (e sym) #<undefined>)))))
 
 (define-constant imh (immutable! (let ((H (make-hash-table 8 #f (cons symbol? integer?)))) (set! (H 'a) 1) (set! (H 'b) 2) H)))
 (define-constant imp (immutable! (cons 0 (immutable! (cons 1 (immutable! (cons 2 ())))))))
@@ -783,6 +783,7 @@
 (define max-stack (*s7* 'stack-top))
 (define last-error-type #f)
 (define old-definee #f)
+(define L0 (inlet 'a 1))
 
 (define (tp val) ; omits trailing " if val long and already a string
   (let ((str (object->string val)))
@@ -800,9 +801,9 @@
 
 (define-macro (with-immutable objs . body)
   `(let-temporarily (,@(map (lambda (obj)
-			      `((setter ',obj) (lambda (s v) 
-						 (error 'immutable-object-error 
-							"in with-immutable, can't set! ~A" 
+			      `((setter ',obj) (lambda (s v)
+						 (error 'immutable-object-error
+							"in with-immutable, can't set! ~A"
 							',obj))))
 			    objs))
      ,@body))
@@ -820,7 +821,7 @@
 			  'even? 'string-append 'char-upcase 'sqrt 'my-make-string
 			  'char-alphabetic? 'odd? 'call-with-exit 'tanh 'copy 'sinh 'make-vector
 			  'string 'char-ci=? 'caddr 'tan 'reverse 'cddr 'append 'vector? 'list? 'exp 'acos 'asin 'symbol? 'char-numeric? 'string-ci=?
-			  'char-downcase 'acosh 'vector-length 'asinh 'format 
+			  'char-downcase 'acosh 'vector-length 'asinh 'format
 			  'make-list 'goto?
 			  ;'sort! ; qsort_r has a memory leak if error raised by comparison function
 			  'atanh 'modulo 'make-polar 'gcd 'angle 'remainder 'quotient 'lcm
@@ -869,7 +870,7 @@
 			  'c-pointer->list 'c-pointer-info 'c-pointer-type 'c-pointer-weak1 'c-pointer-weak2
 			  ;'show-profile
 
-			  'make-hook
+			  ;'make-hook ; can get #=1(1 . #1#) as arglist!
 			  'let 'let* 'letrec 'letrec*
 			  ;'lambda 'lambda*  ; these cause built-ins to become locals if with-method=#f?
 			  ;'macro 'macro* 'bacro 'bacro* ; -- same as lambda above
@@ -949,7 +950,7 @@
 			  '=>
 
 			  'constant?
-			  '*unbound-variable-hook* '*load-hook* '*rootlet-redefinition-hook* '*missing-close-paren-hook* 
+			  '*unbound-variable-hook* '*load-hook* '*rootlet-redefinition-hook* '*missing-close-paren-hook*
 			  '*read-error-hook*
 			  '*after-gc-hook*
 			  '*autoload*
@@ -961,7 +962,7 @@
 			  'cyclic-sequences 'let->list
 
 			  'setter 'int-vector?
-			  'int-vector-set! 'c-object? 'c-object-type 'proper-list? 
+			  'int-vector-set! 'c-object? 'c-object-type 'proper-list?
 			  'symbol->dynamic-value
 			  'vector-append
 			  'flush-output-port 'c-pointer 'make-float-vector
@@ -1032,7 +1033,7 @@
 			  'gb1 'gb2 'gb3
 			  'cf00 'c-function-with-values 'c-macro-with-values 'safe-c-function-with-2-values
 
-			  'bignum 'symbol 'count-if ;'pretty-print 
+			  'bignum 'symbol 'count-if ;'pretty-print
 			  'tree-member 'funclet? 'bignum? 'copy-tree
 			  ;'dynamic-unwind ; many swaps that are probably confused
                           ;'function-open-output 'function-open-input 'function-get-output 'function-close-output ;see s7test, not set up for t725
@@ -1065,7 +1066,7 @@
 		    "(dilambda (lambda args args) (lambda args args))" "(dilambda (lambda* (a b) a) (lambda* (a b c) c))"
 		    "((lambda (a) (+ a 1)) 2)" "((lambda* ((a 1)) (+ a 1)) 1)" "(lambda (a) (values a (+ a 1)))" "((lambda (a) (values a (+ a 1))) 2)"
 		    "(lambda a (copy a))" "(lambda (a . b) (cons a b))" "(lambda* (a . b) (cons a b))" "(lambda (a b . c) (list a b c))"
-		    "(define-macro (_m1_ a) `(+ ,a 1))" "(define-bacro (_b1_ a) `(* ,a 2))" 
+		    "(define-macro (_m1_ a) `(+ ,a 1))" "(define-bacro (_b1_ a) `(* ,a 2))"
 		    "(macro (x) (let ((g (gensym))) (let ((,g ,x)) `(values g g))))"
 		    "((dilambda (lambda () 3) (lambda (x) x)))"
 		    "(macro (a) `(+ ,a 1))" "(bacro (a) `(* ,a 2))" "(macro* (a (b 1)) `(+ ,a ,b))" "(bacro* (a (b 2)) `(* ,a ,b))"
@@ -1100,7 +1101,8 @@
 		    "(inlet 'integer? (lambda (f) #f))" "(inlet 'a 1)"
 		    "(openlet (inlet 'abs (lambda (x) (if (real? x) (if (< x 0.0) (- x) x) (error 'wrong-type-arg \"not a real\")))))"
 		    "(openlet (inlet 'zero? (lambda (x) (if (number? x) (= x 0.0) (error 'wrong-type-arg \"not a number\")))))"
-		    "(inlet 'a (inlet 'b 1))"
+		    "(inlet 'a (inlet 'b 1))" "(if (integer? (with-let ilt (abs -1))) (error 'oops \"oops ilt\"))"
+		    "(L0 'a)" "(L0 :a)" "(let-ref L0 (keyword->symbol :a))" "(let-ref L0 :a)"
 		    "'(15 26 . 36)"
 		    ;" . " ; -- read-errors
 		    "((i 0 (+ i 1)))" "(= i 2)" "(zero? i)" "((null? i) i)"
@@ -1271,7 +1273,7 @@
 		    "(make-vector 3 #f (let ((calls 0)) (lambda (x) (set! calls (+ calls 1)) (= calls 1))))" ; 2 calls = error I hope
 
 		    "(immutable! #(1 2))" "(immutable! #r(1 2))" "(immutable! \"asdf\")" "(immutable! '(1 2))" "(immutable! (hash-table 'a 1))"
-		    ;"(immutable! 'x)" 
+		    ;"(immutable! 'x)"
 		    "(immutable! 'asdf)"
 		    "(lambda (x) (fill! (copy x) 0))"
 
@@ -1617,7 +1619,7 @@
 
       (let ((tree (catch #t
 		    (lambda () ; try to catch read errors
-		      (eval-string (string-append "'" str))) 
+		      (eval-string (string-append "'" str)))
 		    ;;(with-input-from-string str read) -- causes missing close paren troubles with eval-time reader-cond (read error not caught)
 		    (lambda (t i)
 		      ()))))
@@ -1648,7 +1650,7 @@
 				      (eq? val2 'error)
 				      (eq? val3 'error)
 				      (eq? val4 'error))
-				  (format #t "    from same-type type-eqv: ~S: ~S~%" 
+				  (format #t "    from same-type type-eqv: ~S: ~S~%"
 					  error-type
 					  (if (pair? error-info)
 					      (catch #t
@@ -1901,7 +1903,7 @@
 	(when (= m 100000)
 	  (set! m 0)
 	  (set! n (+ n 1))
-	  (when (= n 8) 
+	  (when (= n 8)
 	    (set! n 0)
 	    (format *stderr* " ~A " (daytime)))
 	  (format *stderr* "~A" (vector-ref dots n)))

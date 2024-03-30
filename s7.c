@@ -8489,8 +8489,9 @@ s7_pointer s7_gc_unprotect_via_stack(s7_scheme *sc, s7_pointer x)
 #endif
 
 #define gc_protect_via_stack(Sc, Obj) push_stack_no_code(Sc, OP_GC_PROTECT, Obj)
-#define gc_protect_2_via_stack(Sc, X, Y) do {gc_protect_via_stack(Sc, X); stack_protected2(Sc) = Y;} while (0) /* often X and Y are fx_calls, so push X, then set Y */
-/* #define gc_protect_3_via_stack(Sc, X, Y, Z) do {gc_protect_via_stack(Sc, X); stack_protected2(Sc) = Y; stack_protected3(sc) = Z;} while (0) */
+#define gc_protect_via_stack_no_let(Sc, Obj) push_stack_no_let_no_code(Sc, OP_GC_PROTECT, Obj)
+#define gc_protect_2_via_stack(Sc, X, Y) do {gc_protect_via_stack(Sc, X); set_stack_protected2(Sc, Y);} while (0) /* often X and Y are fx_calls, so push X, then set Y */
+#define gc_protect_2_via_stack_no_let(Sc, X, Y) do {push_stack_no_let_no_code(Sc, OP_GC_PROTECT, X); set_stack_protected2(Sc, Y);} while (0)
 
 
 /* -------------------------------- symbols -------------------------------- */
@@ -34699,7 +34700,7 @@ static void write_closure_readably(s7_scheme *sc, s7_pointer obj, s7_pointer por
 	  return;
 	}
       if ((!ci) && (is_pair(arglist)))
-	{ /* (format #f "~W" (make-hook (cons 'ho (list (values (list (let ((<1> (hash-table))) (set! (<1> 'a) <1>) <1>))))))) -- yow! */
+	{ /* (format #f "~W" (make-hook (let ((cp (list 1))) (set-cdr! cp cp) (list 'quote cp)))) */
 	  shared_info_t *new_ci = make_shared_info(sc);
 	  clear_shared_info(new_ci);
 	  if (collect_shared_info(sc, new_ci, arglist, false))
@@ -63899,7 +63900,7 @@ static s7_pointer opt_p_pp_ff(opt_info *o)
 {
   s7_scheme *sc = o->sc;
   s7_pointer result;
-  gc_protect_2_via_stack(sc, o->v[11].fp(o->v[10].o1), o->v[9].fp(o->v[8].o1)); /* we do need to protect both */
+  gc_protect_2_via_stack_no_let(sc, o->v[11].fp(o->v[10].o1), o->v[9].fp(o->v[8].o1)); /* we do need to protect both */
   result = o->v[3].p_pp_f(sc, stack_protected1(sc), stack_protected2(sc));
   unstack_gc_protect(sc);
   return(result);
@@ -63919,11 +63920,11 @@ static s7_pointer opt_p_pp_ff_add_mul_mul_1(opt_info *o, bool add_case) /* (+|- 
       f4 = o2->v[5].fp(o2->v[4].o1);
       if (is_t_real(f4))
 	return(make_real(sc, (add_case) ? ((real(s1) * r2) + (real(s3) * real(f4))) : ((real(s1) * r2) - (real(s3) * real(f4)))));
-      gc_protect_via_stack(sc, f2);
+      gc_protect_via_stack_no_let(sc, f2);
     }
   else
     {
-      gc_protect_via_stack(sc, f2);
+      gc_protect_via_stack_no_let(sc, f2);
       f4 = o2->v[5].fp(o2->v[4].o1);
     }
   set_stack_protected2(sc, f4);
@@ -64134,7 +64135,7 @@ static s7_pointer opt_p_call_ff(opt_info *o)
 {
   s7_pointer po2;
   s7_scheme *sc = o->sc;
-  gc_protect_via_stack(sc, o->v[11].fp(o->v[10].o1));
+  gc_protect_via_stack_no_let(sc, o->v[11].fp(o->v[10].o1));
   po2 = o->v[9].fp(o->v[8].o1);
   po2 = o->v[3].call(sc, set_plist_2(sc, stack_protected1(sc), po2));
   unstack_gc_protect(sc);
@@ -64227,7 +64228,7 @@ static bool p_call_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_poi
 	      sc->pc = pstart;
 	      return_false(sc, car_x);
 	    }
-	  if (is_code_constant(sc, arg2))
+	  if ((!is_pair(arg2)) || (is_proper_quote(sc, arg2))) /* (char-ci<? (null? i) (quote . let)) t101-43.scm */
 	    {
 	      opc->v[0].fp = opt_p_call_fc;
 	      opc->v[2].p = (is_pair(arg2)) ? cadr(arg2) : arg2;
@@ -64647,7 +64648,7 @@ static s7_pointer opt_p_ppp_sff(opt_info *o)
 {
   s7_pointer res;
   s7_scheme *sc = o->sc;
-  gc_protect_2_via_stack(sc, T_Ext(o->v[11].fp(o->v[10].o1)), T_Ext(o->v[9].fp(o->v[8].o1)));
+  gc_protect_2_via_stack_no_let(sc, T_Ext(o->v[11].fp(o->v[10].o1)), T_Ext(o->v[9].fp(o->v[8].o1)));
   res = o->v[3].p_ppp_f(o->sc, slot_value(o->v[1].p), stack_protected1(sc), stack_protected2(sc));
   unstack_gc_protect(sc);
   return(res);
@@ -64657,7 +64658,7 @@ static s7_pointer opt_p_ppp_fff(opt_info *o)
 {
   s7_pointer res;
   s7_scheme *sc = o->sc;
-  gc_protect_2_via_stack(sc, T_Ext(o->v[11].fp(o->v[10].o1)), T_Ext(o->v[9].fp(o->v[8].o1)));
+  gc_protect_2_via_stack_no_let(sc, T_Ext(o->v[11].fp(o->v[10].o1)), T_Ext(o->v[9].fp(o->v[8].o1)));
   res = o->v[3].p_ppp_f(sc, stack_protected1(sc), stack_protected2(sc), o->v[5].fp(o->v[4].o1));
   unstack_gc_protect(sc);
   return(res);
@@ -64899,7 +64900,7 @@ static s7_pointer opt_p_call_ppp(opt_info *o)
 {
   s7_pointer res;
   s7_scheme *sc = o->sc;
-  gc_protect_2_via_stack(sc, o->v[4].fp(o->v[3].o1), o->v[6].fp(o->v[5].o1));
+  gc_protect_2_via_stack_no_let(sc, o->v[4].fp(o->v[3].o1), o->v[6].fp(o->v[5].o1));
   res = o->v[11].fp(o->v[10].o1); /* not combinable into next */
   res = o->v[2].call(sc, set_plist_3(sc, stack_protected1(sc), stack_protected2(sc), res));
   unstack_gc_protect(sc);
@@ -65019,7 +65020,7 @@ static s7_pointer opt_p_call_any(opt_info *o)
   s7_scheme *sc = o->sc;
   s7_pointer val = safe_list_if_possible(sc, o->v[1].i);
   s7_pointer arg = val;
-  if (in_heap(val)) gc_protect_via_stack(sc, val);
+  if (in_heap(val)) gc_protect_via_stack_no_let(sc, val);
   for (s7_int i = 0; i < o->v[1].i; i++, arg = cdr(arg))
     {
       opt_info *o1 = o->v[i + P_CALL_O1].o1;
@@ -89955,8 +89956,6 @@ static void op_apply_sl(s7_scheme *sc)
 
 static bool op_pair_pair(s7_scheme *sc)
 {
-  /* fprintf(stderr, "%s[%d]: %s\n", __func__, __LINE__, display(sc->code)); */
-  if ((S7_DEBUGGING) && (!is_pair(car(sc->code)))) fprintf(stderr, "%s[%d] unexpected trailer: %s\n", __func__, __LINE__, display(sc->code));
   if (sc->stack_end >= (sc->stack_resize_trigger - 8))
     check_for_cyclic_code(sc, sc->code);       /* calls resize_stack */
   push_stack_no_args_direct(sc, OP_EVAL_ARGS); /* eval args goes immediately to cdr(sc->code) */
@@ -89968,7 +89967,6 @@ static bool op_pair_pair(s7_scheme *sc)
 
 static bool op_pair_sym(s7_scheme *sc)
 {
-  if ((S7_DEBUGGING) && (!is_symbol(car(sc->code)))) fprintf(stderr, "%s[%d] unexpected trailer: %s\n", __func__, __LINE__, display(sc->code));
   sc->value = lookup_global(sc, car(sc->code));
   return(true);
 }
@@ -98378,47 +98376,47 @@ int main(int argc, char **argv)
  * tref      1081    691    687    463    459    464    410
  * index            1026   1016    973    967    972    973
  * tmock            1177   1165   1057   1019   1032   1031
- * tvect     3408   2519   2464   1772   1669   1497   1452
- * tauto                          2562   2048   1729   1704
- * texit     1884   1930   1950   1778   1741   1770   1771
- * s7test           1873   1831   1818   1829   1830   1855
+ * tvect     3408   2519   2464   1772   1669   1497   1454
+ * tauto                          2562   2048   1729   1707
+ * texit     1884   1930   1950   1778   1741   1770   1774
+ * s7test           1873   1831   1818   1829   1830   1859
  * lt        2222   2187   2172   2150   2185   1950   1950
- * thook     7651                 2590   2030   2046   2008
- * dup              3805   3788   2492   2239   2097   2034
- * tcopy            8035   5546   2539   2375   2386   2386
- * tread            2440   2421   2419   2408   2405   2259
+ * thook     7651                 2590   2030   2046   2012
+ * dup              3805   3788   2492   2239   2097   2029
+ * tcopy            8035   5546   2539   2375   2386   2387
+ * tread            2440   2421   2419   2408   2405   2256
  * titer     3657   2865   2842   2641   2509   2449   2446
  * trclo     8031   2735   2574   2454   2445   2449   2470
  * tload                          3046   2404   2566   2538
- * fbench    2933   2688   2583   2460   2430   2478   2557
- * tmat             3065   3042   2524   2578   2590   2570
+ * fbench    2933   2688   2583   2460   2430   2478   2562
+ * tmat             3065   3042   2524   2578   2590   2586
  * tsort     3683   3105   3104   2856   2804   2858   2858
- * tobj             4016   3970   3828   3577   3508   3515
+ * tobj             4016   3970   3828   3577   3508   3519
  * teq              4068   4045   3536   3486   3544   3527
  * tio              3816   3752   3683   3620   3583   3601
- * tmac             3950   3873   3033   3677   3677   3680
+ * tmac             3950   3873   3033   3677   3677   3686
  * tclo      6362   4787   4735   4390   4384   4474   4339
  * tcase            4960   4793   4439   4430   4439   4443
  * tlet      9166   7775   5640   4450   4427   4457   4470
- * tfft             7820   7729   4755   4476   4536   4543
+ * tfft             7820   7729   4755   4476   4536   4546
  * tmap             8869   8774   4489   4541   4586   4592
- * tstar            6139   5923   5519   4449   4550   4570
- * tshoot           5525   5447   5183   5055   5034   5031
- * tform            5357   5348   5307   5316   5084   5091
- * tstr      10.0   6880   6342   5488   5162   5180   5197
- * tnum             6348   6013   5433   5396   5409   5423
+ * tstar            6139   5923   5519   4449   4550   4580
+ * tshoot           5525   5447   5183   5055   5034   5034
+ * tform            5357   5348   5307   5316   5084   5099
+ * tstr      10.0   6880   6342   5488   5162   5180   5209
+ * tnum             6348   6013   5433   5396   5409   5432
  * tgsl             8485   7802   6373   6282   6208   6182
- * tari      15.0   13.0   12.7   6827   6543   6278   6278
- * tlist     9219   7896   7546   6558   6240   6300   6298
- * tset                                  6260   6364   6389
- * trec      19.5   6936   6922   6521   6588   6583   6583
- * tleft     11.1   10.4   10.2   7657   7479   7627   7614
+ * tari      15.0   13.0   12.7   6827   6543   6278   6274
+ * tlist     9219   7896   7546   6558   6240   6300   6311
+ * tset                                  6260   6364   6395
+ * trec      19.5   6936   6922   6521   6588   6583   6584
+ * tleft     11.1   10.4   10.2   7657   7479   7627   7617
  * tmisc                                 8142   7631   7674
- * tlamb                                 8003   7941   7936
- * tgc              11.9   11.1   8177   7857   7986   8005
- * thash            11.8   11.7   9734   9479   9526   9260
- * cb        12.9   11.2   11.0   9658   9564   9609   9628
- * tmap-hash                           1671.0 1467.0   10.4
+ * tlamb                                 8003   7941   7950
+ * tgc              11.9   11.1   8177   7857   7986   8014
+ * thash            11.8   11.7   9734   9479   9526   9259
+ * cb        12.9   11.2   11.0   9658   9564   9609   9645
+ * tmap-hash                           1671.0 1467.0   10.3
  * tmv              16.0   15.4   14.7   14.5   14.4   11.9
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3
  * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1
@@ -98432,5 +98430,4 @@ int main(int argc, char **argv)
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * (define print-length (list 1 2)) (define (f) (with-let *s7* (+ print-length 1))) (display (f)) (newline) -- need a placeholder-let (or actual let) for *s7*?
- * pair_to_port problem, t_pair op_pair*
  */
