@@ -32,7 +32,7 @@
 	 (format p "(load \"s7test.scm\")~%(exit)~%")))
      (format *stderr* "~%~NC~%test: ~S~%" 80 #\- test-case)
      (system (string-append "./repl " aux-file))))
- (list 
+ (list
   "`(ok? ',tst (lambda () (eval ',tst)) ,expected)"
   "`(ok? ',tst (lambda () ,tst) ,expected)"
   "`(ok? ',tst (#_let () (define (_s7_) ,tst)) ,expected)"
@@ -113,7 +113,7 @@
 (define-macro (test tst expected)
   (let ((_call_ (gensym))
 	(_caller_ (gensym)))
-    `(ok? ',tst 
+    `(ok? ',tst
 	  (lambda ()
 	    (define (,_caller_) (,_call_ ,tst))
 	    (define (,_call_ x) x)
@@ -124,14 +124,14 @@
 (define-macro (num-test tst expected)
   (let ((_call_ (gensym))
 	(_caller_ (gensym)))
-    `(nok? ',tst 
+    `(nok? ',tst
 	  (lambda ()
 	    (define (,_caller_) (,_call_ ,tst))
 	    (define (,_call_ x) x)
 	    (,_caller_)
 	    (,_caller_))
 	  ,expected)))
-  
+
 (load "s7test.scm")
 |#
 
@@ -149,7 +149,7 @@
 	      (system "gcc -o ffitest ffitest.c -g -Wall s7.o -lm -I.")
 	      (system "ffitest"))
 	    )))
-    
+
 
 ;(format *stderr* "~%~NC lint ~NC~%" 20 #\- 20 #\-)
 ;(catch #t (lambda () (lint "snd-test.scm" #f)) (lambda (type info) (apply format #t info)))

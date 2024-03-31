@@ -8363,8 +8363,9 @@ static void unstack_1(s7_scheme *sc, opcode_t op, const char *func, int32_t line
     {
       fprintf(stderr, "%s%s[%d]: popped %s? (expected %s)%s\n", bold_text, func, line, op_names[(opcode_t)T_Op(stack_end_op(sc))], op_names[op], unbold_text);
       /* "popped apply" means we called something that went to eval+apply when we thought it was a safe function */
-      fprintf(stderr, "    code: %s, args: %s\n", display(sc->code), display(sc->args));
-      fprintf(stderr, "    cur_code: %s, estr: %s\n", display(current_code(sc)), display(s7_name_to_value(sc, "estr")));
+      fprintf(stderr, "    code: %s\n    args: %s\n", display(sc->code), display(sc->args));
+      fprintf(stderr, "    cur_code: %s\n    estr: %s\n", display(current_code(sc)), display(s7_name_to_value(sc, "estr")));
+      s7_show_stack(sc);
       if (sc->stop_at_error) abort();
     }
 }
@@ -9370,12 +9371,6 @@ static void slot_set_value_with_hook_1(s7_scheme *sc, s7_pointer slot, s7_pointe
       (value != slot_value(slot)))
     s7_call(sc, sc->rootlet_redefinition_hook, set_plist_2(sc, symbol, value));
   slot_set_value(slot, value);
-
-  if ((S7_DEBUGGING) && (is_pair(value)) && (car(value) == slot_symbol(slot)) && (symbol == make_symbol(sc, "x", 1)))
-    {
-      fprintf(stderr, "x set to (x...), estr: %s\n", display(s7_name_to_value(sc, "estr")));
-      if (sc->stop_at_error) abort();
-    }
 }
 
 static void remove_function_from_heap(s7_scheme *sc, s7_pointer value); /* calls remove_let_from_heap */
@@ -9420,9 +9415,6 @@ static void remove_function_from_heap(s7_scheme *sc, s7_pointer value)
 
 s7_pointer s7_make_slot(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7_pointer value)
 {
-  /* if ((S7_DEBUGGING) && (!is_let(let))) {fprintf(stderr, "s7_make_slot let: %s\n", display(let)); abort();} */
-  /* () as let if shadow_rootlet used but unset!?! */
-
   if ((!is_let(let)) ||
       (let == sc->rootlet))
     {
@@ -10994,7 +10986,8 @@ static s7_pointer cur_op_to_caller(s7_scheme *sc, opcode_t op)
     case OP_BACRO:                 return(sc->bacro_symbol);
     case OP_BACRO_STAR:            return(sc->bacro_star_symbol);
     }
-  return(sc->define_macro_symbol);
+  if (S7_DEBUGGING) fprintf(stderr, "%s[%d]: %s?\n", __func__, __LINE__, op_names[op]);
+  return(NULL);
 }
 
 static s7_pointer make_macro(s7_scheme *sc, opcode_t op, bool named)
@@ -28034,8 +28027,6 @@ static s7_pointer g_string_1(s7_scheme *sc, s7_pointer args, s7_pointer sym)
   int32_t i, len;
   s7_pointer x, newstr;
   char *str;
-  /* if (is_null(args)) return(nil_string); */
-  if ((S7_DEBUGGING) && (is_null(args))) fprintf(stderr, "g_string_1 got null?\n");
 
   /* get length for new string and check arg types */
   for (len = 0, x = args; is_not_null(x); len++, x = cdr(x))
@@ -56576,7 +56567,7 @@ static s7_pointer fx_c_opaaq(s7_scheme *sc, s7_pointer arg)
   set_car(sc->t2_2, fx_call(sc, cddr(p)));
   set_car(sc->t2_1, stack_protected1(sc));
   res = fn_proc(p)(sc, sc->t2_1);
-  stack_protected2(sc) = res; /* might be a big list etc (see s7test.scm fx_c_opaaq test) */
+  set_stack_protected2(sc, res); /* might be a big list etc (see s7test.scm fx_c_opaaq test) */
   res = fn_proc(arg)(sc, with_list_t1(res));
   unstack_gc_protect(sc);
   return(res);
@@ -79301,7 +79292,6 @@ static void op_finish_expansion(s7_scheme *sc)
     {
       if (stack_top_op(sc) != OP_LOAD_RETURN_IF_EOF) /* latter op if empty expansion at top-level */
 	{
-	  /* if (S7_DEBUGGING) fprintf(stderr, "%s[%d] ", op_names[stack_top_op(sc)], sc->input_port_stack_loc); */
 	  if (stack_top_op(sc) != OP_READ_LIST)      /* OP_EVAL_STRING: (eval-string "(reader-cond...)") where reader-cond returns (values) */
 	    sc->value = sc->F;                       /* (eval-string "") -> #f, was nil_string for awhile */
 	  else set_stack_top_op(sc, OP_READ_NEXT);
@@ -79574,17 +79564,7 @@ static bool op_cond1(s7_scheme *sc)
 	      sc->cur_op = optimize_op(sc->code);
 	      return(true);
 	    }
-#if 0
-	  /* sc->code is () */
-	  if (is_multiple_value(sc->value)) /* this can't happen since splicer returns car now */
-	    {
-	      if (S7_DEBUGGING) fprintf(stderr, "cond1 mv case %s\n", display(sc->value));
-	      sc->value = splice_in_values(sc, multiple_value(sc->value));
-	    }
-	  /* no result clause, so return test, (cond (#t)) -> #t, (cond ((+ 1 2))) -> 3 */
-#else
 	  if ((S7_DEBUGGING) && (is_multiple_value(sc->value))) fprintf(stderr, "cond1 mv case %s\n", display(sc->value));
-#endif
 	  pop_stack(sc);
 	  return(true);
 	}
@@ -79616,15 +79596,7 @@ static bool op_cond1_simple(s7_scheme *sc)
 	  sc->code = T_Lst(cdar(sc->code));
 	  if (is_null(sc->code))
 	    {
-#if 0
-	      if (is_multiple_value(sc->value))
-		{
-		  if (S7_DEBUGGING) fprintf(stderr, "cond1_simple mv case %s\n", display(sc->value));
-		  sc->value = splice_in_values(sc, multiple_value(sc->value));
-		}
-#else
-	  if ((S7_DEBUGGING) && (is_multiple_value(sc->value))) fprintf(stderr, "cond1_simple mv case %s\n", display(sc->value));
-#endif
+	      if ((S7_DEBUGGING) && (is_multiple_value(sc->value))) fprintf(stderr, "cond1_simple mv case %s\n", display(sc->value));
 	      pop_stack(sc);
 	      return(true);
 	    }
@@ -79784,18 +79756,8 @@ static bool op_cond_feed(s7_scheme *sc)
 static void op_cond_feed_1(s7_scheme *sc)
 {
   if ((S7_DEBUGGING) && (is_multiple_value(sc->value))) fprintf(stderr, "%s %s unexpected mv\n", __func__, display(sc->value));
-#if 0
-  if (is_multiple_value(sc->value))
-    {
-      if (S7_DEBUGGING) fprintf(stderr, "%s %s\n", __func__, display(sc->value));
-      sc->code = cons(sc, opt2_lambda(sc->code), multiple_value(sc->value));
-    }
-  else
-#endif
-    {
-      set_curlet(sc, inline_make_let_with_slot(sc, sc->curlet, caadr(opt2_lambda(sc->code)), sc->value));
-      sc->code = caddr(opt2_lambda(sc->code));
-    }
+  set_curlet(sc, inline_make_let_with_slot(sc, sc->curlet, caadr(opt2_lambda(sc->code)), sc->value));
+  sc->code = caddr(opt2_lambda(sc->code));
 }
 
 static bool feed_to(s7_scheme *sc)
@@ -82756,24 +82718,6 @@ static goto_t op_dox(s7_scheme *sc)
 	  } while ((sc->value = endf(sc, endp)) == sc->F);
 	  sc->code = cdr(end);
 	  return(goto_do_end_clauses);
-	}
-
-      /* not fxable body (bodyf nil) but body might be gxable here: is_gxable(body) */
-      if ((has_gx(body)) || (gx_annotate_arg(sc, code, sc->curlet)))
-	{
-	  s7_function f = fx_proc_unchecked(code);
-	  if (S7_DEBUGGING) fprintf(stderr, "%d: %s\n", __LINE__, display(form));
-	  do {
-	    s7_pointer slot1 = slots;
-	    f(sc, body);
-	    do {
-	      if (slot_has_expression(slot1))
-		slot_set_value(slot1, fx_call(sc, slot_expression(slot1)));
-	      slot1 = next_slot(slot1);
-	    } while (tis_slot(slot1));
-	  } while ((sc->value = endf(sc, endp)) == sc->F);
-	  sc->code = cdr(end);
-	  return(goto_do_end_clauses);
 	}}
   else /* more than one expr */
     {
@@ -83357,7 +83301,6 @@ static bool op_simple_do_1(s7_scheme *sc, s7_pointer code)
 	{ /* (do ((j (+ nv k -1) (- j 1))) ((< j k)) (set! (r j) (- (r j) (* (q k) (p2 (- j k)))))) */
 	  /* (do ((__i__ 0 (+ __i__ 1))) ((= __i__ 1) 32.0) (b 0)) and many more, all wrap-int safe I think */
 	  /* splitting out opt_float_any_nv here saves almost nothing */
-	  /* if (S7_DEBUGGING) fprintf(stderr, "%d: %s\n", __LINE__, display(code)); */
 	  for (i = start; i < stop; i++)
 	    {
 	      slot_set_value(ctr_slot, make_integer(sc, i));
@@ -83379,20 +83322,17 @@ static bool op_simple_do_1(s7_scheme *sc, s7_pointer code)
 	  if (!opt_do_copy(sc, o, stop, start + 1))
 	    { /* (do ((i 9 (- i 1))) ((< i 0) v) (vector-set! v i i)) */
 	      s7_pointer (*fp)(opt_info *o) = o->v[0].fp;
-	      /* if (S7_DEBUGGING) fprintf(stderr, "%d: %s\n", __LINE__, display(code)); */
 	      for (i = start; i >= stop; i--)
 		{
 		  slot_set_value(ctr_slot, make_integer(sc, i));
 		  fp(o);
 		}}}
       else /* (do ((i 9 (- i 1))) ((< i 0)) (set! (v i) (delay gen 0.5 i))) */
-	{
-	  /* if (S7_DEBUGGING) fprintf(stderr, "%d: %s\n", __LINE__, display(code)); */
-	  for (i = start; i >= stop; i--)
-	    {
-	      slot_set_value(ctr_slot, make_integer(sc, i));
-	      func(sc);
-	    }}
+	for (i = start; i >= stop; i--)
+	  {
+	    slot_set_value(ctr_slot, make_integer(sc, i));
+	    func(sc);
+	  }
       sc->value = sc->T;
       sc->code = cdadr(code);
       return(true);
@@ -83408,20 +83348,17 @@ static bool op_simple_do_1(s7_scheme *sc, s7_pointer code)
 	  /* (do ((i 0 (+ i 8))) ((= i 64)) (write-byte (logand (ash int (- i)) 255))) */
 	  opt_info *o = sc->opts[0];
 	  s7_pointer (*fp)(opt_info *o) = o->v[0].fp;
-	  /* if (S7_DEBUGGING) fprintf(stderr, "%d: %s\n", __LINE__, display(code)); */
 	  for (i = start; i < stop; i += incr)
 	    {
 	      slot_set_value(ctr_slot, make_integer(sc, i));
 	      fp(o);
 	    }}
       else
-	{
-	  if (S7_DEBUGGING) fprintf(stderr, "%d: %s\n", __LINE__, display(code));
-	  for (i = start; i < stop; i += incr)
-	    {
-	      slot_set_value(ctr_slot, make_integer(sc, i));
-	      func(sc);
-	    }}
+	for (i = start; i < stop; i += incr)
+	  {
+	    slot_set_value(ctr_slot, make_integer(sc, i));
+	    func(sc);
+	  }
       sc->value = sc->T;
       sc->code = cdadr(code);
       return(true);
@@ -83440,7 +83377,6 @@ static bool op_simple_do_1(s7_scheme *sc, s7_pointer code)
 	      s7_pointer (*test_fp)(opt_info *o) = o->v[4].o1->v[O_WRAP].fp;
 	      opt_info *test_o1 = o->v[4].o1;
 	      opt_info *o2 = o->v[6].o1;
-	      /* if (S7_DEBUGGING) fprintf(stderr, "%d: %s\n", __LINE__, display(code)); */
 	      for (s7_int i = start; i <= stop; i++)
 		{
 		  slot_set_value(ctr_slot, make_integer(sc, i));
@@ -98430,4 +98366,5 @@ int main(int argc, char **argv)
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * (define print-length (list 1 2)) (define (f) (with-let *s7* (+ print-length 1))) (display (f)) (newline) -- need a placeholder-let (or actual let) for *s7*?
+ * is gx_annotate worth the bother?
  */
