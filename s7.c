@@ -2723,10 +2723,7 @@ static void init_types(void)
 #define opt1_func_listed(p)            has_high_type_bit(T_Pair(p), T_OPT1_FUNC_LISTED)
 #define set_opt1_func_listed(p)        set_high_type_bit(T_Pair(p), T_OPT1_FUNC_LISTED)
 
-#define T_FULL_HAS_GX                  (1LL << (48 + 10))
-#define T_HAS_GX                       (1 << 10)
-#define has_gx(p)                      has_high_type_bit(T_Pair(p), T_HAS_GX)
-#define set_has_gx(p)                  set_high_type_bit(T_Pair(p), T_HAS_GX)
+/* (1LL << (48 + 10)) was HAS_GX, is now free */
 
 #define T_FULL_UNKNOPT                 (1LL << (48 + 11))
 #define T_UNKNOPT                      (1 << 11)
@@ -4750,7 +4747,7 @@ void s7_show_history(s7_scheme *sc)
 }
 
 #if S7_DEBUGGING
-#define UNUSED_BITS 0xfc00000000c0 /* high 6 bits of optimizer code + high 2 bits of type */
+#define UNUSED_BITS 0x400fc00000000c0 /* high 6 bits of optimizer code + high 2 bits of type + bit 58 (was gx) */
 
 static char *describe_type_bits(s7_scheme *sc, s7_pointer obj)
 {
@@ -4929,8 +4926,7 @@ static char *describe_type_bits(s7_scheme *sc, s7_pointer obj)
 	  ((full_typ & T_FULL_CASE_KEY) != 0) ?  ((is_symbol(obj)) ? " case-key" :
 						  ((is_pair(obj)) ? " opt1-func-listed" :
 						   " ?33?")) : "",
-	  /* bit 34+24 */
-	  ((full_typ & T_FULL_HAS_GX) != 0) ?    ((is_pair(obj)) ? " has-gx" : " ?34?") : "",
+	  /* bit 34+24 free */
 	  /* bit 35+24 */
 	  ((full_typ & T_FULL_UNKNOPT) != 0) ?    ((is_pair(obj)) ? " unknopt" : " ?35?") : "",
 	  /* bit 36+24 */
@@ -5004,7 +5000,6 @@ static bool has_odd_bits(s7_pointer obj)
   if (((full_typ & T_FULL_CASE_KEY) != 0) && (!is_symbol(obj)) && (!is_pair(obj))) return(true);
   if (((full_typ & T_FULL_UNKNOPT) != 0) && (!is_pair(obj))) return(true);
   if (((full_typ & T_FULL_SAFETY_CHECKED) != 0) && (!is_pair(obj))) return(true);
-  if (((full_typ & T_FULL_HAS_GX) != 0) && (!is_pair(obj))) return(true);
   if (((full_typ & T_DONT_EVAL_ARGS) != 0) && (!is_any_macro(obj)) && (!is_syntax(obj))) return(true);
   if (((full_typ & T_CHECKED) != 0) && (!is_slot(obj)) && (!is_pair(obj)) && (!is_symbol(obj))) return(true);
   if (((full_typ & T_SHARED) != 0) && (!t_sequence_p[type(obj)]) && (!t_structure_p[type(obj)]) && (!is_any_closure(obj))) return(true);
@@ -56419,14 +56414,6 @@ fx_c_sa_any(fx_c_sa, s_lookup)
 fx_c_sa_any(fx_c_ta, t_lookup)
 fx_c_sa_any(fx_c_ua, u_lookup)
 
-static s7_pointer fx_c_za(s7_scheme *sc, s7_pointer arg) /* "z"=unsafe_s */
-{
-  s7_pointer val = lookup_checked(sc, cadr(arg)); /* this can call an autoload function that steps on sc->t2_1 */
-  set_car(sc->t2_2, fx_call(sc, opt3_pair(arg)));
-  set_car(sc->t2_1, val);
-  return(fn_proc(arg)(sc, sc->t2_1));
-}
-
 #define fx_c_sa_direct_any(Name, Lookup) \
   static s7_pointer Name(s7_scheme *sc, s7_pointer arg) \
   { \
@@ -57195,17 +57182,6 @@ static bool is_fxable(s7_scheme *sc, s7_pointer p)
   return(is_proper_quote(sc, p));
 }
 
-static bool is_gxable(s7_pointer p)
-{
-  opcode_t op;
-  if (!is_optimized(p)) return(false);
-  op = optimize_op(p);
-  return((is_symbol(car(p))) && (symbol_ctr(car(p)) == 1) &&
-	 (op < FIRST_UNHOPPABLE_OP) &&
-	 (op > OP_GC_PROTECT) &&
-	 (fx_function[op | 1]));
-}
-
 static int32_t fx_count(s7_scheme *sc, s7_pointer x)
 {
   int32_t count = 0;
@@ -57892,8 +57868,6 @@ static s7_function fx_choose(s7_scheme *sc, s7_pointer holder, s7_pointer cur_en
 	  if (fn_proc(arg) == g_multiply_2)       return(fx_multiply_aa);
 	  if (fn_proc(arg) == g_number_to_string) return(fx_number_to_string_aa);
 	  if (fn_proc(arg) == g_cons)             return(fx_cons_aa);
-	  /* we can get here from gx_annotate which does not call fx_tree, where A=fx_unsafe_s */
-	  if (fx_proc(cdr(arg)) == fx_unsafe_s)   return(fx_c_za);
 	  return(fx_c_aa);
 
 	case HOP_SAFE_C_opAAq:
@@ -70951,31 +70925,6 @@ static s7_pointer unbound_variable(s7_scheme *sc, s7_pointer sym)
   return(sc->unbound_variable_symbol);
 }
 
-static bool gx_annotate_arg(s7_scheme *sc, s7_pointer p, s7_pointer e)
-{
-  if (is_gxable(car(p)))
-    {
-      opcode_t old_op = optimize_op(car(p));
-      s7_pointer fxf;
-      set_optimize_op(car(p), old_op + 1);
-      fxf = (s7_pointer)fx_choose(sc, p, e, (is_list(e)) ? pair_symbol_is_safe : let_symbol_is_safe);
-      if (fxf)
-	{
-	  set_has_gx(p);
-	  set_opt2(p, fxf, OPT2_FX);
-	}
-      set_optimize_op(car(p), old_op);
-      return(fxf);
-    }
-  return(false);
-}
-
-static void gx_annotate_args(s7_scheme *sc, s7_pointer args, s7_pointer e)
-{
-  for (s7_pointer p = args; is_pair(p); p = cdr(p))
-    gx_annotate_arg(sc, p, e);
-}
-
 #define choose_c_function(Sc, Expr, Func, Args) set_c_function(Expr, c_function_chooser(Func)(Sc, Func, Args, Expr))
 
 static void fx_annotate_arg(s7_scheme *sc, s7_pointer arg, s7_pointer e)
@@ -71813,11 +71762,7 @@ static opt_t set_any_c_np(s7_scheme *sc, s7_pointer func, s7_pointer expr, s7_po
    *   or use op_stack? error clears this? op-any-c-fp: op_any_c_2p|3p|fp? -- mimic clo_3p|4p?
    */
   for (s7_pointer p = cdr(expr); is_pair(p); p = cdr(p))
-    {
-      set_fx(p, fx_choose(sc, p, e, (is_list(e)) ? pair_symbol_is_safe : let_symbol_is_safe));
-      if (!has_fx(p))
-	gx_annotate_arg(sc, p, e);
-    }
+    set_fx(p, fx_choose(sc, p, e, (is_list(e)) ? pair_symbol_is_safe : let_symbol_is_safe));
   set_opt3_arglen(cdr(expr), num_args); /* for op_unknown_np */
   set_unsafe_optimize_op(expr, op);
   choose_c_function(sc, expr, func, num_args); /* we can use num_args -- mv will redirect to generic call */
@@ -72000,7 +71945,6 @@ static opt_t optimize_func_two_args(s7_scheme *sc, s7_pointer expr, s7_pointer f
 			return(check_c_aa(sc, expr, func, hop, e)); /* AA case */
 		      set_optimize_op(expr, hop + OP_SAFE_C_AP);
 		      fx_annotate_arg(sc, cdr(expr), e);
-		      gx_annotate_arg(sc, cddr(expr), e);
 		      set_opt3_arglen(cdr(expr), 2);
 		    }
 		  else
@@ -72008,11 +71952,8 @@ static opt_t optimize_func_two_args(s7_scheme *sc, s7_pointer expr, s7_pointer f
 		      {
 			set_optimize_op(expr, hop + OP_SAFE_C_PA);
 			fx_annotate_arg(sc, cddr(expr), e);
-			gx_annotate_arg(sc, cdr(expr), e);
 			set_opt3_arglen(cdr(expr), 2);
-		      }
-		    else gx_annotate_args(sc, cdr(expr), e);
-		}
+		      }}
 	      choose_c_function(sc, expr, func, 2); /* this might change the op to safe_c_c, so it has to be last */
 	      return(OPT_T);
 	    }}
@@ -72197,20 +72138,17 @@ static opt_t optimize_func_two_args(s7_scheme *sc, s7_pointer expr, s7_pointer f
 		  set_optimize_op(expr, hop + OP_SAFE_C_AP);
 		  opt_sp_1(sc, c_function_call(func), expr);
 		  fx_annotate_arg(sc, cdr(expr), e);
-		  gx_annotate_arg(sc, cddr(expr), e);
 		}
 	      else
 		if (is_fxable(sc, arg2))
 		  {
 		    set_optimize_op(expr, hop + OP_SAFE_C_PA);
 		    fx_annotate_arg(sc, cddr(expr), e);
-		    gx_annotate_arg(sc, cdr(expr), e);
 		  }
 		else
 		  {
 		    set_optimize_op(expr, hop + OP_SAFE_C_PP);
 		    opt_sp_1(sc, c_function_call(func), expr);
-		    gx_annotate_args(sc, cdr(expr), e);
 		  }
 	      choose_c_function(sc, expr, func, 2);
 	      return(OPT_F);
@@ -89496,23 +89434,12 @@ static inline void op_safe_c_pp(s7_scheme *sc)
 {
   s7_pointer args = cdr(sc->code);
   check_stack_size(sc);
-  /* has_fx check here is slower, we assume car(args) below is a pair (else cp/sp/ap?) */
-  if ((has_gx(args)) && (symbol_ctr(caar(args)) == 1))
-    {
-      sc->args = fx_proc_unchecked(args)(sc, car(args));
-      push_stack_direct(sc, (opcode_t)T_Op(opt1_any(args))); /* args = first value, func(args, value) if no mv */
-      sc->code = cadr(args);
-    }
-  else
-    {
-      push_stack_no_args_direct(sc, OP_SAFE_C_PP_1); /* first arg = p, if mv -> op_safe_c_pp_3 */
-      sc->code = car(args);
-    }
+  push_stack_no_args_direct(sc, OP_SAFE_C_PP_1); /* first arg = p, if mv -> op_safe_c_pp_3 */
+  sc->code = car(args);
 }
 
 static void op_safe_c_pp_1(s7_scheme *sc)
 {
-  /* it is much slower to check has_gx here! */
   push_stack(sc, (opcode_t)T_Op(opt1_any(cdr(sc->code))), sc->value, sc->code); /* args[i.e. sc->value] = first value, func(args, value) if no mv */
   sc->code = caddr(sc->code);
 }
@@ -89612,14 +89539,11 @@ static Inline bool inline_collect_np_args(s7_scheme *sc, opcode_t op, s7_pointer
     if (has_fx(p))
       sc->args = cons(sc, sc->value = fx_call(sc, p), sc->args); /* reversed before apply in OP_ANY_C_NP_1 */
     else
-      if ((has_gx(p)) && (symbol_ctr(caar(p)) == 1))
-	sc->args = cons(sc, sc->value = fx_proc_unchecked(p)(sc, car(p)), sc->args);
-      else
-	{
-	  push_stack(sc, op, sc->args, cdr(p));
-	  sc->code = T_Pair(car(p));
-	  return(true);
-	}
+      {
+	push_stack(sc, op, sc->args, cdr(p));
+	sc->code = T_Pair(car(p));
+	return(true);
+      }
   return(false);
 }
 
@@ -89632,19 +89556,15 @@ static /* inline */ bool op_any_c_np(s7_scheme *sc) /* code: (func . args) where
     if (has_fx(p))
       sc->args = cons(sc, sc->value = fx_call(sc, p), sc->args); /* reversed before apply in OP_ANY_C_NP_1 */
     else
-      if ((has_gx(p)) && (symbol_ctr(caar(p)) == 1))
-	sc->args = cons(sc, sc->value = fx_proc_unchecked(p)(sc, car(p)), sc->args);
-      else
-	{
-	  if (sc->op_stack_now >= sc->op_stack_end)
-	    resize_op_stack(sc);
-	  push_op_stack(sc, sc->code);
-	  check_stack_size(sc);
-	  push_stack(sc, ((intptr_t)((is_pair(cdr(p))) ? OP_ANY_C_NP_1 : OP_ANY_C_NP_2)), sc->args, cdr(p));
-	  sc->code = T_Pair(car(p));
-	  return(true);
-	}
-  /* here fx/gx got all the args */
+      {
+	if (sc->op_stack_now >= sc->op_stack_end)
+	  resize_op_stack(sc);
+	push_op_stack(sc, sc->code);
+	check_stack_size(sc);
+	push_stack(sc, ((intptr_t)((is_pair(cdr(p))) ? OP_ANY_C_NP_1 : OP_ANY_C_NP_2)), sc->args, cdr(p));
+	sc->code = T_Pair(car(p));
+	return(true);
+      }
   sc->args = proper_list_reverse_in_place(sc, sc->args);
   sc->value = fn_proc(sc->code)(sc, sc->args);
   return(false);
@@ -89749,16 +89669,6 @@ static bool op_safe_c_ap(s7_scheme *sc)
 {
   s7_pointer code = cdr(sc->code);
   s7_pointer val = cdr(code);
-  if ((has_gx(val)) && (symbol_ctr(caar(val)) == 1))
-    {
-      val = fx_proc_unchecked(val)(sc, car(val));
-      gc_protect_via_stack(sc, val);
-      set_car(sc->t2_1, fx_call(sc, code));
-      set_car(sc->t2_2, val);
-      unstack_gc_protect(sc);
-      sc->value = fn_proc(sc->code)(sc, sc->t2_1);
-      return(false);
-    }
   check_stack_size(sc);
   sc->args = fx_call(sc, code);
   push_stack_direct(sc, (opcode_t)T_Op(opt1_any(code))); /* safe_c_sp cases, mv->safe_c_sp_mv */
@@ -89769,15 +89679,6 @@ static bool op_safe_c_ap(s7_scheme *sc)
 static bool op_safe_c_pa(s7_scheme *sc)
 {
   s7_pointer args = cdr(sc->code);
-  if ((has_gx(args)) && (symbol_ctr(caar(args)) == 1))
-    {
-      gc_protect_via_stack(sc, fx_proc_unchecked(args)(sc, car(args)));
-      set_car(sc->t2_2, fx_call(sc, cdr(args)));
-      set_car(sc->t2_1, stack_protected1(sc));
-      unstack_gc_protect(sc);
-      sc->value = fn_proc(sc->code)(sc, sc->t2_1);
-      return(false);
-    }
   check_stack_size(sc);
   push_stack_no_args_direct(sc, OP_SAFE_C_PA_1);
   sc->code = car(args);
@@ -91897,7 +91798,6 @@ static bool op_unknown_np(s7_scheme *sc)
 	  {
 	    set_any_c_np(sc, f, code, sc->curlet, 2, OP_SAFE_C_PP);
 	    opt_sp_1(sc, c_function_call(f), code);
-	    gx_annotate_args(sc, cdr(code), sc->curlet);
 	  }
 	else
 	  if ((num_args == 3) &&
@@ -98311,52 +98211,52 @@ int main(int argc, char **argv)
  * tpeak      148    115    114    108    105    102    102
  * tref      1081    691    687    463    459    464    410
  * index            1026   1016    973    967    972    973
- * tmock            1177   1165   1057   1019   1032   1031
+ * tmock            1177   1165   1057   1019   1032   1029
  * tvect     3408   2519   2464   1772   1669   1497   1454
  * tauto                          2562   2048   1729   1707
- * texit     1884   1930   1950   1778   1741   1770   1774
- * s7test           1873   1831   1818   1829   1830   1859
- * lt        2222   2187   2172   2150   2185   1950   1950
- * thook     7651                 2590   2030   2046   2012
- * dup              3805   3788   2492   2239   2097   2029
+ * texit     1884   1930   1950   1778   1741   1770   1769
+ * s7test           1873   1831   1818   1829   1830   1857
+ * lt        2222   2187   2172   2150   2185   1950   1952
+ * thook     7651                 2590   2030   2046   2011
+ * dup              3805   3788   2492   2239   2097   2031
  * tcopy            8035   5546   2539   2375   2386   2387
  * tread            2440   2421   2419   2408   2405   2256
  * titer     3657   2865   2842   2641   2509   2449   2446
  * trclo     8031   2735   2574   2454   2445   2449   2470
- * tload                          3046   2404   2566   2538
+ * tload                          3046   2404   2566   2537
  * fbench    2933   2688   2583   2460   2430   2478   2562
- * tmat             3065   3042   2524   2578   2590   2586
+ * tmat             3065   3042   2524   2578   2590   2578
  * tsort     3683   3105   3104   2856   2804   2858   2858
- * tobj             4016   3970   3828   3577   3508   3519
+ * tobj             4016   3970   3828   3577   3508   3518
  * teq              4068   4045   3536   3486   3544   3527
  * tio              3816   3752   3683   3620   3583   3601
- * tmac             3950   3873   3033   3677   3677   3686
- * tclo      6362   4787   4735   4390   4384   4474   4339
- * tcase            4960   4793   4439   4430   4439   4443
- * tlet      9166   7775   5640   4450   4427   4457   4470
- * tfft             7820   7729   4755   4476   4536   4546
- * tmap             8869   8774   4489   4541   4586   4592
- * tstar            6139   5923   5519   4449   4550   4580
- * tshoot           5525   5447   5183   5055   5034   5034
- * tform            5357   5348   5307   5316   5084   5099
- * tstr      10.0   6880   6342   5488   5162   5180   5209
+ * tmac             3950   3873   3033   3677   3677   3683
+ * tclo      6362   4787   4735   4390   4384   4474   4337
+ * tcase            4960   4793   4439   4430   4439   4446
+ * tlet      9166   7775   5640   4450   4427   4457   4481
+ * tfft             7820   7729   4755   4476   4536   4542
+ * tstar            6139   5923   5519   4449   4550   4578
+ * tmap             8869   8774   4489   4541   4586   4593
+ * tshoot           5525   5447   5183   5055   5034   5052
+ * tform            5357   5348   5307   5316   5084   5087
+ * tstr      10.0   6880   6342   5488   5162   5180   5205
  * tnum             6348   6013   5433   5396   5409   5432
- * tgsl             8485   7802   6373   6282   6208   6182
+ * tgsl             8485   7802   6373   6282   6208   6181
  * tari      15.0   13.0   12.7   6827   6543   6278   6274
- * tlist     9219   7896   7546   6558   6240   6300   6311
- * tset                                  6260   6364   6395
+ * tlist     9219   7896   7546   6558   6240   6300   6305
+ * tset                                  6260   6364   6394
  * trec      19.5   6936   6922   6521   6588   6583   6584
- * tleft     11.1   10.4   10.2   7657   7479   7627   7617
- * tmisc                                 8142   7631   7674
- * tlamb                                 8003   7941   7950
+ * tleft     11.1   10.4   10.2   7657   7479   7627   7612
+ * tmisc                                 8142   7631   7673
+ * tlamb                                 8003   7941   7948
  * tgc              11.9   11.1   8177   7857   7986   8014
- * thash            11.8   11.7   9734   9479   9526   9259
- * cb        12.9   11.2   11.0   9658   9564   9609   9645
+ * thash            11.8   11.7   9734   9479   9526   9254
+ * cb        12.9   11.2   11.0   9658   9564   9609   9641
  * tmap-hash                           1671.0 1467.0   10.3
  * tmv              16.0   15.4   14.7   14.5   14.4   11.9
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3
  * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1
- * timp             25.4   24.4   20.0   19.6   19.7   15.7
+ * timp             25.4   24.4   20.0   19.6   19.7   15.6
  * calls            36.7   37.5   37.0   37.5   37.1   37.1
  * sg                             55.9   55.8   55.4   55.2
  * tbig            177.4  175.8  156.5  148.1  146.2  146.2
@@ -98366,5 +98266,5 @@ int main(int argc, char **argv)
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * (define print-length (list 1 2)) (define (f) (with-let *s7* (+ print-length 1))) (display (f)) (newline) -- need a placeholder-let (or actual let) for *s7*?
- * is gx_annotate worth the bother?
+ * t718
  */
