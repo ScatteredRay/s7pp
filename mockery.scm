@@ -1004,6 +1004,7 @@
 		       'write           (with-mock-wrapper* #_write)
 		       'display         (with-mock-wrapper* #_display)
 		       'fill!           (with-mock-wrapper* #_fill!)
+		       'class-name      '*mock-c-pointer*
 		       )))
 	  
 	  (define* (mock-c-pointer (int 0) type info weak1 weak2)
@@ -1034,6 +1035,7 @@
 		       'format             (with-mock-wrapper* #_format)
 		       'write              (with-mock-wrapper* #_write)
 		       'display            (with-mock-wrapper* #_display)
+		       'class-name         '*mock-random-state*
 		       )))
 	  
 	  (define* (mock-random-state seed (carry 1675393560))
@@ -1065,6 +1067,7 @@
 		       'format            (with-mock-wrapper* #_format)
 		       'write             (with-mock-wrapper* #_write)
 		       'display           (with-mock-wrapper* #_display)
+		       'class-name        '*mock-iterator*
 		       )))
 	  
 	  (define (make-mock-iterator . args)

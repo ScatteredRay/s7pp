@@ -6260,11 +6260,24 @@ static noreturn void syntax_error_with_caller2_nr(s7_scheme *sc, const char *err
   error_nr(sc, sc->syntax_error_symbol, set_elist_4(sc, wrap_string(sc, errmsg, len), caller, name, obj));
 }
 
+static s7_pointer make_symbol(s7_scheme *sc, const char *name, s7_int len); /* calls new_symbol */
+#define make_symbol_with_strlen(Sc, Name) make_symbol(Sc, Name, safe_strlen(Name))
+
+static s7_pointer missing_method_class_name(s7_scheme *sc, s7_pointer obj)
+{
+  s7_pointer class_name = find_method(sc, obj, sc->class_name_symbol);
+  if (is_symbol(class_name)) return(class_name);
+  return(sc->is_openlet_symbol);
+}
+
 static noreturn void missing_method_error_nr(s7_scheme *sc, s7_pointer method, s7_pointer obj)
 {
   error_nr(sc, sc->missing_method_symbol,
-	   set_elist_3(sc, wrap_string(sc, "missing ~S method in ~A", 23), method,
-		       (is_c_object(obj)) ? c_object_scheme_name(sc, obj) : obj));
+	   set_elist_4(sc, wrap_string(sc, "missing ~S method in ~A ~A", 26), method, 
+		       (is_c_object(obj)) ? c_object_scheme_name(sc, obj) : 
+                         (((is_let(obj)) && (is_openlet(obj))) ? missing_method_class_name(sc, obj) : 
+                          s7_make_string_wrapper(sc, type_name(sc, obj, NO_ARTICLE))),
+		       obj));
 }
 
 static noreturn void immutable_object_error_nr(s7_scheme *sc, s7_pointer info) {error_nr(sc, sc->immutable_error_symbol, info);}
@@ -7753,9 +7766,6 @@ static int64_t gc(s7_scheme *sc)
 
 #define GC_RESIZE_HEAP_BY_4_FRACTION 0.67
 /*   .5+.1: test -3?, dup +86, tmap +45, tsort -3, thash +305.  .85+.7: dup -5 */
-
-static s7_pointer make_symbol(s7_scheme *sc, const char *name, s7_int len); /* calls new_symbol */
-#define make_symbol_with_strlen(Sc, Name) make_symbol(Sc, Name, safe_strlen(Name))
 
 #if S7_DEBUGGING
 #define resize_heap_to(Sc, Size) resize_heap_to_1(Sc, Size, __func__, __LINE__)
@@ -89167,10 +89177,10 @@ static bool op_x_sc(s7_scheme *sc, s7_pointer f)
     { /* ((L 'abs) x 0.0001) where 'abs is '* in timp.scm */
       if (!needs_copied_args(f))
 	{ 
-	  sc->value = c_function_call(f)(sc, set_plist_2(sc, lookup(sc, cadr(code)), caddr(code)));
+	  sc->value = c_function_call(f)(sc, set_plist_2(sc, lookup_checked(sc, cadr(code)), caddr(code)));
 	  return(true);
 	}
-      sc->args = list_2(sc, lookup(sc, cadr(code)), caddr(code));
+      sc->args = list_2(sc, lookup_checked(sc, cadr(code)), caddr(code));
       sc->code = f;
       return(false); /* goto APPLY */
     }
@@ -89180,8 +89190,8 @@ static bool op_x_sc(s7_scheme *sc, s7_pointer f)
     sc->args = list_2(sc, cadr(code), caddr(code));
   else
     if (!needs_copied_args(f))
-      sc->args = set_plist_2(sc, lookup(sc, cadr(code)), caddr(code));
-    else sc->args = list_2(sc, lookup(sc, cadr(code)), caddr(code));
+      sc->args = set_plist_2(sc, lookup_checked(sc, cadr(code)), caddr(code));
+    else sc->args = list_2(sc, lookup_checked(sc, cadr(code)), caddr(code));
   sc->code = f;
   return(false); /* goto APPLY */
 }
@@ -98266,5 +98276,6 @@ int main(int argc, char **argv)
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * (define print-length (list 1 2)) (define (f) (with-let *s7* (+ print-length 1))) (display (f)) (newline) -- need a placeholder-let (or actual let) for *s7*?
- * t718
+ * utf-8 string support
+ * use display in pair_to_port if display outer?
  */
