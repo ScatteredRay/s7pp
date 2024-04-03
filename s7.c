@@ -89803,6 +89803,11 @@ static void op_apply_sl(s7_scheme *sc)
 
 static bool op_pair_pair(s7_scheme *sc)
 {
+  if (!is_pair(car(sc->code))) /* (for-each (macro* (a . b) `(cons ,a ,b)) #(0 1) (list `+ -1)) ! */
+    {
+      clear_optimize_op(sc->code);
+      return(false);
+    }
   if (sc->stack_end >= (sc->stack_resize_trigger - 8))
     check_for_cyclic_code(sc, sc->code);       /* calls resize_stack */
   push_stack_no_args_direct(sc, OP_EVAL_ARGS); /* eval args goes immediately to cdr(sc->code) */
@@ -89814,6 +89819,11 @@ static bool op_pair_pair(s7_scheme *sc)
 
 static bool op_pair_sym(s7_scheme *sc)
 {
+  if (!is_symbol(car(sc->code))) /* I can't find a case where this happens, but see above */
+    {
+      clear_optimize_op(sc->code);
+      return(false);
+    }
   sc->value = lookup_global(sc, car(sc->code));
   return(true);
 }
@@ -98276,6 +98286,5 @@ int main(int argc, char **argv)
  * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * (define print-length (list 1 2)) (define (f) (with-let *s7* (+ print-length 1))) (display (f)) (newline) -- need a placeholder-let (or actual let) for *s7*?
- * utf-8 string support
- * use display in pair_to_port if display outer?
+ * utf-8 string support, see smsg example -- display if utf-8 involved (e.g. as string in list) needs to output a consistent utf-8 string
  */

@@ -19,7 +19,7 @@
 
 (if (not (defined? '*libdl*))
     (define *libdl*
-      (with-let (unlet)
+      (with-let (sublet (unlet))
 	(set! *libraries* (cons (cons "libdl.scm" (curlet)) *libraries*))
 	(set! *cload-library-name* "*libdl*")
 	(c-define '((void* dlopen (char* int))

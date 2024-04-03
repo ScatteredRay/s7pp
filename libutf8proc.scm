@@ -19,7 +19,7 @@
 
 (if (not (defined? '*libutf8proc*))
     (define *libutf8proc*
-      (with-let (unlet)
+      (with-let (sublet (unlet))
 	
 	(set! *libraries* (cons (cons "libutf8proc.scm" (curlet)) *libraries*))
 
@@ -65,6 +65,8 @@
 	   (char* utf8proc_errmsg (int))
 	   (int utf8proc_tolower ((utf8proc_int32_t int)))
 	   (int utf8proc_toupper ((utf8proc_int32_t int)))
+	   (int utf8proc_islower (utf8proc_int32_t))
+	   (int utf8proc_isupper (utf8proc_int32_t))
 	   (int utf8proc_charwidth ((utf8proc_int32_t int)))
 	   (int utf8proc_category ((utf8proc_int32_t int)))
 	   (char* utf8proc_category_string ((utf8proc_int32_t int)))

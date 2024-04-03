@@ -19,7 +19,7 @@
 
 (if (not (defined? '*libgdbm*))
     (define *libgdbm*
-      (with-let (unlet)
+      (with-let (sublet (unlet))
 	(set! *libraries* (cons (cons "libgdbm.scm" (curlet)) *libraries*))
 	(set! *cload-library-name* "*libgdbm*")
 	

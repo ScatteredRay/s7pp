@@ -16,7 +16,7 @@
 
 (unless (defined? '*libc*)
     (define *libc*
-      (with-let (unlet)
+      (with-let (sublet (unlet))
 
 	(set! *cload-library-name* "*libc*")
 	(set! *libraries* (cons (cons "libc.scm" (curlet)) *libraries*))

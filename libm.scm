@@ -19,7 +19,7 @@
 
 (unless (defined? '*libm*)
   (define *libm*
-    (with-let (unlet)
+    (with-let (sublet (unlet))
       
       (set! *libraries* (cons (cons "libm.scm" (curlet)) *libraries*))
       (set! *cload-library-name* "*libm*")

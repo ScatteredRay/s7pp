@@ -43,7 +43,7 @@
 
 (unless (defined? '*libgsl*)
   (define *libgsl*
-    (with-let (unlet)
+    (with-let (sublet (unlet))
       (define GSL_REAL real-part)
       (define GSL_IMAG imag-part)
       (define GSL_COMPLEX_EQ equal?)
