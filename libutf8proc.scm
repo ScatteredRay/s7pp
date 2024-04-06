@@ -2,6 +2,8 @@
 ;;;
 ;;; tie the utf8proc library into the *libutf8proc* environment
 
+(set! (*s7* 'print-length) 123123)
+
 (require cload.scm)
 (provide 'libutf8proc.scm)
 
@@ -81,14 +83,14 @@
 	   (in-C "static s7_pointer g_utf8proc_iterate(s7_scheme *sc, s7_pointer args)
                   {
                     utf8proc_int32_t code_ref = 0;
-                    int len, res;
+                    s7_int len, res;
                     char *str;
                     str = (char *)s7_string(s7_car(args));
-                    len = s7_string_length(s7_car(args));
+                    len = s7_integer(s7_cadr(args));
                     res = utf8proc_iterate(str, len, &code_ref);
-                    return(s7_list(sc, 2, s7_make_integer(sc, code_ref), s7_make_integer(sc, res)));
+                    return(s7_cons(sc, s7_make_integer(sc, res), s7_make_integer(sc, code_ref)));
                    }")
-	   (C-function ("utf8proc_iterate" g_utf8proc_iterate "" 1))
+	   (C-function ("utf8proc_iterate" g_utf8proc_iterate "" 2))
 
 	   (in-C "static s7_pointer g_utf8proc_encode_char(s7_scheme *sc, s7_pointer args)
                   {
@@ -160,25 +162,34 @@
                   }")
 	   (C-function ("utf8proc_decompose_char" g_utf8proc_decompose_char "" 3))
 
-	   (in-C "static s7_pointer g_utf8proc_map(s7_scheme *sc, s7_pointer args)
+	   (in-C "static s7_pointer g_utf8proc_map(s7_scheme *sc, s7_pointer args) /* returns (cons string-or-#f size-of-string-or-error-integer) */
                   {
                     s7_pointer opt, str, p;
-                    ssize_t res;
-                    utf8proc_uint8_t *dst;
+                    utf8proc_ssize_t res;
+                    s7_int len;
+                    utf8proc_uint8_t *dst, *new_str;
                     str = s7_car(args);
+                    len = s7_string_length(str);
                     opt = s7_cadr(args);
-                    res = utf8proc_map((utf8proc_uint8_t *)s7_string(str), s7_string_length(str), &dst, (utf8proc_option_t)s7_integer(opt));
-                    if (res < 0) return(s7_make_integer(sc, res));
+                    new_str = (utf8proc_uint8_t *)malloc(len + 1);
+                    memcpy((void *)new_str, (const void *)s7_string(str), len); /* online example uses len+1? */
+                    res = utf8proc_map(new_str, len, &dst, (utf8proc_option_t)s7_integer(opt));
+                    if (res < 0)
+                      {
+                        free(new_str);
+                        return(s7_cons(sc, s7_f(sc), s7_make_integer(sc, res))); /* utf8proc library frees dst in this case */
+                      }
                     p = s7_make_string_with_length(sc, dst, res);
+                    free(new_str);
                     free(dst);
-                    return(p);
+                    return(s7_cons(sc, p, s7_make_integer(sc, res)));
                   }")
 	   (C-function ("utf8proc_map" g_utf8proc_map "" 2))
 
 	   (in-C "static s7_pointer g_utf8proc_decompose(s7_scheme *sc, s7_pointer args)
                   {
                     s7_pointer opt, str;
-                    int len;
+                    s7_int len;
                     ssize_t res;
                     utf8proc_int32_t *dst;
                     str = s7_car(args);
