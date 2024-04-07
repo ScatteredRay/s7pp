@@ -113,7 +113,7 @@
                                             (utf8proc_option_t)s7_integer(options));
                     return(s7_make_integer(sc, res));
                    }")
-	   (C-function ("utf8proc_reencode" g_utf8proc_reencode "" 1))
+	   (C-function ("utf8proc_reencode" g_utf8proc_reencode "" 3))
 	   (in-C "static s7_pointer g_utf8proc_get_property(s7_scheme *sc, s7_pointer args)
                   {
 	            const utf8proc_property_t *info;

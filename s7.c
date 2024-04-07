@@ -14842,7 +14842,7 @@ static void init_ctables(void)
   exponent_table[(uint8_t)'l'] = true; exponent_table[(uint8_t)'L'] = true;
 #endif
   for (int32_t i = 0; i < 32; i++) slashify_table[i] = true;
-  for (int32_t i = 127; i < 160; i++) slashify_table[i] = true;
+  /* for (int32_t i = 127; i < 160; i++) slashify_table[i] = true; */ /* 6-Apr-24 for utf-8, but this has no effect on s7test?? */
   slashify_table[(uint8_t)'\\'] = true;
   slashify_table[(uint8_t)'"'] = true;
   slashify_table[(uint8_t)'\n'] = false;
@@ -98288,5 +98288,5 @@ int main(int argc, char **argv)
  * (define print-length (list 1 2)) (define (f) (with-let *s7* (+ print-length 1))) (display (f)) (newline) -- need a placeholder-let (or actual let) for *s7*?
  *   so (with-let *s7* ...) would make a let with whatever *s7* entries are needed? -> (let ((print-length (*s7* 'print-length))) ...)
  *   currently sc->s7_starlet is a let (make_s7_starlet) using g_s7_let_ref_fallback, so it assumes print-length above is undefined
- * utf-8 string support, see smsg example -- display if utf-8 involved (e.g. as string in list) needs to output a consistent utf-8 string
+ * values with 256 args in t725?
  */
