@@ -34269,30 +34269,9 @@ static void internal_slot_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port
   port_write_character(port)(sc, '>', port);
 }
 
-#if S7_DEBUGGING
-static char *base1 = NULL, *min_char1 = NULL;
-#endif
-
 static void let_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, use_write_t use_write, shared_info_t *ci)
 {
   /* if outer env points to (say) method list, the object needs to specialize object->string itself */
-
-#if S7_DEBUGGING
-  char xx;
-  if (!base1) base1 = &xx;
-  else
-    if (&xx > base1) base1 = &xx;
-    else
-      if ((!min_char1) || (&xx < min_char1))
-	{
-	  min_char1 = &xx;
-	  if ((base1 - min_char1) > 1000000)
-	    {
-	      fprintf(stderr, "let_to_port infinite recursion?\n");
-	      abort();
-	    }}
-#endif
-
   if (has_active_methods(sc, obj))
     {
       s7_pointer print_func = find_method(sc, obj, sc->object_to_string_symbol);
@@ -69753,6 +69732,15 @@ static s7_pointer op_safe_c_ssp_mv(s7_scheme *sc, s7_pointer args) /*sc->code: (
   return(sc->value);
 }
 
+static s7_pointer op_safe_c_3p_mv(s7_scheme *sc, s7_pointer args)
+{
+  s7_pointer res;
+  sc->temp8 = copy_proper_list(sc, args);
+  res = cons(sc, sc->unused, sc->temp8);
+  sc->temp8 = sc->unused;
+  return(res);
+}
+
 static s7_pointer op_c_p_mv(s7_scheme *sc, s7_pointer args) /* (values (values 1 2)) or (apply (values + '(2))) */
 {
   sc->value = args;
@@ -69889,7 +69877,7 @@ static s7_pointer splice_in_values(s7_scheme *sc, s7_pointer args)
     case OP_SAFE_C_3P_1: case OP_SAFE_C_3P_2: case OP_SAFE_C_3P_3:          /* (let ((g-1 (lambda (x a b c) (x (+ a 1) (- b 1) (values c 2))))) (g-1 + 2 3 5)) */
       set_stack_top_op(sc, stack_top_op(sc) +  3); /* change op to parallel mv case */
     case OP_SAFE_C_3P_1_MV: case OP_SAFE_C_3P_2_MV: case OP_SAFE_C_3P_3_MV: /* (list-values '+ 1 (apply-values (list 2 3))) */
-      return(cons(sc, sc->unused, copy_proper_list(sc, args)));
+      return(op_safe_c_3p_mv(sc, args));
 
     case OP_SAFE_CLOSURE_P_1:  case OP_CLOSURE_P_1: case OP_SAFE_CLOSURE_P_A_1:
     case OP_SAFE_CLOSURE_AP_1: case OP_CLOSURE_AP_1:
@@ -98288,5 +98276,4 @@ int main(int argc, char **argv)
  * (define print-length (list 1 2)) (define (f) (with-let *s7* (+ print-length 1))) (display (f)) (newline) -- need a placeholder-let (or actual let) for *s7*?
  *   so (with-let *s7* ...) would make a let with whatever *s7* entries are needed? -> (let ((print-length (*s7* 'print-length))) ...)
  *   currently sc->s7_starlet is a let (make_s7_starlet) using g_s7_let_ref_fallback, so it assumes print-length above is undefined
- * values with 256 args in t725?
  */
