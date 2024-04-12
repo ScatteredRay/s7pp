@@ -5,7 +5,7 @@
 (when (defined? '*libutf8proc*)
   
   (with-let *libutf8proc*
-
+#|
     ;; --------------------------------
     ;; these are from the libutf8proc test directory
     
@@ -62,7 +62,7 @@
 		     (and (>= cat UTF8PROC_CATEGORY_SO) (<= cat UTF8PROC_CATEGORY_ZS))))
 	    (format *stderr* "zero width for symbol-like char ~X~%" c))))
     ;; --------------------------------
-
+|#
     (define s '("élan ‘quote’")) ; example from Norman Gray
     (display s)       ; ("élan â\x80;\x98;quoteâ\x80;\x99;") -- this is due to write's slashify_table choices: now displays ("élan ‘quote’")
     (newline)
@@ -107,6 +107,24 @@
       (format #t "#x~{~X~}" (string->byte-vector (car e1))) ; #xc3a9
       (newline)
       (display (car e1))      ; é
+      (newline))
+
+    (let ((e1 (utf8proc_encode_char #x018b)))
+      (format #t "#x~{~X~}" (string->byte-vector (car e1)))
+      (newline)
+      (display (car e1))      ; latin cap D with top bar
+      (newline))
+
+    (let ((e1 (utf8proc_encode_char #x0238)))
+      (format #t "#x~{~X~}" (string->byte-vector (car e1)))
+      (newline)
+      (display (car e1))      ; latin small db digraph
+      (newline))
+
+    (let ((e1 (utf8proc_encode_char #x1e00)))
+      (format #t "#x~{~X~}" (string->byte-vector (car e1)))
+      (newline)
+      (display (car e1))      ; latin cap A ring below
       (newline))
     
   ))

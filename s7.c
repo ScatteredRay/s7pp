@@ -70952,6 +70952,7 @@ static void fx_annotate_args(s7_scheme *sc, s7_pointer args, s7_pointer e)
 
 static opt_t optimize_thunk(s7_scheme *sc, s7_pointer expr, s7_pointer func, int32_t hop, s7_pointer e)
 {
+  if (SHOW_EVAL_OPS) fprintf(stderr, "  %s[%d]: expr: %s, func: %s, hop: %d, e: %s\n", __func__, __LINE__, display_80(expr), display(func), hop, display_80(e));
   if ((hop != 1) && (is_constant_symbol(sc, car(expr)))) hop = 1;
 
   if ((is_closure(func)) || (is_closure_star(func)))
@@ -73076,8 +73077,14 @@ static bool vars_opt_ok(s7_scheme *sc, s7_pointer vars, int32_t hop, s7_pointer 
 {
   for (s7_pointer p = vars; is_pair(p); p = cdr(p))
     {
-      s7_pointer init = cadar(p);
-      /* if ((is_slot(global_slot(caar(p)))) && (is_c_function(global_value(caar(p))))) return(false); */ /* too draconian (see snd-test) */
+      s7_pointer var = car(p);
+      s7_pointer init = cadr(var);
+      /* if ((is_slot(global_slot(car(var)))) && (is_c_function(global_value(car(var))))) return(false); */ /* too draconian (see snd-test) */
+      if ((is_normal_symbol(car(var))) && (is_global(car(var)))) /* (define (f) (let ((+ -)) (with-let (curlet) (#_integer? (+))))) (f) */
+	{
+	  set_local(car(var));
+	  return(false);
+	}
       if ((is_pair(init)) &&
 	  (!is_checked(init)) &&
 	  (optimize_expression(sc, init, hop, e, false) == OPT_OOPS))
@@ -73578,7 +73585,7 @@ static opt_t optimize_funcs(s7_scheme *sc, s7_pointer expr, s7_pointer func, int
 {
   int32_t pairs = 0, symbols = 0, args = 0, bad_pairs = 0, quotes = 0;
   s7_pointer p;
-  if (SHOW_EVAL_OPS) fprintf(stderr, "  %s[%d]: %s\n", __func__, __LINE__, display_80(expr));
+  if (SHOW_EVAL_OPS) fprintf(stderr, "  %s[%d]: %s, func: %s\n", __func__, __LINE__, display_80(expr), display(func));
   for (p = cdr(expr); is_pair(p); p = cdr(p), args++) /* check the args (the calling expression) */
     {
       s7_pointer car_p = car(p);
