@@ -3667,37 +3667,8 @@ const char *display(s7_pointer obj)
 #define display_80(Obj) string_value(object_to_truncated_string(cur_sc, Obj, 80))
 
 #if S7_DEBUGGING
-#if WITH_ALLOC_COUNTERS
-static int allocs[100000];
-static const char *alloc_funcs[100000];
-static void report_allocs(int lim)
-{
-  int mx = -1, mxline = -1;
-  const char *mxfunc;
-  fprintf(stderr, "\n");
-  for (int j = 0; j < lim; j++)
-    {
-      for (int i = 0; i < 100000; i++)
-	if (allocs[i] > mx)
-	  {
-	    mx = allocs[i];
-	    mxline = i;
-	    mxfunc = alloc_funcs[i];
-	  }
-      if (mx <= 0) break;
-      fprintf(stderr, "%s[%d]: %d\n", mxfunc, mxline, mx);
-      allocs[mxline] = 0;
-      mx = -1;
-    }
-}
-#endif
-
 static void set_type_1(s7_pointer p, uint64_t f, const char *func, int32_t line)
 {
-#if WITH_ALLOC_COUNTERS
-  alloc_funcs[line] = func;
-  allocs[line]++;
-#endif
   p->alloc_line = line;
   p->alloc_func = func;
   p->alloc_type = f;
@@ -29753,9 +29724,10 @@ static s7_pointer g_open_output_file(s7_scheme *sc, s7_pointer args)
 
 
 /* -------------------------------- open-input-string -------------------------------- */
-      /* a version of string ports using a pointer to the current location and a pointer to the end
-       *   (rather than an integer for both, indexing from the base string) was not faster.
-       */
+
+/* a version of string ports using a pointer to the current location and a pointer to the end
+ *   (rather than an integer for both, indexing from the base string) was not faster.
+ */
 
 static const port_functions_t input_string_functions =
   {string_read_char, input_write_char, input_write_string, string_read_semicolon, terminated_string_read_white_space,
@@ -29785,9 +29757,9 @@ static s7_pointer open_input_string(s7_scheme *sc, const char *input_string, s7_
 #if S7_DEBUGGING
   if ((len > 0) && (input_string[len] != '\0'))
     {
-      fprintf(stderr, "%s[%d]: read_white_space string is not terminated: len: %" ld64 ", at end: %c%c, str: %s",
-	      __func__, __LINE__, len, input_string[len - 1], input_string[len], input_string);
-      abort();
+      fprintf(stderr, "%s%s[%d]: input_string is not terminated: len: %" ld64 ", at end: %c%c, str: %s%s\n",
+	      bold_text, __func__, __LINE__, len, input_string[len - 1], input_string[len], input_string, unbold_text);
+      if (sc->stop_at_error) abort();
     }
 #endif
   port_port(x)->pf = &input_string_functions;
@@ -29956,6 +29928,7 @@ static s7_pointer g_get_output_string_uncopied(s7_scheme *sc, s7_pointer args)
       return(method_or_bust_p(sc, p, sc->get_output_string_symbol, wrap_string(sc, "an output string port", 21)));
     }
   check_get_output_string_port(sc, p);
+  port_data(p)[port_position(p)] = '\0'; /* wrap_string can't do this, and (for example) open_input_string wants terminated strings */
   return(wrap_string(sc, (const char *)port_data(p), port_position(p)));
 }
 
@@ -33575,32 +33548,12 @@ static void simple_list_readable_display(s7_scheme *sc, s7_pointer lst, s7_int t
     }
 }
 
-#if S7_DEBUGGING
-static char *base = NULL, *min_char = NULL;
-#endif
-
 static void pair_to_port(s7_scheme *sc, s7_pointer lst, s7_pointer port, use_write_t use_write, shared_info_t *ci)
 {
   s7_pointer x;
   s7_int i, len;
   bool immutable = false;
   s7_int true_len = list_length_with_immutable_check(sc, lst, &immutable);
-
-#if S7_DEBUGGING
-  char xx;
-  if (!base) base = &xx;
-  else
-    if (&xx > base) base = &xx;
-    else
-      if ((!min_char) || (&xx < min_char))
-	{
-	  min_char = &xx;
-	  if ((base - min_char) > 1000000)
-	    {
-	      fprintf(stderr, "pair_to_port infinite recursion?\n");
-	      abort();
-	    }}
-#endif
 
   if (true_len < 0)                    /* a dotted list -- handle cars, then final cdr */
     len = (-true_len + 1);
@@ -53889,10 +53842,6 @@ static s7_pointer g_exit(s7_scheme *sc, s7_pointer args)
   /* calling s7_eval_c_string in an atexit function seems to be problematic -- it works, but args can be changed? */
 
   s7_pointer obj;
-#if WITH_ALLOC_COUNTERS
-  report_allocs(25);
-#endif
-
   /* r7rs.pdf says exit checks the stack for dynamic-winds and runs the "after" functions, if any --
    *   this strikes me as ridiculous -- surely they don't expect me to find all the stacks (other s7's running etc)
    *   and search them for dynamic-winds?  The exit must happen in either the init or body sections -- how can we
@@ -97293,9 +97242,6 @@ s7_scheme *s7_init(void)
       init_catchers();
       init_s7_starlet_immutable_field();
       already_inited = true;
-#if WITH_ALLOC_COUNTERS
-      for (int i = 0; i < 100000; i++) allocs[i] = 0;
-#endif
     }
 #if S7_DEBUGGING
   init_never_unheaped();
