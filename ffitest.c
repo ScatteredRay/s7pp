@@ -375,9 +375,8 @@ static s7_pointer g_blocks_are_equivalent(s7_scheme *sc, s7_pointer args)
     return(s7_make_boolean(sc, true));
   if (s7_is_let(arg1))             /* (block-let (block)) */
     return(s7_make_boolean(sc, false));    /* checked == above */
-  g1 = (g_block *)s7_c_object_value(arg1);
-  if (s7_c_object_type(arg2) != g_block_type)
-    return(s7_make_boolean(sc, false));
+  g1 = (g_block *)s7_c_object_value_checked(arg1, g_block_type);
+  if (!g1) return(s7_f(sc));
   g2 = (g_block *)s7_c_object_value(arg2);
   len = g1->size;
   if (len != g2->size)

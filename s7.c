@@ -7867,7 +7867,8 @@ static s7_pointer g_gc(s7_scheme *sc, s7_pointer args)
 Evaluation produces a surprising amount of garbage, so don't leave the GC off for very long!"
   #define Q_gc s7_make_signature(sc, 2, sc->T, sc->is_boolean_symbol)
 
-  /* g_gc can't be called in a situation where these lists matter (I think...) */
+  /* g_gc can't be called in a situation where these lists matter -- oops, gc called in scheme can be using these! and maybe elist... */
+#if 0
   set_mlist_1(sc, sc->unused);
   set_mlist_2(sc, sc->unused, sc->unused);
   set_plist_1(sc, sc->unused);
@@ -7876,6 +7877,8 @@ Evaluation produces a surprising amount of garbage, so don't leave the GC off fo
   set_car(sc->plist_4, sc->unused);
   set_qlist_2(sc, sc->unused, sc->unused);
   set_car(sc->qlist_3, sc->unused);
+  set_ulist_1(sc, sc->unused, sc->unused);
+#endif
   set_elist_1(sc, sc->unused);
   set_elist_2(sc, sc->unused, sc->unused);
   set_elist_3(sc, sc->unused, sc->unused, sc->unused);
@@ -7883,7 +7886,6 @@ Evaluation produces a surprising amount of garbage, so don't leave the GC off fo
   set_car(sc->elist_5, sc->unused);
   set_car(sc->elist_6, sc->unused);
   set_car(sc->elist_7, sc->unused); /* clist and dlist are weak references */
-  set_ulist_1(sc, sc->unused, sc->unused);
   if (is_not_null(args))
     {
       if (!is_boolean(car(args)))
@@ -10135,6 +10137,8 @@ static s7_pointer g_let_to_list(s7_scheme *sc, s7_pointer args)
       else
 	if (is_c_pointer(let))
 	  let = c_pointer_info(let);
+      if (let == sc->rootlet) /* don't laboriously expand this! */
+	return(cons(sc, let, sc->nil));
       if (!is_let(let))
         sole_arg_wrong_type_error_nr(sc, sc->let_to_list_symbol, let, a_let_string);
     }
@@ -98229,4 +98233,5 @@ int main(int argc, char **argv)
  * (define print-length (list 1 2)) (define (f) (with-let *s7* (+ print-length 1))) (display (f)) (newline) -- need a placeholder-let (or actual let) for *s7*?
  *   so (with-let *s7* ...) would make a let with whatever *s7* entries are needed? -> (let ((print-length (*s7* 'print-length))) ...)
  *   currently sc->s7_starlet is a let (make_s7_starlet) using g_s7_let_ref_fallback, so it assumes print-length above is undefined
+ * c_object_value_checked [remember error check]: s7test/tload.scm + lots of snd cases|clm2xen.c, add cycle-ref/catch? case to s7test
  */
