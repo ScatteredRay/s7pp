@@ -6244,7 +6244,7 @@ static s7_pointer missing_method_class_name(s7_scheme *sc, s7_pointer obj)
 static noreturn void missing_method_error_nr(s7_scheme *sc, s7_pointer method, s7_pointer obj)
 {
   error_nr(sc, sc->missing_method_symbol,
-	   set_elist_4(sc, wrap_string(sc, "missing ~S method in ~A ~A", 26), method,
+	   set_elist_4(sc, wrap_string(sc, "~S method is not defined in ~A ~A", 33), method,
 		       (is_c_object(obj)) ? c_object_scheme_name(sc, obj) :
                          (((is_let(obj)) && (is_openlet(obj))) ? missing_method_class_name(sc, obj) :
                           s7_make_string_wrapper(sc, type_name(sc, obj, NO_ARTICLE))),
@@ -10226,6 +10226,9 @@ static s7_pointer g_let_ref(s7_scheme *sc, s7_pointer args)
 {
   #define H_let_ref "(let-ref let sym) returns the value of the symbol sym in the let"
   #define Q_let_ref s7_make_signature(sc, 3, sc->T, sc->is_let_symbol, sc->is_symbol_symbol)
+  if (!is_pair(cdr(args)))
+    error_nr(sc, sc->syntax_error_symbol,
+	     set_elist_2(sc, wrap_string(sc, "let-ref: symbol missing: ~S", 27), set_ulist_1(sc, sc->let_ref_symbol, args)));
   return(let_ref(sc, car(args), cadr(args)));
 }
 
@@ -51902,24 +51905,21 @@ static s7_pointer g_catch(s7_scheme *sc, s7_pointer args)
   #define Q_catch s7_make_signature(sc, 4, sc->values_symbol, \
                     s7_make_signature(sc, 2, sc->is_symbol_symbol, sc->is_boolean_symbol), \
                     sc->is_procedure_symbol, sc->is_procedure_symbol)
-  s7_pointer p, proc = cadr(args), err = caddr(args);
+  s7_pointer p, proc, err;
 
   /* Guile sets up the catch before looking for arg errors: (catch #t log (lambda args "hiho")) -> "hiho"
    *   which is consistent in that (catch #t (lambda () (log))...) should probably be the same as (catch #t log ...)
    *   but what if the error handler arg is messed up?  Seems weird to handle args in reverse order with an intervening let etc.
+   *   I think log as the second arg is an outer error (we don't wait until the catch is called, then fall into
+   *   the local error handler).
    */
-  /* if (is_let(err)) check_method(sc, err, sc->catch_symbol, args); */ /* causes exit from s7! */
-
+  /* if ((is_let(err)) && (is_openlet(err))) check_method(sc, err, sc->catch_symbol, args); */ /* causes exit from s7! */
   if (SHOW_EVAL_OPS) fprintf(stderr, "  %s[%d]\n", __func__, __LINE__);
-  new_cell(sc, p, T_CATCH);
-  catch_tag(p) = car(args);
-  catch_goto_loc(p) = stack_top(sc);
-  catch_op_loc(p) = (int32_t)(sc->op_stack_now - sc->op_stack);
-  catch_set_handler(p, err);
-  catch_cstack(p) = sc->goto_start;
-  push_stack(sc, (intptr_t)((is_any_macro(err)) ? OP_CATCH_2 : OP_CATCH), args, p);
 
-  /* not sure about these error checks -- they can be omitted */
+  if (!is_pair(cdr(args))) /* (let ((mlet (openlet (inlet 'abs catch)))) (abs mlet)) -- this is a special case, avoid calling this everywhere */
+    error_nr(sc, sc->syntax_error_symbol,
+	     set_elist_2(sc, wrap_string(sc, "catch: function missing: ~S", 27), set_ulist_1(sc, sc->catch_symbol, args)));
+  proc = cadr(args);
   if (!is_thunk(sc, proc))
     {
       if (is_any_procedure(proc))        /* i.e. c_function, lambda, macro, etc */
@@ -51930,12 +51930,24 @@ static s7_pointer g_catch(s7_scheme *sc, s7_pointer args)
 	}
       else wrong_type_error_nr(sc, sc->catch_symbol, 2, proc, a_thunk_string);
     }
+  if (!is_pair(cddr(args))) 
+    error_nr(sc, sc->syntax_error_symbol,
+	     set_elist_2(sc, wrap_string(sc, "catch: error handler missing: ~S", 32), set_ulist_1(sc, sc->catch_symbol, args)));
+  err = caddr(args);
   if (!is_applicable(err))
     wrong_type_error_nr(sc, sc->catch_symbol, 3, err, something_applicable_string);
-
   /* should we check here for (aritable? err 2)?  (catch #t (lambda () 1) "hiho") -> 1
    * currently this is checked only if the error handler is called
    */
+
+  new_cell(sc, p, T_CATCH);
+  catch_tag(p) = car(args);
+  catch_goto_loc(p) = stack_top(sc);
+  catch_op_loc(p) = (int32_t)(sc->op_stack_now - sc->op_stack);
+  catch_set_handler(p, err);
+  catch_cstack(p) = sc->goto_start;
+  push_stack(sc, (intptr_t)((is_any_macro(err)) ? OP_CATCH_2 : OP_CATCH), args, p);
+
   if (is_closure(proc))                        /* not also lambda* here because we need to handle the arg defaults */
     {
       /* is_thunk above checks is_aritable(proc, 0), but if it's (lambda args ...) we have to set up the let with args=()
@@ -52084,7 +52096,7 @@ static s7_pointer cull_history(s7_scheme *sc, s7_pointer code)
 }
 #endif
 
-static s7_pointer g_owlet(s7_scheme *sc, s7_pointer unused_args)
+static s7_pointer g_owlet(s7_scheme *sc, s7_pointer args)
 {
 #if WITH_HISTORY
   #define H_owlet "(owlet) returns the environment at the point of the last error. \
@@ -52098,6 +52110,8 @@ It has the additional local variables: error-type, error-data, error-code, error
 
   s7_pointer e;
   bool old_gc = sc->gc_off;
+  if (is_pair(args)) 
+    error_nr(sc, sc->wrong_number_of_args_symbol, set_elist_3(sc, too_many_arguments_string, sc->owlet_symbol, args));
 #if WITH_HISTORY
   slot_set_value(sc->error_history, cull_history(sc, slot_value(sc->error_history)));
 #endif
@@ -69365,7 +69379,7 @@ a list of the results.  Its arguments can be lists, vectors, strings, hash-table
       if ((!is_pair(f)) &&
 	  (!s7_is_aritable(sc, f, len)))
 	error_nr(sc, sc->wrong_number_of_args_symbol,
-		 set_elist_4(sc, wrap_string(sc, "map ~A: ~D argument~P?", 22), f, wrap_integer(sc, len), wrap_integer(sc, len)));
+		 set_elist_4(sc, wrap_string(sc, "map: ~D argument~P for ~A?", 26), wrap_integer(sc, len), wrap_integer(sc, len), f));
       if (got_nil) return(sc->nil);
       break;
     }
@@ -73030,6 +73044,7 @@ static bool vars_opt_ok(s7_scheme *sc, s7_pointer vars, int32_t hop, s7_pointer 
 {
   for (s7_pointer p = vars; is_pair(p); p = cdr(p))
     {
+#if 0
       s7_pointer var = car(p);
       s7_pointer init = cadr(var);
       /* if ((is_slot(global_slot(car(var)))) && (is_c_function(global_value(car(var))))) return(false); */ /* too draconian (see snd-test) */
@@ -73038,6 +73053,10 @@ static bool vars_opt_ok(s7_scheme *sc, s7_pointer vars, int32_t hop, s7_pointer 
 	  set_local(car(var));
 	  return(false);
 	}
+      /* also too draconian (tall for example) but +/- above is broken now (returns #t) */
+      /* TODO: track where this happens outside the with-let example above [commented out in s7test!] */
+#endif
+      s7_pointer init = cadar(p);
       if ((is_pair(init)) &&
 	  (!is_checked(init)) &&
 	  (optimize_expression(sc, init, hop, e, false) == OPT_OOPS))
@@ -79206,8 +79225,8 @@ static void check_with_let(s7_scheme *sc)
 
   if (!is_pair(form))                            /* (with-let . "hi") */
     syntax_error_nr(sc, "with-let takes an environment argument: ~A", 42, sc->code);
-  if (!is_pair(cdr(form)))                       /* (with-let e) -> an error? */
-    syntax_error_nr(sc, "with-let body is messed up: ~A", 30, sc->code);
+  if (is_null(cdr(form)))                        /* (with-let e) */
+    syntax_error_nr(sc, "with-let has no body: ~A", 24, sc->code);
   if (!s7_is_proper_list(sc, cdr(form)))         /* (with-let e . 3) */
     syntax_error_nr(sc, "stray dot in with-let body: ~S", 30, sc->code);
 
@@ -98192,15 +98211,15 @@ int main(int argc, char **argv)
  * fbench    2933   2688   2583   2460   2430   2478   2562
  * tmat             3065   3042   2524   2578   2590   2578
  * tsort     3683   3105   3104   2856   2804   2858   2858
- * tobj             4016   3970   3828   3577   3508   3518
+ * tobj             4016   3970   3828   3577   3508   3513
  * teq              4068   4045   3536   3486   3544   3527
  * tio              3816   3752   3683   3620   3583   3601
  * tmac             3950   3873   3033   3677   3677   3683
  * tclo      6362   4787   4735   4390   4384   4474   4337
- * tcase            4960   4793   4439   4430   4439   4446
+ * tcase            4960   4793   4439   4430   4439   4429
  * tlet      9166   7775   5640   4450   4427   4457   4481
  * tfft             7820   7729   4755   4476   4536   4542
- * tstar            6139   5923   5519   4449   4550   4578
+ * tstar            6139   5923   5519   4449   4550   4584
  * tmap             8869   8774   4489   4541   4586   4593
  * tshoot           5525   5447   5183   5055   5034   5052
  * tform            5357   5348   5307   5316   5084   5087
@@ -98209,7 +98228,7 @@ int main(int argc, char **argv)
  * tgsl             8485   7802   6373   6282   6208   6181
  * tari      15.0   13.0   12.7   6827   6543   6278   6274
  * tlist     9219   7896   7546   6558   6240   6300   6305
- * tset                                  6260   6364   6394
+ * tset                                  6260   6364   6420
  * trec      19.5   6936   6922   6521   6588   6583   6584
  * tleft     11.1   10.4   10.2   7657   7479   7627   7612
  * tmisc                                 8142   7631   7673
@@ -98233,5 +98252,5 @@ int main(int argc, char **argv)
  * (define print-length (list 1 2)) (define (f) (with-let *s7* (+ print-length 1))) (display (f)) (newline) -- need a placeholder-let (or actual let) for *s7*?
  *   so (with-let *s7* ...) would make a let with whatever *s7* entries are needed? -> (let ((print-length (*s7* 'print-length))) ...)
  *   currently sc->s7_starlet is a let (make_s7_starlet) using g_s7_let_ref_fallback, so it assumes print-length above is undefined
- * c_object_value_checked [remember error check]: s7test/tload.scm + lots of snd cases|clm2xen.c, add cycle-ref/catch? case to s7test
+ * 73050 vars_opt_ok problem
  */

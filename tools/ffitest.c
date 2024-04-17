@@ -2624,7 +2624,7 @@ int main(int argc, char **argv)
   }
 
   {
-    s7_define_function(sc, "wd-test-fn", wd_test_fn, 1, 0, false, "call the inner test");
+    s7_define_function(sc, "wd-test-fn", wd_test_fn, 0, 1, false, "call the inner test");
     s7_define_function(sc, "wd-inner-test", wd_inner_test, 0, 0, false, "throw");
     s7_define_function(sc, "wd-inner-test-handler", wd_inner_test_handler, 2, 0, false, "do nothing");
     s7_eval_c_string(sc, "(wd-test-fn #f)");
