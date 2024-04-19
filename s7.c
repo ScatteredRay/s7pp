@@ -36093,7 +36093,7 @@ static s7_int format_n_arg(s7_scheme *sc, const char *str, format_data_t *fdat, 
   if (n > sc->max_format_length)
     format_error_nr(sc, "~~N value is too big", 20, str, args, fdat);
 
-  fdat->args = cdr(fdat->args);    /* I don't think fdat->ctr should be incremented here -- it's for *print-length* etc */
+  fdat->args = cdr(fdat->args);    /* I don't think fdat->ctr should be incremented here -- it's for (*s7* 'print-length) etc */
   return(n);
 }
 
@@ -60965,19 +60965,18 @@ static s7_double opt_d_dd_ff_o4(opt_info *o)
 
 static s7_double opt_d_dd_ff_mul4(opt_info *o) {return(o->v[2].d_v_f(o->v[1].obj) * o->v[7].d_vd_f(o->v[5].obj, o->v[4].d_v_f(o->v[6].obj)));}
 
-static s7_double opt_d_7pii_sss(opt_info *o);
-static s7_double opt_d_dd_ff_mul_sss(opt_info *o)
+static s7_double opt_d_dd_ff_mul_sss_unchecked(opt_info *o)
 {
   opt_info *o1 = o->v[8].o1;
   s7_pointer v = slot_value(o1->v[1].p);
   s7_int i1 = integer(slot_value(o1->v[2].p));
   s7_int i2 = integer(slot_value(o1->v[3].p));
-  s7_double x1 = float_vector_ref_d_7pii(o1->sc, v, i1, i2);
+  s7_double x1 = float_vector(v, (i1 * vector_offset(v, 0)) + i2);
   o1 = o->v[10].o1;
   v = slot_value(o1->v[1].p);
   i1 = integer(slot_value(o1->v[2].p));                /* in (* (A i j) (B j k)) we could reuse i2->i1 (flipping args below) */
   i2 = integer(slot_value(o1->v[3].p));
-  return(x1 * float_vector_ref_d_7pii(o1->sc, v, i1, i2));
+  return(x1 * float_vector(v, (i1 * vector_offset(v, 0)) + i2));
 }
 
 static bool finish_dd_fso(opt_info *opc, opt_info *o1, opt_info *o2)
@@ -61123,6 +61122,8 @@ static bool d_dd_call_combinable(s7_scheme *sc, opt_info *opc, s7_d_dd_t func)
 }
 
 static s7_double opt_d_7pii_scs(opt_info *o);
+static s7_double opt_d_7pii_sss(opt_info *o);
+static s7_double opt_d_7pii_sss_unchecked(opt_info *o);
 
 static bool d_dd_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer car_x)
 {
@@ -61298,9 +61299,9 @@ static bool d_dd_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 		  if (arg1 == arg2)
 		    opc->v[0].fd = opt_d_dd_ff_square;
 		  else
-		    if ((opc->v[9].fd == opt_d_7pii_sss) && (opc->v[11].fd == opt_d_7pii_sss) &&
-			(o1->v[4].d_7pii_f == float_vector_ref_d_7pii)) /* currently redundant */
-		      opc->v[0].fd = opt_d_dd_ff_mul_sss;
+		    if ((opc->v[9].fd == opt_d_7pii_sss_unchecked) && (opc->v[11].fd == opt_d_7pii_sss_unchecked) &&
+			(o1->v[4].d_7pii_f == float_vector_ref_d_7pii))
+		      opc->v[0].fd = opt_d_dd_ff_mul_sss_unchecked;
 		    else opc->v[0].fd = opt_d_dd_ff_mul;
 		  return_true(sc, car_x);
 		}
@@ -98221,7 +98222,7 @@ int main(int argc, char **argv)
  * trclo     8031   2735   2574   2454   2445   2449   2470
  * tload                          3046   2404   2566   2537
  * fbench    2933   2688   2583   2460   2430   2478   2562
- * tmat             3065   3042   2524   2578   2590   2578
+ * tmat             3065   3042   2524   2578   2590   2578  2519
  * tsort     3683   3105   3104   2856   2804   2858   2858
  * tobj             4016   3970   3828   3577   3508   3513
  * teq              4068   4045   3536   3486   3544   3527
