@@ -4384,12 +4384,14 @@ Other functions:
 <li><em class=def id="portfilename">port-filename</em> and 
     <em class=def id="portlinenumber">port-line-number</em> (input ports)
 <li><em class=def id="portposition">port-position</em> (input port, settable)
+<li><em class=def id="portstring">port-string</em> (string port, settable)
 <li><em class=def id="portfile">port-file</em> 
 </ul>
 
 <p>Use length to get the length in bytes of an input port's file or string.
 port-line-number is settable (for fancy *#readers*). 
 <b>port-position</b> is the position in bytes of the reader in the port. It is settable.
+<b>port-string</b> is the string contents of a string port. It is also settable.
 <b>port-file</b> is intended for use with the *libc* library.  It returns a c-pointer
 containing the FILE* pointer associated with the file port (except in Windows):
 </p>

@@ -152,7 +152,7 @@
 	      zero?
 
 	      c-pointer-weak2 c-pointer-type bignum port-position byte-vector->string c-pointer-info c-pointer->list subvector-vector c-pointer-weak1
-	      funclet? bignum? weak-hash-table? goto? port-file byte? hash-code
+	      funclet? bignum? weak-hash-table? goto? port-file port-string byte? hash-code
 	      dilambda ; these 3 lines added 5-May-22, not getenv directory->list or file-mtime because bools are evaluated if constant args!
 
 	      list-values apply-values unquote))

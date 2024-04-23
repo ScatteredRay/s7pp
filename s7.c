@@ -1318,7 +1318,7 @@ struct s7_scheme {
              object_to_string_symbol, object_to_let_symbol, open_input_file_symbol, open_input_function_symbol, open_input_string_symbol,
              open_output_file_symbol, open_output_function_symbol, open_output_string_symbol, openlet_symbol, outlet_symbol, owlet_symbol,
              pair_filename_symbol, pair_line_number_symbol, peek_char_symbol, pi_symbol, port_filename_symbol, port_line_number_symbol,
-             port_file_symbol, port_position_symbol, procedure_source_symbol, provide_symbol,
+             port_file_symbol, port_position_symbol, port_string_symbol, procedure_source_symbol, provide_symbol,
              qq_append_symbol, quotient_symbol,
              random_state_symbol, random_state_to_list_symbol, random_symbol, rationalize_symbol, read_byte_symbol,
              read_char_symbol, read_line_symbol, read_string_symbol, read_symbol, real_part_symbol, remainder_symbol,
@@ -7582,17 +7582,11 @@ static int64_t gc(s7_scheme *sc)
   gc_mark(car(sc->elist_6));
   gc_mark(car(sc->elist_7));
 
-#if 0
-  if (sc->current_safe_list > 0) /* safe_lists are semipermanent, so we have to mark contents by hand */
-    for (s7_pointer p = sc->safe_lists[sc->current_safe_list]; is_pair(p); p = cdr(p))
-      gc_mark(car(p));
-#else
   for (i = 1; i < NUM_SAFE_LISTS; i++) /* see tgen.scm -- we can't just check sc->current_safe_list */
     if ((is_pair(sc->safe_lists[i])) &&
 	(list_is_in_use(sc->safe_lists[i]))) /* safe_lists are semipermanent, so we have to mark contents by hand */
       for (s7_pointer p = sc->safe_lists[i]; is_pair(p); p = cdr(p))
 	gc_mark(car(p));
-#endif
 
   for (i = 0; i < sc->setters_loc; i++)
     gc_mark(cdr(sc->setters[i]));
@@ -10183,15 +10177,12 @@ static /* inline */ s7_pointer let_ref(s7_scheme *sc, s7_pointer let, s7_pointer
 	return(call_let_ref_fallback(sc, let, symbol));
       wrong_type_error_nr(sc, sc->let_ref_symbol, 2, symbol, a_symbol_string);
     }
-#if 0
-  /* let-ref is currently immutable */
-  if (!is_global(sc->let_ref_symbol)) check_method(sc, let, sc->let_ref_symbol, set_plist_2(sc, let, symbol));
   /* a let-ref method is almost impossible to write without creating an infinite loop:
    *   any reference to the let will probably call let-ref somewhere, calling us again, and looping.
    *   This is not a problem in c-objects and funclets because c-object-ref and funclet-ref don't exist.
    *   After much wasted debugging, I decided to make let-ref and let-set! immutable.
    */
-#endif
+
   if (is_keyword(symbol))
     symbol = keyword_symbol(symbol);
 
@@ -28180,6 +28171,57 @@ static bool is_port_closed_b_7p(s7_scheme *sc, s7_pointer x)
 }
 
 
+/* -------------------------------- port-string -------------------------------- */
+static s7_pointer g_port_string(s7_scheme *sc, s7_pointer args)
+{
+  #define H_port_string "(port-string port) returns the port data as a string"
+  #define Q_port_string s7_make_signature(sc, 2, sc->is_string_symbol, s7_make_signature(sc, 2, sc->is_input_port_symbol, sc->is_output_port_symbol))
+
+  s7_pointer port = car(args);
+  if ((!is_input_port(port)) && (!is_output_port(port)))
+    return(method_or_bust_p(sc, port, sc->port_string_symbol, wrap_string(sc, "a port", 6)));
+  if (!is_string_port(port))
+    wrong_type_error_nr(sc, wrap_string(sc, "port-string", 11), 1, port, wrap_string(sc, "a string port", 13));
+  if ((port_is_closed(port)) || (is_function_port(port)))
+    return(nil_string);
+  if (is_output_port(port))
+    return(s7_output_string(sc, port));
+  return(make_string_with_length(sc, (const char *)port_data(port), port_data_size(port))); /* max_string_length? */
+}
+
+static s7_pointer g_set_port_string(s7_scheme *sc, s7_pointer args)
+{
+  s7_pointer port = car(args), str;
+  s7_int str_len;
+  if ((!is_input_port(port)) && (!is_output_port(port)))
+    wrong_type_error_nr(sc, wrap_string(sc, "set! port-string", 16), 1, port, wrap_string(sc, "an input or output port", 23));
+  if (!is_string_port(port))
+    wrong_type_error_nr(sc, wrap_string(sc, "set! port-string", 16), 1, port, wrap_string(sc, "a string port", 13));
+  if (port_is_closed(port))
+    wrong_type_error_nr(sc, wrap_string(sc, "set! port-string", 16), 1, port, wrap_string(sc, "an open port", 12));
+
+  str = cadr(args);
+  if (!is_string(str))
+    wrong_type_error_nr(sc, wrap_string(sc, "set! port-string", 16), 2, str, sc->type_names[T_STRING]);
+
+  str_len = string_length(str);
+  if (is_input_port(port))
+    {
+      port_data(port) = (uint8_t *)string_value(str);
+      port_data(port)[str_len] = '\0';
+      port_data_size(port) = str_len;
+      port_position(port) = 0;
+      port_set_string_or_function(port, str);
+    }
+  else
+    {
+      /* TODO: output-string-port port-string setter code */
+      /* port_position = str_len, port_data_size needs to be big enough for this string, don't set port_string_or_function */
+    }
+  return(str);
+}
+
+
 /* -------------------------------- port-position -------------------------------- */
 static s7_pointer g_port_position(s7_scheme *sc, s7_pointer args)
 {
@@ -29740,6 +29782,11 @@ static const port_functions_t input_string_functions =
 static s7_pointer open_input_string(s7_scheme *sc, const char *input_string, s7_int len)
 {
   s7_pointer x;
+  /* we could look for free entry in sc->input_string_ports and reuse it, but that takes longer than it saves,
+   *   mainly because ports are marked free by the GC, so free entries happen once-in-a-long-while (while the list grows),
+   *   and free_cell can't be used (freeze_t protecting the block). Perhaps free_frozen_cell (just sets type=T_FREE +(?) clears T_GC_MARKED),
+   *   but how to recognize such cases (see tio.scm).  Maybe a way in scheme to reuse such a port? (set! (port-string p) "asdf")?
+   */
   block_t *b = mallocate_port(sc);
   new_cell(sc, x, T_INPUT_PORT);
   port_block(x) = b;
@@ -29771,7 +29818,7 @@ static s7_pointer open_input_string(s7_scheme *sc, const char *input_string, s7_
   return(x);
 }
 
-static /* inline */ s7_pointer open_and_protect_input_string(s7_scheme *sc, s7_pointer str) /* why inline here? */
+static /* inline */ s7_pointer open_and_protect_input_string(s7_scheme *sc, s7_pointer str)
 {
   s7_pointer p = open_input_string(sc, string_value(str), string_length(str));
   port_set_string_or_function(p, str);
@@ -29866,7 +29913,7 @@ static inline void check_get_output_string_port(s7_scheme *sc, s7_pointer p)
 
 static s7_pointer g_get_output_string(s7_scheme *sc, s7_pointer args)
 {
-  #define H_get_output_string "(get-output-string port clear-port) returns the output accumulated in port.  \
+  #define H_get_output_string "(get-output-string port (clear-port #f)) returns the output accumulated in port.  \
 If the optional 'clear-port' is #t, the current string is flushed."
   #define Q_get_output_string s7_make_signature(sc, 3, sc->is_string_symbol, \
                                  s7_make_signature(sc, 2, sc->is_output_port_symbol, sc->not_symbol), sc->is_boolean_symbol)
@@ -44102,7 +44149,7 @@ static hash_entry_t *hash_string(s7_scheme *sc, s7_pointer table, s7_pointer key
 
       if (string_hash(key) == 0)
 	string_hash(key) = raw_string_hash((const uint8_t *)string_value(key), string_length(key));
-      hash = string_hash(key); /* keep uint64_t (not s7_int from hash_map_string) TODO: can this work?? */
+      hash = string_hash(key); /* keep uint64_t (not s7_int from hash_map_string) */
 
       if (key_len <= 8)
 	{
@@ -51098,7 +51145,7 @@ static s7_pointer port_to_let(s7_scheme *sc, s7_pointer obj) /* note the underba
        *   both valgrind and lib*san complain about the uninitialized data during strlen.
        */
       s7_varlet(sc, let, sc->data_symbol,
-		make_string_with_length(sc, (const char *)port_data(obj), ((port_position(obj)) > 16) ? 16 : port_position(obj)));
+		make_string_with_length(sc, (const char *)port_data(obj), ((port_position(obj)) > 16) ? 16 : port_position(obj))); /* sc->print_length? */
     }
   if (is_function_port(obj))
     s7_varlet(sc, let, sc->function_symbol, port_string_or_function(obj));
@@ -57916,11 +57963,6 @@ static bool o_var_ok(const s7_pointer p, const s7_pointer var1, const s7_pointer
 static bool fx_tree_out(s7_scheme *sc, s7_pointer tree, const s7_pointer var1, const s7_pointer var2, const s7_pointer var3, bool unused_more_vars)
 {
   s7_pointer p = car(tree);
-#if 0
-  if ((s7_tree_memq(sc, var1, p)) || ((var2) && (s7_tree_memq(sc, var2, p))) || ((var3) && (s7_tree_memq(sc, var3, p))))
-    fprintf(stderr, "%s[%d] %s %s %s %d %d: %s\n", __func__, __LINE__, display(var1), (var2) ? display(var2) : "", (var3) ? display(var3) : "",
-	    has_fx(tree), unused_more_vars, display(p));
-#endif
   if (is_symbol(p))
     {
       if ((fx_proc(tree) == fx_s) || (fx_proc(tree) == fx_o))
@@ -57987,11 +58029,6 @@ static bool fx_tree_out(s7_scheme *sc, s7_pointer tree, const s7_pointer var1, c
 		  else
 		    if ((fx_proc(tree) == fx_add_sqr_s) && (cadadr(p) == var1)) return(with_fx(tree, fx_add_sqr_T));
 	      }}
-#if 0
-  if ((s7_tree_memq(sc, var1, p)) || ((var2) && (s7_tree_memq(sc, var2, p))) || ((var3) && (s7_tree_memq(sc, var3, p))))
-    fprintf(stderr, "%s[%d] %s %s %s %d %d: %s %s\n", __func__, __LINE__, display(var1), (var2) ? display(var2) : "", (var3) ? display(var3) : "",
-	    has_fx(tree), unused_more_vars, display(p), op_names[optimize_op(p)]);
-#endif
   return(false);
 }
 
@@ -58010,11 +58047,6 @@ static void fx_tree_outer(s7_scheme *sc, s7_pointer tree, s7_pointer var1, s7_po
 static bool fx_tree_in(s7_scheme *sc, s7_pointer tree, s7_pointer var1, s7_pointer var2, s7_pointer var3, bool more_vars)
 {
   s7_pointer p = car(tree);
-#if 0
-  /* if ((s7_tree_memq(sc, var1, p)) || ((var2) && (s7_tree_memq(sc, var2, p))) || ((var3) && (s7_tree_memq(sc, var3, p)))) */
-    fprintf(stderr, "fx_tree_in %s %s %s %s: %s, treed: %d\n", op_names[optimize_op(p)],
-	    display(var1), (var2) ? display(var2) : "", (var3) ? display(var3) : "", display_truncated(p), is_fx_treed(tree));
-#endif
   if (is_symbol(p))
     {
       if (fx_proc(tree) == fx_s)
@@ -58670,11 +58702,6 @@ static bool fx_tree_in(s7_scheme *sc, s7_pointer tree, s7_pointer var1, s7_point
 	}
       break;
      }
-#if 0
-  if ((var3) && ((s7_tree_memq(sc, var1, car(tree))) || ((var2) && (s7_tree_memq(sc, var2, car(tree)))) || ((var3) && (s7_tree_memq(sc, var3, car(tree))))))
-    fprintf(stderr, "fx_tree_in %s %s %s: %s %s\n",
-	    display(var1), (var2) ? display(var2) : "", (var3) ? display(var3) : "", display_truncated(car(tree)), op_names[optimize_op(car(tree))]);
-#endif
   return(false);
 }
 
@@ -61895,7 +61922,7 @@ static bool d_7piiid_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_poin
       if (is_target_or_its_alias(car(car_x), s_func, sc->float_vector_set_symbol))
 	return(opt_float_vector_set(sc, opc, cadr(car_x), cddr(car_x), cdddr(car_x), cddddr(car_x), cdr(cddddr(car_x))));
     }
-  return(false);
+  return_false(sc, car_x);
 }
 
 static bool opt_float_vector_set(s7_scheme *sc, opt_info *opc, s7_pointer v, s7_pointer indexp1, s7_pointer indexp2, s7_pointer indexp3, s7_pointer valp)
@@ -62796,13 +62823,6 @@ static void check_b_types(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_po
 	  opc->v[0].fb = fb;
 	  opc->v[3].b_pp_f = s7_b_pp_unchecked_function(s_func);
 	}}
-#if 0
-  if ((arg2_type == sc->is_integer_symbol) && s7_b_pi_function(s_func))
-    {
-      /* opc->v[0].fb = opt_b_pi */
-      fprintf(stderr, "  pi: %s\n", display(car_x));
-    }
-#endif
 }
 
 static s7_pointer opt_p_c(opt_info *o);
@@ -63281,6 +63301,9 @@ static s7_pointer opt_p_p_s_iterate(opt_info *o) {return(iterate_p_p(o->sc, slot
 static s7_pointer opt_p_p_f_iterate(opt_info *o) {return(iterate_p_p(o->sc, o->v[4].fp(o->v[3].o1)));}
 static s7_pointer opt_p_p_f_string_to_number(opt_info *o) {return(string_to_number_p_p(o->sc, o->v[4].fp(o->v[3].o1)));}
 static s7_pointer opt_p_p_s_iterate_unchecked(opt_info *o) {s7_pointer iter = slot_value(o->v[1].p); return(iterator_next(iter)(o->sc, iter));}
+/* string_iterate built-in here if iterator_sequence is a string is about 12% faster, but currently we can have an unchecked iterator 
+ *   that changes sequence type (via (set! L1 L2) where L1 and L2 are both iterators)
+ */
 
 static s7_pointer opt_p_pi_ss_vref_direct(opt_info *o);
 static s7_pointer opt_p_pi_ss_fvref_direct(opt_info *o);
@@ -68094,19 +68117,19 @@ s7_float_function s7_float_optimize(s7_scheme *sc, s7_pointer expr)
   sc->pc = 0;
   if ((float_optimize(sc, expr)) && (sc->pc < OPTS_SIZE))
     return(opt_float_any);
-  return(NULL);
+  return(NULL); /* can't return_null(sc, expr) here due to type mismatch (s7_pfunc vs s7_float_function) */
 }
 
 static s7_pfunc s7_optimize_1(s7_scheme *sc, s7_pointer expr, bool nv)
 {
   if (WITH_GMP) return(NULL);
   if ((!is_pair(expr)) || (no_cell_opt(expr)) || (sc->debug != 0))
-    return(NULL);
+    return_null(sc, expr);
   sc->pc = 0;
   if (!no_int_opt(expr))
     {
       if (int_optimize(sc, expr))
-	return((nv) ? opt_int_any_nv : opt_make_int);
+	return_success(sc, (nv) ? opt_int_any_nv : opt_make_int, expr);
       sc->pc = 0;
       set_no_int_opt(expr);
     }
@@ -68130,7 +68153,7 @@ static s7_pfunc s7_optimize_1(s7_scheme *sc, s7_pointer expr, bool nv)
   return_null(sc, expr);
 }
 
-s7_pfunc s7_optimize(s7_scheme *sc, s7_pointer expr)    {return(s7_optimize_1(sc, expr, false));}
+s7_pfunc s7_optimize(s7_scheme *sc, s7_pointer expr)           {return(s7_optimize_1(sc, expr, false));}
 static s7_pfunc s7_optimize_nv(s7_scheme *sc, s7_pointer expr) {return(s7_optimize_1(sc, expr, true));}
 
 static s7_pointer g_optimize(s7_scheme *sc, s7_pointer args)
@@ -73056,7 +73079,9 @@ static bool vars_opt_ok(s7_scheme *sc, s7_pointer vars, int32_t hop, s7_pointer 
 	  set_local(car(var));
 	  return(false);
 	}
-      /* also too draconian (tall for example) but +/- above is broken now (returns #t) */
+      /* also too draconian (tall for example) but +/- above is broken now (returns #t)
+       *   perhaps set_local could be undone upon leaving the let if there's no capture possible
+       */
 #else
       s7_pointer init = cadar(p);
 #endif
@@ -83694,12 +83719,8 @@ static bool opt_dotimes(s7_scheme *sc, s7_pointer code, s7_pointer scc, bool loo
 		      }
 		    if (fd == opt_set_d_d_fm)
 		      clear_mutable_number(slot_value(o->v[1].p));
-		  }
-		else
-		  { /* TODO: remove this dead code (we've hit all cases cell/int/float), maybe leave a warning here? */
-		    if (S7_DEBUGGING) fprintf(stderr, "%s[%d]: other case %d: %s\n", __func__, __LINE__, is_mutable_integer(step_val), display(scc));
-		    while (step < stop) {func(sc); step = ++integer(step_val);}
 		  }}
+	        /* there aren't any other possibilities */
       sc->value = sc->T;
       sc->code = cdadr(scc);
       return(true);
@@ -94073,17 +94094,11 @@ void s7_heap_analyze(s7_scheme *sc)
 	mark_holdee(NULL, opt1_any(s1), "opt1_funcs");
       }}
 
-#if 0
-  if (sc->current_safe_list > 0)
-    for (s7_pointer p = sc->safe_lists[sc->current_safe_list]; is_pair(p); p = cdr(p))
-      mark_holdee(NULL, car(p), "safe_lists");
-#else
   for (int32_t i = 1; i < NUM_SAFE_LISTS; i++)
     if ((is_pair(sc->safe_lists[i])) &&
 	(list_is_in_use(sc->safe_lists[i])))
       for (s7_pointer p = sc->safe_lists[i]; is_pair(p); p = cdr(p))
 	mark_holdee(NULL, car(p), "safe_lists");
-#endif
 
   for (s7_pointer p = sc->wrong_type_arg_info; is_pair(p); p = cdr(p)) mark_holdee(NULL, car(p), "wrong-type-arg");
   for (s7_pointer p = sc->sole_arg_wrong_type_info; is_pair(p); p = cdr(p)) mark_holdee(NULL, car(p), "simple wrong-type-arg");
@@ -95174,7 +95189,7 @@ static s7_pointer s7_starlet_set_1(s7_scheme *sc, s7_pointer sym, s7_pointer val
     case SL_OUTPUT_FILE_PORT_DATA_SIZE:
       sc->output_file_port_data_size = s7_integer_clamped_if_gmp(sc, sl_integer_gt_0(sc, sym, val));
       return(val);
-    case SL_PRINT_LENGTH:
+    case SL_PRINT_LENGTH: /* for pairs and vectors this affects how many elements are printed -- confusing */
       sc->print_length = s7_integer_clamped_if_gmp(sc, sl_integer_geq_0(sc, sym, val));
       return(val);
 
@@ -96425,6 +96440,8 @@ static void init_setters(s7_scheme *sc)
 			s7_make_safe_function(sc, "#<set-outlet>", g_set_outlet, 2, 0, false, "outlet setter"));
   c_function_set_setter(global_value(sc->port_line_number_symbol),
 			s7_make_safe_function(sc, "#<set-port-line-number>", g_set_port_line_number, 1, 1, false, "port-line setter"));
+  c_function_set_setter(global_value(sc->port_string_symbol),
+			s7_make_safe_function(sc, "#<set-port-string>", g_set_port_string, 2, 0, false, "port-string setter"));
   c_function_set_setter(global_value(sc->port_position_symbol),
 			s7_make_safe_function(sc, "#<set-port-position>", g_set_port_position, 2, 0, false, "port-position setter"));
   c_function_set_setter(global_value(sc->vector_typer_symbol),
@@ -96741,6 +96758,7 @@ static void init_rootlet(s7_scheme *sc)
   sc->c_pointer_weak2_symbol =       defun("c-pointer-weak2",   c_pointer_weak2,	1, 0, false);
   sc->c_pointer_to_list_symbol =     defun("c-pointer->list",   c_pointer_to_list,      1, 0, false);
 
+  sc->port_string_symbol =           defun("port-string",       port_string,		1, 0, false);
   sc->port_file_symbol =             defun("port-file",	        port_file,		1, 0, false);
   sc->port_position_symbol =         defun("port-position",	port_position,		1, 0, false);
   sc->port_line_number_symbol =      defun("port-line-number",  port_line_number,	0, 1, false);
@@ -98220,9 +98238,9 @@ int main(int argc, char **argv)
  * tread            2440   2421   2419   2408   2405   2256
  * titer     3657   2865   2842   2641   2509   2449   2446
  * trclo     8031   2735   2574   2454   2445   2449   2470
+ * tmat             3065   3042   2524   2578   2590   2519
  * tload                          3046   2404   2566   2537
  * fbench    2933   2688   2583   2460   2430   2478   2562
- * tmat             3065   3042   2524   2578   2590   2578  2519
  * tsort     3683   3105   3104   2856   2804   2858   2858
  * tobj             4016   3970   3828   3577   3508   3513
  * teq              4068   4045   3536   3486   3544   3527
@@ -98265,5 +98283,6 @@ int main(int argc, char **argv)
  * (define print-length (list 1 2)) (define (f) (with-let *s7* (+ print-length 1))) (display (f)) (newline) -- need a placeholder-let (or actual let) for *s7*?
  *   so (with-let *s7* ...) would make a let with whatever *s7* entries are needed? -> (let ((print-length (*s7* 'print-length))) ...)
  *   currently sc->s7_starlet is a let (make_s7_starlet) using g_s7_let_ref_fallback, so it assumes print-length above is undefined
+ * need some print-length/print-elements distinction for vector/pair etc
  * 73050 vars_opt_ok problem
  */
