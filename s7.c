@@ -8823,6 +8823,8 @@ s7_pointer s7_name_to_value(s7_scheme *sc, const char *name) {return(s7_symbol_v
 
 
 /* -------------------------------- symbol->string -------------------------------- */
+static s7_pointer nil_string; /* permanent "" */
+
 static Inline s7_pointer inline_make_string_with_length(s7_scheme *sc, const char *str, s7_int len)
 {
   s7_pointer x;
@@ -26721,8 +26723,6 @@ static s7_pointer g_is_string(s7_scheme *sc, s7_pointer args)
 }
 
 
-static s7_pointer nil_string; /* permanent "" */
-
 s7_int s7_string_length(s7_pointer str) {return(string_length(str));}
 
 
@@ -26763,7 +26763,11 @@ static Inline s7_pointer inline_make_empty_string(s7_scheme *sc, s7_int len, cha
 
 static s7_pointer make_empty_string(s7_scheme *sc, s7_int len, char fill) {return(inline_make_empty_string(sc, len, fill));}
 
-s7_pointer s7_make_string(s7_scheme *sc, const char *str) {return((str) ? make_string_with_length(sc, str, safe_strlen(str)) : nil_string);}
+s7_pointer s7_make_string(s7_scheme *sc, const char *str) 
+{
+  s7_int len = safe_strlen(str);
+  return((len > 0) ? make_string_with_length(sc, str, len) : nil_string);
+}
 
 static char *make_semipermanent_c_string(s7_scheme *sc, const char *str) /* strcpy but avoid malloc */
 {
@@ -27478,8 +27482,10 @@ static s7_pointer g_string_copy(s7_scheme *sc, s7_pointer args)
   if (!is_string(source))
     return(method_or_bust(sc, source, sc->string_copy_symbol, args, sc->type_names[T_STRING], 1));
   if (is_null(cdr(args)))
-    return(make_string_with_length(sc, string_value(source), string_length(source)));
-
+    {
+      if (string_length(source) == 0) return(nil_string);
+      return(make_string_with_length(sc, string_value(source), string_length(source)));
+    }
   dest = cadr(args);
   if (!is_string(dest))
     wrong_type_error_nr(sc, sc->string_copy_symbol, 2, dest, sc->type_names[T_STRING]);
@@ -28189,6 +28195,22 @@ static s7_pointer g_port_string(s7_scheme *sc, s7_pointer args)
   return(make_string_with_length(sc, (const char *)port_data(port), port_data_size(port))); /* max_string_length? */
 }
 
+static void resize_port_data(s7_scheme *sc, s7_pointer pt, s7_int new_size)
+{
+  s7_int loc = port_data_size(pt);
+  block_t *nb;
+
+  if (new_size < loc) return;
+  if (new_size > sc->max_port_data_size)
+    error_nr(sc, make_symbol(sc, "port-too-big", 12),
+	     set_elist_1(sc, wrap_string(sc, "port data size has grown past (*s7* 'max-port-data-size)", 56)));
+
+  nb = reallocate(sc, port_data_block(pt), new_size);
+  port_data_block(pt) = nb;
+  port_data(pt) = (uint8_t *)(block_data(nb));
+  port_data_size(pt) = new_size;
+}
+
 static s7_pointer g_set_port_string(s7_scheme *sc, s7_pointer args)
 {
   s7_pointer port = car(args), str;
@@ -28215,8 +28237,11 @@ static s7_pointer g_set_port_string(s7_scheme *sc, s7_pointer args)
     }
   else
     {
-      /* TODO: output-string-port port-string setter code */
-      /* port_position = str_len, port_data_size needs to be big enough for this string, don't set port_string_or_function */
+      if (port_data_size(port) <= str_len)  /* sc->initial_string_port_length is 128 */
+	resize_port_data(sc, port, str_len * 2);
+      memcpy((void *)port_data(port), (const void *)string_value(str), str_len);
+      port_position(port) = str_len;
+      port_data(port)[str_len] = '\0';
     }
   return(str);
 }
@@ -28886,10 +28911,13 @@ static s7_pointer string_read_line(s7_scheme *sc, s7_pointer port, bool with_eol
   const char *cur = (const char *)strchr(start, (int)'\n'); /* this can run off the end making valgrind unhappy, but I think it's innocuous */
   if (cur)
     {
+      s7_int len;
       port_line_number(port)++;
       i = cur - port_str;
       port_position(port) = i + 1;
-      return(inline_make_string_with_length(sc, start, ((with_eol) ? i + 1 : i) - port_start));
+      len = ((with_eol) ? i + 1 : i) - port_start;
+      if (len == 0) return(nil_string);
+      return(inline_make_string_with_length(sc, start, len));
     }
   i = port_data_size(port);
   port_position(port) = i;
@@ -28900,22 +28928,6 @@ static s7_pointer string_read_line(s7_scheme *sc, s7_pointer port, bool with_eol
 
 
 /* -------- write character functions -------- */
-
-static void resize_port_data(s7_scheme *sc, s7_pointer pt, s7_int new_size)
-{
-  s7_int loc = port_data_size(pt);
-  block_t *nb;
-
-  if (new_size < loc) return;
-  if (new_size > sc->max_port_data_size)
-    error_nr(sc, make_symbol(sc, "port-too-big", 12),
-	     set_elist_1(sc, wrap_string(sc, "port data size has grown past (*s7* 'max-port-data-size)", 56)));
-
-  nb = reallocate(sc, port_data_block(pt), new_size);
-  port_data_block(pt) = nb;
-  port_data(pt) = (uint8_t *)(block_data(nb));
-  port_data_size(pt) = new_size;
-}
 
 static void string_write_char_resized(s7_scheme *sc, uint8_t c, s7_pointer pt)
 {
@@ -29893,6 +29905,7 @@ const char *s7_get_output_string(s7_scheme *sc, s7_pointer p)
 
 s7_pointer s7_output_string(s7_scheme *sc, s7_pointer p)
 {
+  if (port_position(p) == 0) return(nil_string);
   port_data(p)[port_position(p)] = '\0';
   return(make_string_with_length(sc, (const char *)port_data(p), port_position(p)));
 }
@@ -29950,6 +29963,7 @@ If the optional 'clear-port' is #t, the current string is flushed."
       port_data(p)[0] = '\0';
       return(result);
     }
+  if (port_position(p) == 0) return(nil_string);
   return(make_string_with_length(sc, (const char *)port_data(p), port_position(p)));
 }
 
@@ -29960,9 +29974,12 @@ static void op_get_output_string(s7_scheme *sc)
     wrong_type_error_nr(sc, sc->with_output_to_string_symbol, 1, port, wrap_string(sc, "an open string output port", 26));
   check_get_output_string_port(sc, port);
 
-  if (port_position(port) >= port_data_size(port)) /* can the > part happen? */
-    sc->value = block_to_string(sc, reallocate(sc, port_data_block(port), port_position(port) + 1), port_position(port));
-  else sc->value = block_to_string(sc, port_data_block(port), port_position(port));
+  if (port_position(port) == 0) 
+    sc->value = nil_string;
+  else
+    if (port_position(port) >= port_data_size(port)) /* can the > part happen? */
+      sc->value = block_to_string(sc, reallocate(sc, port_data_block(port), port_position(port) + 1), port_position(port));
+    else sc->value = block_to_string(sc, port_data_block(port), port_position(port));
 
   port_data(port) = NULL;
   port_data_size(port) = 0;
@@ -29979,6 +29996,7 @@ static s7_pointer g_get_output_string_uncopied(s7_scheme *sc, s7_pointer args)
       return(method_or_bust_p(sc, p, sc->get_output_string_symbol, wrap_string(sc, "an output string port", 21)));
     }
   check_get_output_string_port(sc, p);
+  if (port_position(p) == 0) return(nil_string);
   port_data(p)[port_position(p)] = '\0'; /* wrap_string can't do this, and (for example) open_input_string wants terminated strings */
   return(wrap_string(sc, (const char *)port_data(p), port_position(p)));
 }
@@ -36724,6 +36742,7 @@ static s7_pointer format_to_port_1(s7_scheme *sc, s7_pointer port, const char *s
 	}
       if (port_position(port) < port_data_size(port))
 	{
+	  if (port_position(port) == 0) return(nil_string);
 	  block_t *block = inline_mallocate(sc, FORMAT_PORT_LENGTH);
 	  result = inline_block_to_string(sc, port_data_block(port), port_position(port));
 	  port_data_size(port) = FORMAT_PORT_LENGTH;
@@ -49146,6 +49165,7 @@ static s7_pointer copy_source_no_dest(s7_scheme *sc, s7_pointer source, s7_point
   switch (type(source))
     {
     case T_STRING:
+      if (string_length(source) == 0) return(nil_string);
       return(make_string_with_length(sc, string_value(source), string_length(source)));
 
     case T_C_OBJECT:
@@ -98233,7 +98253,7 @@ int main(int argc, char **argv)
  * s7test           1873   1831   1818   1829   1830   1857
  * lt        2222   2187   2172   2150   2185   1950   1952
  * thook     7651                 2590   2030   2046   2011
- * dup              3805   3788   2492   2239   2097   2031
+ * dup              3805   3788   2492   2239   2097   2003
  * tcopy            8035   5546   2539   2375   2386   2387
  * tread            2440   2421   2419   2408   2405   2256
  * titer     3657   2865   2842   2641   2509   2449   2446
@@ -98285,4 +98305,8 @@ int main(int argc, char **argv)
  *   currently sc->s7_starlet is a let (make_s7_starlet) using g_s7_let_ref_fallback, so it assumes print-length above is undefined
  * need some print-length/print-elements distinction for vector/pair etc
  * 73050 vars_opt_ok problem
+ * for port-string in timings, use (reader-cond ((or (> (*s7* 'major-version) 10) (and (= (*s7* 'major-version) 10) (>= (*s7* 'minor-version) 9))) ...) (else ...))
+ *   or (reader-cond ((defined? 'port-string) ...))?  init size is 128, or just use if!
+ *   currently slower -- need opt/fx support, new-tio.scm
+ * setter/port opt tests?
  */

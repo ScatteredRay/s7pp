@@ -738,6 +738,19 @@
 (define-constant vvvi (let ((v (make-vector '(2 2)))) (set! (v 0 0) "asd") (set! (v 0 1) #r(4 5 6)) (set! (v 1 0) '(1 2 3)) (set! (v 1 1) 32) (immutable! v)))
 (define-constant vvvf (immutable! (vector abs log sin)))
 
+(define-constant big-let (let ((e (inlet)))
+			   (let-temporarily (((*s7* 'print-length) 80))
+			     (do ((i 0 (+ i 1)))
+				 ((= i 100))
+			       (varlet e (symbol "abc" (number->string i)) i)))
+			   e))
+(define-constant big-hash (let ((e (hash-table)))
+			   (let-temporarily (((*s7* 'print-length) 80))
+			     (do ((i 0 (+ i 1)))
+				 ((= i 100))
+			       (hash-table-set! e (symbol "abc" (number->string i)) i)))
+			   e))
+
 (define-constant a1 (immutable! (let ((H (make-hash-table 8 #f (cons real? integer?)))) (set! (H +nan.0) 1) H)))
 (define-constant a2 (immutable! (inlet :a (hash-table 'b 1))))
 (define-constant a3 (openlet (immutable! (inlet :a 1))))
@@ -858,7 +871,7 @@
 			  'sublet 'inlet
 
 			  'call-with-input-string 'documentation
-			  'continuation? 'hash-table? 'port-closed? 'port-position 'port-file
+			  'continuation? 'hash-table? 'port-closed? 'port-position 'port-file 'port-string
 			  'output-port? 'input-port?
 			  ;'provide
 			  'call-with-output-string
@@ -1246,8 +1259,8 @@
 		    "(let ((lst (list '+ 1))) (set-cdr! (cdr lst) (cdr lst)) (apply lambda* () lst ()))"
 
 		    "(gensym \"g_123\")"
-		    "(make-list 256 1)"
-		    "(make-list 512 '(1))"
+		    "(make-list 256 1)" "(make-list 512 '(1))" "big-let" "big-hash"
+		    "(make-vector 256 #f)" "(make-byte-vector 256 0)" "(make-float-vector 256 0.0)" "(make-int-vector 256 0)"
 		    "(make-vector '(2 3) 1)"             "(make-vector '(12 14) #<undefined>)"
 		    "(make-byte-vector '(2 3) 1)"        "(make-byte-vector '(4 32) 255)"
 		    "(make-string 256 #\\1)"             "(make-string 64 #\\a)"

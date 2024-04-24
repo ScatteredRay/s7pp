@@ -1,10 +1,10 @@
 #ifndef S7_H
 #define S7_H
 
-#define S7_VERSION "10.8"
-#define S7_DATE "24-Apr-2024"
+#define S7_VERSION "10.9"
+#define S7_DATE "25-Apr-2024"
 #define S7_MAJOR_VERSION 10
-#define S7_MINOR_VERSION 8
+#define S7_MINOR_VERSION 9
 
 #include <stdint.h>           /* for int64_t */
 
@@ -904,7 +904,8 @@ bool s7_is_bignum(s7_pointer obj);
 /* --------------------------------------------------------------------------------
  *
  *        s7 changes
-
+ *
+ * 24-Apr:    port-string.
  * 8-Jan-23:  s7_gc_protect_2_via_stack.
  * --------
  * 15-Nov:    s7_make_c_pointer_wrapper_with_type.
