@@ -8214,8 +8214,10 @@ static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer
       if (sc->stop_at_error) abort();
     }
   if (sc->stack_end >= sc->stack_resize_trigger)
-    fprintf(stderr, "%s%s[%d] from %s: stack resize skipped, stack at %u of %u%s\n",
-	    bold_text, func, line, op_names[op], (uint32_t)((intptr_t)(sc->stack_end - sc->stack_start) / 4), sc->stack_size / 4, unbold_text);
+    fprintf(stderr, "%s%s[%d] from %s: stack resize skipped, stack at %u of %u %s%s\n",
+	    bold_text, func, line, op_names[op], 
+	    (uint32_t)((intptr_t)(sc->stack_end - sc->stack_start) / 4),
+	    sc->stack_size / 4, display_truncated(code), unbold_text);
   if (sc->stack_end != end)
     fprintf(stderr, "%s[%d]: stack changed in push_stack\n", func, line);
   if (op >= NUM_OPS)
@@ -8245,8 +8247,8 @@ static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer
 
 #else
 
-#define pop_stack(Sc) do {Sc->stack_end -= 4; memcpy((void *)Sc, (void *)(Sc->stack_end), 4 * sizeof(s7_pointer));} while (0)
-#define pop_stack_no_op(Sc) {Sc->stack_end -= 4; memcpy((void *)Sc, (void *)(Sc->stack_end), 3 * sizeof(s7_pointer));} while (0)
+#define pop_stack(Sc)       do {Sc->stack_end -= 4; memcpy((void *)Sc, (void *)(Sc->stack_end), 4 * sizeof(s7_pointer));} while (0)
+#define pop_stack_no_op(Sc) do {Sc->stack_end -= 4; memcpy((void *)Sc, (void *)(Sc->stack_end), 3 * sizeof(s7_pointer));} while (0)
 
 #define push_stack(Sc, Op, Args, Code) \
   do { \
@@ -57209,7 +57211,7 @@ static int32_t fx_count(s7_scheme *sc, s7_pointer x)
   return(count);
 }
 
-static bool is_code_constant(s7_scheme *sc, s7_pointer p) {return((is_pair(p)) ? (is_quote(car(p))) : is_constant(sc, p));}
+static bool is_code_constant(s7_scheme *sc, s7_pointer p) {return((is_pair(p)) ? (is_quote(car(p))) : (!is_normal_symbol(p)));}
 
 static inline s7_pointer check_quote(s7_scheme *sc, s7_pointer code);
 
@@ -80076,7 +80078,7 @@ static noreturn void no_setter_error_nr(s7_scheme *sc, s7_pointer obj)
 	   set_elist_5(sc, wrap_string(sc, "~A (~A) does not have a setter: (set! ~S ~S)", 44),
 		       caar(sc->code), sc->type_names[typ],
 		       (is_pair(car(sc->code))) ? copy_any_list(sc, car(sc->code)) : car(sc->code),
-		       (is_pair(cadr(sc->code))) ? copy_any_list(sc, cadr(sc->code)) : cadr(sc->code)));
+		       (is_pair(cadr(sc->code))) ? sc->z = copy_any_list(sc, cadr(sc->code)) : cadr(sc->code)));
   /* copy is necessary due to the way quoted lists|symbols are handled in op_set_with_let_1|2 and copy_tree
    *   copy_proper_list can fail: (let ((x #f)) (map set! `((set! x (+ x 1)) (* x 2)) (hash-table 'a 1)))
    */
@@ -98252,8 +98254,8 @@ int main(int argc, char **argv)
  * texit     1884   1930   1950   1778   1741   1770   1769
  * s7test           1873   1831   1818   1829   1830   1857
  * lt        2222   2187   2172   2150   2185   1950   1952
- * thook     7651                 2590   2030   2046   2011
  * dup              3805   3788   2492   2239   2097   2003
+ * thook     7651                 2590   2030   2046   2011
  * tcopy            8035   5546   2539   2375   2386   2387
  * tread            2440   2421   2419   2408   2405   2256
  * titer     3657   2865   2842   2641   2509   2449   2446
@@ -98309,4 +98311,6 @@ int main(int argc, char **argv)
  *   or (reader-cond ((defined? 'port-string) ...))?  init size is 128, or just use if!
  *   currently slower -- need opt/fx support, new-tio.scm
  * setter/port opt tests?
+ * ccrma s7test in tmp, -Wall -Wextra there #      CFLAGS="$CFLAGS -Wall -Wextra"
+ * t718 bugs
  */
