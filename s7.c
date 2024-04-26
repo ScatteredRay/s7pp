@@ -28248,6 +28248,20 @@ static s7_pointer g_set_port_string(s7_scheme *sc, s7_pointer args)
   return(str);
 }
 
+static s7_pointer set_port_string(s7_scheme *sc, s7_pointer port, s7_pointer str)
+{
+  s7_int str_len;
+  if (port_is_closed(port))
+    wrong_type_error_nr(sc, wrap_string(sc, "set! port-string", 16), 1, port, wrap_string(sc, "an open port", 12));
+  str_len = string_length(str);
+  port_data(port) = (uint8_t *)string_value(str);
+  port_data(port)[str_len] = '\0';
+  port_data_size(port) = str_len;
+  port_position(port) = 0;
+  port_set_string_or_function(port, str);
+  return(str);
+}
+
 
 /* -------------------------------- port-position -------------------------------- */
 static s7_pointer g_port_position(s7_scheme *sc, s7_pointer args)
@@ -45770,13 +45784,6 @@ static s7_pointer g_is_procedure(s7_scheme *sc, s7_pointer args)
   #define H_is_procedure "(procedure? obj) returns #t if obj is a procedure"
   #define Q_is_procedure sc->pl_bt
   return(make_boolean(sc, is_procedure(car(args))));
-}
-
-
-static void s7_function_set_setter(s7_scheme *sc, s7_pointer getter, s7_pointer setter)
-{
-  /* this is internal, used only with c_function setters, so we don't need to worry about the GC mark choice */
-  c_function_set_setter(global_value(getter), global_value(setter));
 }
 
 s7_pointer s7_closure_body(s7_scheme *sc, s7_pointer p) {return((has_closure_let(p)) ? closure_body(p) : sc->nil);}
@@ -65238,6 +65245,13 @@ static s7_pointer opt_set_p_p_f_with_setter(opt_info *o)
   return(x);
 }
 
+static s7_pointer opt_set_port_string_p_p_f(opt_info *o)
+{
+  s7_pointer x = o->v[4].fp(o->v[3].o1); /* the string */
+  set_port_string(o->sc, slot_value(o->v[2].p), x);
+  return(x);
+}
+
 static s7_pointer opt_set_p_i_s(opt_info *o)
 {
   s7_pointer val = slot_value(o->v[2].p);
@@ -65603,8 +65617,27 @@ static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_sy
       obj = slot_value(s_slot);
       opc->v[1].p = s_slot;
       if (!is_mutable_sequence(obj))
-	return_false(sc, car_x);
-
+	{
+	  /* a ridiculous experiment... */
+	  if ((car(target) == sc->port_string_symbol) &&
+	      (obj == initial_value(car(target))) &&
+	      (is_normal_symbol(cadr(target))) &&
+	      (opt_arg_type(sc, cdr(target)) == sc->is_input_port_symbol) &&
+	      (opt_arg_type(sc, cddr(car_x)) == sc->is_string_symbol))
+	    {
+	      int32_t start_pc = sc->pc;
+	      opc->v[2].p = s7_slot(sc, cadr(target));
+	      if ((is_slot(opc->v[2].p)) && (is_string_port(slot_value(opc->v[2].p))))
+		{
+		if (cell_optimize(sc, cddr(car_x)))
+		{
+		  opc->v[0].fp = opt_set_port_string_p_p_f;
+		  opc->v[3].o1 = sc->opts[start_pc];
+		  opc->v[4].fp = sc->opts[start_pc]->v[0].fp;
+		  return_true(sc, car_x);
+		}}}
+	  return_false(sc, car_x);
+	}
       index = cadr(target);
       index_type = opt_arg_type(sc, cdr(target));
       switch (type(obj))
@@ -82447,7 +82480,8 @@ static goto_t op_dox(s7_scheme *sc)
   /* any number of steppers using dox exprs, end also dox, body and end result arbitrary.
    *    since all these exprs are local, we don't need to jump until the body
    */
-  int64_t id, steppers = 0;
+  int64_t id;
+  int32_t steppers = 0;
   s7_pointer code, end, endp, stepper = NULL, form = sc->code, slots;
   s7_function endf;
 #if WITH_GMP
@@ -93478,7 +93512,7 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	      goto OR_P;
 	    }
 	  if (is_pair(cdr(sc->code)))
-	    push_stack_no_args(sc, OP_OR_P1, cdr(sc->code));
+	    push_stack_no_args(sc, OP_OR_P1, cdr(sc->code)); /* might need to check stack size here */
 	  sc->code = car(sc->code);
 	  goto EVAL;
 
@@ -96438,26 +96472,26 @@ static void init_setters(s7_scheme *sc)
 #else
   set_is_setter(sc->set_current_input_port_symbol);
   set_is_setter(sc->set_current_output_port_symbol);
-  s7_function_set_setter(sc, sc->current_input_port_symbol,  sc->set_current_input_port_symbol);
-  s7_function_set_setter(sc, sc->current_output_port_symbol, sc->set_current_output_port_symbol);
+  c_function_set_setter(global_value(sc->current_input_port_symbol),  global_value(sc->set_current_input_port_symbol));
+  c_function_set_setter(global_value(sc->current_output_port_symbol), global_value(sc->set_current_output_port_symbol));
 #endif
 
   set_is_setter(sc->set_current_error_port_symbol);
-  s7_function_set_setter(sc, sc->current_error_port_symbol, sc->set_current_error_port_symbol);
+  c_function_set_setter(global_value(sc->current_error_port_symbol), global_value(sc->set_current_error_port_symbol));
   /* despite the similar names, current-error-port is different from the other two, and a setter is needed
    *    in scheme because error and warn send output to it by default.  It is not a "dynamic variable".
    */
 
-  s7_function_set_setter(sc, sc->car_symbol,              sc->set_car_symbol);
-  s7_function_set_setter(sc, sc->cdr_symbol,              sc->set_cdr_symbol);
-  s7_function_set_setter(sc, sc->hash_table_ref_symbol,   sc->hash_table_set_symbol);
-  s7_function_set_setter(sc, sc->vector_ref_symbol,       sc->vector_set_symbol);
-  s7_function_set_setter(sc, sc->float_vector_ref_symbol, sc->float_vector_set_symbol);
-  s7_function_set_setter(sc, sc->int_vector_ref_symbol,   sc->int_vector_set_symbol);
-  s7_function_set_setter(sc, sc->byte_vector_ref_symbol,  sc->byte_vector_set_symbol);
-  s7_function_set_setter(sc, sc->list_ref_symbol,         sc->list_set_symbol);
-  s7_function_set_setter(sc, sc->let_ref_symbol,          sc->let_set_symbol);
-  s7_function_set_setter(sc, sc->string_ref_symbol,       sc->string_set_symbol);
+  c_function_set_setter(global_value(sc->car_symbol),              global_value(sc->set_car_symbol));
+  c_function_set_setter(global_value(sc->cdr_symbol),              global_value(sc->set_cdr_symbol));
+  c_function_set_setter(global_value(sc->hash_table_ref_symbol),   global_value(sc->hash_table_set_symbol));
+  c_function_set_setter(global_value(sc->vector_ref_symbol),       global_value(sc->vector_set_symbol));
+  c_function_set_setter(global_value(sc->float_vector_ref_symbol), global_value(sc->float_vector_set_symbol));
+  c_function_set_setter(global_value(sc->int_vector_ref_symbol),   global_value(sc->int_vector_set_symbol));
+  c_function_set_setter(global_value(sc->byte_vector_ref_symbol),  global_value(sc->byte_vector_set_symbol));
+  c_function_set_setter(global_value(sc->list_ref_symbol),         global_value(sc->list_set_symbol));
+  c_function_set_setter(global_value(sc->let_ref_symbol),          global_value(sc->let_set_symbol));
+  c_function_set_setter(global_value(sc->string_ref_symbol),       global_value(sc->string_set_symbol));
   c_function_set_setter(global_value(sc->outlet_symbol),
 			s7_make_safe_function(sc, "#<set-outlet>", g_set_outlet, 2, 0, false, "outlet setter"));
   c_function_set_setter(global_value(sc->port_line_number_symbol),
@@ -98264,9 +98298,9 @@ int main(int argc, char **argv)
  * tload                          3046   2404   2566   2537
  * fbench    2933   2688   2583   2460   2430   2478   2562
  * tsort     3683   3105   3104   2856   2804   2858   2858
+ * tio              3816   3752   3683   3620   3583   3261
  * tobj             4016   3970   3828   3577   3508   3513
  * teq              4068   4045   3536   3486   3544   3527
- * tio              3816   3752   3683   3620   3583   3601
  * tmac             3950   3873   3033   3677   3677   3683
  * tclo      6362   4787   4735   4390   4384   4474   4337
  * tcase            4960   4793   4439   4430   4439   4429
@@ -98307,10 +98341,6 @@ int main(int argc, char **argv)
  *   currently sc->s7_starlet is a let (make_s7_starlet) using g_s7_let_ref_fallback, so it assumes print-length above is undefined
  * need some print-length/print-elements distinction for vector/pair etc
  * 73050 vars_opt_ok problem
- * for port-string in timings, use (reader-cond ((or (> (*s7* 'major-version) 10) (and (= (*s7* 'major-version) 10) (>= (*s7* 'minor-version) 9))) ...) (else ...))
- *   or (reader-cond ((defined? 'port-string) ...))?  init size is 128, or just use if!
- *   currently slower -- need opt/fx support, new-tio.scm
- * setter/port opt tests?
- * ccrma s7test in tmp, -Wall -Wextra there #      CFLAGS="$CFLAGS -Wall -Wextra"
- * t718 bugs
+ * ccrma s7test in tmp, ./configure CC=g++ CFLAGS="-I. -O2 -lm -Wall -Wextra -Wno-unused-parameter"
+ * maybe extend port-string to other non-pip cases
  */

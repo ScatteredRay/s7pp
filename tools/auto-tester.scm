@@ -1,8 +1,5 @@
 ;;; this is an extension of tauto.scm, an auto-tester
 
-(define-constant stable (symbol-table))
-(define-constant stable-len (length stable))
-
 (define with-mock-data #f)
 ;(set! (*s7* 'profile) 1)
 (when (provided? 'number-separator) (set! (*s7* 'number-separator) #\,))
@@ -687,19 +684,6 @@
 	   'error)))
      (lambda (t i)
        'error)))
-
-(define last-stable-f #f)
-(define-constant (_stable1_ . args)
-  (let ((f (stable (random stable-len))))
-    ;(format *stderr* "~S ~S~%" f args)
-    (set! last-stable-f f)
-    (f (apply f args))))
-
-(define-constant (_stable2_ . args)
-  (let* ((f last-stable-f)
-	 (val (apply f args)))
-    (f val)))
-
 
 (define-constant ims (immutable! (string #\a #\b #\c)))
 (define-constant imbv (immutable! (byte-vector 0 1 2)))
@@ -1483,10 +1467,6 @@
                     (lambda (s) (string-append "(list (let ((old #f)) (dynamic-wind (lambda () (set! old (*s7* 'openlets)) (set! (*s7* 'openlets) #f)) (lambda () " s ") (lambda () (set! (*s7* 'openlets) old)))))")))
 	      (list (lambda (s) (string-append "(list (let () (let-temporarily (((*s7* 'safety) 1)) " s ")))"))
                     (lambda (s) (string-append "(list (let ((old #f)) (dynamic-wind (lambda () (set! old (*s7* 'safety))) (lambda () " s ") (lambda () (set! (*s7* 'safety) old)))))")))
-
-	      (list (lambda (s) (string-append "(_stable1_ " s ")"))
-		    (lambda (s) (string-append "(_stable2_ " s ")")))
-
 	      ;; perhaps function port (see _rd3_ for open-input-string), gmp?
 	      ))
 
