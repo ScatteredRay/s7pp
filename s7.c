@@ -8164,6 +8164,7 @@ void s7_show_stack(s7_scheme *sc);
 #define pop_stack(Sc) pop_stack_1(Sc, __func__, __LINE__)
 static void pop_stack_1(s7_scheme *sc, const char *func, int32_t line)
 {
+  /* if (S7_DEBUGGING) fprintf(stderr, "%s[%d]: pop_stack %s\n", func, line, op_names[(opcode_t)stack_top_op(sc)]); */
   sc->stack_end -= 4;
   if (sc->stack_end < sc->stack_start)
     {
@@ -8187,6 +8188,7 @@ static void pop_stack_1(s7_scheme *sc, const char *func, int32_t line)
 #define pop_stack_no_op(Sc) pop_stack_no_op_1(Sc, __func__, __LINE__)
 static void pop_stack_no_op_1(s7_scheme *sc, const char *func, int32_t line)
 {
+  /* if (S7_DEBUGGING) fprintf(stderr, "%s[%d]: pop_stack_no_op %s\n", func, line, op_names[(opcode_t)stack_top_op(sc)]); */
   sc->stack_end -= 4;
   if (sc->stack_end < sc->stack_start)
     {
@@ -8203,6 +8205,7 @@ static void pop_stack_no_op_1(s7_scheme *sc, const char *func, int32_t line)
 static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer code, s7_pointer *end, const char *func, int32_t line)
 {
   if ((SHOW_EVAL_OPS) && (op == OP_EVAL_DONE)) fprintf(stderr, "  %s[%d]: push eval_done\n", func, line);
+  /* if (S7_DEBUGGING) fprintf(stderr, "%s[%d]: push_stack %s\n", func, line, op_names[op]); */
   if (sc->stack_end >= sc->stack_start + sc->stack_size)
     {
       fprintf(stderr, "%s%s[%d]: stack overflow, %u > %u, trigger: %u %s\n",
@@ -56377,7 +56380,12 @@ static s7_pointer fx_c_aa(s7_scheme *sc, s7_pointer arg)
   set_car(sc->t2_1, T_Ext(stack_protected1(sc)));
   set_car(sc->t2_2, stack_protected2(sc));
   res = fn_proc(arg)(sc, sc->t2_1);
-  unstack_gc_protect(sc);
+  if (unchecked_stack_top_op(sc) == OP_GC_PROTECT)
+    unstack_gc_protect(sc);
+  /* we can't assume the current top-of-stack is the gc_protect above: if fn_proc hits an openlet method redirect to map or for-each,
+   *   the stack will have that operator awaiting the next spin through eval: (define (f) (write (vector 1.0) (openlet (inlet 'write for-each)))) (f)
+   *   the "f" function is needed to get the optimizer to call fx_c_aa
+   */
   return(res);
 }
 
@@ -56991,12 +56999,18 @@ static s7_pointer fx_begin_na(s7_scheme *sc, s7_pointer arg)
 
 static s7_pointer fx_safe_thunk_a(s7_scheme *sc, s7_pointer code)
 {
-  s7_pointer f = opt1_lambda(code), result;
+  s7_pointer f = opt1_lambda(code), result, old_let = sc->curlet;
   gc_protect_via_stack(sc, sc->curlet); /* we do need to GC protect curlet here and below (not just remember it) */
   set_curlet(sc, closure_let(f));
   result = fx_call(sc, closure_body(f));
-  set_curlet(sc, stack_protected1(sc));
+#if 0
+  set_curlet(sc, stack_protected1(sc));  /* TODO: make this change below as well? see fx_c_aa for explanation */
   unstack_gc_protect(sc);
+#else
+  set_curlet(sc, old_let);
+  if (unchecked_stack_top_op(sc) == OP_GC_PROTECT)
+    unstack_gc_protect(sc);
+#endif
   return(result);
 }
 
@@ -65627,15 +65641,13 @@ static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_sy
 	    {
 	      int32_t start_pc = sc->pc;
 	      opc->v[2].p = s7_slot(sc, cadr(target));
-	      if ((is_slot(opc->v[2].p)) && (is_string_port(slot_value(opc->v[2].p))))
-		{
-		if (cell_optimize(sc, cddr(car_x)))
+	      if ((is_slot(opc->v[2].p)) && (is_string_port(slot_value(opc->v[2].p))) && (cell_optimize(sc, cddr(car_x))))
 		{
 		  opc->v[0].fp = opt_set_port_string_p_p_f;
 		  opc->v[3].o1 = sc->opts[start_pc];
 		  opc->v[4].fp = sc->opts[start_pc]->v[0].fp;
 		  return_true(sc, car_x);
-		}}}
+		}}
 	  return_false(sc, car_x);
 	}
       index = cadr(target);
@@ -98281,37 +98293,37 @@ int main(int argc, char **argv)
  * --------------------------------------------------------------
  * tpeak      148    115    114    108    105    102    102
  * tref      1081    691    687    463    459    464    410
- * index            1026   1016    973    967    972    973
+ * index            1026   1016    973    967    972    970
  * tmock            1177   1165   1057   1019   1032   1029
  * tvect     3408   2519   2464   1772   1669   1497   1454
  * tauto                          2562   2048   1729   1707
  * texit     1884   1930   1950   1778   1741   1770   1769
- * s7test           1873   1831   1818   1829   1830   1857
- * lt        2222   2187   2172   2150   2185   1950   1952
- * dup              3805   3788   2492   2239   2097   2003
+ * s7test           1873   1831   1818   1829   1830   1880
+ * lt        2222   2187   2172   2150   2185   1950   1950
+ * dup              3805   3788   2492   2239   2097   1997
  * thook     7651                 2590   2030   2046   2011
- * tcopy            8035   5546   2539   2375   2386   2387
- * tread            2440   2421   2419   2408   2405   2256
+ * tcopy            8035   5546   2539   2375   2386   2370
+ * tread            2440   2421   2419   2408   2405   2261
  * titer     3657   2865   2842   2641   2509   2449   2446
  * trclo     8031   2735   2574   2454   2445   2449   2470
  * tmat             3065   3042   2524   2578   2590   2519
- * tload                          3046   2404   2566   2537
+ * tload                          3046   2404   2566   2546
  * fbench    2933   2688   2583   2460   2430   2478   2562
  * tsort     3683   3105   3104   2856   2804   2858   2858
  * tio              3816   3752   3683   3620   3583   3261
  * tobj             4016   3970   3828   3577   3508   3513
- * teq              4068   4045   3536   3486   3544   3527
+ * teq              4068   4045   3536   3486   3544   3507
  * tmac             3950   3873   3033   3677   3677   3683
  * tclo      6362   4787   4735   4390   4384   4474   4337
  * tcase            4960   4793   4439   4430   4439   4429
- * tlet      9166   7775   5640   4450   4427   4457   4481
+ * tlet      9166   7775   5640   4450   4427   4457   4487
  * tfft             7820   7729   4755   4476   4536   4542
  * tstar            6139   5923   5519   4449   4550   4584
  * tmap             8869   8774   4489   4541   4586   4593
- * tshoot           5525   5447   5183   5055   5034   5052
+ * tshoot           5525   5447   5183   5055   5034   5058
  * tform            5357   5348   5307   5316   5084   5087
- * tstr      10.0   6880   6342   5488   5162   5180   5205
- * tnum             6348   6013   5433   5396   5409   5432
+ * tstr      10.0   6880   6342   5488   5162   5180   5213
+ * tnum             6348   6013   5433   5396   5409   5430
  * tgsl             8485   7802   6373   6282   6208   6181
  * tari      15.0   13.0   12.7   6827   6543   6278   6274
  * tlist     9219   7896   7546   6558   6240   6300   6305
@@ -98322,7 +98334,7 @@ int main(int argc, char **argv)
  * tlamb                                 8003   7941   7948
  * tgc              11.9   11.1   8177   7857   7986   8014
  * thash            11.8   11.7   9734   9479   9526   9254
- * cb        12.9   11.2   11.0   9658   9564   9609   9641
+ * cb        12.9   11.2   11.0   9658   9564   9609   9643
  * tmap-hash                           1671.0 1467.0   10.3
  * tmv              16.0   15.4   14.7   14.5   14.4   11.9
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3
@@ -98342,5 +98354,13 @@ int main(int argc, char **argv)
  * need some print-length/print-elements distinction for vector/pair etc
  * 73050 vars_opt_ok problem
  * ccrma s7test in tmp, ./configure CC=g++ CFLAGS="-I. -O2 -lm -Wall -Wextra -Wno-unused-parameter"
- * maybe extend port-string to other non-pip cases
+ * maybe extend port-string opt to other non-pip cases
+ *   output string-port opt'd
+ *   check port type change (both string-port and port->int etc) [t688.scm]
+ *   check error cases in g_[set_]port_string                    [t688.scm]
+ *   opt other similar c_function_setter cases? [port-position|closed? car/cdr]
+ *   non-dox opt?
+ * t689 fx_c_aa remainders, fx_safe_thunk_a change extended to similar cases, add this test to t725
+ *   move to later so 'write is not messed up
+ *   why is this the error message: "vector-ref second argument, (write . for-each), is a pair but should be an integer"
  */
