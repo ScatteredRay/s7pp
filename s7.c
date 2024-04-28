@@ -2980,7 +2980,6 @@ static void init_types(void)
 #define fn_proc(f)                     ((s7_function)(opt2(f, OPT2_FN)))
 #define fx_proc(f)                     ((s7_function)(opt2(f, OPT2_FX)))
 #define fn_proc_unchecked(f)           ((s7_function)(T_Pair(f)->object.cons.o2.opt2))
-#define fx_proc_unchecked(f)           ((s7_function)(T_Pair(f)->object.cons.o2.opt2)) /* unused */
 
 #define set_fx(f, _X_)                 do {s7_pointer X; X = (s7_pointer)(_X_); set_opt2(f, X, OPT2_FX); if (X) set_has_fx(f); else clear_has_fx(f);} while (0)
 #define set_fx_direct(f, X)            do {set_opt2(f, (s7_pointer)(X), OPT2_FX); set_has_fx(f);} while (0)
@@ -8204,8 +8203,8 @@ static void pop_stack_no_op_1(s7_scheme *sc, const char *func, int32_t line)
 
 static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer code, s7_pointer *end, const char *func, int32_t line)
 {
-  if ((SHOW_EVAL_OPS) && (op == OP_EVAL_DONE)) fprintf(stderr, "  %s[%d]: push eval_done\n", func, line);
   /* if (S7_DEBUGGING) fprintf(stderr, "%s[%d]: push_stack %s\n", func, line, op_names[op]); */
+  if ((SHOW_EVAL_OPS) && (op == OP_EVAL_DONE)) fprintf(stderr, "  %s[%d]: push eval_done\n", func, line);
   if (sc->stack_end >= sc->stack_start + sc->stack_size)
     {
       fprintf(stderr, "%s%s[%d]: stack overflow, %u > %u, trigger: %u %s\n",
@@ -8441,27 +8440,54 @@ s7_pointer s7_gc_unprotect_via_stack(s7_scheme *sc, s7_pointer x)
   return(x);
 }
 
-#define stack_protected1(Sc) stack_top_args(Sc) /* it's easier to remember these aliases in this context (GC protection so code/args business is irrelevant) */
-#define stack_protected2(Sc) stack_top_code(Sc)
-#define stack_protected3(Sc) stack_top_let(Sc)
-
 #if S7_DEBUGGING
-  #define set_stack_protected1(Sc, Val) do {if (stack_top_op(Sc) != OP_GC_PROTECT) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); stack_protected1(Sc) = Val;} while (0)
-  #define set_stack_protected2(Sc, Val) do {if (stack_top_op(Sc) != OP_GC_PROTECT) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); stack_protected2(Sc) = Val;} while (0)
-  #define set_stack_protected3(Sc, Val) do {if (stack_top_op(Sc) != OP_GC_PROTECT) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); stack_protected3(Sc) = Val;} while (0)
+  static s7_pointer stack_protected1_1(s7_scheme *sc, const char *func, int line)
+  {
+    if (stack_top_op(sc) != OP_GC_PROTECT) fprintf(stderr, "%s[%d]: stack_protected1 %s\n", func, line, op_names[stack_top_op(sc)]);
+    return(stack_top_args(sc));
+  }
 
-  #define set_stack_protected1_with(Sc, Val, Op) do {if (stack_top_op(Sc) != Op) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); stack_protected1(Sc) = Val;} while (0)
-  #define set_stack_protected2_with(Sc, Val, Op) do {if (stack_top_op(Sc) != Op) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); stack_protected2(Sc) = Val;} while (0)
-  #define set_stack_protected3_with(Sc, Val, Op) do {if (stack_top_op(Sc) != Op) fprintf(stderr, "%s[%d]: stack_protected %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); stack_protected3(Sc) = Val;} while (0)
+  static s7_pointer stack_protected2_1(s7_scheme *sc, const char *func, int line)
+  {
+    if (stack_top_op(sc) != OP_GC_PROTECT) fprintf(stderr, "%s[%d]: stack_protected2 %s\n", func, line, op_names[stack_top_op(sc)]);
+    return(stack_top_code(sc));
+  }
+
+  static s7_pointer stack_protected3_1(s7_scheme *sc, const char *func, int line)
+  {
+    if (stack_top_op(sc) != OP_GC_PROTECT) fprintf(stderr, "%s[%d]: stack_protected3 %s\n", func, line, op_names[stack_top_op(sc)]);
+    return(stack_top_let(sc));
+  }
+
+  #define stack_protected1(Sc) stack_protected1_1(Sc, __func__, __LINE__)
+  #define stack_protected2(Sc) stack_protected2_1(Sc, __func__, __LINE__)
+  #define stack_protected3(Sc) stack_protected3_1(Sc, __func__, __LINE__)
+  
+  #define set_stack_protected1(Sc, Val) do {if (stack_top_op(Sc) != OP_GC_PROTECT) fprintf(stderr, "%s[%d]: set_stack_protected1 %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); stack_top_args(Sc) = Val;} while (0)
+  #define set_stack_protected2(Sc, Val) do {if (stack_top_op(Sc) != OP_GC_PROTECT) fprintf(stderr, "%s[%d]: set_stack_protected2 %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); stack_top_code(Sc) = Val;} while (0)
+  #define set_stack_protected3(Sc, Val) do {if (stack_top_op(Sc) != OP_GC_PROTECT) fprintf(stderr, "%s[%d]: set_stack_protected3 %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); stack_top_let(Sc) = Val;} while (0)
+
+  #define set_stack_protected1_with(Sc, Val, Op) do {if (stack_top_op(Sc) != Op) fprintf(stderr, "%s[%d]: set_stack_protected1 %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); stack_top_args(Sc) = Val;} while (0)
+  #define set_stack_protected2_with(Sc, Val, Op) do {if (stack_top_op(Sc) != Op) fprintf(stderr, "%s[%d]: set_stack_protected2 %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); stack_top_code(Sc) = Val;} while (0)
+  #define set_stack_protected3_with(Sc, Val, Op) do {if (stack_top_op(Sc) != Op) fprintf(stderr, "%s[%d]: set_stack_protected3 %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); stack_top_let(Sc) = Val;} while (0)
 #else
-  #define set_stack_protected1(Sc, Val) stack_protected1(Sc) = Val
-  #define set_stack_protected2(Sc, Val) stack_protected2(Sc) = Val
-  #define set_stack_protected3(Sc, Val) stack_protected3(Sc) = Val
 
-  #define set_stack_protected1_with(Sc, Val, Op) stack_protected1(Sc) = Val
-  #define set_stack_protected2_with(Sc, Val, Op) stack_protected2(Sc) = Val
-  #define set_stack_protected3_with(Sc, Val, Op) stack_protected3(Sc) = Val
+  #define stack_protected1(Sc) stack_top_args(Sc)
+  #define stack_protected2(Sc) stack_top_code(Sc)
+  #define stack_protected3(Sc) stack_top_let(Sc)
+
+  #define set_stack_protected1(Sc, Val) stack_top_args(Sc) = Val
+  #define set_stack_protected2(Sc, Val) stack_top_code(Sc) = Val
+  #define set_stack_protected3(Sc, Val) stack_top_let(Sc) = Val
+
+  #define set_stack_protected1_with(Sc, Val, Op) stack_top_args(Sc) = Val
+  #define set_stack_protected2_with(Sc, Val, Op) stack_top_code(Sc) = Val
+  #define set_stack_protected3_with(Sc, Val, Op) stack_top_let(Sc) = Val
 #endif
+
+#define stack_protected1_with(Sc) stack_top_args(Sc)
+#define stack_protected2_with(Sc) stack_top_code(Sc)
+#define stack_protected3_with(Sc) stack_top_let(Sc)
 
 #define gc_protect_via_stack(Sc, Obj) push_stack_no_code(Sc, OP_GC_PROTECT, Obj)
 #define gc_protect_via_stack_no_let(Sc, Obj) push_stack_no_let_no_code(Sc, OP_GC_PROTECT, Obj)
@@ -56380,12 +56406,7 @@ static s7_pointer fx_c_aa(s7_scheme *sc, s7_pointer arg)
   set_car(sc->t2_1, T_Ext(stack_protected1(sc)));
   set_car(sc->t2_2, stack_protected2(sc));
   res = fn_proc(arg)(sc, sc->t2_1);
-  if (unchecked_stack_top_op(sc) == OP_GC_PROTECT)
-    unstack_gc_protect(sc);
-  /* we can't assume the current top-of-stack is the gc_protect above: if fn_proc hits an openlet method redirect to map or for-each,
-   *   the stack will have that operator awaiting the next spin through eval: (define (f) (write (vector 1.0) (openlet (inlet 'write for-each)))) (f)
-   *   the "f" function is needed to get the optimizer to call fx_c_aa
-   */
+  unstack_gc_protect(sc);
   return(res);
 }
 
@@ -56999,18 +57020,12 @@ static s7_pointer fx_begin_na(s7_scheme *sc, s7_pointer arg)
 
 static s7_pointer fx_safe_thunk_a(s7_scheme *sc, s7_pointer code)
 {
-  s7_pointer f = opt1_lambda(code), result, old_let = sc->curlet;
+  s7_pointer f = opt1_lambda(code), result;
   gc_protect_via_stack(sc, sc->curlet); /* we do need to GC protect curlet here and below (not just remember it) */
   set_curlet(sc, closure_let(f));
   result = fx_call(sc, closure_body(f));
-#if 0
-  set_curlet(sc, stack_protected1(sc));  /* TODO: make this change below as well? see fx_c_aa for explanation */
+  set_curlet(sc, stack_protected1(sc));
   unstack_gc_protect(sc);
-#else
-  set_curlet(sc, old_let);
-  if (unchecked_stack_top_op(sc) == OP_GC_PROTECT)
-    unstack_gc_protect(sc);
-#endif
   return(result);
 }
 
@@ -68663,7 +68678,7 @@ static void map_or_for_each_closure_pair_2(s7_scheme *sc, s7_pfunc func, s7_poin
 	{
 	  s7_pointer val = func(sc);
 	  if (val != sc->no_value)
-	    set_stack_protected3_with(sc, cons(sc, val, stack_protected3(sc)), OP_MAP_UNWIND); /* see map_closure_2 below -- stack_protected3 is our temp */
+	    set_stack_protected3_with(sc, cons(sc, val, stack_protected3_with(sc)), OP_MAP_UNWIND); /* see map_closure_2 below -- stack_protected3 is our temp */
 	}
       if ((is_pair(cdr(fast1))) && (is_pair(cdr(fast2))))
 	{
@@ -68679,7 +68694,7 @@ static void map_or_for_each_closure_pair_2(s7_scheme *sc, s7_pfunc func, s7_poin
 	    {
 	      s7_pointer val = func(sc);
 	      if (val != sc->no_value)
-		set_stack_protected3_with(sc, cons(sc, val, stack_protected3(sc)), OP_MAP_UNWIND);
+		set_stack_protected3_with(sc, cons(sc, val, stack_protected3_with(sc)), OP_MAP_UNWIND);
 	    }}}
 }
 
@@ -68697,7 +68712,7 @@ static void map_or_for_each_closure_vector_2(s7_scheme *sc, s7_pfunc func, s7_po
 	{
 	  s7_pointer val = func(sc);
 	  if (val != sc->no_value)
-	    set_stack_protected3_with(sc, cons(sc, val, stack_protected3(sc)), OP_MAP_UNWIND);
+	    set_stack_protected3_with(sc, cons(sc, val, stack_protected3_with(sc)), OP_MAP_UNWIND);
 	}}
 }
 
@@ -68716,7 +68731,7 @@ static void map_or_for_each_closure_string_2(s7_scheme *sc, s7_pfunc func, s7_po
 	{
 	  s7_pointer val = func(sc);
 	  if (val != sc->no_value)
-	    set_stack_protected3_with(sc, cons(sc, val, stack_protected3(sc)), OP_MAP_UNWIND);
+	    set_stack_protected3_with(sc, cons(sc, val, stack_protected3_with(sc)), OP_MAP_UNWIND);
 	}}
 }
 
@@ -69092,16 +69107,16 @@ static s7_pointer g_map_closure(s7_scheme *sc, s7_pointer f, s7_pointer seq) /* 
 		{
 		  slot_set_value(slot, car(fast));
 		  z = func(sc);
-		  if (z != sc->no_value) set_stack_protected3_with(sc, cons(sc, z, stack_protected3(sc)), OP_MAP_UNWIND);
+		  if (z != sc->no_value) set_stack_protected3_with(sc, cons(sc, z, stack_protected3_with(sc)), OP_MAP_UNWIND);
 		  if (is_pair(cdr(fast)))
 		    {
 		      fast = cdr(fast);
 		      if (fast == slow)	break;
 		      slot_set_value(slot, car(fast));
 		      z = func(sc);
-		      if (z != sc->no_value) set_stack_protected3_with(sc, cons(sc, z, stack_protected3(sc)), OP_MAP_UNWIND);
+		      if (z != sc->no_value) set_stack_protected3_with(sc, cons(sc, z, stack_protected3_with(sc)), OP_MAP_UNWIND);
 		    }}
-	      res = proper_list_reverse_in_place(sc, stack_protected3(sc));
+	      res = proper_list_reverse_in_place(sc, stack_protected3_with(sc));
 	    }
 	  else
 	    if (is_float_vector(seq))
@@ -69113,9 +69128,9 @@ static s7_pointer g_map_closure(s7_scheme *sc, s7_pointer f, s7_pointer seq) /* 
 		  {
 		    slot_set_value(slot, make_real(sc, vals[i]));
 		    z = func(sc);
-		    if (z != sc->no_value) set_stack_protected3_with(sc, cons(sc, z, stack_protected3(sc)), OP_MAP_UNWIND);
+		    if (z != sc->no_value) set_stack_protected3_with(sc, cons(sc, z, stack_protected3_with(sc)), OP_MAP_UNWIND);
 		  }
-		res = proper_list_reverse_in_place(sc, stack_protected3(sc));
+		res = proper_list_reverse_in_place(sc, stack_protected3_with(sc));
 	      }
 	    else
 	      if (is_int_vector(seq))
@@ -69127,9 +69142,9 @@ static s7_pointer g_map_closure(s7_scheme *sc, s7_pointer f, s7_pointer seq) /* 
 		    {
 		      slot_set_value(slot, make_integer(sc, vals[i]));
 		      z = func(sc);
-		      if (z != sc->no_value) set_stack_protected3_with(sc, cons(sc, z, stack_protected3(sc)), OP_MAP_UNWIND);
+		      if (z != sc->no_value) set_stack_protected3_with(sc, cons(sc, z, stack_protected3_with(sc)), OP_MAP_UNWIND);
 		    }
-		  res = proper_list_reverse_in_place(sc, stack_protected3(sc));
+		  res = proper_list_reverse_in_place(sc, stack_protected3_with(sc));
 		}
 	      else
 		if (is_t_vector(seq))
@@ -69141,9 +69156,9 @@ static s7_pointer g_map_closure(s7_scheme *sc, s7_pointer f, s7_pointer seq) /* 
 		      {
 			slot_set_value(slot, vals[i]);
 			z = func(sc);
-			if (z != sc->no_value) set_stack_protected3_with(sc, cons(sc, z, stack_protected3(sc)), OP_MAP_UNWIND);
+			if (z != sc->no_value) set_stack_protected3_with(sc, cons(sc, z, stack_protected3_with(sc)), OP_MAP_UNWIND);
 		      }
-		    res = proper_list_reverse_in_place(sc, stack_protected3(sc));
+		    res = proper_list_reverse_in_place(sc, stack_protected3_with(sc));
 		  }
 		else
 		  if (is_string(seq))
@@ -69155,9 +69170,9 @@ static s7_pointer g_map_closure(s7_scheme *sc, s7_pointer f, s7_pointer seq) /* 
 			{
 			  slot_set_value(slot, chars[(uint8_t)(str[i])]);
 			  z = func(sc);
-			  if (z != sc->no_value) set_stack_protected3_with(sc, cons(sc, z, stack_protected3(sc)), OP_MAP_UNWIND);
+			  if (z != sc->no_value) set_stack_protected3_with(sc, cons(sc, z, stack_protected3_with(sc)), OP_MAP_UNWIND);
 			}
-		      res = proper_list_reverse_in_place(sc, stack_protected3(sc));
+		      res = proper_list_reverse_in_place(sc, stack_protected3_with(sc));
 		    }
 	  sc->map_call_ctr--;
 	  unstack_with(sc, OP_MAP_UNWIND);
@@ -69227,21 +69242,21 @@ static s7_pointer g_map_closure_2(s7_scheme *sc, s7_pointer f, s7_pointer seq1, 
 	    {
 	      set_stack_protected3_with(sc, sc->nil, OP_MAP_UNWIND);
 	      map_or_for_each_closure_pair_2(sc, func, seq1, seq2, slot1, slot2, false); /* builds result on stack_protected3 */
-	      res = proper_list_reverse_in_place(sc, stack_protected3(sc));
+	      res = proper_list_reverse_in_place(sc, stack_protected3_with(sc));
 	    }
 	  else
 	    if ((is_any_vector(seq1)) && (is_any_vector(seq2)))
 	      {
 		set_stack_protected3_with(sc, sc->nil, OP_MAP_UNWIND);
 		map_or_for_each_closure_vector_2(sc, func, seq1, seq2, slot1, slot2, false);
-		res = proper_list_reverse_in_place(sc, stack_protected3(sc));
+		res = proper_list_reverse_in_place(sc, stack_protected3_with(sc));
 	      }
 	    else
 	      if ((is_string(seq1)) && (is_string(seq2)))
 		{
 		  set_stack_protected3_with(sc, sc->nil, OP_MAP_UNWIND);
 		  map_or_for_each_closure_string_2(sc, func, seq1, seq2, slot1, slot2, false);
-		  res = proper_list_reverse_in_place(sc, stack_protected3(sc));
+		  res = proper_list_reverse_in_place(sc, stack_protected3_with(sc));
 		}
 	  sc->map_call_ctr--;
 	  unstack_with(sc, OP_MAP_UNWIND);
@@ -96798,7 +96813,12 @@ static void init_rootlet(s7_scheme *sc)
   sc->inlet_symbol =                 defun("inlet",		inlet,			0, 0, true);
   sc->owlet_symbol =                 defun("owlet",		owlet,			0, 0, false);
   sc->coverlet_symbol =              defun("coverlet",		coverlet,		1, 0, false);
-  sc->openlet_symbol =               defun("openlet",		openlet,		1, 0, false);
+  sc->openlet_symbol =               unsafe_defun("openlet",	openlet,		1, 0, false);
+  /* unsafe here because otherwise it can be optimized, whereupon our gc_protect_via_stack becomes unreliable:
+   *   we can't assume the current top-of-stack is the gc_protect in fx_c_aa (for example): if fn_proc hits an openlet method redirect to map or for-each,
+   *   the stack will have that operator awaiting the next spin through eval: (define (f) (write (vector 1.0) (openlet (inlet 'write for-each)))) (f)
+   *   the "f" function is needed to get the optimizer to call fx_c_aa.  This affects fx/opt cases throughout!
+   */
   sc->let_ref_symbol =               defun("let-ref",		let_ref,		2, 0, false);
   set_immutable(sc->let_ref_symbol);  /* 16-Sep-19 */
   set_immutable_slot(global_slot(sc->let_ref_symbol));
@@ -98293,37 +98313,37 @@ int main(int argc, char **argv)
  * --------------------------------------------------------------
  * tpeak      148    115    114    108    105    102    102
  * tref      1081    691    687    463    459    464    410
- * index            1026   1016    973    967    972    970
+ * index            1026   1016    973    967    972    973
  * tmock            1177   1165   1057   1019   1032   1029
  * tvect     3408   2519   2464   1772   1669   1497   1454
  * tauto                          2562   2048   1729   1707
  * texit     1884   1930   1950   1778   1741   1770   1769
- * s7test           1873   1831   1818   1829   1830   1880
- * lt        2222   2187   2172   2150   2185   1950   1950
- * dup              3805   3788   2492   2239   2097   1997
+ * s7test           1873   1831   1818   1829   1830   1857
+ * lt        2222   2187   2172   2150   2185   1950   1952
+ * dup              3805   3788   2492   2239   2097   2003
  * thook     7651                 2590   2030   2046   2011
- * tcopy            8035   5546   2539   2375   2386   2370
- * tread            2440   2421   2419   2408   2405   2261
+ * tcopy            8035   5546   2539   2375   2386   2387
+ * tread            2440   2421   2419   2408   2405   2256
  * titer     3657   2865   2842   2641   2509   2449   2446
  * trclo     8031   2735   2574   2454   2445   2449   2470
  * tmat             3065   3042   2524   2578   2590   2519
- * tload                          3046   2404   2566   2546
+ * tload                          3046   2404   2566   2537
  * fbench    2933   2688   2583   2460   2430   2478   2562
  * tsort     3683   3105   3104   2856   2804   2858   2858
  * tio              3816   3752   3683   3620   3583   3261
  * tobj             4016   3970   3828   3577   3508   3513
- * teq              4068   4045   3536   3486   3544   3507
+ * teq              4068   4045   3536   3486   3544   3527
  * tmac             3950   3873   3033   3677   3677   3683
  * tclo      6362   4787   4735   4390   4384   4474   4337
  * tcase            4960   4793   4439   4430   4439   4429
- * tlet      9166   7775   5640   4450   4427   4457   4487
+ * tlet      9166   7775   5640   4450   4427   4457   4481
  * tfft             7820   7729   4755   4476   4536   4542
  * tstar            6139   5923   5519   4449   4550   4584
  * tmap             8869   8774   4489   4541   4586   4593
- * tshoot           5525   5447   5183   5055   5034   5058
+ * tshoot           5525   5447   5183   5055   5034   5052
  * tform            5357   5348   5307   5316   5084   5087
- * tstr      10.0   6880   6342   5488   5162   5180   5213
- * tnum             6348   6013   5433   5396   5409   5430
+ * tstr      10.0   6880   6342   5488   5162   5180   5205
+ * tnum             6348   6013   5433   5396   5409   5432
  * tgsl             8485   7802   6373   6282   6208   6181
  * tari      15.0   13.0   12.7   6827   6543   6278   6274
  * tlist     9219   7896   7546   6558   6240   6300   6305
@@ -98334,7 +98354,7 @@ int main(int argc, char **argv)
  * tlamb                                 8003   7941   7948
  * tgc              11.9   11.1   8177   7857   7986   8014
  * thash            11.8   11.7   9734   9479   9526   9254
- * cb        12.9   11.2   11.0   9658   9564   9609   9643
+ * cb        12.9   11.2   11.0   9658   9564   9609   9641
  * tmap-hash                           1671.0 1467.0   10.3
  * tmv              16.0   15.4   14.7   14.5   14.4   11.9
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3
@@ -98352,15 +98372,11 @@ int main(int argc, char **argv)
  *   so (with-let *s7* ...) would make a let with whatever *s7* entries are needed? -> (let ((print-length (*s7* 'print-length))) ...)
  *   currently sc->s7_starlet is a let (make_s7_starlet) using g_s7_let_ref_fallback, so it assumes print-length above is undefined
  * need some print-length/print-elements distinction for vector/pair etc
- * 73050 vars_opt_ok problem
- * ccrma s7test in tmp, ./configure CC=g++ CFLAGS="-I. -O2 -lm -Wall -Wextra -Wno-unused-parameter"
- * maybe extend port-string opt to other non-pip cases
+ * 73150 vars_opt_ok problem
+ * maybe extend port-string to other non-pip cases
  *   output string-port opt'd
  *   check port type change (both string-port and port->int etc) [t688.scm]
  *   check error cases in g_[set_]port_string                    [t688.scm]
  *   opt other similar c_function_setter cases? [port-position|closed? car/cdr]
  *   non-dox opt?
- * t689 fx_c_aa remainders, fx_safe_thunk_a change extended to similar cases, add this test to t725
- *   move to later so 'write is not messed up
- *   why is this the error message: "vector-ref second argument, (write . for-each), is a pair but should be an integer"
  */
