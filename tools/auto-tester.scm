@@ -1271,6 +1271,8 @@
 		    "(make-hash-table 8 #f (cons (lambda (x) #f) (lambda (x) #f)))" ; same
 		    "(make-vector 3 #f (let ((calls 0)) (lambda (x) (set! calls (+ calls 1)) (= calls 1))))" ; 2 calls = error I hope
 
+		    ;"(write (vector 1.0) (openlet (inlet 'write for-each)))"
+
 		    "(immutable! #(1 2))" "(immutable! #r(1 2))" "(immutable! \"asdf\")" "(immutable! '(1 2))" "(immutable! (hash-table 'a 1))"
 		    ;"(immutable! 'x)"
 		    "(immutable! 'asdf)"

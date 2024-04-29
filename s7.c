@@ -28277,7 +28277,7 @@ static s7_pointer g_set_port_string(s7_scheme *sc, s7_pointer args)
   return(str);
 }
 
-static s7_pointer set_port_string(s7_scheme *sc, s7_pointer port, s7_pointer str)
+static s7_pointer set_input_port_string(s7_scheme *sc, s7_pointer port, s7_pointer str)
 {
   s7_int str_len;
   if (port_is_closed(port))
@@ -28288,6 +28288,20 @@ static s7_pointer set_port_string(s7_scheme *sc, s7_pointer port, s7_pointer str
   port_data_size(port) = str_len;
   port_position(port) = 0;
   port_set_string_or_function(port, str);
+  return(str);
+}
+
+static s7_pointer set_output_port_string(s7_scheme *sc, s7_pointer port, s7_pointer str)
+{
+  s7_int str_len;
+  if (port_is_closed(port))
+    wrong_type_error_nr(sc, wrap_string(sc, "set! port-string", 16), 1, port, wrap_string(sc, "an open port", 12));
+  str_len = string_length(str);
+  if (port_data_size(port) <= str_len)
+    resize_port_data(sc, port, str_len * 2);
+  memcpy((void *)port_data(port), (const void *)string_value(str), str_len);
+  port_position(port) = str_len;
+  port_data(port)[str_len] = '\0';
   return(str);
 }
 
@@ -65274,10 +65288,17 @@ static s7_pointer opt_set_p_p_f_with_setter(opt_info *o)
   return(x);
 }
 
-static s7_pointer opt_set_port_string_p_p_f(opt_info *o)
+static s7_pointer opt_set_input_port_string_p_p_f(opt_info *o)
 {
   s7_pointer x = o->v[4].fp(o->v[3].o1); /* the string */
-  set_port_string(o->sc, slot_value(o->v[2].p), x);
+  set_input_port_string(o->sc, slot_value(o->v[2].p), x);
+  return(x);
+}
+
+static s7_pointer opt_set_output_port_string_p_p_f(opt_info *o)
+{
+  s7_pointer x = o->v[4].fp(o->v[3].o1); /* the string */
+  set_output_port_string(o->sc, slot_value(o->v[2].p), x);
   return(x);
 }
 
@@ -65651,18 +65672,20 @@ static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_sy
 	  if ((car(target) == sc->port_string_symbol) &&
 	      (obj == initial_value(car(target))) &&
 	      (is_normal_symbol(cadr(target))) &&
-	      (opt_arg_type(sc, cdr(target)) == sc->is_input_port_symbol) &&
 	      (opt_arg_type(sc, cddr(car_x)) == sc->is_string_symbol))
 	    {
-	      int32_t start_pc = sc->pc;
-	      opc->v[2].p = s7_slot(sc, cadr(target));
-	      if ((is_slot(opc->v[2].p)) && (is_string_port(slot_value(opc->v[2].p))) && (cell_optimize(sc, cddr(car_x))))
+	      s7_pointer port_type = opt_arg_type(sc, cdr(target));
+	      if ((port_type == sc->is_input_port_symbol) || (port_type == sc->is_output_port_symbol))
 		{
-		  opc->v[0].fp = opt_set_port_string_p_p_f;
-		  opc->v[3].o1 = sc->opts[start_pc];
-		  opc->v[4].fp = sc->opts[start_pc]->v[0].fp;
-		  return_true(sc, car_x);
-		}}
+		  int32_t start_pc = sc->pc;
+		  opc->v[2].p = s7_slot(sc, cadr(target));
+		  if ((is_slot(opc->v[2].p)) && (is_string_port(slot_value(opc->v[2].p))) && (cell_optimize(sc, cddr(car_x))))
+		    {
+		      opc->v[3].o1 = sc->opts[start_pc];
+		      opc->v[4].fp = sc->opts[start_pc]->v[0].fp;
+		      opc->v[0].fp = (port_type == sc->is_input_port_symbol) ? opt_set_input_port_string_p_p_f : opt_set_output_port_string_p_p_f;
+		      return_true(sc, car_x);
+		    }}}
 	  return_false(sc, car_x);
 	}
       index = cadr(target);
@@ -98330,7 +98353,7 @@ int main(int argc, char **argv)
  * tload                          3046   2404   2566   2537
  * fbench    2933   2688   2583   2460   2430   2478   2562
  * tsort     3683   3105   3104   2856   2804   2858   2858
- * tio              3816   3752   3683   3620   3583   3261
+ * tio              3816   3752   3683   3620   3583   3122
  * tobj             4016   3970   3828   3577   3508   3513
  * teq              4068   4045   3536   3486   3544   3527
  * tmac             3950   3873   3033   3677   3677   3683
@@ -98373,10 +98396,4 @@ int main(int argc, char **argv)
  *   currently sc->s7_starlet is a let (make_s7_starlet) using g_s7_let_ref_fallback, so it assumes print-length above is undefined
  * need some print-length/print-elements distinction for vector/pair etc
  * 73150 vars_opt_ok problem
- * maybe extend port-string to other non-pip cases
- *   output string-port opt'd
- *   check port type change (both string-port and port->int etc) [t688.scm]
- *   check error cases in g_[set_]port_string                    [t688.scm]
- *   opt other similar c_function_setter cases? [port-position|closed? car/cdr]
- *   non-dox opt?
  */
