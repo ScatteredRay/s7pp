@@ -47480,7 +47480,7 @@ static s7_pointer symbol_set_setter(s7_scheme *sc, s7_pointer sym, s7_pointer ar
 
   if (is_pair(cddr(args)))
     {
-      s7_pointer e = cadr(args); /* (let ((x 1)) (set! (setter 'x (curlet)) (lambda (s v e) ...))) */
+      s7_pointer e = cadr(args); /* (let ((x 1)) (set! (setter 'x (curlet)) (lambda (s v e) ...))): args is (x (inlet 'x 1) #<lambda (s v ...)>) */
       func = caddr(args);
       if (e == sc->rootlet)
 	slot = global_slot(sym);
@@ -47492,7 +47492,7 @@ static s7_pointer symbol_set_setter(s7_scheme *sc, s7_pointer sym, s7_pointer ar
 	}}
   else
     {
-      slot = s7_slot(sc, sym); /* (set! (setter 'x) (lambda (s v) ...)) */
+      slot = s7_slot(sc, sym); /* (set! (setter 'x) (lambda (s v) ...)): args is: (x #<lambda (s v)>) */
       func = cadr(args);
     }
   if (!is_slot(slot))
@@ -49668,8 +49668,12 @@ static s7_pointer s7_copy_1(s7_scheme *sc, s7_pointer caller, s7_pointer args)
 		  els[j] = car(p);
 	      }
 	    else
-	      for (/* i = start */ j = 0; i < end; i++, j++, p = cdr(p))
-		set(sc, dest, j, car(p));
+	      {
+		gc_protect_via_stack(sc, source);
+		for (/* i = start */ j = 0; i < end; i++, j++, p = cdr(p))
+		  set(sc, dest, j, car(p));
+		unstack_gc_protect(sc);
+	      }
 	return(dest);
       }
 
@@ -98381,4 +98385,6 @@ int main(int argc, char **argv)
  *   currently sc->s7_starlet is a let (make_s7_starlet) using g_s7_let_ref_fallback, so it assumes print-length above is undefined
  * need some print-length/print-elements distinction for vector/pair etc
  * 73150 vars_opt_ok problem
+ * (atan 0.0 -0.0) result is inconsistent (see survey)
+ *   also in cond-expand an undefined feature = #f
  */
