@@ -77,7 +77,7 @@
 (define char-foldcase char-downcase) 
 (define string-foldcase string-downcase)
 ;;; these and the string functions in s7 are not unicode-aware.  To get true unicode
-;;;   handling of the bytes, use the glib functions in libxg or use cload (see xgdata.scm).
+;;;   handling of the bytes, use libutf8proc.scm, the glib functions in libxg or use cload (see xgdata.scm).
 (define (digit-value c) (and (char-numeric? c) (- (char->integer c) (char->integer #\0))))
 
 
@@ -206,11 +206,13 @@
 
 (define interaction-environment curlet)
 ;; for null-environment see stuff.scm
+
 (define-macro (include . files) 
   `(begin
      ,@(map (lambda (file)
 	      `(load ,file (outlet (curlet))))
 	    files)))
+;; todo: this should apparently return (begin (read) ...) from the included files
 
 (set! *#readers* (cons (cons #\; (lambda (s) (read) (values))) *#readers*))
 ;; I prefer (define-expansion (comment . stuff) (values))

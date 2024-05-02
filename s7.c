@@ -17599,6 +17599,10 @@ static s7_pointer g_atan(s7_scheme *sc, s7_pointer args)
 	}}
 
   y = cadr(args);
+  /* this is one place where s7 notices -0.0 != 0.0 -- this is apparently built into atan2, so I guess I'll leave it, but:
+   *   (atan 0.0 0.0): 0.0, (atan 0.0 -0.0): pi, (atan 0 -0.0): pi, (atan 0 -0) 0.0, (atan 0 -0.0): pi.
+   *   so you can sneak up on 0.0 from the left, but you can't fool 0??
+   */
   switch (type(x))
     {
     case T_INTEGER: case T_RATIO: case T_REAL:
@@ -79949,7 +79953,8 @@ static void check_set(s7_scheme *sc)
       if ((is_slot(slot)) &&
 	  (!slot_has_setter(slot)) &&
 	  (!is_immutable(slot)) &&
-	  (!is_syntactic_symbol(settee)))
+	  (!is_syntactic_symbol(settee)) &&
+	  (!s7_tree_memq(sc, sc->setter_symbol, value))) /* (set! x (set! (setter 'x) ...) ...)! */
 	{
 	  if (is_normal_symbol(value))
 	    {
@@ -80076,7 +80081,7 @@ static void op_set_s_p(s7_scheme *sc)
   sc->code = caddr(sc->code);
 }
 
-static void op_set_safe(s7_scheme *sc) /* name is misleading -- we need to check for immutable slot */
+static void op_set_safe(s7_scheme *sc) /* name is misleading -- we need to check for immutable slot, but no setter */
 {
   s7_pointer slot = s7_slot(sc, sc->code);
   if (is_slot(slot))
@@ -80323,7 +80328,7 @@ static bool op_set_opsaq_a(s7_scheme *sc)        /* (set! (symbol fxable) fxable
 	{
 	  sc->code = setf;
 	  sc->args = pair_append(sc, cdar(code), cdr(code));
-	  return(true);
+	  return(true); /* goto APPLY */
 	}}
   value = fx_call(sc, cdr(code));
   gc_protect_via_stack(sc, value);
@@ -80353,11 +80358,11 @@ static inline bool op_set_opsaq_p(s7_scheme *sc)
 	{
 	  sc->code = setf;
 	  sc->args = pair_append(sc, cdar(code), cdr(code));
-	  return(true);
+	  return(true); /* goto APPLY */
 	}}
   push_stack(sc, OP_SET_opSAq_P_1, obj, code);
   sc->code = cadr(code);
-  return(false);
+  return(false);        /* goto EVAL */
 }
 
 static inline bool op_set_opsaq_p_1(s7_scheme *sc)
@@ -98385,6 +98390,4 @@ int main(int argc, char **argv)
  *   currently sc->s7_starlet is a let (make_s7_starlet) using g_s7_let_ref_fallback, so it assumes print-length above is undefined
  * need some print-length/print-elements distinction for vector/pair etc
  * 73150 vars_opt_ok problem
- * (atan 0.0 -0.0) result is inconsistent (see survey)
- *   also in cond-expand an undefined feature = #f
  */

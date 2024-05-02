@@ -4093,10 +4093,10 @@ result = s7_call(s7, hook, s7_list(s7, 2, s7_make_integer(s7, 1), s7_make_intege
 
 
 <pre class="indented">
-(<em class=def id="documentation">documentation</em> obj)          ; old name: (procedure-documentation obj)
-(<em class=def id="signature">signature</em> obj)              ; old:      (procedure-signature obj)
-(<em class=def id="setter">setter</em> obj)                 ; old:      (procedure-setter obj)
-(<em class=def id="arity">arity</em> obj)                  ; very old: (procedure-arity obj)
+(<em class=def id="documentation">documentation</em> obj)
+(<em class=def id="signature">signature</em> obj)
+(<em class=def id="setter">setter</em> obj)
+(<em class=def id="arity">arity</em> obj)
 (<em class=def id="aritablep">aritable?</em> obj num-args)
 (funclet proc)
 (<em class=def id="proceduresource">procedure-source</em> proc)
@@ -4114,7 +4114,7 @@ a procedure's environment.
 </pre>
 
 <p>
-<b>setter</b> returns or sets the set function associated with a procedure (set-car! with car, for example).
+<b>setter</b> returns or sets the setter function associated with a procedure (set-car! with car, for example).
 </p>
 
 <p>
@@ -4157,7 +4157,7 @@ you can treat the initial string in the function's body as documentation.
 </pre>
 
 <p>
-<b>arity</b> takes any object and returns either #f if it is not applicable,
+<b>arity</b> takes any object and returns either #f if that object is not applicable,
 or a cons containing the minimum and maximum number of arguments acceptable.  If the maximum reported
 is a really big number, that means any number of arguments is ok.
 <b>aritable?</b> takes two arguments, an object and an integer, and returns #t if the object can be
@@ -4201,11 +4201,14 @@ argument types.  #t means any type is possible, and 'values means the function r
 </pre>
 
 <p>which says that the first argument to char-position can be a string or a character,
-and the return type can be either boolean or an integer.  If we know a function returns
-multiple values, the return type (first element of the signature) can contain a list 
-describing each such value: <code>(define (f x) (values (floor x) (ceiling x)))</code>
-could be <code>(((integer?) (integer?)) real?)</code>.
+and the return type can be either boolean or an integer.  To specify the types returned
+if multiple values are returned, use (values type1 ..).  So the function:
 </p>
+<code>(define (f int) (case ((0) (values 0 1)) ((1) ((values 'a 1)) (else 0))))</code>
+<p>could declare its signature to be
+</p>
+<code>(((values integer? integer?) (values symbol? integer?) integer?) integer?)</code>
+;; or would it be better to omit the 'values and just have a list of types?
 <p>
 If the function is defined in scheme, its signature is the value of the '+signature+ variable
 in its closure:
