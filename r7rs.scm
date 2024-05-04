@@ -212,7 +212,14 @@
      ,@(map (lambda (file)
 	      `(load ,file (outlet (curlet))))
 	    files)))
-;; todo: this should apparently return (begin (read) ...) from the included files
+;; according to someone, this should insert the text from the included files directly into the loader input stream, perhaps:
+;; (let ((old-string (port-string (current-input-port))) ; do we need to start at port-position?
+;;       (new-string (let ((f (open-input-file file)))
+;;                     (let ((str (port-string f))) ; since it's actually a string port?
+;;                       (close-input-port f)
+;;                       str))))
+;;   (set! (port-string (current-input-file)) (string-append new-string old-string)))
+;; but this is alien to lisp, and even in C it's a horrible kludge -- why did the r7rs committee accept such crap?
 
 (set! *#readers* (cons (cons #\; (lambda (s) (read) (values))) *#readers*))
 ;; I prefer (define-expansion (comment . stuff) (values))

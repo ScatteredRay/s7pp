@@ -453,7 +453,7 @@
     (lambda ()
       (do ((i 0 (+ i 1)))
 	  ((= i len) (+ 1 L 2))
-	(unless (= (+ 1 L 2) 6)
+	(unless (= (+ 1 L 2) 6) ; g_add_3 -> add_p_ppp -> 2 add_p_pp with a method call
 	  (display "f4 oops\n"))))))
 
 ;(f4)

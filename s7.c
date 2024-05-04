@@ -17645,6 +17645,7 @@ static s7_pointer g_atan(s7_scheme *sc, s7_pointer args)
 #endif
 }
 
+static s7_double atan_d_d(s7_double x) {return(atan(x));}
 static s7_double atan_d_dd(s7_double x, s7_double y) {return(atan2(x, y));}
 
 
@@ -47271,7 +47272,7 @@ static bool is_sequence_b(s7_pointer p) {return(is_simple_sequence(p));}
 
 
 /* -------------------------------- setter ------------------------------------------------ */
-static s7_pointer b_simple_setter(s7_scheme *sc, int32_t typer, s7_pointer args)
+static s7_pointer b_simple_setter(s7_scheme *sc, int32_t typer, s7_pointer args) /* see bool_defun -> define_bool_function */
 {
   if (type(cadr(args)) != typer)
     error_nr(sc, sc->wrong_type_arg_symbol,
@@ -47279,6 +47280,8 @@ static s7_pointer b_simple_setter(s7_scheme *sc, int32_t typer, s7_pointer args)
 			 car(args), cadr(args), sc->type_names[type(cadr(args))], sc->type_names[typer]));
   return(cadr(args));
 }
+
+/* these are for the simplified setter designation: (let ((x 1)) (set! (setter 'x) integer?) (set! x 3.14)) -> error */
 
 static s7_pointer b_is_symbol_setter(s7_scheme *sc, s7_pointer args)       {return(b_simple_setter(sc, T_SYMBOL, args));}
 static s7_pointer b_is_syntax_setter(s7_scheme *sc, s7_pointer args)       {return(b_simple_setter(sc, T_SYNTAX, args));}
@@ -73169,16 +73172,14 @@ static bool vars_opt_ok(s7_scheme *sc, s7_pointer vars, int32_t hop, s7_pointer 
       /* if ((is_slot(global_slot(car(var)))) && (is_c_function(global_value(car(var))))) return(false); */ /* too draconian (see snd-test) */
       if ((is_normal_symbol(car(var))) && (is_global(car(var)))) /* (define (f) (let ((+ -)) (with-let (curlet) (#_integer? (+))))) (f) */
 	{
-	  s7_int old_pl = sc->print_length;
-	  sc->print_length = 80;
 	  /* fprintf(stderr, "set %s local in %s\n", display(car(var)), display_truncated(vars)); */
-	  /* locals in tall: initial_dur, bump, fft_window ?? none of these look problematic! */
-	  sc->print_length = old_pl;
 	  set_local(car(var));
 	  return(false);
 	}
       /* also too draconian (tall for example) but +/- above is broken now (returns #t)
-       *   perhaps set_local could be undone upon leaving the let if there's no capture possible
+       *   perhaps set_local could be undone upon leaving the let if there's no capture possible:
+       *   for each here, save full type, add to list, set_local, then when let opt is done, reset to outside type
+       *   would need lists of such lists following the let chain
        */
 #else
       s7_pointer init = cadar(p);
@@ -86209,10 +86210,10 @@ static Inline void inline_op_closure_aa_o(s7_scheme *sc) /* called once in eval,
 static /* inline */ void op_closure_fa(s7_scheme *sc) /* "inline" matters perhaps in texit.scm */
 {
   s7_pointer new_clo, code = sc->code;
-  s7_pointer farg = opt2_pair(code);           /* cdadr(code), '((a . b) (cons a b)) for (lambda (a . b) (cons a b)) */
+  s7_pointer farg = opt2_pair(code);             /* cdadr(code), '((a . b) (cons a b)) for (lambda (a . b) (cons a b)) */
   s7_pointer aarg = fx_call(sc, cddr(code));
-  s7_pointer func = opt1_lambda(code);         /* outer func */
-  s7_pointer func_args = closure_args(func);   /* outer func args (not the arglist of the applied func) */
+  s7_pointer func = opt1_lambda(code);           /* outer func */
+  s7_pointer func_args = closure_args(func);     /* outer func args (not the arglist of the applied func) */
   sc->value = inline_make_let_with_two_slots(sc, closure_let(func), car(func_args), sc->F, cadr(func_args), aarg);
   new_clo = make_closure_unchecked(sc, car(farg), cdr(farg), T_CLOSURE | ((!s7_is_proper_list(sc, car(farg))) ? T_COPY_ARGS : 0), CLOSURE_ARITY_NOT_SET);
   /* this is checking the called closure arglist (see op_lambda), arity<0 probably not usable since "f" in "fa" is a parameter */
@@ -95945,6 +95946,7 @@ static void init_opt_functions(s7_scheme *sc)
   s7_set_i_i_function(sc, global_value(sc->truncate_symbol), truncate_i_i);
 
   s7_set_d_d_function(sc, global_value(sc->tan_symbol), tan_d_d);
+  s7_set_d_d_function(sc, global_value(sc->atan_symbol), atan_d_d);
   s7_set_d_dd_function(sc, global_value(sc->atan_symbol), atan_d_dd);
   s7_set_d_d_function(sc, global_value(sc->tanh_symbol), tanh_d_d);
   s7_set_p_p_function(sc, global_value(sc->exp_symbol), exp_p_p);
@@ -98348,7 +98350,7 @@ int main(int argc, char **argv)
  * fbench    2933   2688   2583   2460   2430   2478   2562
  * tsort     3683   3105   3104   2856   2804   2858   2858
  * tio              3816   3752   3683   3620   3583   3128
- * tobj             4016   3970   3828   3577   3508   3513
+ * tobj             4016   3970   3828   3577   3508   3453
  * teq              4068   4045   3536   3486   3544   3507
  * tmac             3950   3873   3033   3677   3677   3683
  * tclo      6362   4787   4735   4390   4384   4474   4337
@@ -98362,7 +98364,7 @@ int main(int argc, char **argv)
  * tstr      10.0   6880   6342   5488   5162   5180   5211
  * tnum             6348   6013   5433   5396   5409   5430
  * tgsl             8485   7802   6373   6282   6208   6181
- * tari      15.0   13.0   12.7   6827   6543   6278   6274
+ * tari      15.0   13.0   12.7   6827   6543   6278   6189
  * tlist     9219   7896   7546   6558   6240   6300   6313
  * tset                                  6260   6364   6420
  * trec      19.5   6936   6922   6521   6588   6583   6584

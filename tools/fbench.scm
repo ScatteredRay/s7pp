@@ -21,7 +21,7 @@
 ;;;  Ported from the C language implementation in September 2005
 ;;;  by John Walker.
 ;;;
-;;;  Ported to s7 (and Guile) 20-May-2019
+;;;  Ported to s7 20-May-2019
 
 ;;      Wavelengths of standard spectral lines in Angstroms
 (define spectral-line
@@ -236,3 +236,4 @@
 (when (> (*s7* 'profile) 0)
   (show-profile 200))
 (exit)
+

@@ -6,7 +6,6 @@
 (define int-limit 1000000)
 (define float-limit 1000.0)
 
-
 (define (make-ivals)
   (let ((v (make-int-vector size))
 	(lim (* 2 int-limit)))
@@ -22,7 +21,6 @@
 	((= i size) v)
       (vector-set! v i (- (random lim) int-limit)))))
 (define ivals1 (make-ivals1))
-
 
 (define (make-fvals)
   (let ((v (make-float-vector size))
@@ -40,7 +38,6 @@
       (vector-set! v i (- (random lim) float-limit)))))
 (define fvals1 (make-fvals1))
 
-
 (define (make-ratvals)
   (let ((v (make-vector size))
 	(lim (* 2 int-limit)))
@@ -48,7 +45,6 @@
 	((= i size) v)
       (vector-set! v i (/ (- (random lim) int-limit) (+ 1 (random int-limit)))))))
 (define ratvals (make-ratvals))
-
 
 (define (make-cvals)
   (let ((v (make-vector size))
@@ -246,33 +242,42 @@
 
 ;;; -------- sin etc --------
 
-(define (trigs)
+(define (trigs1) ; this division into *_d_d here and *_p_p below doesn't save much -- most time is in libm */
   (let ((fv (make-float-vector 1)))
     (do ((i 0 (+ i 1)))
 	((= i size))
       (sin (fvals i))
-      (sin (cvals i))
       (float-vector-set! fv 0 (sin (fvals i)))
       (cos (fvals i))
-      (cos (cvals i))
       (float-vector-set! fv 0 (cos (fvals i)))
       (tan (fvals i))
-      (tan (cvals i))
       (float-vector-set! fv 0 (tan (fvals i)))
+      (atan (fvals i))
+      (float-vector-set! fv 0 (atan (fvals i) (fvals i)))
+      (tanh (fvals i))
+      (sinh (fvals i))
+      (float-vector-set! fv 0 (sinh (fvals i)))
+      (cosh (fvals i))
+      (float-vector-set! fv 0 (cosh (fvals i)))
+
+      )))
+
+(trigs1)
+
+(define (trigs2)
+  (let ((fv (make-float-vector 1)))
+    (do ((i 0 (+ i 1)))
+	((= i size))
+      (sin (cvals i))
+      (cos (cvals i))
+      (tan (cvals i))
       (asin (fvals i))
       (asin (cvals i))
       (acos (fvals i))
       (acos (cvals i))
-      (atan (fvals i))
       (atan (cvals i))
-      (float-vector-set! fv 0 (atan (fvals i) (fvals i)))
-      (sinh (fvals i))
       (sinh (cvals i))
-      (float-vector-set! fv 0 (sinh (fvals i)))
-      (cosh (fvals i))
       (cosh (cvals i))
-      (float-vector-set! fv 0 (cosh (fvals i)))
-      (tanh (fvals i))
       (tanh (cvals i))
       (asinh (fvals i))
       (asinh (cvals i))
@@ -282,7 +287,7 @@
       (atanh (cvals i))
       (angle (fvals i)))))
 
-(trigs)
+(trigs2)
 
 
 ;;; -------- lognot etc --------
@@ -434,5 +439,16 @@
 
 (exptest)
 
+(fill! ratvals 0)
+(fill! cvals 0)
+(set! unzeros #f)
+(set! funzeros #f)
+(set! unzeros1 #f)
+(set! ivals #f)
+(set! fvals #f)
+(set! fvals1 #f)
+(set! ivals1 #f)
+(set! ratvals #f)
+(set! cvals #f)
 
 (exit)
