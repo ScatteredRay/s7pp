@@ -259,7 +259,7 @@
       (float-vector-set! fv 0 (sinh (fvals i)))
       (cosh (fvals i))
       (float-vector-set! fv 0 (cosh (fvals i)))
-
+      (angle (fvals i))
       )))
 
 (trigs1)
@@ -284,8 +284,7 @@
       (acosh (fvals i))
       (acosh (cvals i))
       (atanh (fvals i))
-      (atanh (cvals i))
-      (angle (fvals i)))))
+      (atanh (cvals i)))))
 
 (trigs2)
 

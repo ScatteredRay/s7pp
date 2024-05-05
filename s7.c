@@ -16607,6 +16607,8 @@ static s7_pointer g_angle(s7_scheme *sc, s7_pointer args)
     }
 }
 
+static s7_double angle_d_d(s7_double x) {return((is_NaN(x)) ? x : ((x < 0.0) ? M_PI : 0.0));}
+
 
 /* -------------------------------- complex -------------------------------- */
 
@@ -55808,9 +55810,9 @@ static s7_pointer fx_cons_opuq_t(s7_scheme *sc, s7_pointer arg)
 #define fx_c_opsq_cs_any(Name, Lookup1, Lookup2) \
   static s7_pointer Name(s7_scheme *sc, s7_pointer arg) \
   { \
-    set_car(sc->t3_1, fn_proc(cadr(arg))(sc, with_list_t1(Lookup1(sc, opt3_sym(cdr(arg)), arg))));  /* cadadr(arg); */ \
+    set_car(sc->t3_1, fn_proc(cadr(arg))(sc, with_list_t1(Lookup1(sc, opt3_sym(cdr(arg)), arg))));  /* cadadr(arg) */ \
     set_car(sc->t3_2, opt1_con(cdr(arg)));              /* caddr(arg) or cadaddr(arg) */ \
-    set_car(sc->t3_3, Lookup2(sc, opt2_sym(cdr(arg)), arg));  /* cadddr(arg); */ \
+    set_car(sc->t3_3, Lookup2(sc, opt2_sym(cdr(arg)), arg));  /* cadddr(arg) */ \
     return(fn_proc(arg)(sc, sc->t3_1)); \
   }
 
@@ -56093,7 +56095,7 @@ static s7_pointer fx_not_op_optq_sq(s7_scheme *sc, s7_pointer arg)
 
 static s7_pointer fx_c_c_opsq(s7_scheme *sc, s7_pointer arg)
 {
-  s7_pointer largs = opt3_pair(arg); /* caddr(arg); */
+  s7_pointer largs = opt3_pair(arg); /* caddr(arg) */
   set_car(sc->t2_2, fn_proc(largs)(sc, with_list_t1(lookup(sc, cadr(largs)))));
   set_car(sc->t2_1, cadr(arg));
   return(fn_proc(arg)(sc, sc->t2_1));
@@ -56231,7 +56233,7 @@ static s7_pointer fx_c_opssq_opssq(s7_scheme *sc, s7_pointer arg)
 
 static s7_pointer fx_sub_mul_mul(s7_scheme *sc, s7_pointer arg) /* (- (* s1 s2) (* s3 s4)) */
 {
-  s7_pointer a1 = opt3_pair(arg);      /* cdaddr(arg); */
+  s7_pointer a1 = opt3_pair(arg);      /* cdaddr(arg) */
   s7_pointer s1 = lookup(sc, car(a1));
   s7_pointer s2 = lookup(sc, cadr(a1));
   s7_pointer a2 = opt1_pair(cdr(arg)); /* cdadr(arg) */ /* here and elsewhere this should be GC safe -- opssq->* (no methods?) etc */
@@ -56245,7 +56247,7 @@ static s7_pointer fx_sub_mul_mul(s7_scheme *sc, s7_pointer arg) /* (- (* s1 s2) 
 
 static s7_pointer fx_add_mul_mul(s7_scheme *sc, s7_pointer arg) /* (+ (* s1 s2) (* s3 s4)) */
 {
-  s7_pointer a1 = opt3_pair(arg);      /* cdaddr(arg); */
+  s7_pointer a1 = opt3_pair(arg);      /* cdaddr(arg) */
   s7_pointer s1 = lookup(sc, car(a1));
   s7_pointer s2 = lookup(sc, cadr(a1));
   s7_pointer a2 = opt1_pair(cdr(arg)); /* cdadr(arg) */
@@ -56259,7 +56261,7 @@ static s7_pointer fx_add_mul_mul(s7_scheme *sc, s7_pointer arg) /* (+ (* s1 s2) 
 
 static s7_pointer fx_mul_sub_sub(s7_scheme *sc, s7_pointer arg) /* (* (- s1 s2) (- s3 s4)) */
 {
-  s7_pointer a1 = opt3_pair(arg);      /* cdaddr(arg); */
+  s7_pointer a1 = opt3_pair(arg);      /* cdaddr(arg) */
   s7_pointer s1 = lookup(sc, car(a1));
   s7_pointer s2 = lookup(sc, cadr(a1));
   s7_pointer a2 = opt1_pair(cdr(arg)); /* cdadr(arg) */
@@ -56273,7 +56275,7 @@ static s7_pointer fx_mul_sub_sub(s7_scheme *sc, s7_pointer arg) /* (* (- s1 s2) 
 
 static s7_pointer fx_lt_sub2(s7_scheme *sc, s7_pointer arg)
 {
-  s7_pointer a1 = opt3_pair(arg);      /* cdaddr(arg); */
+  s7_pointer a1 = opt3_pair(arg);      /* cdaddr(arg) */
   sc->temp5 = subtract_p_pp(sc, lookup(sc, car(a1)), lookup(sc, cadr(a1)));
   a1 = opt1_pair(cdr(arg)); /* cdadr(arg) */
   return(lt_p_pp(sc, subtract_p_pp(sc, lookup(sc, car(a1)), lookup(sc, cadr(a1))), sc->temp5));
@@ -56284,7 +56286,7 @@ static s7_pointer fx_sub_vref2(s7_scheme *sc, s7_pointer arg)
   s7_pointer a1 = cdadr(arg);
   s7_pointer v1 = lookup(sc, car(a1));
   s7_pointer p1 = lookup(sc, cadr(a1));
-  s7_pointer p2 = lookup(sc, opt3_sym(arg)); /* caddaddr(arg)); */
+  s7_pointer p2 = lookup(sc, opt3_sym(arg)); /* caddaddr(arg) */
   if ((is_t_integer(p1)) && (is_t_integer(p2)) && ((is_t_vector(v1)) && (vector_rank(v1) == 1)))
     {
       s7_int i1 = integer(p1), i2 = integer(p2);
@@ -56600,7 +56602,7 @@ static s7_pointer fx_c_opaq_s(s7_scheme *sc, s7_pointer arg)
 
 static s7_pointer fx_c_s_opaq(s7_scheme *sc, s7_pointer arg)
 {
-  set_car(sc->t2_2, fn_proc(caddr(arg))(sc, with_list_t1(fx_call(sc, opt3_pair(arg))))); /* cdaddr(arg); */
+  set_car(sc->t2_2, fn_proc(caddr(arg))(sc, with_list_t1(fx_call(sc, opt3_pair(arg))))); /* cdaddr(arg) */
   set_car(sc->t2_1, lookup_checked(sc, cadr(arg)));
   return(fn_proc(arg)(sc, sc->t2_1));
 }
@@ -56957,14 +56959,14 @@ static s7_pointer fx_or_2a(s7_scheme *sc, s7_pointer arg)
 static s7_pointer fx_or_s_2(s7_scheme *sc, s7_pointer arg)
 {
   /* the "s" is looked up once here -- not obvious how to use fx_call anyway */
-  s7_pointer x = fn_proc(cadr(arg))(sc, with_list_t1(lookup(sc, opt3_sym(cdr(arg))))); /* cadadr(arg); */
+  s7_pointer x = fn_proc(cadr(arg))(sc, with_list_t1(lookup(sc, opt3_sym(cdr(arg))))); /* cadadr(arg) */
   return((x != sc->F) ? x : fn_proc(caddr(arg))(sc, sc->t1_1));
 }
 
 static s7_pointer fx_or_s_type_2(s7_scheme *sc, s7_pointer arg)
 {
-  s7_pointer x = lookup(sc, opt3_sym(cdr(arg))); /* cadadr(arg)); */
-  return(make_boolean(sc, (type(x) == opt3_int(arg)) || (type(x) == opt2_int(cdr(arg)))));
+  int32_t x = type(lookup(sc, opt3_sym(cdr(arg)))); /* cadadr(arg)) */
+  return(make_boolean(sc, (x == opt3_int(arg)) || (x == opt2_int(cdr(arg)))));
 }
 
 static s7_pointer fx_not_symbol_or_keyword(s7_scheme *sc, s7_pointer arg)
@@ -56978,7 +56980,7 @@ static s7_pointer fx_or_and_2a(s7_scheme *sc, s7_pointer arg)
   s7_pointer p = cdr(arg);
   s7_pointer val = fx_call(sc, p);
   if (val != sc->F) return(val);
-  p = opt3_pair(arg); /* cdadr(p); */
+  p = opt3_pair(arg); /* cdadr(p) */
   val = fx_call(sc, p);
   return((val == sc->F) ? val : fx_call(sc, cdr(p)));
 }
@@ -56988,7 +56990,7 @@ static s7_pointer fx_or_and_3a(s7_scheme *sc, s7_pointer arg)
   s7_pointer p = cdr(arg);
   s7_pointer val = fx_call(sc, p);
   if (val != sc->F) return(val);
-  p = opt3_pair(arg); /* cdadr(p); */
+  p = opt3_pair(arg); /* cdadr(p) */
   val = fx_call(sc, p);
   if (val == sc->F) return(val);
   p = cdr(p);
@@ -95865,6 +95867,7 @@ static void init_opt_functions(s7_scheme *sc)
   s7_set_d_d_function(sc, global_value(sc->magnitude_symbol), magnitude_d_d);
   s7_set_p_p_function(sc, global_value(sc->magnitude_symbol), magnitude_p_p);
 
+  s7_set_d_d_function(sc, global_value(sc->angle_symbol), angle_d_d);
   s7_set_p_d_function(sc, global_value(sc->sin_symbol), sin_p_d);
   s7_set_p_p_function(sc, global_value(sc->sin_symbol), sin_p_p);
   s7_set_p_d_function(sc, global_value(sc->cos_symbol), cos_p_d);
@@ -98364,7 +98367,7 @@ int main(int argc, char **argv)
  * tstr      10.0   6880   6342   5488   5162   5180   5211
  * tnum             6348   6013   5433   5396   5409   5430
  * tgsl             8485   7802   6373   6282   6208   6181
- * tari      15.0   13.0   12.7   6827   6543   6278   6189
+ * tari      15.0   13.0   12.7   6827   6543   6278   6184
  * tlist     9219   7896   7546   6558   6240   6300   6313
  * tset                                  6260   6364   6420
  * trec      19.5   6936   6922   6521   6588   6583   6584
@@ -98392,4 +98395,5 @@ int main(int argc, char **argv)
  *   currently sc->s7_starlet is a let (make_s7_starlet) using g_s7_let_ref_fallback, so it assumes print-length above is undefined
  * need some print-length/print-elements distinction for vector/pair etc
  * 73150 vars_opt_ok problem
+ * hash_table_to_port t718
  */
