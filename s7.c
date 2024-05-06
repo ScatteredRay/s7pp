@@ -34171,6 +34171,7 @@ static void hash_table_to_port(s7_scheme *sc, s7_pointer hash, s7_pointer port, 
       for (s7_int i = 0; i < len; i++)
 	{
 	  s7_pointer key_val = hash_table_iterate(sc, iterator);
+	  if (key_val == eof_object) break;             /* key_val can be #<eof> if hash is a weak-hash-table, and a GC happens during this loop */
 	  port_write_character(port)(sc, ' ', port);
 	  if ((use_write != P_READABLE) && (use_write != P_CODE) && (is_normal_symbol(car(key_val))))
 	    port_write_character(port)(sc, '\'', port);
@@ -59774,7 +59775,7 @@ static bool opt_i_7piii_args(s7_scheme *sc, opt_info *opc, s7_pointer indexp1, s
 		opc->v[0].fi = opt_i_piii_sssf_ivset_unchecked;
 	      return_true(sc, NULL);
 	    }}
-      return_false(sc, NULL);
+      return_false(sc, valp);
     }
   opc->v[10].o1 = sc->opts[sc->pc];
   if (int_optimize(sc, indexp1))
@@ -59827,7 +59828,7 @@ static bool opt_int_vector_set(s7_scheme *sc, int32_t otype, opt_info *opc, s7_p
 		      return_true(sc, NULL);
 		    }
 		  if (!int_optimize(sc, valp))
-		    return_false(sc, NULL);
+		    return_false(sc, valp);
 		  opc->v[0].fi = (opc->v[3].i_7pii_f == int_vector_set_i_7pii_direct) ? opt_i_7pii_ssf_vset : opt_i_7pii_ssf;
 		  opc->v[4].o1 = sc->opts[start];
 		  opc->v[5].fi = sc->opts[start]->v[0].fi;
@@ -59849,7 +59850,7 @@ static bool opt_int_vector_set(s7_scheme *sc, int32_t otype, opt_info *opc, s7_p
 		      else opc->v[0].fi = opt_i_7pii_sff;
 		      return_true(sc, NULL);
 		    }}
-	      return_false(sc, NULL);
+	      return_false(sc, valp);
 	    }
 	  if ((indexp2) &&
 	      (vector_rank(vect) == 2))
@@ -62005,7 +62006,7 @@ static bool opt_float_vector_set(s7_scheme *sc, opt_info *opc, s7_pointer v, s7_
       int32_t start = sc->pc;
       opc->v[1].p = settee;
       if (!is_float_vector(vect))
-	return_false(sc, NULL);
+	return_false(sc, vect);
       opc->v[10].o1 = sc->opts[start];
       if ((!indexp2) &&
 	  (vector_rank(vect) == 1))
@@ -62050,7 +62051,7 @@ static bool opt_float_vector_set(s7_scheme *sc, opt_info *opc, s7_pointer v, s7_
 		  opc->v[9].fd = opc->v[8].o1->v[0].fd;
 		  return_true(sc, NULL);
 		}}
-	  return_false(sc, NULL);
+	  return_false(sc, indexp1);
 	}
       if ((indexp2) && (!indexp3) &&
 	  (vector_rank(vect) == 2))
@@ -62066,7 +62067,7 @@ static bool opt_float_vector_set(s7_scheme *sc, opt_info *opc, s7_pointer v, s7_
 	      if (is_t_integer(car(indexp1)))
 		{
 		  if (!float_optimize(sc, valp))
-		    return_false(sc, NULL);
+		    return_false(sc, valp);
 		  opc->v[0].fd = opt_d_7piid_scsf;
 		  opc->v[2].i = integer(car(indexp1));
 		  opc->v[11].fd = opc->v[10].o1->v[0].fd;
@@ -62109,7 +62110,7 @@ static bool opt_float_vector_set(s7_scheme *sc, opt_info *opc, s7_pointer v, s7_
 		      opc->v[4].fd = opc->v[3].o1->v[0].fd;
 		      return_true(sc, NULL);
 		    }}}
-	  return_false(sc, NULL);
+	  return_false(sc, indexp1);
 	}
       if ((indexp3) &&
 	  (vector_rank(vect) == 3))
@@ -64522,7 +64523,7 @@ static bool p_piip_to_sx(s7_scheme *sc, opt_info *opc, s7_pointer indexp1, s7_po
 	      opc->v[0].fp = opt_p_piip_sfff;
 	      return_true(sc, NULL);
 	    }}}
-  return_false(sc, NULL);
+  return_false(sc, indexp1);
 }
 
 static bool p_piip_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer car_x)
@@ -65537,7 +65538,7 @@ static bool check_type_uncertainty(s7_scheme *sc, s7_pointer target, s7_pointer 
   return_false(sc, car_x);
 }
 
-static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_syntax) */
+static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_syntax_ok) */
 {
   opt_info *opc = alloc_opt_info(sc);
   s7_pointer target = cadr(car_x);
@@ -67659,7 +67660,7 @@ static bool opt_cell_do(s7_scheme *sc, s7_pointer car_x, int32_t len)
   return_true(sc, car_x);
 }
 
-static bool p_syntax(s7_scheme *sc, s7_pointer car_x, int32_t len)
+static bool p_syntax_ok(s7_scheme *sc, s7_pointer car_x, int32_t len)
 {
   s7_pointer func = lookup_global(sc, car(car_x));
   opcode_t op;
@@ -68013,7 +68014,7 @@ static bool cell_optimize_1(s7_scheme *sc, s7_pointer expr)
     {
       if ((is_syntactic_symbol(head)) ||
 	  (is_syntactic_pair(car_x))) /* this can be wrong! */
-	return(p_syntax(sc, car_x, len));
+	return(p_syntax_ok(sc, car_x, len));
 
       s_slot = s7_slot(sc, head);
       if (!is_slot(s_slot)) return_false(sc, car_x);
@@ -68197,9 +68198,9 @@ static bool bool_optimize(s7_scheme *sc, s7_pointer expr)
   sc->pc = start;
   wrapper = sc->opts[start];
   if (!cell_optimize(sc, expr))
-    return_false(sc, NULL);
+    return_false(sc, expr);
   if (wrapper->v[O_WRAP].fp) /* (when (+ i 1) ...) */
-    return_false(sc, NULL);
+    return_false(sc, expr);
   wrapper->v[O_WRAP].fp = wrapper->v[0].fp;
   wrapper->v[0].fb = p_to_b;
   return_true(sc, expr);
@@ -98395,5 +98396,6 @@ int main(int argc, char **argv)
  *   currently sc->s7_starlet is a let (make_s7_starlet) using g_s7_let_ref_fallback, so it assumes print-length above is undefined
  * need some print-length/print-elements distinction for vector/pair etc
  * 73150 vars_opt_ok problem
- * hash_table_to_port t718
+ * hash_iterate #<eof> in loops elsewhere?
+ * values with constant args is safe and typable -- can't this be opt'd? (values) and (values 1) at least if called by safe-func?
  */
