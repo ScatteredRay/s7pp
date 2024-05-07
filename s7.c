@@ -148,7 +148,7 @@
 #endif
 /* the stack grows as needed, each frame takes 4 entries, this is its initial size. (*s7* 'stack-top) divides size by 4 */
 
-#define STACK_RESIZE_TRIGGER (INITIAL_STACK_SIZE / 2)
+#define STACK_RESIZE_TRIGGER 256   /* was INITIAL_STACK_SIZE/2 which seems excessive */
 
 #ifndef INITIAL_PROTECTED_OBJECTS_SIZE
   #define INITIAL_PROTECTED_OBJECTS_SIZE 16
@@ -8203,7 +8203,7 @@ static void pop_stack_no_op_1(s7_scheme *sc, const char *func, int32_t line)
 
 static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer code, s7_pointer *end, const char *func, int32_t line)
 {
-  /* if (S7_DEBUGGING) fprintf(stderr, "%s[%d]: push_stack %s\n", func, line, op_names[op]); */
+  /* if (S7_DEBUGGING) fprintf(stderr, "%s[%d]: %u push_stack %s\n", func, line, (uint32_t)((intptr_t)(sc->stack_end - sc->stack_start)), op_names[op]); */
   if ((SHOW_EVAL_OPS) && (op == OP_EVAL_DONE)) fprintf(stderr, "  %s[%d]: push eval_done\n", func, line);
   if (sc->stack_end >= sc->stack_start + sc->stack_size)
     {
@@ -8215,11 +8215,13 @@ static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer
       s7_show_stack(sc);
       if (sc->stop_at_error) abort();
     }
-  if (sc->stack_end >= sc->stack_resize_trigger)
+  if (sc->stack_end >= sc->stack_resize_trigger){
     fprintf(stderr, "%s%s[%d] from %s: stack resize skipped, stack at %u of %u %s%s\n",
 	    bold_text, func, line, op_names[op], 
-	    (uint32_t)((intptr_t)(sc->stack_end - sc->stack_start) / 4),
-	    sc->stack_size / 4, display_truncated(code), unbold_text);
+	    (uint32_t)((intptr_t)(sc->stack_end - sc->stack_start)),
+	    sc->stack_size, display_truncated(code), unbold_text);
+    abort();
+    }
   if (sc->stack_end != end)
     fprintf(stderr, "%s[%d]: stack changed in push_stack\n", func, line);
   if (op >= NUM_OPS)
@@ -11951,10 +11953,11 @@ static bool op_with_baffle_unchecked(s7_scheme *sc)
 /* -------------------------------- call/cc -------------------------------- */
 static void make_room_for_cc_stack(s7_scheme *sc)
 {
-  if ((int64_t)(sc->free_heap_top - sc->free_heap) < (int64_t)(sc->heap_size / 8)) /* we probably never need this much space */
-    {
+  if ((int64_t)(sc->free_heap_top - sc->free_heap) < (int64_t)(sc->heap_size / 32)) /* we probably never need this much space (8 becomes enormous, 512 seems ok) */
+    {                                                                               /*  but this doesn't seem to make much difference in timings */
+      /* fprintf(stderr, "%" ld64 " < %" ld64 "\n", (int64_t)(sc->free_heap_top - sc->free_heap), (int64_t)(sc->heap_size / 32)); */
       call_gc(sc);
-      if ((int64_t)(sc->free_heap_top - sc->free_heap) < (int64_t)(sc->heap_size / 8))
+      if ((int64_t)(sc->free_heap_top - sc->free_heap) < (int64_t)(sc->heap_size / 32))
 	resize_heap(sc);
     }
 }
@@ -85586,7 +85589,7 @@ static void check_for_cyclic_code(s7_scheme *sc, s7_pointer code)
 {
   if (tree_is_cyclic(sc, code))
     {
-      sc->stack_resize_trigger = (s7_pointer *)(sc->stack_start + (sc->stack_size - ((STACK_RESIZE_TRIGGER) / 2)));
+      /* sc->stack_resize_trigger = (s7_pointer *)(sc->stack_start + (sc->stack_size - ((STACK_RESIZE_TRIGGER) / 2))); */
       syntax_error_nr(sc, "attempt to evaluate a circular list: ~A", 39, code);
     }
   resize_stack(sc); /* we've already checked that resize_stack is needed */
@@ -89911,9 +89914,9 @@ static bool op_pair_pair(s7_scheme *sc)
       clear_optimize_op(sc->code);
       return(false);
     }
-  if (sc->stack_end >= (sc->stack_resize_trigger - 8))
-    check_for_cyclic_code(sc, sc->code);       /* calls resize_stack */
-  push_stack_no_args_direct(sc, OP_EVAL_ARGS); /* eval args goes immediately to cdr(sc->code) */
+  if (sc->stack_end >= sc->stack_resize_trigger - 8) /* -8 so the next two push_stacks don't hit the resize_trigger before we can check for cyclic code */
+    check_for_cyclic_code(sc, sc->code);         /* calls resize_stack */
+  push_stack_no_args_direct(sc, OP_EVAL_ARGS);   /* eval args goes immediately to cdr(sc->code) */
   /* don't put check_stack_size here! */
   push_stack_no_args(sc, OP_EVAL_ARGS, car(sc->code));
   sc->code = caar(sc->code);
@@ -97632,8 +97635,11 @@ s7_scheme *s7_init(void)
   /* if not_filled, segfault in gc_mark in mark_stack_1 after size check? probably unfilled OP_BARRIER etc? */
   sc->stack_start = vector_elements(sc->stack); /* stack type set below */
   sc->stack_end = sc->stack_start;
-  sc->stack_size = INITIAL_STACK_SIZE;
+  if (STACK_RESIZE_TRIGGER <= (INITIAL_STACK_SIZE / 2))
+    sc->stack_size = INITIAL_STACK_SIZE;
+  else sc->stack_size = STACK_RESIZE_TRIGGER * 2;
   sc->stack_resize_trigger = (s7_pointer *)(sc->stack_start + (INITIAL_STACK_SIZE - STACK_RESIZE_TRIGGER));
+  
   set_full_type(sc->stack, T_STACK);
   sc->max_stack_size = (1 << 30);
   stack_clear_flags(sc->stack);
@@ -98375,7 +98381,7 @@ int main(int argc, char **argv)
  * tleft     11.1   10.4   10.2   7657   7479   7627   7618
  * tmisc                                 8142   7631   7679
  * tlamb                                 8003   7941   7940
- * tgc              11.9   11.1   8177   7857   7986   8014
+ * tgc              11.9   11.1   8177   7857   7986   7959
  * thash            11.8   11.7   9734   9479   9526   9254
  * cb        12.9   11.2   11.0   9658   9564   9609   9639
  * tmap-hash                           1671.0 1467.0   10.3
@@ -98396,6 +98402,7 @@ int main(int argc, char **argv)
  *   currently sc->s7_starlet is a let (make_s7_starlet) using g_s7_let_ref_fallback, so it assumes print-length above is undefined
  * need some print-length/print-elements distinction for vector/pair etc
  * 73150 vars_opt_ok problem
- * hash_iterate #<eof> in loops elsewhere?
- * values with constant args is safe and typable -- can't this be opt'd? (values) and (values 1) at least if called by safe-func?
+ * weak-hash_iterate #<eof> in loops elsewhere?  (iterator seq) -- a better name than make-iterator?
+ * values feeding safe func -- can't this be opt'd? (values 1) at least
+ * iterator-position|length?
  */
