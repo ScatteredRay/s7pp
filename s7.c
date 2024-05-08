@@ -8215,13 +8215,11 @@ static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer
       s7_show_stack(sc);
       if (sc->stop_at_error) abort();
     }
-  if (sc->stack_end >= sc->stack_resize_trigger){
+  if (sc->stack_end >= sc->stack_resize_trigger)
     fprintf(stderr, "%s%s[%d] from %s: stack resize skipped, stack at %u of %u %s%s\n",
 	    bold_text, func, line, op_names[op], 
 	    (uint32_t)((intptr_t)(sc->stack_end - sc->stack_start)),
 	    sc->stack_size, display_truncated(code), unbold_text);
-    abort();
-    }
   if (sc->stack_end != end)
     fprintf(stderr, "%s[%d]: stack changed in push_stack\n", func, line);
   if (op >= NUM_OPS)
@@ -9212,27 +9210,14 @@ static inline void make_let_with_five_slots(s7_scheme *sc, s7_pointer func, s7_p
   inline_add_slot_at_end(sc, let_id(sc->curlet), last_slot, cadr(cargs), val5);
 }
 
-static s7_pointer reuse_as_let(s7_scheme *sc, s7_pointer let, s7_pointer next_let)
+static s7_pointer add_slot_1(s7_scheme *sc, s7_pointer symbol, s7_pointer value)
 {
-#if S7_DEBUGGING
-  let->debugger_bits = 0;
-  if (!in_heap(let)) {fprintf(stderr, "reusing an unheaped %s as a let?\n", s7_type_names[type(let)]); abort();}
-#endif
-  set_full_type(T_Pair(let), T_LET | T_SAFE_PROCEDURE); /* we're reusing let here as a let -- it was a pair */
-  let_set_slots(let, slot_end);
-  let_set_outlet(let, next_let);
-  let_set_id(let, ++sc->let_number);
-  return(let);
-}
-
-static s7_pointer reuse_as_slot(s7_pointer slot, s7_pointer symbol, s7_pointer value)
-{
-#if S7_DEBUGGING
-  slot->debugger_bits = 0;
-  if (!in_heap(slot)) {fprintf(stderr, "reusing an unheaped %s as a slot?\n", s7_type_names[type(slot)]); abort();}
-#endif
-  set_full_type(T_Pair(slot), T_SLOT);
+  s7_pointer slot;
+  new_cell_no_check(sc, slot, T_SLOT);
   slot_set_symbol_and_value(slot, symbol, value);
+  symbol_set_local_slot(symbol, let_id(sc->curlet), slot);
+  slot_set_next(slot, let_slots(sc->curlet));
+  let_set_slots(sc->curlet, slot);
   return(slot);
 }
 
@@ -11859,7 +11844,7 @@ static s7_pointer copy_stack(s7_scheme *sc, s7_pointer new_v, s7_pointer old_v, 
 	    }
 	  /* lst can be dotted or circular here.  The circular list only happens in a case like:
 	   *    (dynamic-wind (lambda () (eq? (let ((lst (cons 1 2))) (set-cdr! lst lst) lst) (call/cc (lambda (k) k)))) (lambda () #f) (lambda () #f))
-	   *    proper_list_reverse_in_place(sc->args) is one reason we need to copy, another reuse_as_let
+	   *    proper_list_reverse_in_place(sc->args) is one reason we need to copy
 	   */
 	  else
 	    if (is_counter(p))                  /* these can only occur in this context (not in a list etc) */
@@ -32237,6 +32222,8 @@ static s7_pointer g_iterator_sequence(s7_scheme *sc, s7_pointer args)
     return(sole_arg_method_or_bust(sc, iter, sc->iterator_sequence_symbol, args, sc->type_names[T_ITERATOR]));
   return(iterator_sequence(iter));
 }
+
+/* iterator-length and iterator-position run up against the function iterator */
 
 
 /* -------- cycles -------- */
@@ -76687,15 +76674,9 @@ static bool op_named_let_1(s7_scheme *sc, s7_pointer args) /* args = vals in dec
   add_slot(sc, sc->curlet, car(sc->code), sc->x);
   set_curlet(sc, make_let(sc, sc->curlet)); /* inner let */
 
-  for (x = sc->w; is_not_null(args); x = cdr(x)) /* reuse the value cells as the new let slots */
-    {
-      s7_pointer sym = car(x), new_args = cdr(args);
-      reuse_as_slot(args, sym, unchecked_car(args)); /* args=slot, sym=symbol, car(args)=value */
-      slot_set_next(args, let_slots(sc->curlet));
-      let_set_slots(sc->curlet, args);
-      symbol_set_local_slot(sym, let_id(sc->curlet), args);
-      args = new_args;
-    }
+  for (x = sc->w; is_not_null(args); x = cdr(x), args = cdr(args))
+    add_slot_1(sc, car(x), unchecked_car(args));
+
   closure_set_let(sc->x, sc->curlet);
   let_set_slots(sc->curlet, reverse_slots(let_slots(sc->curlet)));
   sc->x = sc->unused;
@@ -76706,7 +76687,7 @@ static bool op_named_let_1(s7_scheme *sc, s7_pointer args) /* args = vals in dec
 
 static bool op_let1(s7_scheme *sc)
 {
-  s7_pointer x, y, e;
+  s7_pointer x, y;
   uint64_t id;
   /* building a list, then reusing it below as the let/slots seems stupid, but if we make the let first, and
    *   add slots, there are other problems.  The let/slot ids (and symbol_set_local_slot) need to wait
@@ -76722,19 +76703,7 @@ static bool op_let1(s7_scheme *sc)
 	{
 	  x = cdar(sc->code);
 	  if (has_fx(x))
-	    {
-#if S7_DEBUGGING
-	      s7_pointer old_args = sc->args;
-#endif
-	      sc->value = fx_call(sc, x);
-#if S7_DEBUGGING
-	      if (sc->args != old_args)
-		{
-		  fprintf(stderr, "%s[%d]: %s %s\n", __func__, __LINE__, display(old_args), display(sc->args));
-		  gdb_break();
-		}
-#endif
-	    }
+	    sc->value = fx_call(sc, x);
 	  else
 	    {
 	      check_stack_size(sc);
@@ -76748,37 +76717,22 @@ static bool op_let1(s7_scheme *sc)
     }
   x = proper_list_reverse_in_place(sc, sc->args);
   sc->code = car(x); /* restore the original form */
-  y = cdr(x);        /* use sc->args as the new let */
+  y = cdr(x);
   sc->temp8 = y;
-  set_curlet(sc, reuse_as_let(sc, x, T_Let(sc->curlet)));
+  free_cell(sc, x);
+  set_curlet(sc, make_let(sc, T_Let(sc->curlet)));
 
   if (is_symbol(car(sc->code)))
     return(op_named_let_1(sc, y)); /* inner let here */
 
-  e = sc->curlet;
-  id = let_id(e);
+  id = let_id(sc->curlet);
   if (is_pair(y))
     {
-      s7_pointer sym, args = cdr(y), sp;
+      s7_pointer args = cdr(y), last_slot;
       x = car(sc->code);
-      sym = caar(x);
-      reuse_as_slot(y, sym, unchecked_car(y)); /* if car(y) is a multiple value, should we clear it? How did it get there? */
-      symbol_set_local_slot(sym, id, y);
-      let_set_slots(e, y);
-      sp = y;
-      y = args;
-
-      for (x = cdr(x); is_not_null(y); x = cdr(x))
-	{
-	  sym = caar(x);
-	  args = cdr(args);
-	  reuse_as_slot(y, sym, unchecked_car(y));
-	  symbol_set_local_slot(sym, id, y);
-	  slot_set_next(sp, y);
-	  sp = y;
-	  y = args;
-	}
-      slot_set_next(sp, slot_end);
+      last_slot = add_slot_unchecked_with_id(sc, sc->curlet, caar(x), unchecked_car(y));
+      for (x = cdr(x), y = args; is_not_null(y); x = cdr(x), y = cdr(y))
+	last_slot = inline_add_slot_at_end(sc, id, last_slot, caar(x), unchecked_car(y));
     }
   sc->code = T_Pair(cdr(sc->code));
   sc->temp8 = sc->unused;
@@ -84344,7 +84298,6 @@ static goto_t op_dotimes_p(s7_scheme *sc)
 
 static bool op_do_init_1(s7_scheme *sc)
 {
-  s7_pointer y, z;
   while (true)  /* at start, first value is the loop (for GC protection?), returning sc->value is the next value */
     {
       s7_pointer init;
@@ -84370,29 +84323,21 @@ static bool op_do_init_1(s7_scheme *sc)
   /* all the initial values are now in the args list */
   sc->args = proper_list_reverse_in_place(sc, sc->args);
   sc->code = car(sc->args);                       /* saved at the start */
-  z = sc->args;
-  sc->args = cdr(sc->args);                       /* init values */
+  sc->x = cdr(sc->args);                          /* init values */
+  free_cell(sc, sc->args);
+  sc->args = sc->x;
+  set_curlet(sc, make_let(sc, T_Let(sc->curlet)));
 
-  /* sc->args was cons'd above, so it should be safe to reuse it as the new let */
-  set_curlet(sc, reuse_as_let(sc, z, T_Let(sc->curlet)));     /* set_curlet(sc, make_let(sc, sc->curlet)); */
-
-  /* run through sc->code and sc->args adding '( caar(car(code)) . car(args) ) to sc->curlet, also reuse sc->args as the new let slots */
+  /* run through sc->code and sc->args adding '( caar(car(code)) . car(args) ) to sc->curlet */
   sc->value = sc->nil;
-  y = sc->args;
-  for (s7_pointer x = car(sc->code); is_not_null(y); x = cdr(x))
+  for (s7_pointer x = car(sc->code), y = sc->args; is_not_null(y); x = cdr(x), y = cdr(y))
     {
-      s7_pointer sym = caar(x), args = cdr(y);
-      reuse_as_slot(y, sym, unchecked_car(y));
-      slot_set_next(y, let_slots(sc->curlet));
-      let_set_slots(sc->curlet, y);
-      symbol_set_local_slot(sym, let_id(sc->curlet), y);
+      s7_pointer slot = add_slot_1(sc, caar(x), unchecked_car(y));
       if (is_pair(cddar(x)))                   /* else no incr expr, so ignore it henceforth */
 	{
-	  slot_set_expression(y, cddar(x));
-	  sc->value = cons_unchecked(sc, y, sc->value);
-	}
-      y = args;
-    }
+	  slot_set_expression(slot, cddar(x));
+	  sc->value = cons_unchecked(sc, slot, sc->value);
+	}}
   sc->args = cons(sc, sc->value = proper_list_reverse_in_place(sc, sc->value), cadr(sc->code));
   sc->code = cddr(sc->code);
   return(false); /* fall through */
@@ -97967,6 +97912,7 @@ s7_scheme *s7_init(void)
   if (strcmp(op_names[OP_SET_WITH_LET_2], "set_with_let_2") != 0) fprintf(stderr, "set op_name: %s\n", op_names[OP_SET_WITH_LET_2]);
   if (NUM_OPS != 927) fprintf(stderr, "size: cell: %d, block: %d, max op: %d, opt: %d\n", (int)sizeof(s7_cell), (int)sizeof(block_t), NUM_OPS, (int)sizeof(opt_info));
   /* cell size: 48, 120 if debugging, block size: 40, opt: 128 or 280 */
+  gdb_break();
 #endif
   return(sc);
 }
@@ -98349,7 +98295,7 @@ int main(int argc, char **argv)
  * texit     1884   1930   1950   1778   1741   1770   1768
  * s7test           1873   1831   1818   1829   1830   1870
  * lt        2222   2187   2172   2150   2185   1950   1950
- * dup              3805   3788   2492   2239   2097   2000
+ * dup              3805   3788   2492   2239   2097   1996
  * thook     7651                 2590   2030   2046   2015
  * tcopy            8035   5546   2539   2375   2386   2370
  * tread            2440   2421   2419   2408   2405   2256
@@ -98364,34 +98310,34 @@ int main(int argc, char **argv)
  * teq              4068   4045   3536   3486   3544   3507
  * tmac             3950   3873   3033   3677   3677   3683
  * tclo      6362   4787   4735   4390   4384   4474   4337
- * tcase            4960   4793   4439   4430   4439   4427
- * tlet      9166   7775   5640   4450   4427   4457   4481
+ * tcase            4960   4793   4439   4430   4439   4433
+ * tlet      9166   7775   5640   4450   4427   4457   4492
  * tfft             7820   7729   4755   4476   4536   4542
  * tstar            6139   5923   5519   4449   4550   4584
  * tmap             8869   8774   4489   4541   4586   4593
  * tshoot           5525   5447   5183   5055   5034   5055
- * tform            5357   5348   5307   5316   5084   5100
- * tstr      10.0   6880   6342   5488   5162   5180   5211
- * tnum             6348   6013   5433   5396   5409   5430
+ * tform            5357   5348   5307   5316   5084   5098
+ * tstr      10.0   6880   6342   5488   5162   5180   5211  5275 [op_let1]
+ * tnum             6348   6013   5433   5396   5409   5434
  * tgsl             8485   7802   6373   6282   6208   6181
  * tari      15.0   13.0   12.7   6827   6543   6278   6184
- * tlist     9219   7896   7546   6558   6240   6300   6313
- * tset                                  6260   6364   6420
+ * tlist     9219   7896   7546   6558   6240   6300   6306
+ * tset                                  6260   6364   6377
  * trec      19.5   6936   6922   6521   6588   6583   6584
  * tleft     11.1   10.4   10.2   7657   7479   7627   7618
  * tmisc                                 8142   7631   7679
  * tlamb                                 8003   7941   7940
- * tgc              11.9   11.1   8177   7857   7986   7959
+ * tgc              11.9   11.1   8177   7857   7986   7959  8015 [op_let1]
  * thash            11.8   11.7   9734   9479   9526   9254
- * cb        12.9   11.2   11.0   9658   9564   9609   9639
+ * cb        12.9   11.2   11.0   9658   9564   9609   9639  9670 [op_named_let_1, gc]
  * tmap-hash                           1671.0 1467.0   10.3
  * tmv              16.0   15.4   14.7   14.5   14.4   11.9
- * tgen             11.2   11.4   12.0   12.1   12.2   12.3
+ * tgen             11.2   11.4   12.0   12.1   12.2   12.3  12.4 [op_let1, gc]
  * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1
  * timp             25.4   24.4   20.0   19.6   19.7   15.7
- * calls            36.7   37.5   37.0   37.5   37.1   37.0
- * sg                             55.9   55.8   55.4   55.2
- * tbig            177.4  175.8  156.5  148.1  146.2  146.2
+ * calls            36.7   37.5   37.0   37.5   37.1   37.0  37.2 [op_let1, gc]
+ * sg                             55.9   55.8   55.4   55.2  55.5 same
+ * tbig            177.4  175.8  156.5  148.1  146.2  146.1
  * --------------------------------------------------------------
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
@@ -98404,5 +98350,4 @@ int main(int argc, char **argv)
  * 73150 vars_opt_ok problem
  * weak-hash_iterate #<eof> in loops elsewhere?  (iterator seq) -- a better name than make-iterator?
  * values feeding safe func -- can't this be opt'd? (values 1) at least
- * iterator-position|length?
  */
