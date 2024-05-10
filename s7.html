@@ -763,6 +763,16 @@ have been evaluated (as in named let).
 &gt; (foo x 1)
 <em class="gray">1</em>
 </pre>
+
+<p>Keywords (named arguments) also work in named let*:
+</p>
+<pre class="indented">
+&gt; (let* loop ((i 0) (j 0)) 
+      (if (> i 3)
+          (+ i j) 
+          (loop :j 2 :i (+ i 1))))
+<em class="gray">6</em>
+</pre>
 </div>
 
 
