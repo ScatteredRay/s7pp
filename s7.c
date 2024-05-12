@@ -9105,7 +9105,7 @@ static inline void add_slot_unchecked(s7_scheme *sc, s7_pointer let, s7_pointer 
   symbol_set_local_slot(symbol, id, slot);
 }
 
-static void add_slot_unchecked_no_local_slot(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7_pointer value)
+static s7_pointer add_slot_unchecked_no_local_slot(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7_pointer value)
 {
   s7_pointer slot;
   new_cell_no_check(sc, slot, T_SLOT);
@@ -9113,6 +9113,7 @@ static void add_slot_unchecked_no_local_slot(s7_scheme *sc, s7_pointer let, s7_p
   slot_set_next(slot, let_slots(let));
   let_set_slots(let, slot);
   set_local(symbol);
+  return(slot);
 }
 
 #define add_slot(Sc, Let, Symbol, Value) add_slot_unchecked(Sc, Let, Symbol, Value, let_id(Let))
@@ -56768,7 +56769,6 @@ static s7_pointer fx_inlet_ca(s7_scheme *sc, s7_pointer code)
   /* as in let, we need to call the var inits before making the new let, but a simpler equivalent is to make the new let
    *    but don't set its id yet, and don't set local_slot until end either because fx_call might refer to same-name symbol in outer let.
    *    That is, symbol_id=outer_let_id so lookup->local_slot, so we better not set local_slot ahead of time here.
-   *    As far as I can tell, this is the only place we do fx_call at the time of new_slot with new let id unset.
    */
   for (s7_pointer x = cdr(code); is_pair(x); x = cddr(x))
     {
@@ -56781,10 +56781,7 @@ static s7_pointer fx_inlet_ca(s7_scheme *sc, s7_pointer code)
 	}
       value = fx_call(sc, cdr(x));            /* it's necessary to do this first, before add_slot_unchecked */
       if (!sp)
-	{
-	  add_slot_unchecked_no_local_slot(sc, new_e, symbol, value);
-	  sp = let_slots(new_e);
-	}
+	  sp = add_slot_unchecked_no_local_slot(sc, new_e, symbol, value);
       else sp = add_slot_at_end_no_local(sc, sp, symbol, value);
     }
   id = ++sc->let_number;
@@ -76773,7 +76770,7 @@ static bool op_let(s7_scheme *sc)
       return(true); /* goto BEGIN */
     }
   sc->args = sc->nil;
-  return(op_let_1(sc)); /* sc->code = vars */
+  return(op_let_1(sc)); /* sc->code == vars */
 }
 
 static bool op_let_unchecked(s7_scheme *sc)     /* not named, but has vars, called from eval if looping via op_let_1 + unopt'd args */
@@ -76803,9 +76800,9 @@ static bool op_named_let(s7_scheme *sc)
 }
 
 static void op_named_let_no_vars(s7_scheme *sc)
-{ /* sc->code is full form (let name () ...) */
+{                                           /* sc->code is full form (let name () ...) */
   s7_pointer name = cadr(sc->code);
-  sc->code = opt1_pair(sc->code);           /* cdddr(sc->code) = body */
+  sc->code = opt1_pair(sc->code);           /* cdddr(sc->code) == body */
   set_curlet(sc, inline_make_let(sc, sc->curlet));
   sc->args = make_closure_unchecked(sc, sc->nil, sc->code, T_CLOSURE, 0);  /* sc->args is a temp here */
   add_slot_checked(sc, sc->curlet, name, sc->args);
@@ -76814,7 +76811,7 @@ static void op_named_let_no_vars(s7_scheme *sc)
 }
 
 static void op_named_let_a(s7_scheme *sc)
-{ /* sc->code is the full form (let name vars...), par pointers are preset in opt1|3(cdr(sc->code)) */
+{                                                     /* sc->code is the full form (let name vars...), par pointers are preset in opt1|3(cdr(sc->code)) */
   s7_pointer data = cdr(sc->code);
   s7_pointer par1 = opt1_pair(data);                  /* cdaadr(args) == first par */
   sc->code = cddr(data);                              /* (vars ...) */
@@ -76822,7 +76819,7 @@ static void op_named_let_a(s7_scheme *sc)
   set_curlet(sc, make_let(sc, sc->curlet));           /* funclet(?) */
   sc->w = list_1_unchecked(sc, car(par1));            /* (list sym1), subsequent calls will need a normal list of pars in closure_args */
   sc->x = make_closure_unchecked(sc, sc->w, sc->code, T_CLOSURE, 1); /* picks up curlet (this is the funclet?) */
-  add_slot(sc, sc->curlet, car(data), sc->x);         /* car(data) = the function name */
+  add_slot(sc, sc->curlet, car(data), sc->x);         /* car(data) == the function name */
   set_curlet(sc, inline_make_let_with_slot(sc, sc->curlet, car(sc->w), sc->args)); /* inner let */
   closure_set_let(sc->x, sc->curlet);
   sc->x = sc->unused;
@@ -76831,17 +76828,17 @@ static void op_named_let_a(s7_scheme *sc)
 }
 
 static void op_named_let_aa(s7_scheme *sc)
-{ /* sc->code is the full form (let name vars...), par pointers are preset in opt1|3(cdr(sc->code)) */
+{                                                       /* sc->code is the full form (let name vars...), par pointers are preset in opt1|3(cdr(sc->code)) */
   s7_pointer data = cdr(sc->code);
   s7_pointer par1 = opt1_pair(data);                    /* cdaadr(data) == first par */
-  s7_pointer par2 = opt3_pair(data);                    /* cdadadr = second */
+  s7_pointer par2 = opt3_pair(data);                    /* cdadadr == second */
   sc->code = cddr(data);                                /* (vars ...) */
   sc->args = fx_call(sc, cdr(par1));
   sc->value = fx_call(sc, cdr(par2));
   set_curlet(sc, make_let(sc, sc->curlet));             /* funclet below I think */
   sc->w = list_2_unchecked(sc, car(par1), car(par2));   /* (list sym1 sym2): subsequent calls will need a normal list of pars in closure_args */
   sc->x = make_closure_unchecked(sc, sc->w, sc->code, T_CLOSURE, 2); /* picks up curlet (this is the funclet?) */
-  add_slot(sc, sc->curlet, car(data), sc->x);           /* car(data) = the function name */
+  add_slot(sc, sc->curlet, car(data), sc->x);           /* car(data) == the function name */
   set_curlet(sc, inline_make_let_with_two_slots(sc, sc->curlet, car(sc->w), sc->args, cadr(sc->w), sc->value)); /* inner let */
   closure_set_let(sc->x, sc->curlet);
   sc->x = sc->unused;
@@ -84307,11 +84304,26 @@ static goto_t op_dotimes_p(s7_scheme *sc)
 }
 
 static bool op_do_init_1(s7_scheme *sc)
-{
-  while (true)  /* at start, first value is the loop (for GC protection?), returning sc->value is the next value */
+{ 
+  while (true)
     {
       s7_pointer init;
-      sc->args = cons(sc, sc->value, sc->args);    /* code will be last element (first after reverse), these cons's will be used below for the new let/slots */
+      s7_pointer sp = gc_protected2(sc);
+      if (sp == sc->F)
+	{
+	  sp = sc->T;
+	  set_gc_protected2(sc, sc->T);
+	}
+      else
+	{
+	  if (sp == sc->T)
+	    sp = add_slot_unchecked_no_local_slot(sc, gc_protected1(sc), caar(sc->code), sc->value);
+	  else sp = add_slot_at_end_no_local(sc, sp, caar(sc->code), sc->value);
+	  if (is_pair(cddar(sc->code)))            /* else no incr expr, so ignore it henceforth */
+	    slot_set_expression(sp, cddar(sc->code));
+	  set_gc_protected2(sc, sp);
+	  sc->code = cdr(sc->code);
+	}
       if (!is_pair(sc->code)) break;
       /* here sc->code is a list like: ((i 0 (+ i 1)) ...) so cadar gets the init value */
       init = cdar(sc->code);
@@ -84322,38 +84334,34 @@ static bool op_do_init_1(s7_scheme *sc)
 	  init = car(init);
 	  if (is_pair(init))
 	    {
-	      push_stack(sc, OP_DO_INIT, sc->args, cdr(sc->code));  /* OP_DO_INIT only used here */
+	      push_stack(sc, OP_DO_INIT, sc->args, sc->code);  /* OP_DO_INIT only used here */
 	      sc->code = init;
-	      return(true); /* goto eval */
+	      return(true); /* goto EVAL */
 	    }
 	  sc->value = (is_symbol(init)) ? lookup_checked(sc, init) : init;
-	}
-      sc->code = cdr(sc->code);
-    }
-  /* all the initial values are now in the args list */
-  sc->args = proper_list_reverse_in_place(sc, sc->args);
-  sc->code = car(sc->args);                       /* saved at the start */
-  sc->x = cdr(sc->args);                          /* init values */
-  free_cell(sc, sc->args);
-  sc->args = sc->x;
-  set_curlet(sc, make_let(sc, T_Let(sc->curlet)));
-
-  /* run through sc->code and sc->args adding '( caar(car(code)) . car(args) ) to sc->curlet */
-  sc->value = sc->nil;
-  for (s7_pointer x = car(sc->code), y = sc->args; is_not_null(y); x = cdr(x), y = cdr(y))
-    {
-      s7_pointer slot = add_slot_unchecked_with_id(sc, sc->curlet, caar(x), unchecked_car(y));
-      if (is_pair(cddar(x)))                   /* else no incr expr, so ignore it henceforth */
-	{
-	  slot_set_expression(slot, cddar(x));
-	  sc->value = cons_unchecked(sc, slot, sc->value);
 	}}
-  sc->args = cons(sc, sc->value = proper_list_reverse_in_place(sc, sc->value), cadr(sc->code));
+  {
+    int64_t id = ++sc->let_number;
+    s7_pointer new_let = gc_protected1(sc);
+    let_set_id(new_let, id);
+    set_curlet(sc, new_let);
+    sc->value = sc->nil;
+    for (s7_pointer x = let_slots(new_let); tis_slot(x); x = next_slot(x))
+      {
+	symbol_set_local_slot_unincremented(slot_symbol(x), id, x);  /* was symbol_set_id(slot_symbol(x), id) */
+	if (slot_has_expression(x))
+	  sc->value = cons_unchecked(sc, x, sc->value);
+      }
+    sc->code = gc_protected3(sc);
+    unstack_gc_protect(sc);
+  }
+  sc->args = cons(sc, sc->value = proper_list_reverse_in_place(sc, sc->value), cadr(sc->code)); /* TODO: use the let, not this list (all need changes?) */
+  /* ((#<slot: i 0> #<slot: j 1>) (= i 3)) */
   sc->code = cddr(sc->code);
   return(false); /* fall through */
 }
 
-static bool op_do_init(s7_scheme *sc)
+static bool op_do_init(s7_scheme *sc) /* looping through inits via eval */
 {
   if (is_multiple_value(sc->value))               /* (do ((i (values 1 2)))...) */
     error_nr(sc, sc->wrong_type_arg_symbol,
@@ -84370,6 +84378,7 @@ static void op_do_unchecked(s7_scheme *sc)
 
 static bool do_unchecked(s7_scheme *sc)
 {
+  s7_pointer new_let;
   if (is_null(car(sc->code)))                     /* (do () ...) -- (let ((i 0)) (do () ((= i 1)) (set! i 1))) */
     {
       set_curlet(sc, make_let(sc, sc->curlet));
@@ -84377,16 +84386,18 @@ static bool do_unchecked(s7_scheme *sc)
       sc->code = cddr(sc->code);
       return(false);
     }
-  /* eval each init value, then set up the new let (like let, not let*) */
-  sc->args = sc->nil;                             /* the evaluated var-data */
-  sc->value = sc->code;                           /* protect it */
+  new_let = inline_make_let(sc, sc->curlet);
+  new_cell(sc, new_let, T_LET | T_SAFE_PROCEDURE);
+  let_set_slots(new_let, slot_end); /* needed by add_slot_unchecked */
+  let_set_outlet(new_let, sc->curlet);
+  gc_protect_2_via_stack(sc, new_let, sc->F);
+  set_gc_protected3(sc, sc->code);
   sc->code = car(sc->code);                       /* the vars */
   return(op_do_init_1(sc));
 }
 
 static bool op_do_end(s7_scheme *sc)
 {
-  /* car(sc->args) here is the var list used by do_end2 */
   if (is_pair(cdr(sc->args)))
     {
       if (!has_fx(cdr(sc->args)))
@@ -84686,8 +84697,7 @@ static void op_f_np(s7_scheme *sc)   /* sc->code: ((lambda (x y) (+ x y)) (value
 		 set_elist_4(sc, wrap_string(sc, "lambda parameter ~S is a constant: ((lambda ~S ...)~{~^ ~S~})", 61),
 			     car(pars), cadar(sc->code), cdr(sc->code)));
 
-      add_slot_unchecked_no_local_slot(sc, e, car(pars), sc->undefined);
-      last_slot = let_slots(e);
+      last_slot = add_slot_unchecked_no_local_slot(sc, e, car(pars), sc->undefined);
       for (pars = cdr(pars); is_pair(pars); pars = cdr(pars))
 	last_slot = add_slot_at_end_no_local(sc, last_slot, car(pars), sc->undefined);
       /* last par might be rest par (dotted) */
@@ -93132,7 +93142,7 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 	case OP_DOX_NO_BODY:         op_dox_no_body(sc);             continue;
 	case OP_DOX_PENDING_NO_BODY: op_dox_pending_no_body(sc);     goto DO_END_CLAUSES;
 
-	case OP_DO_INIT: if (op_do_init(sc)) goto DO_END; goto EVAL;
+	case OP_DO_INIT: if (op_do_init(sc)) goto DO_END; goto EVAL; /* looping if need eval for init */
 
 	case OP_DO:
 	  if (is_null(check_do(sc)))
@@ -98328,7 +98338,7 @@ int main(int argc, char **argv)
  * tshoot           5525   5447   5183   5055   5034   5055
  * tform            5357   5348   5307   5316   5084   5098
  * tstr      10.0   6880   6342   5488   5162   5180   5211  5275 [op_let1]
- * tnum             6348   6013   5433   5396   5409   5434
+ * tnum             6348   6013   5433   5396   5409   5434  5547
  * tgsl             8485   7802   6373   6282   6208   6181
  * tari      15.0   13.0   12.7   6827   6543   6278   6184
  * tlist     9219   7896   7546   6558   6240   6300   6306
@@ -98336,17 +98346,17 @@ int main(int argc, char **argv)
  * trec      19.5   6936   6922   6521   6588   6583   6584
  * tleft     11.1   10.4   10.2   7657   7479   7627   7618
  * tmisc                                 8142   7631   7679
- * tlamb                                 8003   7941   7940
+ * tlamb                                 8003   7941   7940  7954
  * tgc              11.9   11.1   8177   7857   7986   7959  8015 [op_let1]
  * thash            11.8   11.7   9734   9479   9526   9254
- * cb        12.9   11.2   11.0   9658   9564   9609   9639  9670 [op_named_let_1, gc]
+ * cb        12.9   11.2   11.0   9658   9564   9609   9639  9670 [op_named_let_1, gc] 9665
  * tmap-hash                           1671.0 1467.0   10.3
  * tmv              16.0   15.4   14.7   14.5   14.4   11.9
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3  12.4 [op_let1, gc]
  * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1
  * timp             25.4   24.4   20.0   19.6   19.7   15.7
  * calls            36.7   37.5   37.0   37.5   37.1   37.0  37.2 [op_let1, gc]
- * sg                             55.9   55.8   55.4   55.2  55.5 same
+ * sg                             55.9   55.8   55.4   55.2  55.4 same
  * tbig            177.4  175.8  156.5  148.1  146.2  146.1
  * --------------------------------------------------------------
  *
@@ -98360,10 +98370,8 @@ int main(int argc, char **argv)
  * 73150 vars_opt_ok problem
  * weak-hash_iterate #<eof> in loops elsewhere?  (iterator seq) -- a better name than make-iterator?
  * values feeding safe func -- can't this be opt'd? (values 1) at least
- * see fx_inlet_ca -> let1 et al
+ * see fx_inlet_ca -> let_1 et al
  * perhaps fx_simple_catch? (if #t is error type, stack should end up ok?)
- * if closure sig, add some way to have arg types checked by s7?
+ * if closure sig, add some way to have arg types checked by s7? (*s7* :check-signature?)
  * can set_locals in add_slots be omitted? if add_slot_checked_with_id (as in copy) it looks redundant (symbol is already local?) [add_slot_no_local -- check for others)
- * op_do_init_1 can build let directly like op_let_1 and op_named_let_1?
- * named let* and other such tests -> s7test
  */
