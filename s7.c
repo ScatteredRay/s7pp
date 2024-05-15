@@ -1712,6 +1712,7 @@ static block_t *callocate(s7_scheme *sc, size_t bytes)
 static block_t *reallocate(s7_scheme *sc, block_t *op, size_t bytes)
 {
   block_t *np = inline_mallocate(sc, bytes);
+  if ((S7_DEBUGGING) && (bytes < (size_t)block_size(op))) fprintf(stderr, "reallocate to smaller block?\n");
   if (block_data(op))  /* presumably block_data(np) is not null */
     memcpy((uint8_t *)(block_data(np)), (uint8_t *)(block_data(op)), block_size(op));
   liberate(sc, op);
@@ -3893,6 +3894,7 @@ static void try_to_call_gc(s7_scheme *sc);
 
 #define new_cell(Sc, Obj, Type)						\
   do {									\
+    if (Sc->gc_in_progress) fprintf(stderr, "%s[%d]: new_cell during GC\n", __func__, __LINE__); \
     if (Sc->free_heap_top <= Sc->free_heap_trigger) try_to_call_gc(Sc); \
     Obj = (*(--(Sc->free_heap_top)));					\
     Obj->debugger_bits = 0; Obj->gc_func = NULL; Obj->gc_line = 0;	\
@@ -3901,6 +3903,7 @@ static void try_to_call_gc(s7_scheme *sc);
 
 #define new_cell_no_check(Sc, Obj, Type)				\
   do {									\
+    if (Sc->gc_in_progress) fprintf(stderr, "%s[%d]: new_cell_no_check during GC\n", __func__, __LINE__); \
     Obj = (*(--(Sc->free_heap_top)));					\
     if (Sc->free_heap_top < Sc->free_heap) {fprintf(stderr, "%s[%d]: free heap exhausted\n", __func__, __LINE__); abort();}\
     Obj->debugger_bits = 0; Obj->gc_func = NULL; Obj->gc_line = 0;	\
@@ -6829,7 +6832,7 @@ static void sweep(s7_scheme *sc)
               {						\
                 Code;					\
               }						\
-            else gp->list[j++] = s1;			\
+            else if (in_heap(s1)) gp->list[j++] = s1;	\
           }						\
         gp->loc = j;					\
       }							\
@@ -26030,7 +26033,7 @@ static s7_pointer integer_to_char_p_p(s7_scheme *sc, s7_pointer x)
     return(method_or_bust_p(sc, x, sc->integer_to_char_symbol, sc->type_names[T_INTEGER]));
   ind = s7_integer_clamped_if_gmp(sc, x);
   if ((ind < 0) || (ind >= NUM_CHARS))
-    sole_arg_out_of_range_error_nr(sc, sc->integer_to_char_symbol, x, wrap_string(sc, "it doen't fit in an unsigned byte", 33));
+    sole_arg_out_of_range_error_nr(sc, sc->integer_to_char_symbol, x, wrap_string(sc, "it doesn't fit in an unsigned byte", 34));
   return(chars[(uint8_t)ind]);
 }
 
@@ -26045,7 +26048,7 @@ static s7_pointer integer_to_char_p_i(s7_scheme *sc, s7_int ind)
 {
   if ((ind < 0) || (ind >= NUM_CHARS))
     sole_arg_out_of_range_error_nr(sc, sc->integer_to_char_symbol, wrap_integer(sc, ind),
-				   wrap_string(sc, "it doen't fit in an unsigned byte", 33)); /* int2 s7_out... uses 1 */
+				   wrap_string(sc, "it doesn't fit in an unsigned byte", 34)); /* int2 s7_out... uses 1 */
   return(chars[(uint8_t)ind]);
 }
 
@@ -26846,7 +26849,7 @@ s7_pointer s7_make_permanent_string(s7_scheme *sc, const char *str) /* keep s7_s
 static void init_strings(void)
 {
   nil_string = make_permanent_string("", 0);
-  nil_string->tf.u64_type = T_STRING | T_UNHEAP; /* turn off T_IMMUTABLE?? */
+  nil_string->tf.u64_type = T_STRING | T_UNHEAP; /* turn off T_IMMUTABLE? -- (copy str (make-string 0))! */
   set_optimize_op(nil_string, OP_CONSTANT);
 
   car_a_list_string = make_permanent_string("a pair whose car is also a pair", 31);
@@ -27010,7 +27013,7 @@ static s7_pointer g_string_downcase(s7_scheme *sc, s7_pointer args)
   if (!is_string(p))
     return(method_or_bust_p(sc, p, sc->string_downcase_symbol, sc->type_names[T_STRING]));
   len = string_length(p);
-  newstr = make_empty_string(sc, len, 0);
+  newstr = make_empty_string(sc, len, '\0');
 
   ostr = (const uint8_t *)string_value(p);
   nstr = (uint8_t *)string_value(newstr);
@@ -27039,7 +27042,7 @@ static s7_pointer g_string_upcase(s7_scheme *sc, s7_pointer args)
   if (!is_string(p))
     return(method_or_bust_p(sc, p, sc->string_upcase_symbol, sc->type_names[T_STRING]));
   len = string_length(p);
-  newstr = make_empty_string(sc, len, 0);
+  newstr = make_empty_string(sc, len, '\0');
 
   ostr = (const uint8_t *)string_value(p);
   nstr = (uint8_t *)string_value(newstr);
@@ -27296,7 +27299,7 @@ static s7_pointer g_string_append_1(s7_scheme *sc, s7_pointer args, s7_pointer c
 		      unstack_gc_protect(sc);
 		      return(s7_apply_function(sc, func, x)); /* not args (string-append "" "" ...) */
 		    }
-		  newstr = make_empty_string(sc, len, 0);
+		  newstr = make_empty_string(sc, len, '\0');
 		  string_append_2(sc, newstr, args, x, caller);
 		  unstack_gc_protect(sc);
 		  return(s7_apply_function(sc, func, set_ulist_1(sc, newstr, x)));
@@ -27327,7 +27330,7 @@ static s7_pointer g_string_append_1(s7_scheme *sc, s7_pointer args, s7_pointer c
 	       set_elist_4(sc, wrap_string(sc, "~S new string length, ~D, is larger than (*s7* 'max-string-length): ~D", 70),
 			   caller, wrap_integer(sc, len), wrap_integer(sc, sc->max_string_length)));
     }
-  newstr = inline_make_empty_string(sc, len, 0);
+  newstr = inline_make_empty_string(sc, len, '\0');
   if (just_strings)
     {
       x = args;
@@ -27359,7 +27362,7 @@ static inline s7_pointer string_append_1(s7_scheme *sc, s7_pointer s1, s7_pointe
 	error_nr(sc, sc->out_of_range_symbol,
 		 set_elist_4(sc, wrap_string(sc, "~S new string length, ~D, is larger than (*s7* 'max-string-length): ~D", 70),
 			     sc->string_append_symbol, wrap_integer(sc, len), wrap_integer(sc, sc->max_string_length)));
-      newstr = make_empty_string(sc, len, 0); /* len+1 0-terminated */
+      newstr = make_empty_string(sc, len, '\0'); /* len+1 0-terminated */
       memcpy(string_value(newstr), string_value(s1), pos);
       memcpy((char *)(string_value(newstr) + pos), string_value(s2), string_length(s2));
       return(newstr);
@@ -28048,7 +28051,7 @@ static s7_pointer g_string_1(s7_scheme *sc, s7_pointer args, s7_pointer sym)
 		  s7_pointer y;
 		  if (len == 0)
 		    return(s7_apply_function(sc, func, args));
-		  newstr = make_empty_string(sc, len, 0);
+		  newstr = make_empty_string(sc, len, '\0');
 		  str = string_value(newstr);
 		  for (i = 0, y = args; y != x; i++, y = cdr(y))
 		    str[i] = character(car(y));
@@ -28060,7 +28063,7 @@ static s7_pointer g_string_1(s7_scheme *sc, s7_pointer args, s7_pointer sym)
     error_nr(sc, sc->out_of_range_symbol,
 	     set_elist_4(sc, wrap_string(sc, "~S result string is too large (> ~D ~D) (*s7* 'max-string-length)", 65),
 			 sym, wrap_integer(sc, len), wrap_integer(sc, sc->max_string_length)));
-  newstr = inline_make_empty_string(sc, len, 0);
+  newstr = inline_make_empty_string(sc, len, '\0');
   str = string_value(newstr);
   for (i = 0, x = args; is_not_null(x); i++, x = cdr(x))
     str[i] = character(car(x));
@@ -28080,7 +28083,7 @@ static s7_pointer g_string_c1(s7_scheme *sc, s7_pointer args)
   /* no multiple values here because no pairs below */
   if (!is_character(c))
     return(method_or_bust(sc, c, sc->string_symbol, args, sc->type_names[T_CHARACTER], 1));
-  str = inline_make_empty_string(sc, 1, 0); /* can't put character(c) here because null is handled specially */
+  str = inline_make_empty_string(sc, 1, '\0'); /* can't put character(c) here because null is handled specially */
   string_value(str)[0] = character(c);
   return(str);
 }
@@ -28094,7 +28097,7 @@ static s7_pointer string_p_p(s7_scheme *sc, s7_pointer p)
 {
   s7_pointer str;
   if (!is_character(p)) return(g_string_1(sc, set_plist_1(sc, p), sc->string_symbol));
-  str = inline_make_empty_string(sc, 1, 0);
+  str = inline_make_empty_string(sc, 1, '\0');
   string_value(str)[0] = character(p);
   return(str);
 }
@@ -28220,11 +28223,11 @@ static s7_pointer g_port_string(s7_scheme *sc, s7_pointer args)
   if ((port_is_closed(port)) || (is_function_port(port)))
     return(nil_string);
   if (is_output_port(port))
-    return(s7_output_string(sc, port));
+    return(s7_output_string(sc, port)); /* both here and below we copy the data, so the returned value can be mutated */
   return(make_string_with_length(sc, (const char *)port_data(port), port_data_size(port))); /* max_string_length? */
 }
 
-static void resize_port_data(s7_scheme *sc, s7_pointer pt, s7_int new_size)
+static void resize_port_data_for_port_string(s7_scheme *sc, s7_pointer pt, s7_int new_size)
 {
   s7_int loc = port_data_size(pt);
   block_t *nb;
@@ -28233,8 +28236,8 @@ static void resize_port_data(s7_scheme *sc, s7_pointer pt, s7_int new_size)
   if (new_size > sc->max_port_data_size)
     error_nr(sc, make_symbol(sc, "port-too-big", 12),
 	     set_elist_1(sc, wrap_string(sc, "port data size has grown past (*s7* 'max-port-data-size)", 56)));
-
-  nb = reallocate(sc, port_data_block(pt), new_size);
+  liberate(sc, port_data_block(pt));
+  nb = inline_mallocate(sc, new_size);
   port_data_block(pt) = nb;
   port_data(pt) = (uint8_t *)(block_data(nb));
   port_data_size(pt) = new_size;
@@ -28242,8 +28245,10 @@ static void resize_port_data(s7_scheme *sc, s7_pointer pt, s7_int new_size)
 
 
 static s7_pointer set_input_port_string(s7_scheme *sc, s7_pointer port, s7_pointer str)
-{
+{ /*assume port is an input string port */
   s7_int str_len;
+  if ((S7_DEBUGGING) && ((!is_input_port(port)) || (!is_string_port(port))))
+    fprintf(stderr, "%s[%d]: %s should be an input string port\n", __func__, __LINE__, display(port));
   if (port_is_closed(port))
     wrong_type_error_nr(sc, wrap_string(sc, "set! port-string", 16), 1, port, wrap_string(sc, "an open port", 12));
   str_len = string_length(str);
@@ -28256,13 +28261,15 @@ static s7_pointer set_input_port_string(s7_scheme *sc, s7_pointer port, s7_point
 }
 
 static s7_pointer set_output_port_string(s7_scheme *sc, s7_pointer port, s7_pointer str)
-{
+{ /*assume port is an output string port */
   s7_int str_len;
+  if ((S7_DEBUGGING) && ((!is_output_port(port)) || (!is_string_port(port))))
+    fprintf(stderr, "%s[%d]: %s should be an output string port\n", __func__, __LINE__, display(port));
   if (port_is_closed(port))
     wrong_type_error_nr(sc, wrap_string(sc, "set! port-string", 16), 1, port, wrap_string(sc, "an open port", 12));
   str_len = string_length(str);
   if (port_data_size(port) <= str_len)  /* sc->initial_string_port_length is 128 */
-    resize_port_data(sc, port, str_len * 2);
+    resize_port_data_for_port_string(sc, port, str_len * 2);
   memcpy((void *)port_data(port), (const void *)string_value(str), str_len);
   port_position(port) = str_len;
   port_data(port)[str_len] = '\0';
@@ -28967,6 +28974,21 @@ static s7_pointer string_read_line(s7_scheme *sc, s7_pointer port, bool with_eol
 
 
 /* -------- write character functions -------- */
+
+static void resize_port_data(s7_scheme *sc, s7_pointer pt, s7_int new_size)
+{
+  s7_int loc = port_data_size(pt);
+  block_t *nb;
+
+  if (new_size < loc) return;
+  if (new_size > sc->max_port_data_size)
+    error_nr(sc, make_symbol(sc, "port-too-big", 12),
+	     set_elist_1(sc, wrap_string(sc, "port data size has grown past (*s7* 'max-port-data-size)", 56)));
+  nb = reallocate(sc, port_data_block(pt), new_size);
+  port_data_block(pt) = nb;
+  port_data(pt) = (uint8_t *)(block_data(nb));
+  port_data_size(pt) = new_size;
+}
 
 static void string_write_char_resized(s7_scheme *sc, uint8_t c, s7_pointer pt)
 {
@@ -29944,8 +29966,8 @@ const char *s7_get_output_string(s7_scheme *sc, s7_pointer p)
 
 s7_pointer s7_output_string(s7_scheme *sc, s7_pointer p)
 {
-  if (port_position(p) == 0) return(nil_string);
   port_data(p)[port_position(p)] = '\0';
+  if (port_position(p) == 0) return(nil_string);
   return(make_string_with_length(sc, (const char *)port_data(p), port_position(p)));
 }
 
@@ -30012,10 +30034,11 @@ static void op_get_output_string(s7_scheme *sc)
   if (!is_output_port(port))
     wrong_type_error_nr(sc, sc->with_output_to_string_symbol, 1, port, wrap_string(sc, "an open string output port", 26));
   check_get_output_string_port(sc, port);
-
+#if 0
   if (port_position(port) == 0) 
     sc->value = nil_string;
   else
+#endif
     if (port_position(port) >= port_data_size(port)) /* can the > part happen? */
       sc->value = block_to_string(sc, reallocate(sc, port_data_block(port), port_position(port) + 1), port_position(port));
     else sc->value = block_to_string(sc, port_data_block(port), port_position(port));
@@ -30035,8 +30058,8 @@ static s7_pointer g_get_output_string_uncopied(s7_scheme *sc, s7_pointer args)
       return(method_or_bust_p(sc, p, sc->get_output_string_symbol, wrap_string(sc, "an output string port", 21)));
     }
   check_get_output_string_port(sc, p);
-  if (port_position(p) == 0) return(nil_string);
   port_data(p)[port_position(p)] = '\0'; /* wrap_string can't do this, and (for example) open_input_string wants terminated strings */
+  if (port_position(p) == 0) return(nil_string);
   return(wrap_string(sc, (const char *)port_data(p), port_position(p)));
 }
 
@@ -30480,7 +30503,7 @@ static s7_pointer g_read_string(s7_scheme *sc, s7_pointer args)
   if (port_is_closed(port))
     wrong_type_error_nr(sc, sc->read_string_symbol, 2, port, an_open_input_port_string);
 
-  s = make_empty_string(sc, nchars, 0);
+  s = make_empty_string(sc, nchars, '\0');
   if (nchars == 0) return(s);
   str = (uint8_t *)string_value(s);
   if (is_string_port(port))
@@ -36784,7 +36807,7 @@ static s7_pointer format_to_port_1(s7_scheme *sc, s7_pointer port, const char *s
 	}
       if (port_position(port) < port_data_size(port))
 	{
-	  if (port_position(port) == 0) return(nil_string);
+	  /* if (port_position(port) == 0) return(nil_string); */
 	  block_t *block = inline_mallocate(sc, FORMAT_PORT_LENGTH);
 	  result = inline_block_to_string(sc, port_data_block(port), port_position(port));
 	  port_data_size(port) = FORMAT_PORT_LENGTH;
@@ -37539,13 +37562,13 @@ static s7_pointer tree_set_memq_syms_direct(s7_scheme *sc, s7_pointer syms, s7_p
   if (!is_list(tree))
     wrong_type_error_nr(sc, sc->tree_set_memq_symbol, 2, tree, a_list_string);
   if (is_null(tree)) return(sc->F);
+  if (is_quote(car(tree))) return(sc->F);
   if ((sc->safety > NO_SAFETY) &&
       (tree_is_cyclic(sc, tree)))
     error_nr(sc, sc->wrong_type_arg_symbol, set_elist_2(sc, wrap_string(sc, "tree-set-memq: tree is cyclic: ~S", 33), tree));
   clear_symbol_list(sc);
   for (s7_pointer p = syms; is_pair(p); p = cdr(p))
     add_symbol_to_list(sc, car(p));
-  if (is_quote(car(tree))) return(sc->F);
   return(make_boolean(sc, pair_set_memq(sc, tree)));
 }
 
@@ -40529,7 +40552,7 @@ static s7_pointer g_byte_vector_to_string(s7_scheme *sc, s7_pointer args)
     error_nr(sc, sc->out_of_range_symbol,
 	     set_elist_3(sc, wrap_string(sc, "byte-vector->string byte-vector is too large: (> ~D ~D) (*s7* 'max-string-length)", 81),
 			 wrap_integer(sc, byte_vector_length(v)), wrap_integer(sc, sc->max_string_length)));
-  return(s7_copy_1(sc, sc->byte_vector_to_string_symbol, set_plist_2(sc, v, make_empty_string(sc, byte_vector_length(v), 0))));
+  return(s7_copy_1(sc, sc->byte_vector_to_string_symbol, set_plist_2(sc, v, make_empty_string(sc, byte_vector_length(v), '\0'))));
 }
 
 
@@ -40798,7 +40821,6 @@ static s7_pointer g_subvector_position(s7_scheme *sc, s7_pointer args)
     {
       /* we can't use vector_elements(sv) - vector_elements(subvector_vector(sv)) because that assumes we're looking at s7_pointer*,
        *   so a subvector of a byte_vector gets a bogus position (0 if position is less than 8 etc).
-       *   Since we currently let the user reset s7_int and s7_double, all four cases have to be handled explicitly.
        */
       switch (type(sv))
 	{
@@ -40845,6 +40867,7 @@ static s7_pointer subvector(s7_scheme *sc, s7_pointer vect, s7_int skip_dims, s7
       vector_set_dimension_info(x, NULL);
       subvector_set_vector(x, vect);
     }
+
   if (is_t_vector(vect))
     mark_function[T_VECTOR] = mark_vector_possibly_shared;
   else mark_function[type(vect)] = mark_int_or_float_vector_possibly_shared;
@@ -65276,14 +65299,18 @@ static s7_pointer opt_set_p_p_f_with_setter(opt_info *o)
 static s7_pointer opt_set_input_port_string_p_p_f(opt_info *o)
 {
   s7_pointer x = o->v[4].fp(o->v[3].o1); /* the string */
-  set_input_port_string(o->sc, slot_value(o->v[2].p), x);
+  s7_pointer port = slot_value(o->v[2].p);
+  if (!is_input_port(port)) wrong_type_error_nr(o->sc, o->sc->port_string_symbol, 1, port, an_input_port_string);
+  set_input_port_string(o->sc, port, x);
   return(x);
 }
 
 static s7_pointer opt_set_output_port_string_p_p_f(opt_info *o)
 {
   s7_pointer x = o->v[4].fp(o->v[3].o1); /* the string */
-  set_output_port_string(o->sc, slot_value(o->v[2].p), x);
+  s7_pointer port = slot_value(o->v[2].p);
+  if (!is_output_port(port)) wrong_type_error_nr(o->sc, o->sc->port_string_symbol, 1, port, an_input_port_string);
+  set_output_port_string(o->sc, port, x);
   return(x);
 }
 
@@ -65651,6 +65678,7 @@ static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_sy
 
       obj = slot_value(s_slot);
       opc->v[1].p = s_slot;
+
       if (!is_mutable_sequence(obj))
 	{
 	  /* a ridiculous experiment... */
@@ -65673,6 +65701,7 @@ static bool opt_cell_set(s7_scheme *sc, s7_pointer car_x) /* len == 3 here (p_sy
 		    }}}
 	  return_false(sc, car_x);
 	}
+
       index = cadr(target);
       index_type = opt_arg_type(sc, cdr(target));
       switch (type(obj))
@@ -76684,6 +76713,9 @@ static void op_named_let_1(s7_scheme *sc, s7_pointer args) /* args = vals in dec
   sc->w = sc->unused;
 }
 
+#define NEWLET 0
+#define NEWLET_PRINT 0
+
 static bool op_let_1(s7_scheme *sc)
 { /* op_let form: (let ((i 0) (j 1)) (+ i j)), code: ((i 0) (j 1)), value: (((i 0) (j 1)) (+ i j)), args: ()
    * op_named_let: (let loop ((i 0)) (if (< i 3) (loop (+ i 1)) i)), code: ((i 0)), value: (loop ((i 0)) (if (< i 3) (loop (+ i 1)) i)), args: ()
@@ -76770,15 +76802,19 @@ static bool op_let(s7_scheme *sc)
       return(true); /* goto BEGIN */
     }
   sc->args = sc->nil;
+  /* if (NEWLET_PRINT) fprintf(stderr, "%s[%d]: value: %s, code: %s\n", __func__, __LINE__, display(sc->value), display(sc->code)); */
+  /* make_let here */
   return(op_let_1(sc)); /* sc->code == vars */
 }
 
-static bool op_let_unchecked(s7_scheme *sc)     /* not named, but has vars, called from eval if looping via op_let_1 + unopt'd args */
+static bool op_let_unchecked(s7_scheme *sc)     /* not named, but has vars, called from eval if looping via op_let->op_let_1 + unopt'd args */
 {
   s7_pointer code = cadr(sc->code);
   s7_pointer x = cdar(code);  /* next arg */
-  /* code: (let ((i (catch #t (lambda () 1) (lambda (t i) 'error))) (j 2)) (+ i j)), value: f1, args: () */
-  sc->args = list_1(sc, cdr(sc->code));
+  /* value: 0, code: ((radix (+ 2 (random 15)))) from (do ((i 0 (+ i 1))) ((= i 2)) (let ((j 0) (radix (+ 2 (random 15)))) (+ j radix))) on second iteration (i == 1) */
+  /*  no make_let here */
+
+  sc->args = list_1(sc, cdr(sc->code)); /* as if sc->value were this, then absorbed into sc->args */
   if (has_fx(x))
     sc->value = fx_call(sc, x);
   else
@@ -76788,25 +76824,28 @@ static bool op_let_unchecked(s7_scheme *sc)     /* not named, but has vars, call
       return(false); /* goto EVAL */
     }
   sc->code = cdr(code);
+  /* if (NEWLET_PRINT) fprintf(stderr, "%s[%d]: value: %s, code: %s\n", __func__, __LINE__, display(sc->value), display(sc->code)); */
   return(op_let_1(sc));
 }
 
 static bool op_named_let(s7_scheme *sc)
-{
+{ /* from eval */
   sc->args = sc->nil;
   sc->value = cdr(sc->code);
   sc->code = cadr(sc->value);
+  /* if (NEWLET_PRINT) fprintf(stderr, "%s[%d]: value: %s, code: %s\n", __func__, __LINE__, display(sc->value), display(sc->code)); */
+  /* make_let here */
   return(op_let_1(sc));
 }
 
 static void op_named_let_no_vars(s7_scheme *sc)
-{                                           /* sc->code is full form (let name () ...) */
+{                                                     /* sc->code is full form (let name () ...) */
   s7_pointer name = cadr(sc->code);
-  sc->code = opt1_pair(sc->code);           /* cdddr(sc->code) == body */
+  sc->code = opt1_pair(sc->code);                     /* cdddr(sc->code) == body */
   set_curlet(sc, inline_make_let(sc, sc->curlet));
-  sc->args = make_closure_unchecked(sc, sc->nil, sc->code, T_CLOSURE, 0);  /* sc->args is a temp here */
-  add_slot_checked(sc, sc->curlet, name, sc->args);
-  set_curlet(sc, make_let(sc, sc->curlet)); /* inner let */
+  sc->args = make_closure_unchecked(sc, sc->nil, sc->code, T_CLOSURE, 0);
+  add_slot_checked(sc, sc->curlet, name, sc->args);   /* sc->args is a temp here */
+  set_curlet(sc, make_let(sc, sc->curlet));           /* inner let */
   /* goto BEGIN */
 }
 
@@ -84334,7 +84373,7 @@ static bool op_do_init_1(s7_scheme *sc)
 	  init = car(init);
 	  if (is_pair(init))
 	    {
-	      push_stack(sc, OP_DO_INIT, sc->args, sc->code);  /* OP_DO_INIT only used here */
+	      push_stack_direct(sc, OP_DO_INIT);  /* OP_DO_INIT only used here */
 	      sc->code = init;
 	      return(true); /* goto EVAL */
 	    }
@@ -94669,7 +94708,7 @@ static s7_pointer memory_usage(s7_scheme *sc)
 #endif
     for (i = 0, len = 0, sc->w = sc->nil; i < TOP_BLOCK_LIST; i++)
       {
-	for (b = sc->block_lists[i], k = 0; b; b = block_next(b), k++);
+	for (b = sc->block_lists[i], k = 0; b; b = block_next(b), k++); /* these are the free blocks awaiting mallocate */
 	sc->w = cons(sc, make_integer(sc, k), sc->w);
 	len += ((sizeof(block_t) + (1LL << i)) * k);
 #if S7_DEBUGGING
@@ -97922,7 +97961,8 @@ s7_scheme *s7_init(void)
    *   (begin 23 (cond-expand (surreals 1) (foonly 2))) should evaluate to 23.
    */
   /* make-polar, call-with-values, make-hook, hook-functions, multiple-value-bind, cond-expand, and reader-cond can't
-   *   set the initial_value to the global_value so that #_... can be used because the global_value is not semipremanent.
+   *   set the initial_value to the global_value so that #_... can be used because the global_value is not semipermanent.
+   *   but could it be made so?
    */
 #endif
 
@@ -98366,12 +98406,26 @@ int main(int argc, char **argv)
  * (define print-length (list 1 2)) (define (f) (with-let *s7* (+ print-length 1))) (display (f)) (newline) -- need a placeholder-let (or actual let) for *s7*?
  *   so (with-let *s7* ...) would make a let with whatever *s7* entries are needed? -> (let ((print-length (*s7* 'print-length))) ...)
  *   currently sc->s7_starlet is a let (make_s7_starlet) using g_s7_let_ref_fallback, so it assumes print-length above is undefined
- * need some print-length/print-elements distinction for vector/pair etc
+ * need some print-length/print-elements distinction for vector/pair etc [which to choose if both set?]
  * 73150 vars_opt_ok problem
  * weak-hash_iterate #<eof> in loops elsewhere?  (iterator seq) -- a better name than make-iterator?
  * values feeding safe func -- can't this be opt'd? (values 1) at least
- * see fx_inlet_ca -> let_1 et al
  * perhaps fx_simple_catch? (if #t is error type, stack should end up ok?)
  * if closure sig, add some way to have arg types checked by s7? (*s7* :check-signature?)
  * can set_locals in add_slots be omitted? if add_slot_checked_with_id (as in copy) it looks redundant (symbol is already local?) [add_slot_no_local -- check for others)
+ * check let/do -- redundant slot?
+ * 0/1/2-arg-func types? [esp closure-args -- why save a list if let can recreate it? (defines?) but this can be changed in any case]
+ *   need some counts here (eval:apply etc)
+ * #_ extended to anything that might be captured? #_make-rectangular|polar i.e. ((rootlet) :make-polar)? see comment line 97936
+ *   similarly #_ for any c_function (libraries), or variable etc
+ *   or perhaps better, user-defined way to create #_ refs: (define #_x x) where existing #_x blocks the definition in its context? (define #<x> x) might be better
+ *   (define #<L> L) then (#<L> :x) can't be captured?  Currently #<L> is t_undefined, and #_L looks in unlet.  Here #<L> is the inlet itself.
+ *   (define (f x) x) (define-constant #<f> f) (#<f> 1) [or maybe #_f but will that confuse the reader?]
+ *   can this fix the let-fallback-ref|set problem, with-let and others?
+ *   does define-constant itself handle this (define-constant F f)
+ * user-defined-heap? user-defined-stack? requires new-cell|_no_check, free_cell and gc
+ * can C code redefine abs+its initial-slot?
+ * blocks_allocated can be in the millions, num_blocks (free blocks) in the low thousands!
+ *   need counts for block_list[index] of allocs/frees + lines + total-sizes
+ * why was subvector_vector not set if dim_info?
  */
