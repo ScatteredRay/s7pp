@@ -1431,7 +1431,7 @@ struct s7_scheme {
 #if S7_DEBUGGING
   int32_t *tc_rec_calls;
   bool printing_gc_info;
-  s7_int blocks_allocated;
+  s7_int blocks_allocated, format_ports_allocated;
 #endif
 };
 
@@ -28236,7 +28236,7 @@ static void resize_port_data_for_port_string(s7_scheme *sc, s7_pointer pt, s7_in
   if (new_size > sc->max_port_data_size)
     error_nr(sc, make_symbol(sc, "port-too-big", 12),
 	     set_elist_1(sc, wrap_string(sc, "port data size has grown past (*s7* 'max-port-data-size)", 56)));
-  liberate(sc, port_data_block(pt));
+  liberate(sc, port_data_block(pt));  /* reallocate has an irrelevant memcpy */
   nb = inline_mallocate(sc, new_size);
   port_data_block(pt) = nb;
   port_data(pt) = (uint8_t *)(block_data(nb));
@@ -30034,15 +30034,12 @@ static void op_get_output_string(s7_scheme *sc)
   if (!is_output_port(port))
     wrong_type_error_nr(sc, sc->with_output_to_string_symbol, 1, port, wrap_string(sc, "an open string output port", 26));
   check_get_output_string_port(sc, port);
-#if 0
-  if (port_position(port) == 0) 
-    sc->value = nil_string;
-  else
-#endif
-    if (port_position(port) >= port_data_size(port)) /* can the > part happen? */
-      sc->value = block_to_string(sc, reallocate(sc, port_data_block(port), port_position(port) + 1), port_position(port));
-    else sc->value = block_to_string(sc, port_data_block(port), port_position(port));
 
+  /* nil_string here is tricky (need liberate etc) */
+  if (port_position(port) >= port_data_size(port)) /* can the > part happen? */
+    sc->value = block_to_string(sc, reallocate(sc, port_data_block(port), port_position(port) + 1), port_position(port));
+  else sc->value = block_to_string(sc, port_data_block(port), port_position(port));
+  /* block_to_string attaches the port's data_block to the string for later free */
   port_data(port) = NULL;
   port_data_size(port) = 0;
   port_data_block(port) = NULL;
@@ -35587,6 +35584,9 @@ static s7_pointer new_format_port(s7_scheme *sc)
   port_position(x) = 0;
   port_needs_free(x) = false;
   port_port(x)->pf = &output_string_functions;
+#if S7_DEBUGGING
+  sc->format_ports_allocated++;
+#endif
   return(x);
 }
 
@@ -36807,17 +36807,20 @@ static s7_pointer format_to_port_1(s7_scheme *sc, s7_pointer port, const char *s
 	}
       if (port_position(port) < port_data_size(port))
 	{
-	  /* if (port_position(port) == 0) return(nil_string); */
-	  block_t *block = inline_mallocate(sc, FORMAT_PORT_LENGTH);
-	  result = inline_block_to_string(sc, port_data_block(port), port_position(port));
-	  port_data_size(port) = FORMAT_PORT_LENGTH;
-	  port_data_block(port) = block;
-	  port_data(port) = (uint8_t *)(block_data(block));
-	  port_data(port)[0] = '\0';
-	  port_position(port) = 0;
-	}
-      else result = make_string_with_length(sc, (char *)port_data(port), port_position(port));
-      close_format_port(sc, port);
+	  if (port_position(port) == 0)
+	    result = nil_string;
+	  else
+	    {
+	      block_t *block = inline_mallocate(sc, FORMAT_PORT_LENGTH); /* for format port after turning current format block into a string */
+	      result = inline_block_to_string(sc, port_data_block(port), port_position(port));
+	      port_data_size(port) = FORMAT_PORT_LENGTH;
+	      port_data_block(port) = block;
+	      port_data(port) = (uint8_t *)(block_data(block));
+	      port_data(port)[0] = '\0';
+	      port_position(port) = 0;
+	    }}
+      else result = make_string_with_length(sc, (char *)port_data(port), port_position(port)); /* this can happen (s7test, pos/size=128) */
+      close_format_port(sc, port); /* i.e. return it to the fdat free list */
       fdat->port = NULL;
       return(result);
     }
@@ -39504,7 +39507,7 @@ static void check_list_validity(s7_scheme *sc, const char *caller, s7_pointer ls
 s7_pointer s7_list(s7_scheme *sc, s7_int num_values, ...)
 {
   va_list ap;
-  s7_pointer p;
+  s7_pointer p, old_sw = sc->w;
   if (num_values == 0)
     return(sc->nil);
   sc->w = make_list(sc, num_values, sc->unused);
@@ -39516,7 +39519,7 @@ s7_pointer s7_list(s7_scheme *sc, s7_int num_values, ...)
   if (sc->safety > NO_SAFETY)
     check_list_validity(sc, __func__, sc->w);
   p = sc->w;
-  sc->w = sc->unused;
+  sc->w = old_sw;
   return(p);
 }
 
@@ -94640,11 +94643,13 @@ static s7_pointer memory_usage(s7_scheme *sc)
       hlen += (hash_table_entries(v) * sizeof(hash_entry_t));
     }
     all_len += all_len;
-    add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "hash-tables", 11),
+    add_slot_unchecked_with_id(sc, mu_let, 
+			       make_symbol(sc, "hash-tables", 11),
 			       cons(sc, make_integer(sc, sc->hash_tables->loc), make_integer(sc, hlen)));
   }
   /* ports */
-  add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "input-port-stack", 16),
+  add_slot_unchecked_with_id(sc, mu_let, 
+			     make_symbol(sc, "input-port-stack", 16),
 			     cons(sc, make_integer(sc, sc->input_port_stack_loc), make_integer(sc, sc->input_port_stack_size)));
   gp = sc->input_ports;
   for (i = 0, len = 0; i < gp->loc; i++)
@@ -94652,7 +94657,8 @@ static s7_pointer memory_usage(s7_scheme *sc)
       s7_pointer v = gp->list[i];
       if (port_data(v)) len += port_data_size(v);
     }
-  add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "input-ports", 11),
+  add_slot_unchecked_with_id(sc, mu_let, 
+			     make_symbol(sc, "input-ports", 11),
 			     cons(sc, make_integer(sc, sc->input_ports->loc), make_integer(sc, len)));
 
   gp = sc->input_string_ports;
@@ -94661,7 +94667,8 @@ static s7_pointer memory_usage(s7_scheme *sc)
       s7_pointer v = gp->list[i];
       if (port_data(v)) len += port_data_size(v);
     }
-  add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "input-string-ports", 18),
+  add_slot_unchecked_with_id(sc, mu_let, 
+			     make_symbol(sc, "input-string-ports", 18),
 			     cons(sc, make_integer(sc, sc->input_string_ports->loc), make_integer(sc, len)));
 
   gp = sc->output_ports;
@@ -94670,26 +94677,31 @@ static s7_pointer memory_usage(s7_scheme *sc)
       s7_pointer v = gp->list[i];
       if (port_data(v)) len += port_data_size(v);
     }
-  add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "output-ports", 12),
+  add_slot_unchecked_with_id(sc, mu_let, 
+			     make_symbol(sc, "output-ports", 12),
 			     cons(sc, make_integer(sc, sc->output_ports->loc), make_integer(sc, len)));
-
+#if S7_DEBUGGING
   i = 0;
   for (s7_pointer p = sc->format_ports; p; i++, p = (s7_pointer)port_next(p));
-  add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "format-ports", 12), make_integer(sc, i));
-
+  add_slot_unchecked_with_id(sc, mu_let, 
+			     make_symbol(sc, "format-ports-allocated/free/inuse", 33),
+			     list_3(sc, make_integer(sc, sc->format_ports_allocated), make_integer(sc, i), make_integer(sc, sc->format_ports_allocated - i)));
+#endif
   /* continuations (sketchy!) */
   gp = sc->continuations;
   for (i = 0, len = 0; i < gp->loc; i++)
     if (is_continuation(gp->list[i]))
       len += continuation_stack_size(gp->list[i]);
   if (len > 0)
-    add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "continuations", 13),
+    add_slot_unchecked_with_id(sc, mu_let, 
+			       make_symbol(sc, "continuations", 13),
 			       cons(sc, make_integer(sc, sc->continuations->loc), make_integer(sc, len * sizeof(s7_pointer))));
   /* c-objects */
   if (sc->c_objects->loc > 0)
     add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "c-objects", 9), make_integer(sc, sc->c_objects->loc));
   if (sc->num_c_object_types > 0)
-    add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "c-types", 7),
+    add_slot_unchecked_with_id(sc, mu_let, 
+			       make_symbol(sc, "c-types", 7),
 			       cons(sc, make_integer(sc, sc->num_c_object_types),
 				    make_integer(sc, (sc->c_object_types_size * sizeof(c_object_t *)) + (sc->num_c_object_types * sizeof(c_object_t)))));
 				    /* we're ignoring c_type->scheme_name: make_permanent_string(sc, name) */
@@ -94720,8 +94732,9 @@ static s7_pointer memory_usage(s7_scheme *sc)
     sc->w = cons(sc, make_integer(sc, k), sc->w);
 #if S7_DEBUGGING
     num_blocks += k;
-    add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "blocks-allocated", 16),
-			       cons(sc, make_integer(sc, num_blocks), make_integer(sc, sc->blocks_allocated)));
+    add_slot_unchecked_with_id(sc, mu_let, 
+			       make_symbol(sc, "blocks-allocated/available/in-use", 33),
+			       list_3(sc, make_integer(sc, sc->blocks_allocated), make_integer(sc, num_blocks), make_integer(sc, sc->blocks_allocated - num_blocks)));
 #endif
     add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "free-lists", 10),
 			       s7_inlet(sc, list_2(sc, cons(sc, make_symbol(sc, "bytes", 5), kmg(sc, len)),
@@ -98413,7 +98426,7 @@ int main(int argc, char **argv)
  * perhaps fx_simple_catch? (if #t is error type, stack should end up ok?)
  * if closure sig, add some way to have arg types checked by s7? (*s7* :check-signature?)
  * can set_locals in add_slots be omitted? if add_slot_checked_with_id (as in copy) it looks redundant (symbol is already local?) [add_slot_no_local -- check for others)
- * check let/do -- redundant slot?
+ * check let/do -- redundant slot? op_let_1 et al
  * 0/1/2-arg-func types? [esp closure-args -- why save a list if let can recreate it? (defines?) but this can be changed in any case]
  *   need some counts here (eval:apply etc)
  * #_ extended to anything that might be captured? #_make-rectangular|polar i.e. ((rootlet) :make-polar)? see comment line 97936
@@ -98423,9 +98436,8 @@ int main(int argc, char **argv)
  *   (define (f x) x) (define-constant #<f> f) (#<f> 1) [or maybe #_f but will that confuse the reader?]
  *   can this fix the let-fallback-ref|set problem, with-let and others?
  *   does define-constant itself handle this (define-constant F f)
+ *   see also comment 97974 -- if vals are not semipermanent, can be GC'd
+ *   s7_set_initial_slot, (set! #<asdf> 32)
  * user-defined-heap? user-defined-stack? requires new-cell|_no_check, free_cell and gc
- * can C code redefine abs+its initial-slot?
- * blocks_allocated can be in the millions, num_blocks (free blocks) in the low thousands!
- *   need counts for block_list[index] of allocs/frees + lines + total-sizes
- * why was subvector_vector not set if dim_info?
+ * need counts for block_list[index] of allocs/frees + lines + total-sizes
  */

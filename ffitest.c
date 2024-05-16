@@ -479,6 +479,12 @@ static bool symbol_func_1(const char *symbol_name, void *data)
   return(false);
 }
 
+static s7_pointer our_abs(s7_scheme *sc, s7_pointer args)
+{
+  return(s7_make_real(sc, (s7_Double)(1.0 + s7_number_to_real(sc, s7_car(args)))));
+}
+
+
 static s7_scheme *cur_sc;
 
 static const char *pretty_print(s7_scheme *sc, s7_pointer obj) /* (pretty-print obj) */
@@ -2820,6 +2826,15 @@ int main(int argc, char **argv)
     res = s7_eval_c_string(sc, "(read-char)");
     if (s7_character(res) != '0') {fprintf(stderr, "%d: read-char: %s\n", __LINE__, s1 = TO_STR(res)); free(s1);}
     s7_set_current_input_port(sc, old_port);
+  }
+
+  {
+    s7_pointer res;
+    s7_define_function(sc, "abs", our_abs, 1, 0, false, "abs replacement"); /* make sure #_abs is not touched */
+    res = s7_eval_c_string(sc, "(#_abs -1.0)");
+    if (s7_real(res) != 1.0) {fprintf(stderr, "#_abs: %s?\n", s1 = TO_STR(res)); free(s1);}
+    res = s7_eval_c_string(sc, "(abs -1.0)");
+    if (s7_real(res) != 0.0) {fprintf(stderr, "(our_)abs: %s?\n", s1 = TO_STR(res)); free(s1);}
   }
 
   { /* check realloc'd large block handling in s7_free */
