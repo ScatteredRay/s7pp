@@ -98378,7 +98378,7 @@ int main(int argc, char **argv)
  * tload                          3046   2404   2566   2546
  * fbench    2933   2688   2583   2460   2430   2478   2562
  * tsort     3683   3105   3104   2856   2804   2858   2858
- * tio              3816   3752   3683   3620   3583   3128
+ * tio              3816   3752   3683   3620   3583   3128  3132 [set_output_port_string]
  * tobj             4016   3970   3828   3577   3508   3453
  * teq              4068   4045   3536   3486   3544   3507
  * tmac             3950   3873   3033   3677   3677   3683
@@ -98391,18 +98391,18 @@ int main(int argc, char **argv)
  * tshoot           5525   5447   5183   5055   5034   5055
  * tform            5357   5348   5307   5316   5084   5098
  * tstr      10.0   6880   6342   5488   5162   5180   5211  5275 [op_let1]
- * tnum             6348   6013   5433   5396   5409   5434  5547
+ * tnum             6348   6013   5433   5396   5409   5434  5452
  * tgsl             8485   7802   6373   6282   6208   6181
  * tari      15.0   13.0   12.7   6827   6543   6278   6184
  * tlist     9219   7896   7546   6558   6240   6300   6306
  * tset                                  6260   6364   6377
  * trec      19.5   6936   6922   6521   6588   6583   6584
- * tleft     11.1   10.4   10.2   7657   7479   7627   7618
+ * tleft     11.1   10.4   10.2   7657   7479   7627   7613
  * tmisc                                 8142   7631   7679
- * tlamb                                 8003   7941   7940  7954
+ * tlamb                                 8003   7941   7940  7950
  * tgc              11.9   11.1   8177   7857   7986   7959  8015 [op_let1]
  * thash            11.8   11.7   9734   9479   9526   9254
- * cb        12.9   11.2   11.0   9658   9564   9609   9639  9670 [op_named_let_1, gc] 9665
+ * cb        12.9   11.2   11.0   9658   9564   9609   9639  9670 [op_named_let_1, gc]
  * tmap-hash                           1671.0 1467.0   10.3
  * tmv              16.0   15.4   14.7   14.5   14.4   11.9
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3  12.4 [op_let1, gc]
@@ -98438,6 +98438,6 @@ int main(int argc, char **argv)
  *   does define-constant itself handle this (define-constant F f)
  *   see also comment 97974 -- if vals are not semipermanent, can be GC'd
  *   s7_set_initial_slot, (set! #<asdf> 32)
- * user-defined-heap? user-defined-stack? requires new-cell|_no_check, free_cell and gc
  * need counts for block_list[index] of allocs/frees + lines + total-sizes
+ * why doesn't #symbol<a b c> work in let-temp, can we use these (t692) as par names etc?
  */
