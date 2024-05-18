@@ -1357,7 +1357,7 @@ struct s7_scheme {
              rest_keyword, allow_other_keys_keyword, readable_keyword, display_keyword, write_keyword, value_symbol, type_symbol,
              baffled_symbol, set_symbol, body_symbol, class_name_symbol, feed_to_symbol, format_error_symbol, immutable_error_symbol,
              wrong_number_of_args_symbol, read_error_symbol, string_read_error_symbol, syntax_error_symbol, division_by_zero_symbol, bad_result_symbol,
-             io_error_symbol, invalid_escape_function_symbol, wrong_type_arg_symbol, out_of_range_symbol, out_of_memory_symbol,
+             io_error_symbol, invalid_exit_function_symbol, wrong_type_arg_symbol, out_of_range_symbol, out_of_memory_symbol,
              missing_method_symbol, unbound_variable_symbol, if_keyword, symbol_table_symbol, profile_in_symbol, trace_in_symbol,
              quote_function, quasiquote_function;
 
@@ -2210,29 +2210,18 @@ static void init_types(void)
 /* -------- mid type bits -------- */
 #define T_GLOBAL                       (1 << (16 + 0))
 #define T_MID_GLOBAL                   (1 << 0)
-#define T_LOCAL                        (1 << (16 + 4))
-#define T_MID_LOCAL                    (1 << 4)
 #define is_global(p)                   has_mid_type_bit(T_Sym(p), T_MID_GLOBAL)
-#define set_global(p)                  do {if (!has_mid_type_bit(T_Sym(p), T_MID_LOCAL)) set_mid_type_bit(p, T_MID_GLOBAL);} while (0)
-/* T_LOCAL marks a symbol that has been used locally */
+#define set_global(p)                  set_mid_type_bit(T_Sym(p), T_MID_GLOBAL)
 /* T_GLOBAL marks something defined (bound) at the top-level, and never defined locally */
 
 #define REPORT_ROOTLET_REDEF 0
 #if REPORT_ROOTLET_REDEF
   /* to find who is stomping on our symbols: */
   static void set_local_1(s7_scheme *sc, s7_pointer symbol, const char *func, int32_t line);
-  #define set_local(Symbol) set_local_1(sc, Symbol, __func__, __LINE__)
+  #define set_local(Symbol)            set_local_1(sc, T_Sym(Symbol), __func__, __LINE__)
 #else
-  #define set_local(p)                 full_type(T_Sym(p)) = ((full_type(p) | T_LOCAL) & ~(T_DONT_EVAL_ARGS | T_GLOBAL | T_SYNTACTIC))
+  #define set_local(p)                 full_type(T_Sym(p)) &= ~(T_DONT_EVAL_ARGS | T_GLOBAL | T_SYNTACTIC)
 #endif
-
-#define T_LOW_COUNT                    T_MID_LOCAL
-#define has_low_count(p)               has_mid_type_bit(T_Pair(p), T_LOW_COUNT)
-#define set_has_low_count(p)           set_mid_type_bit(T_Pair(p), T_LOW_COUNT)
-
-#define T_TC                           T_MID_LOCAL
-#define has_tc(p)                      has_mid_type_bit(T_Pair(p), T_TC)
-#define set_has_tc(p)                  set_mid_type_bit(T_Pair(p), T_TC)
 
 #define T_UNSAFE_DO                    T_MID_GLOBAL
 #define is_unsafe_do(p)                has_mid_type_bit(T_Pair(p), T_UNSAFE_DO)
@@ -2294,7 +2283,15 @@ static void init_types(void)
 #define set_shared(p)                  set_mid_type_bit(T_Seq(p), T_MID_SHARED)
 #define is_collected_or_shared(p)      has_mid_type_bit(p, T_MID_COLLECTED | T_MID_SHARED)
 #define clear_collected_and_shared(p)  clear_mid_type_bit(p, T_MID_COLLECTED | T_MID_SHARED) /* this can clear free cells = calloc */
-/* T_LOCAL is bit 4 mid-wise) */
+
+#define T_LOW_COUNT                    (1 << (16 + 4))
+#define T_MID_LOW_COUNT                (1 << 4)
+#define has_low_count(p)               has_mid_type_bit(T_Pair(p), T_LOW_COUNT)
+#define set_has_low_count(p)           set_mid_type_bit(T_Pair(p), T_LOW_COUNT)
+
+#define T_TC                           T_MID_LOW_COUNT
+#define has_tc(p)                      has_mid_type_bit(T_Pair(p), T_TC)
+#define set_has_tc(p)                  set_mid_type_bit(T_Pair(p), T_TC)
 
 #define T_SAFE_PROCEDURE               (1 << (16 + 5))
 #define T_MID_SAFE_PROCEDURE           (1 << 5)
@@ -4774,9 +4771,7 @@ static char *describe_type_bits(s7_scheme *sc, s7_pointer obj)
 	  /* bit 19 */
 	  ((full_typ & T_SHARED) != 0) ?         ((is_sequence(obj)) ? " shared" : " ?11?") : "",
 	  /* bit 20 */
-	  ((full_typ & T_LOCAL) != 0) ?          ((is_normal_symbol(obj)) ? " local" :
-						  ((is_pair(obj)) ? " high-c" :
-						   " ?12?")) : "",
+	  ((full_typ & T_LOW_COUNT) != 0) ?      ((is_pair(obj)) ? " low-count" : " ?12?") : "",	  
 	  /* bit 21 */
 	  ((full_typ & T_SAFE_PROCEDURE) != 0) ? ((is_applicable(obj)) ? " safe-procedure" : " ?13?") : "",
 	  /* bit 22 */
@@ -4967,7 +4962,7 @@ static bool has_odd_bits(s7_pointer obj)
   if (((full_typ & T_MULTIPLE_VALUE) != 0) && (!is_symbol(obj)) && (!is_pair(obj))) return(true);
   if (((full_typ & T_GLOBAL) != 0) && (!is_pair(obj)) && (!is_symbol(obj)) && (!is_let(obj)) && (!is_syntax(obj))) return(true);
   if (((full_typ & T_ITER_OK) != 0) && (!is_iterator(obj)) && (!is_pair(obj)) && (!is_slot(obj)) && (!is_c_function(obj)) && (!is_symbol(obj))) return(true);
-  if (((full_typ & T_LOCAL) != 0) && (!is_normal_symbol(obj)) && (!is_pair(obj))) return(true);
+  if (((full_typ & T_LOW_COUNT) != 0) && (!is_pair(obj))) return(true);
   if (((full_typ & T_UNSAFE) != 0) && (!is_symbol(obj)) && (!is_slot(obj)) && (!is_let(obj)) && (!is_pair(obj))) return(true);
   if (((full_typ & T_VERY_SAFE_CLOSURE) != 0) && (!is_pair(obj)) && (!is_any_closure(obj)) && (!is_let(obj))) return(true);
   if (((full_typ & T_FULL_CASE_KEY) != 0) && (!is_symbol(obj)) && (!is_pair(obj))) return(true);
@@ -9448,6 +9443,7 @@ s7_pointer s7_make_slot(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7_poi
 	     *   the string_signature check, but then symbol collisions would probably be resolved as the last loaded (which might not
 	     *   be in the active chain).
 	     * Also, the c_function check is overly paranoid -- all we need is that the value is semipermanent (T_UNHEAP?).
+	     * But I don't see any interesting omissions.
 	     */
 	    {
 	      set_initial_slot(symbol, make_semipermanent_slot(sc, symbol, value));
@@ -11394,7 +11390,7 @@ void s7_define(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7_pointer valu
       if ((let == sc->shadow_rootlet) &&
 	  (!is_slot(global_slot(symbol))))
 	{
-	  set_global(symbol); /* is_global => global_slot is usable -- is this a good idea? */
+	  if (symbol_id(symbol) == 0) set_global(symbol);
 	  set_global_slot(symbol, local_slot(symbol));
 	}}
 }
@@ -12216,8 +12212,8 @@ static void call_with_exit(s7_scheme *sc)
   int64_t i, new_stack_top, quit = 0;
 
   if (!call_exit_active(sc->code))
-    error_nr(sc, sc->invalid_escape_function_symbol,
-	     set_elist_1(sc, wrap_string(sc, "call-with-exit escape procedure called outside its block", 56)));
+    error_nr(sc, sc->invalid_exit_function_symbol,
+	     set_elist_1(sc, wrap_string(sc, "call-with-exit exit procedure called outside its block", 56)));
 
   call_exit_active(sc->code) = false;
   new_stack_top = call_exit_goto_loc(sc->code);
@@ -96684,7 +96680,7 @@ then returns each var to its original value."
   sc->io_error_symbol =             make_symbol(sc, "io-error", 8);
   sc->missing_method_symbol =       make_symbol(sc, "missing-method", 14);
   sc->number_to_real_symbol =       make_symbol(sc, "number_to_real", 14);
-  sc->invalid_escape_function_symbol = make_symbol(sc, "invalid-escape-function", 23);
+  sc->invalid_exit_function_symbol = make_symbol(sc, "invalid-exit-function", 23);
   sc->immutable_error_symbol =      make_symbol(sc, "immutable-error", 15);
   sc->division_by_zero_symbol =     make_symbol(sc, "division-by-zero", 16);
   sc->bad_result_symbol =           make_symbol(sc, "bad-result", 10);
@@ -97939,7 +97935,10 @@ s7_scheme *s7_init(void)
   /*   maybe a better name: reader-cond-values? or reader-values or splicing-cond? */
 
 #if (!WITH_PURE_S7)
-  s7_define_variable(sc, "make-rectangular", global_value(sc->complex_symbol));
+  {
+    s7_pointer rs = s7_define_variable(sc, "make-rectangular", global_value(sc->complex_symbol));
+    set_initial_slot(rs, global_slot(sc->complex_symbol)); /* for #_make-rectangular */
+  }
   s7_eval_c_string(sc, "(define make-polar                                                                \n\
                           (let ((+signature+ '(number? real? real?)))                                     \n\
                             (lambda (mag ang)                                                             \n\
@@ -98357,7 +98356,7 @@ int main(int argc, char **argv)
 #endif
 
 /* --------------------------------------------------------------
- *           19.9   20.9   21.0   22.0   23.0   24.0   24.3
+ *           19.9   20.9   21.0   22.0   23.0   24.0   24.4
  * --------------------------------------------------------------
  * tpeak      148    115    114    108    105    102    102
  * tref      1081    691    687    463    459    464    410
@@ -98370,9 +98369,9 @@ int main(int argc, char **argv)
  * lt        2222   2187   2172   2150   2185   1950   1950
  * dup              3805   3788   2492   2239   2097   1996
  * thook     7651                 2590   2030   2046   2015
- * tcopy            8035   5546   2539   2375   2386   2370  2343 [add_slot_no_local]
  * tread            2440   2421   2419   2408   2405   2256
- * titer     3657   2865   2842   2641   2509   2449   2446
+ * tcopy            8035   5546   2539   2375   2386   2370  2343 [add_slot_no_local]
+ * titer     3657   2865   2842   2641   2509   2449   2443
  * trclo     8031   2735   2574   2454   2445   2449   2470
  * tmat             3065   3042   2524   2578   2590   2512
  * tload                          3046   2404   2566   2546
@@ -98383,26 +98382,26 @@ int main(int argc, char **argv)
  * teq              4068   4045   3536   3486   3544   3507
  * tmac             3950   3873   3033   3677   3677   3683
  * tclo      6362   4787   4735   4390   4384   4474   4337
- * tcase            4960   4793   4439   4430   4439   4433
- * tlet      9166   7775   5640   4450   4427   4457   4492
+ * tcase            4960   4793   4439   4430   4439   4428
+ * tlet      9166   7775   5640   4450   4427   4457   4487
  * tfft             7820   7729   4755   4476   4536   4542
  * tstar            6139   5923   5519   4449   4550   4584
- * tmap             8869   8774   4489   4541   4586   4593
+ * tmap             8869   8774   4489   4541   4586   4591
  * tshoot           5525   5447   5183   5055   5034   5055
  * tform            5357   5348   5307   5316   5084   5098
  * tstr      10.0   6880   6342   5488   5162   5180   5211  5275 [op_let1]
- * tnum             6348   6013   5433   5396   5409   5434  5452
+ * tnum             6348   6013   5433   5396   5409   5434  5443
  * tgsl             8485   7802   6373   6282   6208   6181
  * tari      15.0   13.0   12.7   6827   6543   6278   6184
  * tlist     9219   7896   7546   6558   6240   6300   6306
  * tset                                  6260   6364   6377
  * trec      19.5   6936   6922   6521   6588   6583   6584
  * tleft     11.1   10.4   10.2   7657   7479   7627   7613
- * tmisc                                 8142   7631   7679
+ * tmisc                                 8142   7631   7676
  * tlamb                                 8003   7941   7940  7950
- * tgc              11.9   11.1   8177   7857   7986   7959  8015 [op_let1]
+ * tgc              11.9   11.1   8177   7857   7986   7959  8010 [op_let1]
  * thash            11.8   11.7   9734   9479   9526   9254
- * cb        12.9   11.2   11.0   9658   9564   9609   9639  9670 [op_named_let_1, gc]
+ * cb        12.9   11.2   11.0   9658   9564   9609   9639  9656 [op_named_let_1, gc]
  * tmap-hash                           1671.0 1467.0   10.3
  * tmv              16.0   15.4   14.7   14.5   14.4   11.9
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3  12.4 [op_let1, gc]
@@ -98425,11 +98424,10 @@ int main(int argc, char **argv)
  * values feeding safe func -- can't this be opt'd? (values 1) at least
  * perhaps fx_simple_catch? (if #t is error type, stack should end up ok?)
  * if closure sig, add some way to have arg types checked by s7? (*s7* :check-signature?)
- * can set_locals in add_slots be omitted? if add_slot_checked_with_id (as in copy) it looks redundant (symbol is already local?) [add_slot_no_local -- check for others)
  * check let/do -- redundant slot? op_let_1 et al
  * 0/1/2-arg-func types? [esp closure-args -- why save a list if let can recreate it? (defines?) but this can be changed in any case]
  *   need some counts here (eval:apply etc)
- * #_ extended to anything that might be captured? #_make-rectangular|polar i.e. ((rootlet) :make-polar)? see comment line 97936
+ * #_ extended to anything that might be captured? #_polar i.e. ((rootlet) :make-polar)? see comment line 97973
  *   similarly #_ for any c_function (libraries), or variable etc
  *   or perhaps better, user-defined way to create #_ refs: (define #_x x) where existing #_x blocks the definition in its context? (define #<x> x) might be better
  *   (define #<L> L) then (#<L> :x) can't be captured?  Currently #<L> is t_undefined, and #_L looks in unlet.  Here #<L> is the inlet itself.
@@ -98438,6 +98436,8 @@ int main(int argc, char **argv)
  *   does define-constant itself handle this (define-constant F f)
  *   see also comment 97974 -- if vals are not semipermanent, can be GC'd
  *   s7_set_initial_slot, (set! #<asdf> 32)
+ *   perhaps: use the #symbol<> code, but block any attempt to redefine #_... [see make_sharp_constant 15058 -- currently blocked completely]
  * need counts for block_list[index] of allocs/frees + lines + total-sizes
- * why doesn't #symbol<a b c> work in let-temp, can we use these (t692) as par names etc?
+ *   :blocks-allocated/available/in-use (668672 652001 16671): maybe break up large blocks?
+ * obj->str if #symbol?
  */

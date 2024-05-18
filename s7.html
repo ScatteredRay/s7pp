@@ -6588,21 +6588,24 @@ making it possible to use odd names more widely:
 
 <pre class="indented">
 (set! *#readers* 
-      (list (cons #\s
+      (list (cons #\s 
 		  (lambda (str)
-		    (and (string=? (substring str 0 7) "symbol<")
-			 (do ((sym (substring str 7))
-			      (c (read-char) (read-char)))
-			     ((memq c (list #\&gt; #&lt;eof&gt;))
-			      (string->symbol sym))
-			   (set! sym (string-append sym (string c)))))))))
+		    (let ((len (length str)))
+		      (and (string=? (substring str 0 7) "symbol<")
+			   (if (char=? (str (- len 1)) #\&gt;) ; pointless use of #symbol!
+			       (symbol (substring str 7 (- len 1)))
+			       (do ((sym (substring str 7))
+				    (c (read-char) (read-char)))
+				   ((memq c (list #\&gt; #&lgt;eof&gt;))
+				    (string-&gt;symbol sym))
+				 (set! sym (string-append sym (string c)))))))))))
 
 &gt; (let ((#symbol&lt;a b c&gt; 32)) (+ #symbol&lt;a b c&gt; 1))
 <em class="gray">33</em>
 </pre>
 
 <p>
-The symbol function
+The <code>symbol</code> function
 accepts any number of string arguments which it concatenates
 to form the new symbol name.
 </p>
