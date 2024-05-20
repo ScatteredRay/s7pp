@@ -2206,31 +2206,17 @@ static void init_types(void)
 #define is_matched_symbol(p)           has_low_type_bit(T_Sym(p), T_MATCHED)
 #define clear_match_symbol(p)          clear_low_type_bit(T_Sym(p), T_MATCHED)
 
-
 /* -------- mid type bits -------- */
-#define T_GLOBAL                       (1 << (16 + 0))
-#define T_MID_GLOBAL                   (1 << 0)
-#define is_global(p)                   has_mid_type_bit(T_Sym(p), T_MID_GLOBAL)
-#define set_global(p)                  set_mid_type_bit(T_Sym(p), T_MID_GLOBAL)
-/* T_GLOBAL marks something defined (bound) at the top-level, and never defined locally */
 
-#define REPORT_ROOTLET_REDEF 0
-#if REPORT_ROOTLET_REDEF
-  /* to find who is stomping on our symbols: */
-  static void set_local_1(s7_scheme *sc, s7_pointer symbol, const char *func, int32_t line);
-  #define set_local(Symbol)            set_local_1(sc, T_Sym(Symbol), __func__, __LINE__)
-#else
-  #define set_local(p)                 full_type(T_Sym(p)) &= ~(T_DONT_EVAL_ARGS | T_GLOBAL | T_SYNTACTIC)
-#endif
-
-#define T_UNSAFE_DO                    T_MID_GLOBAL
-#define is_unsafe_do(p)                has_mid_type_bit(T_Pair(p), T_UNSAFE_DO)
-#define set_unsafe_do(p)               set_mid_type_bit(T_Pair(p), T_UNSAFE_DO)
+#define T_UNSAFE_DO                    (1 << (16 + 0))
+#define T_MID_UNSAFE_DO                (1 << 0)
+#define is_unsafe_do(p)                has_mid_type_bit(T_Pair(p), T_MID_UNSAFE_DO)
+#define set_unsafe_do(p)               set_mid_type_bit(T_Pair(p), T_MID_UNSAFE_DO)
 /* marks do-loops that resist optimization */
 
-#define T_DOX_SLOT1                    T_MID_GLOBAL
-#define has_dox_slot1(p)               has_mid_type_bit(T_Let(p), T_DOX_SLOT1)
-#define set_has_dox_slot1(p)           set_mid_type_bit(T_Let(p), T_DOX_SLOT1)
+#define T_MID_DOX_SLOT1                T_MID_UNSAFE_DO
+#define has_dox_slot1(p)               has_mid_type_bit(T_Let(p), T_MID_DOX_SLOT1)
+#define set_has_dox_slot1(p)           set_mid_type_bit(T_Let(p), T_MID_DOX_SLOT1)
 /* marks a let that includes the dox_slot1 */
 
 #define T_COLLECTED                    (1 << (16 + 1))
@@ -3126,6 +3112,16 @@ static void symbol_set_id(s7_pointer p, s7_int id)
 #define symbol_clear_type(p)           block_size(symbol_info(p)) = 0
 #define s7_starlet_symbol(p)           ((uint8_t)((block_size(symbol_info(p)) >> 8) & 0xff))  /* *s7* id */
 #define s7_starlet_symbol_set(p, F)    block_size(symbol_info(p)) = ((block_size(symbol_info(p)) & ~0xff00) | (((F) & 0xff) << 8))
+
+#define REPORT_ROOTLET_REDEF 0
+#if REPORT_ROOTLET_REDEF
+  /* to find who is stomping on our symbols: */
+  static void set_local_1(s7_scheme *sc, s7_pointer symbol, const char *func, int32_t line);
+  #define set_local(Symbol)            set_local_1(sc, T_Sym(Symbol), __func__, __LINE__)
+#else
+  #define set_local(p)                 full_type(T_Sym(p)) &= ~(T_DONT_EVAL_ARGS | T_SYNTACTIC)
+#endif
+#define is_global(p)                   ((is_slot(global_slot(p))) && (symbol_id(p) == 0))
 
 #define initial_slot(p)                T_Sld(symbol_info(p)->ex.ex_ptr)
 #define set_initial_slot(p, Val)       symbol_info(p)->ex.ex_ptr = T_Sld(Val)
@@ -4755,10 +4751,9 @@ static char *describe_type_bits(s7_scheme *sc, s7_pointer obj)
 						  ((is_pair(obj)) ? " values|matched" :
 						   " ?7?")) : "",
 	  /* bit 16 */
-	  ((full_typ & T_GLOBAL) != 0) ?         ((is_pair(obj)) ? " unsafe-do" :
-						  (((is_symbol(obj)) || (is_syntax(obj))) ? " global" :
-						   ((is_let(obj)) ? " dox_slot1" :
-						    " ?8?"))) : "",
+	  ((full_typ & T_UNSAFE_DO) != 0) ?      ((is_pair(obj)) ? " unsafe-do" :
+						  ((is_let(obj)) ? " dox_slot1" :
+						   " ?8?")) : "",
 	  /* bit 17 */
 	  ((full_typ & T_COLLECTED) != 0) ?      " collected" : "",
 	  /* bit 18 */
@@ -4911,7 +4906,7 @@ static char *describe_type_bits(s7_scheme *sc, s7_pointer obj)
 	  NULL);
 
   buf = (char *)Malloc(1024);
-  snprintf(buf, 1024, "type: %s? (%d), opt_op: %d %s, flags: #x%" PRIx64 "%s",
+  snprintf(buf, 1024, "type: %s? (%d), opt_op: %d %s, full_type: #x%" PRIx64 "%s",
 	   type_name(sc, obj, NO_ARTICLE), typ,
 	   unchecked_optimize_op(obj), (unchecked_optimize_op(obj) < NUM_OPS) ? op_names[unchecked_optimize_op(obj)] : "", full_typ,
 	   str);
@@ -4960,7 +4955,7 @@ static bool has_odd_bits(s7_pointer obj)
   if (((full_typ & T_SAFE_PROCEDURE) != 0) && (!is_applicable(obj))) return(true);
   if (((full_typ & T_EXPANSION) != 0) && (!is_normal_symbol(obj)) && (!is_either_macro(obj))) return(true);
   if (((full_typ & T_MULTIPLE_VALUE) != 0) && (!is_symbol(obj)) && (!is_pair(obj))) return(true);
-  if (((full_typ & T_GLOBAL) != 0) && (!is_pair(obj)) && (!is_symbol(obj)) && (!is_let(obj)) && (!is_syntax(obj))) return(true);
+  if (((full_typ & T_UNSAFE_DO) != 0) && (!is_pair(obj)) && (!is_let(obj))) return(true);
   if (((full_typ & T_ITER_OK) != 0) && (!is_iterator(obj)) && (!is_pair(obj)) && (!is_slot(obj)) && (!is_c_function(obj)) && (!is_symbol(obj))) return(true);
   if (((full_typ & T_LOW_COUNT) != 0) && (!is_pair(obj))) return(true);
   if (((full_typ & T_UNSAFE) != 0) && (!is_symbol(obj)) && (!is_slot(obj)) && (!is_let(obj)) && (!is_pair(obj))) return(true);
@@ -5066,7 +5061,7 @@ static void set_local_1(s7_scheme *sc, s7_pointer symbol, const char *func, int3
 {
   if (is_global(symbol))
     fprintf(stderr, "%s[%d]: %s%s%s in %s\n", func, line, bold_text, display(symbol), unbold_text, display_truncated(sc->cur_code));
-  full_type(symbol) = (full_type(symbol) & ~(T_DONT_EVAL_ARGS | T_GLOBAL | T_SYNTACTIC));
+  full_type(symbol) = (full_type(symbol) & ~(T_DONT_EVAL_ARGS | T_SYNTACTIC));
 }
 #endif
 
@@ -8568,7 +8563,7 @@ static /* inline */ s7_pointer new_symbol(s7_scheme *sc, const char *name, s7_in
       ((name[0] == ':') || (name[len - 1] == ':')))   /* see s7test under keyword? for troubles if both colons are present */
     {
       s7_pointer slot, ksym;
-      set_type_bit(x, T_IMMUTABLE | T_KEYWORD | T_GLOBAL);
+      set_type_bit(x, T_IMMUTABLE | T_KEYWORD);
       set_optimize_op(str, OP_CONSTANT);
       ksym = make_symbol(sc, (name[0] == ':') ? (const char *)(name + 1) : name, len - 1);
       keyword_set_symbol(x, ksym);
@@ -9429,7 +9424,7 @@ s7_pointer s7_make_slot(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7_poi
       slot = make_semipermanent_slot(sc, symbol, value);
       add_slot_to_rootlet(sc, slot);
       set_global_slot(symbol, slot);
-      if (symbol_id(symbol) == 0)         /* never defined locally? */
+      if (symbol_id(symbol) == 0)         /* never defined locally (symbol_id tracks let_id) */
 	{
 	  if ((!is_gensym(symbol)) &&
 	      (initial_slot(symbol) == sc->undefined) &&
@@ -9456,7 +9451,6 @@ s7_pointer s7_make_slot(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7_poi
 		  sc->unlet_slots = initial_slot(symbol);
 		}}
 	  set_local_slot(symbol, slot);
-	  set_global(symbol);
 	}
       symbol_increment_ctr(symbol);
       if (is_gensym(symbol))
@@ -11389,10 +11383,8 @@ void s7_define(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7_pointer valu
       /* if let is rootlet, s7_make_slot makes a semipermanent_slot */
       if ((let == sc->shadow_rootlet) &&
 	  (!is_slot(global_slot(symbol))))
-	{
-	  if (symbol_id(symbol) == 0) set_global(symbol);
-	  set_global_slot(symbol, local_slot(symbol));
-	}}
+	set_global_slot(symbol, local_slot(symbol));
+    }
 }
 
 s7_pointer s7_define_variable(s7_scheme *sc, const char *name, s7_pointer value)
@@ -46547,7 +46539,7 @@ each a function of no arguments, guaranteeing that finish is called even if body
 static bool is_lambda(s7_scheme *sc, s7_pointer sym)
 {
   return((sym == sc->lambda_symbol) && (symbol_id(sym) == 0)); /* do we need (!sc->in_with_let) ? */
-  /* symbol_id=0 means it has never been rebound (T_GLOBAL might not be set for initial stuff) */
+  /* symbol_id=0 means it has never been locally bound */
 }
 
 static int32_t is_ok_thunk(s7_scheme *sc, s7_pointer arg) /* used only in dynamic_wind_chooser */
@@ -96420,7 +96412,7 @@ static s7_pointer syntax(s7_scheme *sc, const char *name, opcode_t op, s7_pointe
   s7_pointer x = new_symbol(sc, name, len, hash, loc);
   s7_pointer syn = alloc_pointer(sc);
 
-  set_full_type(syn, T_SYNTAX | T_SYNTACTIC | T_DONT_EVAL_ARGS | T_GLOBAL | T_UNHEAP);
+  set_full_type(syn, T_SYNTAX | T_SYNTACTIC | T_DONT_EVAL_ARGS | T_UNHEAP);
   syntax_opcode(syn) = op;
   syntax_set_symbol(syn, x);
   syntax_min_args(syn) = integer(min_args);
@@ -96430,7 +96422,7 @@ static s7_pointer syntax(s7_scheme *sc, const char *name, opcode_t op, s7_pointe
   set_initial_slot(x, make_semipermanent_slot(sc, x, syn));  /* set_local_slot(x, global_slot(x)); */
   slot_set_next(initial_slot(x), sc->unlet_slots);
   sc->unlet_slots = initial_slot(x);
-  set_type_bit(x, T_SYMBOL | T_SYNTACTIC | T_GLOBAL | T_UNHEAP);
+  set_type_bit(x, T_SYMBOL | T_SYNTACTIC | T_UNHEAP);
   symbol_set_local_slot_unchecked(x, 0LL, sc->nil);
   symbol_clear_ctr(x);
   return(x);
@@ -98375,7 +98367,7 @@ int main(int argc, char **argv)
  * trclo     8031   2735   2574   2454   2445   2449   2470
  * tmat             3065   3042   2524   2578   2590   2512
  * tload                          3046   2404   2566   2546
- * fbench    2933   2688   2583   2460   2430   2478   2562
+ * fbench    2933   2688   2583   2460   2430   2478   2562  2573 [fx_g if no global bit]
  * tsort     3683   3105   3104   2856   2804   2858   2858
  * tio              3816   3752   3683   3620   3583   3128  3132 [set_output_port_string]
  * tobj             4016   3970   3828   3577   3508   3453
@@ -98437,7 +98429,9 @@ int main(int argc, char **argv)
  *   see also comment 97974 -- if vals are not semipermanent, can be GC'd
  *   s7_set_initial_slot, (set! #<asdf> 32)
  *   perhaps: use the #symbol<> code, but block any attempt to redefine #_... [see make_sharp_constant 15058 -- currently blocked completely]
- * need counts for block_list[index] of allocs/frees + lines + total-sizes
+ * need counts for block_list[index] of allocs/frees + lines + total-sizes + (maybe) unheaped blocks + borrowings + what caused max
  *   :blocks-allocated/available/in-use (668672 652001 16671): maybe break up large blocks?
- * obj->str if #symbol?
+ * obj->str+:readable if #symbol?
+ * *s7* switch to turn off the quote->#_quote switch (and the rest?) -- or do it only in a macro body?
+ * rootlet_id=-1, symbol_id=-1 for global+slot?
  */

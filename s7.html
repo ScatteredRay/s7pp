@@ -3476,9 +3476,9 @@ know the field names in advance,
 <p>Here's one way to add a method to a closure:
 </p>
 <pre class="indented">
-(define sf (let ((object-&gt;string (lambda (obj . arg) 
-				   "#&lt;secret function!&gt;")))
-	     (openlet (lambda (x) 
+(define sf (openlet (let ((object-&gt;string (lambda (obj . arg) 
+				            "#&lt;secret function!&gt;")))
+	              (lambda (x) 
 			(+ x 1)))))
 &gt; sf
 <em class="gray">#&lt;secret function!&gt;</em>
