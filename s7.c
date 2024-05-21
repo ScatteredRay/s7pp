@@ -76673,14 +76673,14 @@ static s7_pointer check_let(s7_scheme *sc) /* called only from op_let */
   return(code);
 }
 
-/* rather than two lists (pars and code+vals), build let+slot list + original form in par order? (need let for GC)
- *   keep let + form on stack (and form locally)
- */
+#define NEWLET 0
+#define NEWLET_PRINT 0
 
 static void op_named_let_1(s7_scheme *sc, s7_pointer args) /* args = vals in decl order */
 { /* sc->code = (name vars . body), args = vals in decl order */
   s7_pointer body = cddr(sc->code), x;
   s7_int n = opt2_int(sc->code); /* num pars, see check_named_let called in check_let */
+  if (NEWLET_PRINT) fprintf(stderr, "%s[%d]: n: %" ld64 ", body: %s, name: %s\n", __func__, __LINE__, n, display(body), display(car(sc->code)));
   for (x = cadr(sc->code), sc->w = sc->nil; is_pair(x); x = cdr(x))
     {
       sc->w = cons(sc, caar(x), sc->w);
@@ -76688,24 +76688,40 @@ static void op_named_let_1(s7_scheme *sc, s7_pointer args) /* args = vals in dec
       if (!is_pair(x)) break;
       sc->w = cons_unchecked(sc, caar(x), sc->w);
     }
-  sc->w = proper_list_reverse_in_place(sc, sc->w); /* needed for closure_args list as well as inner let names */
+  sc->w = proper_list_reverse_in_place(sc, sc->w); /* needed for closure_args */
+#if NEWLET
+  set_curlet(sc, make_let(sc, sc->curlet));
+  sc->x = make_closure_unchecked(sc, sc->w, body, T_CLOSURE, n); /* n = num pars */
+  add_slot(sc, sc->curlet, car(sc->code), sc->x);
+
+  let_set_outlet(gc_protected1(sc), sc->curlet);
+  set_curlet(sc, gc_protected1(sc));
+  closure_set_let(sc->x, sc->curlet);
+
+  {
+    int64_t id;
+  id = ++sc->let_number;
+  let_set_id(sc->curlet, id);
+  for (s7_pointer x = let_slots(sc->curlet); tis_slot(x); x = next_slot(x))
+    symbol_set_local_slot_unincremented(slot_symbol(x), id, x);  /* was symbol_set_id(slot_symbol(x), id) */
+  }
+  sc->x = sc->unused;
+  sc->code = T_Pair(body);
+#else
   set_curlet(sc, make_let(sc, sc->curlet));
   sc->x = make_closure_unchecked(sc, sc->w, body, T_CLOSURE, n); /* n = num pars */
   add_slot(sc, sc->curlet, car(sc->code), sc->x);
   set_curlet(sc, make_let(sc, sc->curlet)); /* inner let */
-
   for (x = sc->w; is_not_null(args); x = cdr(x), args = cdr(args))
     add_slot_unchecked_with_id(sc, sc->curlet, car(x), unchecked_car(args));
-
   closure_set_let(sc->x, sc->curlet);
   let_set_slots(sc->curlet, reverse_slots(let_slots(sc->curlet)));
   sc->x = sc->unused;
   sc->code = T_Pair(body);
   sc->w = sc->unused;
+#endif
+  if (NEWLET_PRINT) fprintf(stderr, "curlet: %s, outlet: %s\n", display(sc->curlet), display(let_outlet(sc->curlet)));
 }
-
-#define NEWLET 0
-#define NEWLET_PRINT 0
 
 static bool op_let_1(s7_scheme *sc)
 { /* op_let form: (let ((i 0) (j 1)) (+ i j)), code: ((i 0) (j 1)), value: (((i 0) (j 1)) (+ i j)), args: ()
@@ -76713,10 +76729,48 @@ static bool op_let_1(s7_scheme *sc)
    * eval->op_let_unchecked: (let ((i (catch #t (lambda () 1) (lambda (t i) 'error))) (j 2)) (+ i j))) (in a function),
    *    code: ((j 2)), value: 1, args: ((((i (catch #t (lambda () 1) (lambda (t i) 'error))) (j 2)) (+ i j)))
    */
+#if NEWLET
+#else
   s7_pointer y;
-  uint64_t id;
+#endif
+  int64_t id;
   while (true)
     {
+#if NEWLET
+      s7_pointer init;
+      s7_pointer sp = gc_protected2(sc);
+      if (NEWLET_PRINT) fprintf(stderr, "%s[%d]: value: %s, code: %s\n", __func__, __LINE__, display(sc->value), display(sc->code));
+      if (sp == sc->F)
+	{
+	  sp = sc->T;
+	  set_gc_protected2(sc, sc->T);
+	}
+      else
+	{
+      if (sp == sc->T)
+	    sp = add_slot_unchecked_no_local_slot(sc, gc_protected1(sc), caar(sc->code), sc->value);
+	  else sp = add_slot_at_end_no_local(sc, sp, caar(sc->code), sc->value);
+	  set_gc_protected2(sc, sp);
+	  sc->code = cdr(sc->code);
+	}
+      if (!is_pair(sc->code)) break;
+      /* here sc->code is a list like: ((i 0) ...) so cadar gets the init value */
+      init = cdar(sc->code);
+      if (has_fx(init))
+	sc->value = fx_call(sc, init);
+      else
+	{
+	  init = car(init);
+	  if (is_pair(init))
+	    {
+	      check_stack_size(sc);
+	      push_stack_direct(sc, OP_LET1);
+	      sc->code = init;
+	      return(false); /* goto EVAL */
+	    }
+	  sc->value = (is_symbol(init)) ? lookup_checked(sc, init) : init;
+	}
+#else
       sc->args = cons(sc, sc->value, sc->args);
       if (is_pair(sc->code))
 	{
@@ -76733,21 +76787,48 @@ static bool op_let_1(s7_scheme *sc)
 	  sc->code = cdr(sc->code);
 	}
       else break;
+#endif
     }
 
+  if (NEWLET_PRINT) fprintf(stderr, "%s[%d]: new_let: %s, code: %s\n", __func__, __LINE__, display(gc_protected1(sc)), display(sc->code));
+#if (NEWLET)
+  /* set_curlet(sc, new_let); */
+#else
   sc->args = proper_list_reverse_in_place(sc, sc->args);
   sc->code = car(sc->args); /* restore the original form */
   y = cdr(sc->args);
   sc->temp8 = y;
   free_cell(sc, sc->args);
   set_curlet(sc, make_let(sc, T_Let(sc->curlet)));
-
+#endif
+#if NEWLET
+  sc->code = gc_protected3(sc); /* (((i 0)) (+ i 1)) */
+  if (NEWLET_PRINT) fprintf(stderr, "%s[%d]: code: %s\n", __func__, __LINE__, display(sc->code));
   if (is_symbol(car(sc->code)))
     {
-      op_named_let_1(sc, y); /* inner let here */
+      op_named_let_1(sc, sc->nil); /* inner let here,  nil is just a temp */
       return(true);
     }
-
+#else
+  if (is_symbol(car(sc->code)))
+    {
+      op_named_let_1(sc, y); /* inner let here, y = var list?? */
+      return(true);
+    }
+#endif
+#if (NEWLET)
+  {
+    s7_pointer new_let = gc_protected1(sc);
+  id = ++sc->let_number;
+  let_set_id(new_let, id);
+  set_curlet(sc, new_let);
+  sc->value = sc->nil;
+  for (s7_pointer x = let_slots(new_let); tis_slot(x); x = next_slot(x))
+    symbol_set_local_slot_unincremented(slot_symbol(x), id, x);  /* was symbol_set_id(slot_symbol(x), id) */
+  sc->code = cdr(gc_protected3(sc)); /* the body */
+  unstack_gc_protect(sc);
+  }
+#else
   id = let_id(sc->curlet);
   if (is_pair(y))
     {
@@ -76758,6 +76839,8 @@ static bool op_let_1(s7_scheme *sc)
     }
   sc->code = T_Pair(cdr(sc->code));
   sc->temp8 = sc->unused;
+#endif
+  if (NEWLET_PRINT) fprintf(stderr, "%s[%d]: let: %s, code: %s\n", __func__, __LINE__, display(sc->curlet), display(sc->code));
   return(true); /* goto BEGIN */
 }
 
@@ -76793,8 +76876,23 @@ static bool op_let(s7_scheme *sc)
       return(true); /* goto BEGIN */
     }
   sc->args = sc->nil;
-  /* if (NEWLET_PRINT) fprintf(stderr, "%s[%d]: value: %s, code: %s\n", __func__, __LINE__, display(sc->value), display(sc->code)); */
-  /* make_let here */
+  if (NEWLET_PRINT) fprintf(stderr, "%s[%d]: value: %s, code: %s\n", __func__, __LINE__, display(sc->value), display(sc->code));
+  /* value: (((i 0)) (+ i 1)), code: ((i 0)) */
+
+#if NEWLET
+  {
+    s7_pointer new_let = inline_make_let(sc, sc->curlet);
+    new_cell(sc, new_let, T_LET | T_SAFE_PROCEDURE);
+    let_set_slots(new_let, slot_end); /* needed by add_slot_unchecked */
+    let_set_outlet(new_let, sc->curlet);
+    gc_protect_2_via_stack(sc, new_let, sc->F);
+    set_gc_protected3(sc, sc->value);
+    /* duplicate of op_do_init_1 code */
+  }
+#endif
+  if (NEWLET_PRINT) fprintf(stderr, "%s[%d]: new let: %s\n", __func__, __LINE__, display(gc_protected1(sc)));
+  /* new let: (inlet) */
+
   return(op_let_1(sc)); /* sc->code == vars */
 }
 
@@ -76815,7 +76913,7 @@ static bool op_let_unchecked(s7_scheme *sc)     /* not named, but has vars, call
       return(false); /* goto EVAL */
     }
   sc->code = cdr(code);
-  /* if (NEWLET_PRINT) fprintf(stderr, "%s[%d]: value: %s, code: %s\n", __func__, __LINE__, display(sc->value), display(sc->code)); */
+  if (NEWLET_PRINT) fprintf(stderr, "%s[%d]: value: %s, code: %s\n", __func__, __LINE__, display(sc->value), display(sc->code));
   return(op_let_1(sc));
 }
 
@@ -76824,8 +76922,18 @@ static bool op_named_let(s7_scheme *sc)
   sc->args = sc->nil;
   sc->value = cdr(sc->code);
   sc->code = cadr(sc->value);
-  /* if (NEWLET_PRINT) fprintf(stderr, "%s[%d]: value: %s, code: %s\n", __func__, __LINE__, display(sc->value), display(sc->code)); */
-  /* make_let here */
+  if (NEWLET_PRINT) fprintf(stderr, "%s[%d]: value: %s, code: %s\n", __func__, __LINE__, display(sc->value), display(sc->code));
+#if NEWLET
+  {
+    s7_pointer new_let = inline_make_let(sc, sc->curlet);
+    new_cell(sc, new_let, T_LET | T_SAFE_PROCEDURE);
+    let_set_slots(new_let, slot_end);
+    let_set_outlet(new_let, sc->curlet);
+    gc_protect_2_via_stack(sc, new_let, sc->F);
+    set_gc_protected3(sc, sc->code);
+    /* duplicate of op_do_init_1 code */
+  }
+#endif
   return(op_let_1(sc));
 }
 
