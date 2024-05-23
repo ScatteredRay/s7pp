@@ -3122,6 +3122,7 @@ static void symbol_set_id(s7_pointer p, s7_int id)
   #define set_local(p)                 full_type(T_Sym(p)) &= ~(T_DONT_EVAL_ARGS | T_SYNTACTIC)
 #endif
 #define is_global(p)                   ((is_slot(global_slot(p))) && (symbol_id(p) == 0))
+/* or ((symbol_id(p) == 0) && (global_slot(p) != cur_sc->undefined)) but it's slower, both are slower than the T_GLOBAL bit from earlier */
 
 #define initial_slot(p)                T_Sld(symbol_info(p)->ex.ex_ptr)
 #define set_initial_slot(p, Val)       symbol_info(p)->ex.ex_ptr = T_Sld(Val)
@@ -34138,32 +34139,34 @@ static void hash_table_to_port(s7_scheme *sc, s7_pointer hash, s7_pointer port, 
       for (s7_int i = 0; i < len; i++)
 	{
 	  s7_pointer key_val = hash_table_iterate(sc, iterator);
-	  s7_pointer key = car(key_val);
-	  s7_pointer val = cdr(key_val);
-	  char buf[128];
-	  int32_t eref = peek_shared_ref(ci, val);
-	  int32_t kref = peek_shared_ref(ci, key);
-	  int32_t plen = catstrs_direct(buf, "  (set! (<", pos_int_to_str_direct(sc, href), "> ", (const char *)NULL);
-	  port_write_string(ci->cycle_port)(sc, buf, plen, ci->cycle_port);
-	  if (kref != 0)
-	    {
-	      if (kref < 0) kref = -kref;
-	      plen = catstrs_direct(buf, "<", pos_int_to_str_direct(sc, kref), ">", (const char *)NULL);
-	      port_write_string(ci->cycle_port)(sc, buf, plen, ci->cycle_port);
-	    }
-	  else object_to_port(sc, key, ci->cycle_port, P_READABLE, ci);
-	  if (eref != 0)
-	    {
-	      if (eref < 0) eref = -eref;
-	      plen = catstrs_direct(buf, ") <", pos_int_to_str_direct(sc, eref), ">) ", (const char *)NULL);
-	      port_write_string(ci->cycle_port)(sc, buf, plen, ci->cycle_port);
-	    }
-	  else
-	    {
-	      port_write_string(ci->cycle_port)(sc, ") ", 2, ci->cycle_port);
-	      object_to_port_with_circle_check(sc, val, ci->cycle_port, P_READABLE, ci);
-	      port_write_string(ci->cycle_port)(sc, ") ", 2, ci->cycle_port);
-	    }}}
+	  if (key_val == eof_object) break;             /* key_val can be #<eof> if hash is a weak-hash-table, and a GC happens during this loop */
+	  {
+	    s7_pointer key = car(key_val);
+	    s7_pointer val = cdr(key_val);
+	    char buf[128];
+	    int32_t eref = peek_shared_ref(ci, val);
+	    int32_t kref = peek_shared_ref(ci, key);
+	    int32_t plen = catstrs_direct(buf, "  (set! (<", pos_int_to_str_direct(sc, href), "> ", (const char *)NULL);
+	    port_write_string(ci->cycle_port)(sc, buf, plen, ci->cycle_port);
+	    if (kref != 0)
+	      {
+		if (kref < 0) kref = -kref;
+		plen = catstrs_direct(buf, "<", pos_int_to_str_direct(sc, kref), ">", (const char *)NULL);
+		port_write_string(ci->cycle_port)(sc, buf, plen, ci->cycle_port);
+	      }
+	    else object_to_port(sc, key, ci->cycle_port, P_READABLE, ci);
+	    if (eref != 0)
+	      {
+		if (eref < 0) eref = -eref;
+		plen = catstrs_direct(buf, ") <", pos_int_to_str_direct(sc, eref), ">) ", (const char *)NULL);
+		port_write_string(ci->cycle_port)(sc, buf, plen, ci->cycle_port);
+	      }
+	    else
+	      {
+		port_write_string(ci->cycle_port)(sc, ") ", 2, ci->cycle_port);
+		object_to_port_with_circle_check(sc, val, ci->cycle_port, P_READABLE, ci);
+		port_write_string(ci->cycle_port)(sc, ") ", 2, ci->cycle_port);
+	      }}}}
   else
     {
       if (((!is_typed_hash_table(hash)) && (!is_pair(hash_table_procedures(hash))) && (!hash_chosen(hash))) || (use_write != P_READABLE))
@@ -57281,11 +57284,7 @@ static s7_p_dd_t s7_p_dd_function(s7_pointer f);
 static s7_p_pi_t s7_p_pi_function(s7_pointer f);
 static s7_p_ii_t s7_p_ii_function(s7_pointer f);
 
-#define is_unchanged_global(P) \
-  ((is_symbol(P)) && (is_global(P)) && (symbol_id(P) == 0) && \
-  (is_slot(initial_slot(P))) && \
-  (initial_value(P) == global_value(P)))
-
+#define is_unchanged_global(P) ((is_symbol(P)) && (is_global(P)) && (is_slot(initial_slot(P))) && (initial_value(P) == global_value(P)))
 #define is_global_and_has_func(P, Func) ((is_unchanged_global(P)) && (Func(global_value(P)))) /* Func = s7_p_pp_function and friends */
 
 static bool fx_matches(s7_pointer symbol, const s7_pointer target_symbol) {return((symbol == target_symbol) && (is_unchanged_global(symbol)));}
@@ -78758,7 +78757,7 @@ static void check_define(s7_scheme *sc)
 	   (caadr(code) == sc->lambda_star_symbol)) &&
 	  (symbol_id(caadr(code)) == 0))
 	{
-	  if ((is_global(func)) && (is_slot(global_slot(func))) && (is_immutable(global_slot(func))) && (is_slot(initial_slot(func))))
+	  if ((is_global(func)) && /* (is_slot(global_slot(func))) && */ (is_immutable(global_slot(func))) && (is_slot(initial_slot(func))))
 	    immutable_object_error_nr(sc, set_elist_3(sc, wrap_string(sc, "can't ~A ~S: it is immutable", 28), caller, func));
 
 	  /* not is_global here because that bit might not be set for initial symbols (why not? -- redef as method etc) */
@@ -78782,7 +78781,7 @@ static void check_define(s7_scheme *sc)
 	    s7_warn(sc, 256, "%s: syntactic keywords tend to behave badly if redefined: %s\n", display(func), display_truncated(sc->code));
 	  set_local(func);
 	}
-      if ((is_global(func)) && (is_slot(global_slot(func))) &&
+      if ((is_global(func)) && /* (is_slot(global_slot(func))) && */
 	  (is_immutable(global_slot(func))) && (is_slot(initial_slot(func))))     /* (define (abs x) 1) after (immutable! abs) */
 	immutable_object_error_nr(sc, set_elist_3(sc, wrap_string(sc, "can't ~A ~S: it is immutable", 28), caller, func));
       if (starred)
@@ -98396,9 +98395,8 @@ int main(int argc, char **argv)
  *   currently sc->s7_starlet is a let (make_s7_starlet) using g_s7_let_ref_fallback, so it assumes print-length above is undefined
  * need some print-length/print-elements distinction for vector/pair etc [which to choose if both set?]
  * 73150 vars_opt_ok problem
- * weak-hash_iterate #<eof> in loops elsewhere?  (iterator seq) -- a better name than make-iterator?
  * values feeding safe func -- can't this be opt'd? (values 1) at least
- * perhaps fx_simple_catch? (if #t is error type, stack should end up ok?)
+ * perhaps fx_simple_catch? (if #t is error type, stack should end up ok?) and simple call/exit
  * if closure sig, add some way to have arg types checked by s7? (*s7* :check-signature?)
  * 0/1/2-arg-func types? [esp closure-args -- why save a list if let can recreate it? (defines?) but this can be changed in any case]
  *   need some counts here (eval:apply etc)
@@ -98406,16 +98404,32 @@ int main(int argc, char **argv)
  *   similarly #_ for any c_function (libraries), or variable etc
  *   or perhaps better, user-defined way to create #_ refs: (define #_x x) where existing #_x blocks the definition in its context? (define #<x> x) might be better
  *   (define #<L> L) then (#<L> :x) can't be captured?  Currently #<L> is t_undefined, and #_L looks in unlet.  Here #<L> is the inlet itself.
- *   (define (f x) x) (define-constant #<f> f) (#<f> 1) [or maybe #_f but will that confuse the reader?]
- *   can this fix the let-fallback-ref|set problem, with-let and others?
- *   does define-constant itself handle this (define-constant F f)
+ *       but #<L> here is the thing itself -- not a symbol so defined? is pointless, and #<unspecified> has a value but (defined? '#<unspecified>) is an error
  *   see also comment 97974 -- if vals are not semipermanent, can be GC'd
- *   s7_set_initial_slot, (set! #<asdf> 32)
- *   perhaps: use the #symbol<> code, but block any attempt to redefine #_... [see make_sharp_constant 15058 -- currently blocked completely]
+ *   perhaps (undefined <name> <value>) returns an undefined object #<name> with the value, blocking overwrites (#<unspecified> can't be redefined)
+ *              15080 make_sharp_constant
+ *           (built-in <name> <value>) [normally <value> is a c_function], s7_built_in(), s7_undefined()??
+ *              maybe insist that <name> is already defined, and just set its initial_value? If <name> value changes, clear initial_value? or save symbol_id? tricky.
+ *           in both cases <value> needs to be GC-protected while #<name> is in use
+<1> (procedure? #_abs)
+#t
+<2> (procedure? '#_abs)
+#t
+<3> (procedure? 'abs)
+#f
+<4> (type-of #_abs)
+procedure?
+<5> (type-of '#_abs)
+procedure?
+<6> (eq? abs #_abs)
+#t
  * need counts for block_list[index] of allocs/frees + lines + total-sizes + (maybe) unheaped blocks + borrowings + what caused max
  *   :blocks-allocated/available/in-use (668672 652001 16671): maybe break up large blocks?
  * obj->str+:readable if #symbol?
+ *   (define (f x) (let ((#symbol<a b> (+ x 1))) #symbol<a b>))
+ *   (object->string f :readable) -> (lambda (x) (let (((symbol "a b") (+ x 1))) (symbol "a b")))
+ *   obj->str :readable ignores local obj->str methods (t692)
  * *s7* switch to turn off the quote->#_quote switch (and the rest?) -- or do it only in a macro body?
- * rootlet_id=-1, symbol_id=-1 for global+slot?
+ *   or make (eq? x 'quote) -> (memq x '(quote #_quote))??
  * op_let_1/do_init_1 might work with slot list on the stack (as opposed to current list): see ~/old/s7-new-do.c
  */

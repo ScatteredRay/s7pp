@@ -6033,6 +6033,7 @@ int main(int argc, char **argv)
 <li>quasiquoted vector constants are not supported (read-time expansions can be used here; see s7test.scm).
 <li><em class=def id="typeof">type-of</em> returns a type indicator for its argument.
 <li>'&lt;datum&gt; is (#_quote &lt;datum&gt;), see <a href="#quotediff">below</a>.
+<li>s7 symbol names can begin with a digit: >code>(define (1+ x) (+ x 1))</code>.
 </ul>
 
 <p>In s7 if a built-in function like gcd is referred to in a function
