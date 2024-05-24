@@ -777,6 +777,11 @@ typedef struct {
 
 typedef intptr_t opcode_t;
 
+typedef struct unlet_entry_t {
+  s7_pointer symbol;
+  struct unlet_entry_t *next;
+} unlet_entry_t;
+
 
 /* -------------------------------- cell structure -------------------------------- */
 
@@ -1127,7 +1132,7 @@ struct s7_scheme {
 
   s7_pointer symbol_table;
   s7_pointer rootlet, rootlet_slots, shadow_rootlet;
-  s7_pointer unlet_slots;             /* original bindings of predefined functions */
+  unlet_entry_t *unlet_entries;         /* original bindings of predefined functions */
 
   s7_pointer input_port;              /* current-input-port */
   s7_pointer *input_port_stack;       /*   input port stack (load and read internally) */
@@ -3124,14 +3129,13 @@ static void symbol_set_id(s7_pointer p, s7_int id)
 #define is_global(p)                   ((is_slot(global_slot(p))) && (symbol_id(p) == 0))
 /* or ((symbol_id(p) == 0) && (global_slot(p) != cur_sc->undefined)) but it's slower, both are slower than the T_GLOBAL bit from earlier */
 
-#define initial_slot(p)                T_Sld(symbol_info(p)->ex.ex_ptr)
-#define set_initial_slot(p, Val)       symbol_info(p)->ex.ex_ptr = T_Sld(Val)
 #define global_slot(p)                 T_Sld((T_Sym(p))->object.sym.global_slot)
 #define set_global_slot(p, Val)        (T_Sym(p))->object.sym.global_slot = T_Sld(Val)
 #define local_slot(p)                  T_Sln((T_Sym(p))->object.sym.local_slot)
 #define set_local_slot(p, Val)         (T_Sym(p))->object.sym.local_slot = T_Slt(Val)
 
-#define initial_value(p)               slot_value(initial_slot(T_Sym(p)))
+#define initial_value(p)               symbol_info(p)->ex.ex_ptr
+#define set_initial_value(p, Val)      initial_value(p) = T_Ext(Val)
 #define local_value(p)                 slot_value(local_slot(T_Sym(p)))
 #define unchecked_local_value(p)       local_slot(p)->object.slt.val
 #define global_value(p)                slot_value(global_slot(T_Sym(p)))
@@ -3223,7 +3227,6 @@ static s7_pointer slot_expression(s7_pointer p)    \
 #define is_let(p)                      (type(p) == T_LET)
 #define is_let_unchecked(p)            (unchecked_type(p) == T_LET)
 #define let_slots(p)                   T_Sln((T_Let(p))->object.envr.slots)
-#define let_slots_unchecked(p)         p->object.envr.slots
 #define let_outlet(p)                  T_Out((T_Let(p))->object.envr.nxt)
 #define let_set_outlet(p, ol)          (T_Let(p))->object.envr.nxt = T_Out(ol)
 #if S7_DEBUGGING
@@ -3240,7 +3243,7 @@ static s7_pointer slot_expression(s7_pointer p)    \
 #define set_curlet(Sc, P)              Sc->curlet = T_Let(P)
 
 #define let_baffle_key(p)              (T_Let(p))->object.envr.edat.key
-#define set_let_baffle_key(p, K)       (T_Let(p))->object.envr.edat.key = K
+#define let_set_baffle_key(p, K)       (T_Let(p))->object.envr.edat.key = K
 
 #define let_line(p)                    (C_Let(p, L_FUNC))->object.envr.edat.efnc.line
 #define let_set_line(p, L)             (S_Let(p, L_FUNC))->object.envr.edat.efnc.line = L
@@ -8566,7 +8569,7 @@ static /* inline */ s7_pointer new_symbol(s7_scheme *sc, const char *name, s7_in
   symbol_set_name_cell(x, str);
   set_global_slot(x, sc->undefined);                       /* was sc->nil */
   symbol_info(x) = (block_t *)(base + 3 * sizeof(s7_cell));
-  set_initial_slot(x, sc->undefined);
+  set_initial_value(x, sc->undefined);
   symbol_set_local_slot_unchecked_and_unincremented(x, 0LL, sc->nil);
   symbol_set_tag(x, 0);
   symbol_set_tag2(x, 0);
@@ -8813,7 +8816,8 @@ static s7_pointer g_gensym(s7_scheme *sc, s7_pointer args)
   new_cell(sc, x, T_SYMBOL | T_GENSYM);
   symbol_set_name_cell(x, str);
   symbol_info(x) = ib;
-  set_global_slot(x, sc->undefined);  /* set_initial_slot(x, sc->undefined); */
+  set_global_slot(x, sc->undefined);  
+  set_initial_value(x, sc->undefined);
   symbol_set_local_slot_unchecked(x, 0LL, sc->nil);
   symbol_clear_ctr(x);
   symbol_set_tag(x, 0);
@@ -9386,13 +9390,6 @@ static void remove_let_from_heap(s7_scheme *sc, s7_pointer lt)
   let_set_removed(lt);
 }
 
-static void add_slot_to_rootlet(s7_scheme *sc, s7_pointer slot)
-{
-  set_in_rootlet(slot);
-  slot_set_next(slot, sc->rootlet_slots);
-  sc->rootlet_slots = slot;
-}
-
 static void remove_function_from_heap(s7_scheme *sc, s7_pointer value)
 {
   s7_pointer lt;
@@ -9410,6 +9407,21 @@ static void remove_function_from_heap(s7_scheme *sc, s7_pointer value)
 	  if ((is_let(lt)) && (!let_removed(lt)) && (lt != sc->shadow_rootlet))
 	    remove_let_from_heap(sc, lt);
 	}}
+}
+
+static void add_slot_to_rootlet(s7_scheme *sc, s7_pointer slot)
+{
+  set_in_rootlet(slot);
+  slot_set_next(slot, sc->rootlet_slots);
+  sc->rootlet_slots = slot;
+}
+
+static void add_to_unlet(s7_scheme *sc, s7_pointer symbol)
+{
+  unlet_entry_t *new_entry = (unlet_entry_t *)permalloc(sc, sizeof(s7_pointer) + sizeof(unlet_entry_t *));
+  new_entry->symbol = symbol;
+  new_entry->next = sc->unlet_entries;
+  sc->unlet_entries = new_entry;
 }
 
 s7_pointer s7_make_slot(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7_pointer value)
@@ -9441,13 +9453,13 @@ s7_pointer s7_make_slot(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7_poi
       if (symbol_id(symbol) == 0)         /* never defined locally (symbol_id tracks let_id) */
 	{
 	  if ((!is_gensym(symbol)) &&
-	      (initial_slot(symbol) == sc->undefined) &&
-	      (!in_heap(value)) &&         /* else initial_slot value can be GC'd if symbol set! (initial != global, initial unprotected) */
+	      (initial_value(symbol) == sc->undefined) &&
+	      (!in_heap(value)) &&         /* else initial_value can be GC'd if symbol set! (initial != global, initial unprotected) */
 	       ((!sc->string_signature) || /* from init_signatures -- maybe need a boolean for this */
 	       (is_c_function(value))))    /* || (is_syntax(value)) -- we need 'else as a special case? */
 	    /* the string_signature business means only the initial rootlet c_functions take part in unlet.  It would be neat if any
 	     *   cload library's c_functions could be there as well, but then (unlet) needs to know which envs are in the chain.
-	     *   The current shadow_rootlet could be saved in each initial_slot, these could be marked in some way, then the chain
+	     *   The current shadow_rootlet could be saved in each initial_value, these could be marked in some way, then the chain
 	     *   searched in (unlet) to get the currently active envs -- maybe too complex?  We could also provide a way to overrule
 	     *   the string_signature check, but then symbol collisions would probably be resolved as the last loaded (which might not
 	     *   be in the active chain).
@@ -9455,15 +9467,13 @@ s7_pointer s7_make_slot(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7_poi
 	     * But I don't see any interesting omissions.
 	     */
 	    {
-	      set_initial_slot(symbol, make_semipermanent_slot(sc, symbol, value));
+	      set_initial_value(symbol, value);
 	      if ((!sc->string_signature) && ((is_c_function(value)) || (is_syntax(value)))) /* syntax probably can't happen here (handled explicitly in syntax procedure) */
-		{
-		  /* non-c_functions that are not set! (and therefore initial_slot GC) protected by default: make-hook hook-functions
-		   *   if these initial_slot values are added to unlet, they need explicit GC protection.
-		   */
-		  slot_set_next(initial_slot(symbol), sc->unlet_slots);
-		  sc->unlet_slots = initial_slot(symbol);
-		}}
+		/* non-c_functions that are not set! (and therefore initial_value GC) protected by default: make-hook hook-functions
+		 *   if these initial_values are added to unlet, they need explicit GC protection.
+		 */
+		add_to_unlet(sc, symbol);
+	    }
 	  set_local_slot(symbol, slot);
 	}
       symbol_increment_ctr(symbol);
@@ -9523,10 +9533,10 @@ static s7_pointer g_unlet(s7_scheme *sc, s7_pointer unused_args)
   set_is_unlet(sc->w);
   if (global_value(sc->else_symbol) != sc->else_symbol)
     add_slot_checked_with_id(sc, sc->w, sc->else_symbol, initial_value(sc->else_symbol));
-  for (s7_pointer p = sc->unlet_slots; tis_slot(p); p = next_slot(p))
+  for (unlet_entry_t *p = sc->unlet_entries; p; p = p->next)
     {
-      s7_pointer sym = slot_symbol(p);
-      s7_pointer x = slot_value(p);
+      s7_pointer sym = p->symbol;
+      s7_pointer x = initial_value(sym);
       if ((x != global_value(sym)) ||  /* it has been changed globally */
 	  ((!is_global(sym)) &&        /* it might be shadowed locally */
 	   (s7_symbol_local_value(sc, sym, sc->curlet) != global_value(sym))))
@@ -10343,7 +10353,7 @@ static s7_pointer let_set_1(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7
       if (is_constant_symbol(sc, symbol))  /* (let-set! (rootlet) 'pi #f) */
 	wrong_type_error_nr(sc, sc->let_set_symbol, 2, symbol, a_non_constant_symbol_string);
       /* it would be nice if safety>0 to add an error check for bad arity if a built-in method is set (set! (lt 'write) hash-table-set!),
-       *   built_in being is_slot(initial_slot(sym)), but this function is called a ton, and this error can't easily be
+       *   built_in being (initial_value(sym) != sc->undefined), but this function is called a ton, and this error can't easily be
        *   checked by the optimizer (we see the names, but not the values, so bad arity check requires assumptions about those values).
        */
       slot = global_slot(symbol);
@@ -10755,8 +10765,10 @@ symbol sym in the given let: (let ((x 32)) (symbol->value 'x)) -> 32"
   if (is_not_null(cdr(args)))
     {
       s7_pointer local_let = cadr(args);
-      if (local_let == sc->unlet_symbol)
-	return((is_slot(initial_slot(sym))) ? initial_value(sym) : sc->undefined);
+      if (local_let == sc->unlet_symbol) /* perhaps #<unlet> rather than passing 'unlet to symbol->value? */
+	return(initial_value(sym));
+      if (local_let == sc->rootlet)
+	return((is_slot(global_slot(sym))) ? global_value(sym) : sc->undefined);
 
       if (!is_let(local_let))
 	{
@@ -10766,6 +10778,8 @@ symbol sym in the given let: (let ((x 32)) (symbol->value 'x)) -> 32"
 	}
       if (local_let == sc->s7_starlet)
 	return(s7_starlet(sc, s7_starlet_symbol(sym)));
+      if (is_unlet(local_let))
+	return(initial_value(sym));
 
       return(s7_symbol_local_value(sc, sym, local_let));
     }
@@ -11935,7 +11949,7 @@ static bool op_with_baffle_unchecked(s7_scheme *sc)
     }
   set_curlet(sc, make_let(sc, sc->curlet));
   set_baffle_let(sc->curlet);
-  set_let_baffle_key(sc->curlet, sc->baffle_ctr++);
+  let_set_baffle_key(sc->curlet, sc->baffle_ctr++);
   return(false);
 }
 
@@ -15052,7 +15066,7 @@ static s7_pointer make_sharp_constant(s7_scheme *sc, const char *name, bool with
        *    (let ((+ -)) (#_+ 1 2)): -1
        */
       s7_pointer sym = make_symbol_with_strlen(sc, (const char *)(name + 1));
-      if ((!is_gensym(sym)) && (is_slot(initial_slot(sym))))
+      if ((!is_gensym(sym)) && (initial_value(sym) != sc->undefined))
 	return(initial_value(sym));
       /* here we should not necessarily raise an error that *_... is undefined.  reader-cond, for example, needs to
        *    read undefined #_ vals that it will eventually discard.
@@ -35222,7 +35236,7 @@ static void c_function_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, u
 {
   s7_pointer sym = c_function_name_to_symbol(sc, obj);
   if ((!is_global(sym)) &&
-      (is_slot(initial_slot(sym))) &&
+      (initial_value(sym) != sc->undefined) &&
       ((use_write == P_READABLE) || (lookup(sc, sym) != initial_value(sym))))
     {
       /* this is not ideal, but normally the initial_value == global_value (so we can't set a bit there), and the slot
@@ -35239,7 +35253,7 @@ static void c_function_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, u
 
 static void c_macro_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, use_write_t unused_use_write, shared_info_t *unused_ci)
 {
-  /* should this check initial_slot and so on as in c_function_to_port above? */
+  /* should this check initial_value and so on as in c_function_to_port above? */
   if (c_macro_name_length(obj) > 0)
     {
       port_write_string(port)(sc, "#_", 2, port);
@@ -46444,7 +46458,7 @@ static s7_pointer make_baffled_closure(s7_scheme *sc, s7_pointer inp)
   s7_pointer nclo = make_closure_unchecked(sc, sc->nil, closure_body(inp), type(inp), 0); /* always preceded by new dw cell */
   s7_pointer let = make_let(sc, closure_let(inp)); /* let_outlet(let) = closure_let(inp) */
   set_baffle_let(let);
-  set_let_baffle_key(let, sc->baffle_ctr++);
+  let_set_baffle_key(let, sc->baffle_ctr++);
   closure_set_let(nclo, let);
   return(nclo);
 }
@@ -57284,7 +57298,7 @@ static s7_p_dd_t s7_p_dd_function(s7_pointer f);
 static s7_p_pi_t s7_p_pi_function(s7_pointer f);
 static s7_p_ii_t s7_p_ii_function(s7_pointer f);
 
-#define is_unchanged_global(P) ((is_symbol(P)) && (is_global(P)) && (is_slot(initial_slot(P))) && (initial_value(P) == global_value(P)))
+#define is_unchanged_global(P) ((is_symbol(P)) && (is_global(P)) && (initial_value(P) == global_value(P)))
 #define is_global_and_has_func(P, Func) ((is_unchanged_global(P)) && (Func(global_value(P)))) /* Func = s7_p_pp_function and friends */
 
 static bool fx_matches(s7_pointer symbol, const s7_pointer target_symbol) {return((symbol == target_symbol) && (is_unchanged_global(symbol)));}
@@ -76575,7 +76589,7 @@ static s7_pointer check_let(s7_scheme *sc) /* called only from op_let */
 	  if (is_c_function(y))                      /* (let ((#_abs 3)) ...) */
 	    {
 	      s7_pointer sym = c_function_name_to_symbol(sc, y);
-	      if (is_slot(initial_slot(sym)))
+	      if (initial_value(sym) != sc->undefined)
 		error_nr(sc, sc->syntax_error_symbol,
 			 set_elist_2(sc, wrap_string(sc, "variable name #_~S in let is a function, not a symbol", 53), y));
 	    }
@@ -78757,7 +78771,7 @@ static void check_define(s7_scheme *sc)
 	   (caadr(code) == sc->lambda_star_symbol)) &&
 	  (symbol_id(caadr(code)) == 0))
 	{
-	  if ((is_global(func)) && /* (is_slot(global_slot(func))) && */ (is_immutable(global_slot(func))) && (is_slot(initial_slot(func))))
+	  if ((is_global(func)) && (is_immutable(global_slot(func))) && (initial_value(func) != sc->undefined))
 	    immutable_object_error_nr(sc, set_elist_3(sc, wrap_string(sc, "can't ~A ~S: it is immutable", 28), caller, func));
 
 	  /* not is_global here because that bit might not be set for initial symbols (why not? -- redef as method etc) */
@@ -78781,8 +78795,7 @@ static void check_define(s7_scheme *sc)
 	    s7_warn(sc, 256, "%s: syntactic keywords tend to behave badly if redefined: %s\n", display(func), display_truncated(sc->code));
 	  set_local(func);
 	}
-      if ((is_global(func)) && /* (is_slot(global_slot(func))) && */
-	  (is_immutable(global_slot(func))) && (is_slot(initial_slot(func))))     /* (define (abs x) 1) after (immutable! abs) */
+      if ((is_global(func)) && (is_immutable(global_slot(func))) && (initial_value(func) != sc->undefined))     /* (define (abs x) 1) after (immutable! abs) */
 	immutable_object_error_nr(sc, set_elist_3(sc, wrap_string(sc, "can't ~A ~S: it is immutable", 28), caller, func));
       if (starred)
 	set_cdar(code, check_lambda_star_args(sc, cdar(code), cdr(code), sc->code));
@@ -96402,9 +96415,8 @@ static s7_pointer syntax(s7_scheme *sc, const char *name, opcode_t op, s7_pointe
   syntax_max_args(syn) = ((max_args == max_arity) ? -1 : integer(max_args));
   syntax_documentation(syn) = doc;
   set_global_slot(x, make_semipermanent_slot(sc, x, syn));
-  set_initial_slot(x, make_semipermanent_slot(sc, x, syn));  /* set_local_slot(x, global_slot(x)); */
-  slot_set_next(initial_slot(x), sc->unlet_slots);
-  sc->unlet_slots = initial_slot(x);
+  set_initial_value(x, syn);  /* set_local_slot(x, global_slot(x)); */
+  add_to_unlet(sc, x);
   set_type_bit(x, T_SYMBOL | T_SYNTACTIC | T_UNHEAP);
   symbol_set_local_slot_unchecked(x, 0LL, sc->nil);
   symbol_clear_ctr(x);
@@ -96670,7 +96682,7 @@ then returns each var to its original value."
 
   sc->else_symbol =                 make_symbol(sc, "else", 4);
   s7_make_slot(sc, sc->rootlet, sc->else_symbol, sc->else_symbol);
-  slot_set_value(initial_slot(sc->else_symbol), s7_make_keyword(sc, "else")); /* 3-Oct-23 was #t */
+  set_initial_value(sc->else_symbol, s7_make_keyword(sc, "else")); /* 3-Oct-23 was #t */
   /* if we set #_else to 'else, it can pick up a local else value: (let ((else #f)) (cond (#_else 2)...)) -- #_* is read-time */
 
   sc->allow_other_keys_keyword =    s7_make_keyword(sc, "allow-other-keys");
@@ -97757,7 +97769,7 @@ s7_scheme *s7_init(void)
   sc->rootlet_slots = slot_end;
   set_curlet(sc, sc->rootlet);
   sc->shadow_rootlet = sc->rootlet;
-  sc->unlet_slots = slot_end;
+  sc->unlet_entries = NULL;
 
   init_wrappers(sc);
   init_standard_ports(sc);
@@ -97912,7 +97924,7 @@ s7_scheme *s7_init(void)
 #if (!WITH_PURE_S7)
   {
     s7_pointer rs = s7_define_variable(sc, "make-rectangular", global_value(sc->complex_symbol));
-    set_initial_slot(rs, global_slot(sc->complex_symbol)); /* for #_make-rectangular */
+    set_initial_value(rs, global_value(sc->complex_symbol)); /* for #_make-rectangular */
   }
   s7_eval_c_string(sc, "(define make-polar                                                                \n\
                           (let ((+signature+ '(number? real? real?)))                                     \n\
@@ -98402,7 +98414,7 @@ int main(int argc, char **argv)
  *   need some counts here (eval:apply etc)
  * #_ extended to anything that might be captured? #_polar i.e. ((rootlet) :make-polar)? see comment line 97973
  *   similarly #_ for any c_function (libraries), or variable etc
- *   or perhaps better, user-defined way to create #_ refs: (define #_x x) where existing #_x blocks the definition in its context? (define #<x> x) might be better
+ *   or perhaps better, way to create #_ refs: (define #_x x) where existing #_x blocks the definition in its context? (define #<x> x) might be better
  *   (define #<L> L) then (#<L> :x) can't be captured?  Currently #<L> is t_undefined, and #_L looks in unlet.  Here #<L> is the inlet itself.
  *       but #<L> here is the thing itself -- not a symbol so defined? is pointless, and #<unspecified> has a value but (defined? '#<unspecified>) is an error
  *   see also comment 97974 -- if vals are not semipermanent, can be GC'd
@@ -98411,18 +98423,9 @@ int main(int argc, char **argv)
  *           (built-in <name> <value>) [normally <value> is a c_function], s7_built_in(), s7_undefined()??
  *              maybe insist that <name> is already defined, and just set its initial_value? If <name> value changes, clear initial_value? or save symbol_id? tricky.
  *           in both cases <value> needs to be GC-protected while #<name> is in use
-<1> (procedure? #_abs)
-#t
-<2> (procedure? '#_abs)
-#t
-<3> (procedure? 'abs)
-#f
-<4> (type-of #_abs)
-procedure?
-<5> (type-of '#_abs)
-procedure?
-<6> (eq? abs #_abs)
-#t
+ *   (undefined-define string val) sets #string's (or <string>'s??) value to val (not GC protected)
+ *   (define symbol val (unlet)) sets initial-value if it is not set, else error (not GC protected) ; or maybe unlet-define?
+ *   (define polar polar (unlet)) looks weird, (unlet-define polar)??
  * need counts for block_list[index] of allocs/frees + lines + total-sizes + (maybe) unheaped blocks + borrowings + what caused max
  *   :blocks-allocated/available/in-use (668672 652001 16671): maybe break up large blocks?
  * obj->str+:readable if #symbol?
@@ -98431,5 +98434,7 @@ procedure?
  *   obj->str :readable ignores local obj->str methods (t692)
  * *s7* switch to turn off the quote->#_quote switch (and the rest?) -- or do it only in a macro body?
  *   or make (eq? x 'quote) -> (memq x '(quote #_quote))??
- * op_let_1/do_init_1 might work with slot list on the stack (as opposed to current list): see ~/old/s7-new-do.c
+ * ((unlet) 'abs) should return #_abs without scanning unlet -> new let
+ *   same for ((rootlet) 'abs) -> global_value, also (let-ref (unlet) 'abs)
+ *   symbol->value uses 'unlet
  */
