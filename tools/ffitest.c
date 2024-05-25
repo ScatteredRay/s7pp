@@ -1437,6 +1437,20 @@ int main(int argc, char **argv)
   s7_for_each_symbol(sc, symbol_func_1, NULL);
   s7_symbol_name(s7_make_symbol(sc, "a_symbol"));
 
+  {
+    const char *str = s7_symbol_name(s7_make_symbol(sc, "asdf"));
+    if (strcmp(str, "asdf") != 0)
+      fprintf(stderr, "%d: s7_symbol_name('asdf): %s\n", __LINE__, str);
+  }
+
+  p = s7_symbol_initial_value(s7_make_symbol(sc, "abs"));
+  if (p != s7_name_to_value(sc, "abs"))
+    {fprintf(stderr, "%d: s7_symbol_initial_value('abs): %s\n", __LINE__, s1 = TO_STR(p)); free(s1);}
+
+  p = s7_symbol_set_initial_value(sc, s7_make_symbol(sc, "asdf"), s7_make_integer(sc, 321));
+  if (s7_integer(p) != 321)
+    {fprintf(stderr, "%d: s7_symbol_set_initial_value('asdf, 321): %s\n", __LINE__, s1 = TO_STR(p)); free(s1);}
+
   p = s7_make_hash_table(sc, 255);
   gc_loc = s7_gc_protect(sc, p);
 

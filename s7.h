@@ -1,10 +1,10 @@
 #ifndef S7_H
 #define S7_H
 
-#define S7_VERSION "10.9"
+#define S7_VERSION "10.10"
 #define S7_DATE "27-May-2024"
 #define S7_MAJOR_VERSION 10
-#define S7_MINOR_VERSION 9
+#define S7_MINOR_VERSION 10
 
 #include <stdint.h>           /* for int64_t */
 
@@ -435,6 +435,9 @@ s7_pointer s7_symbol_table_find_name(s7_scheme *sc, const char *name);
 s7_pointer s7_symbol_value(s7_scheme *sc, s7_pointer sym);
 s7_pointer s7_symbol_set_value(s7_scheme *sc, s7_pointer sym, s7_pointer val);
 s7_pointer s7_symbol_local_value(s7_scheme *sc, s7_pointer sym, s7_pointer local_env);
+s7_pointer s7_symbol_initial_value(s7_pointer symbol);                      /* #_symbol's value */
+s7_pointer s7_symbol_set_initial_value(s7_scheme *sc, s7_pointer symbol, s7_pointer value);
+
 bool s7_for_each_symbol_name(s7_scheme *sc, bool (*symbol_func)(const char *symbol_name, void *data), void *data);
 bool s7_for_each_symbol(s7_scheme *sc, bool (*symbol_func)(const char *symbol_name, void *data), void *data);
 
@@ -905,6 +908,7 @@ bool s7_is_bignum(s7_pointer obj);
  *
  *        s7 changes
  *
+ * 24-May:    symbol-initial-value, s7_symbol_initial_value, and setters.
  * 24-Apr:    port-string.
  * 8-Jan-23:  s7_gc_protect_2_via_stack.
  * --------

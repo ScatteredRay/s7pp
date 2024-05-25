@@ -5402,6 +5402,7 @@ is considered to be a part of the symbol name.  A keyword is a constant that eva
 (<em class=def id="symboltable">symbol-table</em>)
 (<em class=def id="symboltovalue">symbol-&gt;value</em> sym (env (curlet)))
 (<em class=def id="symboltodynamicvalue">symbol-&gt;dynamic-value</em> sym)
+(<em class=def id="symbolinitialvalue">symbol-initial-value</em> sym) ; settable
 (<em class=def id="definedp">defined?</em> sym (env (curlet)) ignore-rootlet)
 </pre>
 
@@ -5420,6 +5421,10 @@ is considered to be a part of the symbol name.  A keyword is a constant that eva
 <p>
 <code>symbol-&gt;value</code> returns the value (lexically) bound to the symbol, whereas <code>symbol-&gt;dynamic-value</code>
 returns the value dynamically bound to it.
+</p>
+<p>
+<code>symbol-initial-value</code> is normally the built-in (start up) value of a function, accessed via #_abs for example.
+For other symbols this value can only be set once, and the value should be protected from the GC (s7 does not protect it).
 </p>
 <p>
 <code>symbol-table</code> returns a vector containing the symbols currently in the symbol-table.

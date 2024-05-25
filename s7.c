@@ -1335,7 +1335,7 @@ struct s7_scheme {
              string_geq_symbol, string_gt_symbol, string_leq_symbol, string_lt_symbol, string_position_symbol, string_ref_symbol,
              string_set_symbol, string_symbol, string_to_number_symbol, string_to_symbol_symbol, string_upcase_symbol,
              sublet_symbol, substring_symbol, subtract_symbol, subvector_symbol, subvector_position_symbol, subvector_vector_symbol,
-             symbol_symbol, symbol_to_dynamic_value_symbol,
+             symbol_symbol, symbol_to_dynamic_value_symbol, symbol_initial_value_symbol,
              symbol_to_keyword_symbol, symbol_to_string_symbol, symbol_to_value_symbol,
              tan_symbol, tanh_symbol, throw_symbol, string_to_byte_vector_symbol,
              tree_count_symbol, tree_leaves_symbol, tree_memq_symbol, tree_set_memq_symbol, tree_is_cyclic_symbol, truncate_symbol, type_of_symbol,
@@ -9018,6 +9018,39 @@ static s7_pointer symbol_p_pp(s7_scheme *sc, s7_pointer p1, s7_pointer p2)
   memcpy((void *)buf, (void *)string_value(p1), string_length(p1));
   memcpy((void *)(buf + string_length(p1)), (void *)string_value(p2), string_length(p2));
   return(mark_as_symbol_from_symbol(inline_make_symbol(sc, buf, len)));
+}
+
+/* -------- symbol-initial-value -------- */
+static s7_pointer g_symbol_initial_value(s7_scheme *sc, s7_pointer args)
+{
+  #define H_symbol_initial_value "(symbol-initial-value sym) returns the initial binding of the symbol sym"
+  #define Q_symbol_initial_value s7_make_signature(sc, 2, sc->T, sc->is_symbol_symbol)
+
+  s7_pointer symbol = car(args);
+  if (!is_symbol(symbol)) /* or is_normal_symbol? now (symbol-initial-value :hi) -> #<undefined> */
+    return(sole_arg_method_or_bust(sc, symbol, sc->symbol_initial_value_symbol, set_plist_1(sc, symbol), sc->type_names[T_SYMBOL]));
+  return(initial_value(symbol));
+}
+
+static s7_pointer g_symbol_set_initial_value(s7_scheme *sc, s7_pointer args)
+{
+  s7_pointer symbol = car(args), value = cadr(args);
+  if (!is_symbol(symbol))
+    wrong_type_error_nr(sc, wrap_string(sc, "set! symbol-initial-value", 25), 1, symbol, sc->type_names[T_SYMBOL]);
+  if (initial_value(symbol) != sc->undefined)
+    immutable_object_error_nr(sc, set_elist_2(sc, wrap_string(sc, "can't set! (symbol-initial-value '~S); it is immutable", 54), symbol));
+  set_initial_value(symbol, value);
+  /* should this tie into unlet? */
+  return(value);
+}
+
+s7_pointer s7_symbol_initial_value(s7_pointer symbol) {return(initial_value(symbol));}
+
+s7_pointer s7_symbol_set_initial_value(s7_scheme *sc, s7_pointer symbol, s7_pointer value)
+{
+  if (initial_value(symbol) == sc->undefined)
+    set_initial_value(symbol, value);
+  return(initial_value(symbol));
 }
 
 
@@ -35235,9 +35268,10 @@ static void macro_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, use_wr
 static void c_function_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, use_write_t use_write, shared_info_t *unused_ci)
 {
   s7_pointer sym = c_function_name_to_symbol(sc, obj);
+  s7_pointer local_val = lookup_unexamined(sc, sym); /* lookup here really needs the env where sym is defined */
   if ((!is_global(sym)) &&
       (initial_value(sym) != sc->undefined) &&
-      ((use_write == P_READABLE) || (lookup(sc, sym) != initial_value(sym))))
+      ((use_write == P_READABLE) || ((local_val) && (local_val != initial_value(sym)))))
     {
       /* this is not ideal, but normally the initial_value == global_value (so we can't set a bit there), and the slot
        *   is not accessible here, so we can't tell that the #_ value was used (and probably needed) in the original code.
@@ -96561,6 +96595,9 @@ static void init_setters(s7_scheme *sc)
 			s7_make_safe_function(sc, "#<set-hash-table-value-typer>", g_set_hash_table_value_typer, 2, 0, false, "hash-table-value-typer setter"));
   c_function_set_setter(global_value(sc->symbol_symbol),
 			s7_make_safe_function(sc, "#<symbol-set>", g_symbol_set, 2, 0, true, "symbol setter"));
+  c_function_set_setter(global_value(sc->symbol_initial_value_symbol),
+			s7_make_safe_function(sc, "#<symbol-set-initial-value>", g_symbol_set_initial_value, 2, 0, false, "symbol-initial-value setter"));
+
 }
 
 static void init_syntax(s7_scheme *sc)
@@ -96667,7 +96704,7 @@ then returns each var to its original value."
   sc->io_error_symbol =             make_symbol(sc, "io-error", 8);
   sc->missing_method_symbol =       make_symbol(sc, "missing-method", 14);
   sc->number_to_real_symbol =       make_symbol(sc, "number_to_real", 14);
-  sc->invalid_exit_function_symbol = make_symbol(sc, "invalid-exit-function", 23);
+  sc->invalid_exit_function_symbol = make_symbol(sc, "invalid-exit-function", 21);
   sc->immutable_error_symbol =      make_symbol(sc, "immutable-error", 15);
   sc->division_by_zero_symbol =     make_symbol(sc, "division-by-zero", 16);
   sc->bad_result_symbol =           make_symbol(sc, "bad-result", 10);
@@ -96813,6 +96850,7 @@ static void init_rootlet(s7_scheme *sc)
   sc->symbol_symbol =                defun("symbol",		symbol,			1, 0, true);
   sc->symbol_to_value_symbol =       defun("symbol->value",	symbol_to_value,	1, 1, false);
   sc->symbol_to_dynamic_value_symbol = defun("symbol->dynamic-value", symbol_to_dynamic_value, 1, 0, false);
+  sc->symbol_initial_value_symbol =  defun("symbol-initial-value", symbol_initial_value, 1, 0, false);
   sc->immutable_symbol =             unsafe_defun("immutable!",	immutable,		1, 1, false); /* unsafe 11-Oct-23, added let arg 13-Oct-23 */
   set_func_is_definer(sc->immutable_symbol);
   sc->is_immutable_symbol =          defun("immutable?",	is_immutable,		1, 1, false); /* added optional let arg 13-Oct-23 */
@@ -98357,14 +98395,14 @@ int main(int argc, char **argv)
  * dup              3805   3788   2492   2239   2097   1996
  * thook     7651                 2590   2030   2046   2015
  * tread            2440   2421   2419   2408   2405   2256
- * tcopy            8035   5546   2539   2375   2386   2370  2343 [add_slot_no_local]
+ * tcopy            8035   5546   2539   2375   2386   2343
  * titer     3657   2865   2842   2641   2509   2449   2443
  * trclo     8031   2735   2574   2454   2445   2449   2470
  * tmat             3065   3042   2524   2578   2590   2512
  * tload                          3046   2404   2566   2546
- * fbench    2933   2688   2583   2460   2430   2478   2562  2573 [fx_g if no global bit]
+ * fbench    2933   2688   2583   2460   2430   2478   2573
  * tsort     3683   3105   3104   2856   2804   2858   2858
- * tio              3816   3752   3683   3620   3583   3128  3132 [set_output_port_string]
+ * tio              3816   3752   3683   3620   3583   3132
  * tobj             4016   3970   3828   3577   3508   3453
  * teq              4068   4045   3536   3486   3544   3507
  * tmac             3950   3873   3033   3677   3677   3683
@@ -98376,7 +98414,7 @@ int main(int argc, char **argv)
  * tmap             8869   8774   4489   4541   4586   4591
  * tshoot           5525   5447   5183   5055   5034   5055
  * tform            5357   5348   5307   5316   5084   5098
- * tstr      10.0   6880   6342   5488   5162   5180   5211  5275 [op_let1]
+ * tstr      10.0   6880   6342   5488   5162   5180   5275
  * tnum             6348   6013   5433   5396   5409   5434
  * tgsl             8485   7802   6373   6282   6208   6181
  * tari      15.0   13.0   12.7   6827   6543   6278   6184
@@ -98385,17 +98423,17 @@ int main(int argc, char **argv)
  * trec      19.5   6936   6922   6521   6588   6583   6584
  * tleft     11.1   10.4   10.2   7657   7479   7627   7613
  * tmisc                                 8142   7631   7676
- * tlamb                                 8003   7941   7940  7950
- * tgc              11.9   11.1   8177   7857   7986   7959  8010 [op_let1]
+ * tlamb                                 8003   7941   7950
+ * tgc              11.9   11.1   8177   7857   7986   8010
  * thash            11.8   11.7   9734   9479   9526   9254
- * cb        12.9   11.2   11.0   9658   9564   9609   9639  9656 [op_named_let_1, gc]
+ * cb        12.9   11.2   11.0   9658   9564   9609   9656
  * tmap-hash                           1671.0 1467.0   10.3
  * tmv              16.0   15.4   14.7   14.5   14.4   11.9
- * tgen             11.2   11.4   12.0   12.1   12.2   12.3  12.4 [op_let1, gc]
+ * tgen             11.2   11.4   12.0   12.1   12.2   12.4
  * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1
  * timp             25.4   24.4   20.0   19.6   19.7   15.7
- * calls            36.7   37.5   37.0   37.5   37.1   37.0  37.2 [op_let1, gc]
- * sg                             55.9   55.8   55.4   55.2  55.4 same
+ * calls            36.7   37.5   37.0   37.5   37.1   37.2
+ * sg                             55.9   55.8   55.4   55.4
  * tbig            177.4  175.8  156.5  148.1  146.2  146.1
  * --------------------------------------------------------------
  *
@@ -98405,6 +98443,7 @@ int main(int argc, char **argv)
  * (define print-length (list 1 2)) (define (f) (with-let *s7* (+ print-length 1))) (display (f)) (newline) -- need a placeholder-let (or actual let) for *s7*?
  *   so (with-let *s7* ...) would make a let with whatever *s7* entries are needed? -> (let ((print-length (*s7* 'print-length))) ...)
  *   currently sc->s7_starlet is a let (make_s7_starlet) using g_s7_let_ref_fallback, so it assumes print-length above is undefined
+ *   default to 80 if not in Snd
  * need some print-length/print-elements distinction for vector/pair etc [which to choose if both set?]
  * 73150 vars_opt_ok problem
  * values feeding safe func -- can't this be opt'd? (values 1) at least
@@ -98412,20 +98451,6 @@ int main(int argc, char **argv)
  * if closure sig, add some way to have arg types checked by s7? (*s7* :check-signature?)
  * 0/1/2-arg-func types? [esp closure-args -- why save a list if let can recreate it? (defines?) but this can be changed in any case]
  *   need some counts here (eval:apply etc)
- * #_ extended to anything that might be captured? #_polar i.e. ((rootlet) :make-polar)? see comment line 97973
- *   similarly #_ for any c_function (libraries), or variable etc
- *   or perhaps better, way to create #_ refs: (define #_x x) where existing #_x blocks the definition in its context? (define #<x> x) might be better
- *   (define #<L> L) then (#<L> :x) can't be captured?  Currently #<L> is t_undefined, and #_L looks in unlet.  Here #<L> is the inlet itself.
- *       but #<L> here is the thing itself -- not a symbol so defined? is pointless, and #<unspecified> has a value but (defined? '#<unspecified>) is an error
- *   see also comment 97974 -- if vals are not semipermanent, can be GC'd
- *   perhaps (undefined <name> <value>) returns an undefined object #<name> with the value, blocking overwrites (#<unspecified> can't be redefined)
- *              15080 make_sharp_constant
- *           (built-in <name> <value>) [normally <value> is a c_function], s7_built_in(), s7_undefined()??
- *              maybe insist that <name> is already defined, and just set its initial_value? If <name> value changes, clear initial_value? or save symbol_id? tricky.
- *           in both cases <value> needs to be GC-protected while #<name> is in use
- *   (undefined-define string val) sets #string's (or <string>'s??) value to val (not GC protected)
- *   (define symbol val (unlet)) sets initial-value if it is not set, else error (not GC protected) ; or maybe unlet-define?
- *   (define polar polar (unlet)) looks weird, (unlet-define polar)??
  * need counts for block_list[index] of allocs/frees + lines + total-sizes + (maybe) unheaped blocks + borrowings + what caused max
  *   :blocks-allocated/available/in-use (668672 652001 16671): maybe break up large blocks?
  * obj->str+:readable if #symbol?
@@ -98436,5 +98461,5 @@ int main(int argc, char **argv)
  *   or make (eq? x 'quote) -> (memq x '(quote #_quote))??
  * ((unlet) 'abs) should return #_abs without scanning unlet -> new let
  *   same for ((rootlet) 'abs) -> global_value, also (let-ref (unlet) 'abs)
- *   symbol->value uses 'unlet
+ *   symbol->value uses 'unlet -- ugly
  */

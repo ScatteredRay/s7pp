@@ -291,7 +291,7 @@
 	       (format p "#include <~A>~%" header))
 	     headers))
 	(format p "#include \"s7.h\"~%~%")
-	(format p "static s7_pointer c_pointer_string, string_string, character_string, boolean_string, real_string, complex_string, integer_string;~%"))
+	(format p "static s7_pointer fsym, ffunc, c_pointer_string, string_string, character_string, boolean_string, real_string, complex_string, integer_string;~%"))
       
       (define collides?
 	(let ((all-names (hash-table)))
@@ -640,14 +640,15 @@
 		 (num-args    (f 3))
 		 (opt-args    (if (> (length f) 4) (f 4) 0))
 		 (sig         (and (> (length f) 5) (f 5))))
-	     (format p "~%  s7_define(sc, cur_env,~%            s7_make_symbol(sc, ~S),~%" scheme-name)
-	     (format p "            s7_make_typed_function(sc, ~S, ~A, ~D, ~D, false, ~S, ~A));~%"
+	     (format p "~%  s7_define(sc, cur_env,~%            fsym = s7_make_symbol(sc, ~S),~%" scheme-name)
+	     (format p "            ffunc = s7_make_typed_function(sc, ~S, ~A, ~D, ~D, false, ~S, ~A));~%"
 		     scheme-name
 		     base-name
 		     num-args
 		     opt-args
 		     helpf
-		     (if (pair? sig) (signatures sig) 'NULL))))
+		     (if (pair? sig) (signatures sig) 'NULL))
+	     (format p "  s7_symbol_set_initial_value(sc, fsym, ffunc);~%"))) ; not sure this is a good idea, added 24-May-24
 	 functions)
 	
 	;; optimizer connection
