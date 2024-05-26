@@ -10256,14 +10256,13 @@ static /* inline */ s7_pointer let_ref(s7_scheme *sc, s7_pointer let, s7_pointer
    *   After much wasted debugging, I decided to make let-ref and let-set! immutable.
    */
 
-  if (is_keyword(symbol))
-    symbol = keyword_symbol(symbol);
-
-  if (let == sc->rootlet)
-    return((is_slot(global_slot(symbol))) ? global_value(symbol) : sc->undefined);
-
   if (let_id(let) == symbol_id(symbol))
     return(local_value(symbol)); /* this has to follow the rootlet check(?) */
+
+  if (is_keyword(symbol))
+    symbol = keyword_symbol(symbol);
+  if (let == sc->rootlet)
+    return((is_slot(global_slot(symbol))) ? global_value(symbol) : sc->undefined);
 
   for (s7_pointer x = let; x; x = let_outlet(x))
     for (s7_pointer y = let_slots(x); tis_slot(y); y = next_slot(y))
@@ -10303,10 +10302,10 @@ static s7_pointer slot_in_let(s7_scheme *sc, s7_pointer e, const s7_pointer sym)
 
 static s7_pointer let_ref_p_pp(s7_scheme *sc, s7_pointer lt, s7_pointer sym)
 {
-  if (lt == sc->rootlet) /* op_implicit_let_ref_c can pass rootlet */
-    return((is_slot(global_slot(sym))) ? global_value(sym) : sc->undefined);
   if (let_id(lt) == symbol_id(sym))
     return(local_value(sym)); /* see add in tlet! */
+  if (lt == sc->rootlet) /* op_implicit_let_ref_c can pass rootlet */
+    return((is_slot(global_slot(sym))) ? global_value(sym) : sc->undefined);
   for (s7_pointer x = lt; x; x = let_outlet(x))
     for (s7_pointer y = let_slots(x); tis_slot(y); y = next_slot(y))
       if (slot_symbol(y) == sym)
@@ -10321,10 +10320,10 @@ static inline s7_pointer g_simple_let_ref(s7_scheme *sc, s7_pointer args)
   s7_pointer lt = car(args), sym = cadr(args);
   if (!is_let(lt))
     wrong_type_error_nr(sc, sc->let_ref_symbol, 1, lt, a_let_string);
-  if (lt == sc->rootlet)
-    return((is_slot(global_slot(sym))) ? global_value(sym) : sc->undefined);
   if (let_id(lt) == symbol_id(sym))
     return(local_value(sym));
+  if (lt == sc->rootlet)
+    return((is_slot(global_slot(sym))) ? global_value(sym) : sc->undefined);
   for (s7_pointer y = let_slots(lt); tis_slot(y); y = next_slot(y))
     if (slot_symbol(y) == sym)
       return(slot_value(y));
@@ -98408,9 +98407,9 @@ int main(int argc, char **argv)
  * tmac             3950   3873   3033   3677   3677   3683
  * tclo      6362   4787   4735   4390   4384   4474   4337
  * tcase            4960   4793   4439   4430   4439   4428
- * tlet      9166   7775   5640   4450   4427   4457   4487
+ * tlet      9166   7775   5640   4450   4427   4457   4487  4483
  * tfft             7820   7729   4755   4476   4536   4542
- * tstar            6139   5923   5519   4449   4550   4584
+ * tstar            6139   5923   5519   4449   4550   4584  4556
  * tmap             8869   8774   4489   4541   4586   4591
  * tshoot           5525   5447   5183   5055   5034   5055
  * tform            5357   5348   5307   5316   5084   5098
@@ -98459,7 +98458,7 @@ int main(int argc, char **argv)
  *   obj->str :readable ignores local obj->str methods (t692)
  * *s7* switch to turn off the quote->#_quote switch (and the rest?) -- or do it only in a macro body?
  *   or make (eq? x 'quote) -> (memq x '(quote #_quote))??
- * ((unlet) 'abs) should return #_abs without scanning unlet -> new let
- *   same for ((rootlet) 'abs) -> global_value, also (let-ref (unlet) 'abs)
- *   symbol->value uses 'unlet -- ugly
+ * ((unlet) 'abs) should return #_abs without scanning unlet -> new let, also (let-ref (unlet) 'abs)
+ *   symbol->value uses 'unlet -- ugly, symbol-initial-value opt?
+ * no gensym: (#_:L :a)!
  */
