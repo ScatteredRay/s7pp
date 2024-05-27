@@ -34,13 +34,25 @@
 
 (define (daytime)
   (with-let (sublet *libc*)
-    (let ((timestr (make-string 64))
+    (let ((timestr (make-string 16))
 	  (p #f))
-      (let ((len (strftime timestr 64 "%H:%M"
+      (let ((len (strftime timestr 16 "%H:%M"
 			   (localtime
 			    (set! p (time.make (time (c-pointer 0 'time_t*))))))))
 	(time.free p)
 	(substring timestr 0 len)))))
+
+(define (memory-rusage)
+  (with-let (sublet *libc*)
+    (let ((v (rusage.make)))
+      (getrusage RUSAGE_SELF v)
+      (let ((mem (rusage.ru_maxrss v)))
+	(free v)
+	mem)))) ; 99 414 [016] -- this is in kbytes
+
+(define-constant start-resident-size (memory-rusage))
+(format #t "size: ~S~%" start-resident-size)
+(define current-size start-resident-size)
 
 (define (cycler size)
   (let ((cp-lst (make-list 3 #f))
@@ -506,11 +518,16 @@
 (define (checked-*function* . args)
   (procedure? (apply *function* args)))
 
+(define *read-file-name* "s7test.scm")
+;(define *read-file-name* "libdl.scm")
+
+
 (define (checked-read-char . args) (with-input-from-string "0123" (lambda () (apply read-char args))))
 (define (checked-read-byte . args) (with-input-from-string "0123" (lambda () (apply read-byte args))))
-(define (checked-read-line . args) (with-input-from-file "s7test.scm" (lambda () (apply read-line args))))
-(define (checked-read-string . args) (with-input-from-file "s7test.scm" (lambda () (apply read-string args))))
+(define (checked-read-line . args) (with-input-from-file *read-file-name* (lambda () (apply read-line args))))
+(define (checked-read-string . args) (with-input-from-file *read-file-name* (lambda () (apply read-string args))))
 (define (checked-read . args) (with-input-from-file "dsp.scm" (lambda () (apply read args))))
+
 (define (checked-reverse! . args) (reverse! (copy (car args))))
 (define (checked-port-line-number . args) (apply port-line-number args) 0)
 (define (checked-procedure-source . args) (copy (procedure-source (car args)) :readable))
@@ -825,7 +842,7 @@
 			  'char-whitespace? 'assoc 'procedure? 'char<?
 			  'inexact->exact 'vector->list 'boolean? 'undefined? 'unspecified?
 			  'caar (if with-bignums '* 'ash) 'list-tail 'symbol->string 'string->symbol 'exact->inexact
-			  'object->string 'char>? 'symbol->value
+			  'object->string 'char>? 'symbol->value 'symbol-initial-value
 			  'cadar 'integer-decode-float 'string-copy 'cdddr 'logand 'cadddr
 			  'with-input-from-string 'substring 'string->list 'char-upper-case?
 			  'hash-table-set! 'cddddr 'string<? 'dynamic-wind 'call-with-input-file 'error
@@ -1172,7 +1189,7 @@
 
 		    "__var2__"
 		    ; "\"~S~%\"" "\"~A~D~X\"" "\"~{~A~^~}~%\"" "\"~NC~&\"" ; -- creates files by these names?
-		    "(call-with-input-file \"s7test.scm\" (lambda (p) p))"
+		    "(call-with-input-file *read-file-name* (lambda (p) p))"
 		    "(call-with-output-string (lambda (p) p))"
 
 		    "ims" "imbv" "imv" "imiv" "imfv" "imi" "imp" "imh"
@@ -1209,7 +1226,7 @@
 		      "(mock-vector 1 2 3 4)"
 		      "(mock-hash-table 'b 2)" "(mock-hash-table 'b (mock-number 2))"
 		      "(mock-c-pointer -1)"
-		      ;"(mock-port (open-input-port \"s7test.scm\"))"
+		      ;"(mock-port (open-input-port *read-file-name*))"
 		      "(mock-random-state 1234)"))
 		    "'value"
 
@@ -1874,6 +1891,13 @@
 	;(when (eq? outer-funcs last-func) (reseed))
 	(set! last-func outer-funcs))
 
+#|
+      (let ((size (memory-rusage)))
+	(if (> (- size current-size) 100)
+	    (format *stderr* "size: ~S -> ~S, ~S~%" current-size size estr))
+	(set! current-size size))
+|#
+
       ;(unless (output-port? imfo) (format *stderr* "(new) imfo ~S -> ~S~%" estr imfo) (abort)) ; with-mock-data
       (set! *features* (copy %features%))
       (set! error-info #f)
@@ -1903,8 +1927,9 @@
 	  (when (= n 8)
 	    (set! n 0)
 	    (format *stderr* " ~A " (daytime))
+;	    (format *stderr* " ~A " current-size)
 
-	    ;; these two tend to become seriously bloated
+	    ;; these two tend to become seriously bloated -- maybe add setters
 	    (set! big-let (let ((e (inlet)))
 			    (let-temporarily (((*s7* 'print-length) 80))
 			      (do ((i 0 (+ i 1)))

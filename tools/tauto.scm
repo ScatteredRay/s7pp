@@ -24,7 +24,7 @@
 		  define-expansion call-with-current-continuation 
 		  vector-append append ; append gets uninteresting type conversion complaints
 		  call/cc call-with-output-string open-input-function open-output-function
-		  set-current-input-port ;set-current-output-port 
+		  set-current-input-port ;set-current-output-port
 		  set-current-error-port))
 
 (let ((max-args 3))
@@ -80,7 +80,7 @@
 	     (lambda (type info)
 	       (if (and (positive? args-now)
 			(memq type '(wrong-type-arg wrong-number-of-args out-of-range syntax-error io-error
-				     division-by-zero format-error missing-method error invalid-escape-function)))
+				     division-by-zero format-error missing-method error invalid-exit-function)))
 		   (quit)))))
        
        (let ((c-args (vector-ref auto-arglists args-now)))
@@ -88,7 +88,7 @@
 	 
 	 (let ((p (list-tail c-args args-now))
 	       (checker (and (pair? sig) (car sig)))) ; see map-values
-	   
+
 	   (if (= args-left 1)
 	       (call-with-exit
 		(lambda (quit)
@@ -99,7 +99,7 @@
 		      (apply func c-args))
 		    (lambda (type info)
 		      (if (or (memq type '(wrong-number-of-args out-of-range syntax-error io-error
-					   division-by-zero format-error error missing-method invalid-escape-function))
+					   division-by-zero format-error error missing-method invalid-exit-function))
 			      (and (eq? type 'wrong-type-arg)
 				   (pair? (cdr info))
 				   (pair? (cddr info))

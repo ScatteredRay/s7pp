@@ -228,7 +228,7 @@
 #endif
 
 #ifndef DEFAULT_PRINT_LENGTH
-  #define DEFAULT_PRINT_LENGTH 12 /* (*s7* 'print-length) initial value, was 32 but Snd uses 12, 23-Jul-21 */
+  #define DEFAULT_PRINT_LENGTH 40 /* (*s7* 'print-length) initial value, was 32 but that's too small 26-May-24 */
 #endif
 
 #ifndef WITH_NUMBER_SEPARATOR
@@ -1255,6 +1255,9 @@ struct s7_scheme {
   block_t *block_lists[NUM_BLOCK_LISTS];
   size_t alloc_string_k;
   char *alloc_string_cells;
+#if S7_DEBUGGING
+  int64_t blocks_borrowed[NUM_BLOCK_LISTS], blocks_freed[NUM_BLOCK_LISTS], blocks_mallocated[NUM_BLOCK_LISTS];
+#endif
 
   c_object_t **c_object_types;
   int32_t c_object_types_size, num_c_object_types;
@@ -1576,17 +1579,22 @@ static void init_block_lists(s7_scheme *sc)
     sc->block_lists[i] = NULL;
 #if S7_DEBUGGING
   sc->blocks_allocated = 0;
+  for (int32_t i = 0; i < NUM_BLOCK_LISTS; i++)
+    sc->blocks_borrowed[i] = 0;
 #endif
 }
 
 static inline void liberate(s7_scheme *sc, block_t *p)
 {
+#if S7_DEBUGGING
+  sc->blocks_freed[block_index(p)]++;
+#endif
   if (block_index(p) != TOP_BLOCK_LIST)
     {
       block_next(p) = (struct block_t *)sc->block_lists[block_index(p)];
       sc->block_lists[block_index(p)] = p;
     }
-  else
+  else /* biggest blocks (allocated according to each particular size) are freed and placed on the 0-th list */
     {
       if (block_data(p))
 	{
@@ -1600,6 +1608,9 @@ static inline void liberate(s7_scheme *sc, block_t *p)
 
 static inline void liberate_block(s7_scheme *sc, block_t *p)
 {
+#if S7_DEBUGGING
+  sc->blocks_freed[BLOCK_LIST]++;
+#endif
   block_next(p) = (struct block_t *)sc->block_lists[BLOCK_LIST]; /* BLOCK_LIST==0 */
   sc->block_lists[BLOCK_LIST] = p;
 }
@@ -1672,7 +1683,12 @@ static Inline block_t *inline_mallocate(s7_scheme *sc, size_t bytes)
 	}
       p = sc->block_lists[index];
       if (p)
-	sc->block_lists[index] = (block_t *)block_next(p);
+	{
+#if (S7_DEBUGGING)
+	  sc->blocks_mallocated[index]++;
+#endif
+	  sc->block_lists[index] = (block_t *)block_next(p);
+	}
       else
 	{
 	  if (index < (TOP_BLOCK_LIST - 1))
@@ -1686,6 +1702,10 @@ static Inline block_t *inline_mallocate(s7_scheme *sc, size_t bytes)
 		   *   speed-up, probably because grabbing a block here is faster than making a new one.
 		   *   Worst case is tlet: 8 slower in callgrind.
 		   */
+#if S7_DEBUGGING
+		  sc->blocks_mallocated[index + 1]++;
+		  sc->blocks_borrowed[index + 1]++;
+#endif
 		  sc->block_lists[index + 1] = (block_t *)block_next(p);
 		  block_set_size(p, bytes);
 		  return(p);
@@ -1693,8 +1713,17 @@ static Inline block_t *inline_mallocate(s7_scheme *sc, size_t bytes)
 	  p = mallocate_block(sc);
 	  block_data(p) = (index < TOP_BLOCK_LIST) ? (void *)permalloc(sc, (size_t)(1 << index)) : Malloc(bytes);
 	  block_set_index(p, index);
+#if S7_DEBUGGING
+	  sc->blocks_mallocated[index]++;
+#endif
 	}}
-  else p = mallocate_block(sc);
+  else
+    {
+#if S7_DEBUGGING
+      sc->blocks_mallocated[BLOCK_LIST]++;
+#endif
+      p = mallocate_block(sc);
+    }
   block_set_size(p, bytes);
   return(p);
 }
@@ -4621,7 +4650,7 @@ static const char *s7_starlet_names[SL_NUM_FIELDS] =
    "gc-temps-size", "gc-resize-heap-fraction", "gc-resize-heap-by-4-fraction", "openlets", "expansions?",
    "number-separator"};
 
-static s7_pointer object_to_string_truncated(s7_scheme *sc, s7_pointer p); 
+static s7_pointer object_to_string_truncated(s7_scheme *sc, s7_pointer p);
 static const char *type_name(s7_scheme *sc, s7_pointer arg, article_t article);
 static s7_pointer cons_unchecked(s7_scheme *sc, s7_pointer a, s7_pointer b);
 static s7_pointer unbound_variable(s7_scheme *sc, s7_pointer sym);
@@ -4771,7 +4800,7 @@ static char *describe_type_bits(s7_scheme *sc, s7_pointer obj)
 	  /* bit 19 */
 	  ((full_typ & T_SHARED) != 0) ?         ((is_sequence(obj)) ? " shared" : " ?11?") : "",
 	  /* bit 20 */
-	  ((full_typ & T_LOW_COUNT) != 0) ?      ((is_pair(obj)) ? " low-count" : " ?12?") : "",	  
+	  ((full_typ & T_LOW_COUNT) != 0) ?      ((is_pair(obj)) ? " low-count" : " ?12?") : "",
 	  /* bit 21 */
 	  ((full_typ & T_SAFE_PROCEDURE) != 0) ? ((is_applicable(obj)) ? " safe-procedure" : " ?13?") : "",
 	  /* bit 22 */
@@ -8215,7 +8244,7 @@ static void push_stack_1(s7_scheme *sc, opcode_t op, s7_pointer args, s7_pointer
     }
   if (sc->stack_end >= sc->stack_resize_trigger)
     fprintf(stderr, "%s%s[%d] from %s: stack resize skipped, stack at %u of %u %s%s\n",
-	    bold_text, func, line, op_names[op], 
+	    bold_text, func, line, op_names[op],
 	    (uint32_t)((intptr_t)(sc->stack_end - sc->stack_start)),
 	    sc->stack_size, display_truncated(code), unbold_text);
   if (sc->stack_end != end)
@@ -8472,7 +8501,7 @@ s7_pointer s7_gc_unprotect_via_stack(s7_scheme *sc, s7_pointer x)
   #define stack_protected1(Sc, Op) stack_protected1_1(Sc, Op, __func__, __LINE__)
   #define stack_protected2(Sc, Op) stack_protected2_1(Sc, Op, __func__, __LINE__)
   #define stack_protected3(Sc, Op) stack_protected3_1(Sc, Op, __func__, __LINE__)
-  
+
   #define set_stack_protected1(Sc, Val, Op) do {if (stack_top_op(Sc) != Op) fprintf(stderr, "%s[%d]: set_stack_protected1 %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); stack_top_args(Sc) = Val;} while (0)
   #define set_stack_protected2(Sc, Val, Op) do {if (stack_top_op(Sc) != Op) fprintf(stderr, "%s[%d]: set_stack_protected2 %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); stack_top_code(Sc) = Val;} while (0)
   #define set_stack_protected3(Sc, Val, Op) do {if (stack_top_op(Sc) != Op) fprintf(stderr, "%s[%d]: set_stack_protected3 %s\n", __func__, __LINE__, op_names[stack_top_op(Sc)]); stack_top_let(Sc) = Val;} while (0)
@@ -8816,7 +8845,7 @@ static s7_pointer g_gensym(s7_scheme *sc, s7_pointer args)
   new_cell(sc, x, T_SYMBOL | T_GENSYM);
   symbol_set_name_cell(x, str);
   symbol_info(x) = ib;
-  set_global_slot(x, sc->undefined);  
+  set_global_slot(x, sc->undefined);
   set_initial_value(x, sc->undefined);
   symbol_set_local_slot_unchecked(x, 0LL, sc->nil);
   symbol_clear_ctr(x);
@@ -12017,6 +12046,9 @@ s7_pointer s7_make_continuation(s7_scheme *sc)
 
   new_cell(sc, x, T_CONTINUATION);
   block = mallocate_block(sc);
+#if S7_DEBUGGING
+  sc->blocks_mallocated[BLOCK_LIST]++;
+#endif
   continuation_block(x) = block;
   continuation_set_stack(x, stack);
   continuation_stack_size(x) = vector_length(continuation_stack(x));
@@ -26843,7 +26875,7 @@ static Inline s7_pointer inline_make_empty_string(s7_scheme *sc, s7_int len, cha
 
 static s7_pointer make_empty_string(s7_scheme *sc, s7_int len, char fill) {return(inline_make_empty_string(sc, len, fill));}
 
-s7_pointer s7_make_string(s7_scheme *sc, const char *str) 
+s7_pointer s7_make_string(s7_scheme *sc, const char *str)
 {
   s7_int len = safe_strlen(str);
   return((len > 0) ? make_string_with_length(sc, str, len) : nil_string);
@@ -28334,7 +28366,7 @@ static s7_pointer g_set_port_string(s7_scheme *sc, s7_pointer args)
   str = cadr(args);
   if (!is_string(str))
     wrong_type_error_nr(sc, wrap_string(sc, "set! port-string", 16), 2, str, sc->type_names[T_STRING]);
-  if (is_input_port(port)) 
+  if (is_input_port(port))
     set_input_port_string(sc, port, str);
   else set_output_port_string(sc, port, str);
   return(str);
@@ -29516,6 +29548,9 @@ static block_t *mallocate_port(s7_scheme *sc)
       block_set_index(p, PORT_LIST);
     }
   block_set_size(p, sizeof(port_t));
+#if (S7_DEBUGGING)
+  sc->blocks_mallocated[PORT_LIST]++;
+#endif
   return(p);
 }
 
@@ -37205,6 +37240,9 @@ system captures the output as a string and returns it."
 	  block_t *b = mallocate_block(sc);
 	  block_data(b) = (void *)str;
 	  block_set_index(b, TOP_BLOCK_LIST);
+#if S7_DEBUGGING
+	  sc->blocks_mallocated[TOP_BLOCK_LIST]++;
+#endif
 	  return(block_to_string(sc, b, cur_len));
 	}
       return(nil_string);
@@ -39858,6 +39896,9 @@ static block_t *mallocate_empty_block(s7_scheme *sc)
 {
   block_t *b;
   b = mallocate_block(sc);
+#if S7_DEBUGGING
+  sc->blocks_mallocated[BLOCK_LIST]++;
+#endif
   block_data(b) = NULL;
   block_info(b) = NULL;
   return(b);
@@ -40036,6 +40077,9 @@ s7_pointer s7_make_and_fill_vector(s7_scheme *sc, s7_int len, s7_pointer fill)
 static vdims_t *make_wrap_only(s7_scheme *sc) /* this makes sc->wrap_only */
 {
   vdims_t *v = (vdims_t *)mallocate_block(sc);
+#if S7_DEBUGGING
+  sc->blocks_mallocated[BLOCK_LIST]++;
+#endif
   vdims_original(v) = sc->F;
   vector_elements_should_be_freed(v) = false;
   vdims_rank(v) = 1;
@@ -40068,6 +40112,9 @@ static vdims_t *make_vdims(s7_scheme *sc, bool elements_should_be_freed, s7_int 
       return(v);
     }
   v = (vdims_t *)mallocate_block(sc);
+#if S7_DEBUGGING
+  sc->blocks_mallocated[BLOCK_LIST]++;
+#endif
   vdims_original(v) = sc->F;
   vector_elements_should_be_freed(v) = elements_should_be_freed;
   vdims_rank(v) = 1;
@@ -40909,6 +40956,9 @@ static s7_pointer subvector(s7_scheme *sc, s7_pointer vect, s7_int skip_dims, s7
   if (dims > 1)
     {
       vdims_t *v = (vdims_t *)mallocate_block(sc);
+#if S7_DEBUGGING
+      sc->blocks_mallocated[BLOCK_LIST]++;
+#endif
       vdims_rank(v) = dims;
       vdims_dims(v) = (s7_int *)(vector_dimensions(vect) + skip_dims);
       vdims_offsets(v) = (s7_int *)(vector_offsets(vect) + skip_dims);
@@ -43692,6 +43742,9 @@ static void free_hash_table(s7_scheme *sc, s7_pointer table)
 static hash_entry_t *make_hash_entry(s7_scheme *sc, s7_pointer key, s7_pointer value, s7_int raw_hash)
 {
   hash_entry_t *p = (hash_entry_t *)mallocate_block(sc);
+#if S7_DEBUGGING
+  sc->blocks_mallocated[BLOCK_LIST]++;
+#endif
   hash_entry_key(p) = key;
   hash_entry_set_value(p, value);
   hash_entry_set_raw_hash(p, raw_hash);
@@ -45493,6 +45546,9 @@ s7_pointer s7_hash_table_set(s7_scheme *sc, s7_pointer table, s7_pointer key, s7
       check_hash_table_checker(sc, table, key);
 
   p = mallocate_block(sc);
+#if S7_DEBUGGING
+  sc->blocks_mallocated[BLOCK_LIST]++;
+#endif
   hash_entry_key(p) = key;
   hash_entry_set_value(p, T_Ext(value));
   hash_entry_set_raw_hash(p, hash_loc(sc, table, key));
@@ -45565,6 +45621,9 @@ static inline s7_pointer hash_table_add(s7_scheme *sc, s7_pointer table, s7_poin
       return(value);
 
   p = mallocate_block(sc);
+#if S7_DEBUGGING
+  sc->blocks_mallocated[BLOCK_LIST]++;
+#endif
   hash_entry_key(p) = key;
   hash_entry_set_value(p, T_Ext(value));
   hash_entry_set_raw_hash(p, hash);
@@ -45745,6 +45804,9 @@ static s7_pointer hash_table_fill(s7_scheme *sc, s7_pointer args)
 		  while (hash_entry_next(p)) p = hash_entry_next(p);
 		  hash_entry_next(p) = sc->block_lists[BLOCK_LIST];
 		  sc->block_lists[BLOCK_LIST] = *hp;
+#if (S7_DEBUGGING)
+		  sc->blocks_mallocated[BLOCK_LIST]++;
+#endif
 		}
 	      hp++;
 	      if (*hp)
@@ -45753,6 +45815,9 @@ static s7_pointer hash_table_fill(s7_scheme *sc, s7_pointer args)
 		  while (hash_entry_next(p)) p = hash_entry_next(p);
 		  hash_entry_next(p) = sc->block_lists[BLOCK_LIST];
 		  sc->block_lists[BLOCK_LIST] = *hp;
+#if (S7_DEBUGGING)
+		  sc->blocks_mallocated[BLOCK_LIST]++;
+#endif
 		}}
 	  if (len >= 8)
 	    memclr64(entries, len * sizeof(hash_entry_t *));
@@ -52112,7 +52177,7 @@ static s7_pointer g_catch(s7_scheme *sc, s7_pointer args)
 	}
       else wrong_type_error_nr(sc, sc->catch_symbol, 2, proc, a_thunk_string);
     }
-  if (!is_pair(cddr(args))) 
+  if (!is_pair(cddr(args)))
     error_nr(sc, sc->syntax_error_symbol,
 	     set_elist_2(sc, wrap_string(sc, "catch: error handler missing: ~S", 32), set_ulist_1(sc, sc->catch_symbol, args)));
   err = caddr(args);
@@ -52292,7 +52357,7 @@ It has the additional local variables: error-type, error-data, error-code, error
 
   s7_pointer e;
   bool old_gc = sc->gc_off;
-  if (is_pair(args)) 
+  if (is_pair(args))
     error_nr(sc, sc->wrong_number_of_args_symbol, set_elist_3(sc, too_many_arguments_string, sc->owlet_symbol, args));
 #if WITH_HISTORY
   slot_set_value(sc->error_history, cull_history(sc, slot_value(sc->error_history)));
@@ -63431,7 +63496,7 @@ static s7_pointer opt_p_p_s_iterate(opt_info *o) {return(iterate_p_p(o->sc, slot
 static s7_pointer opt_p_p_f_iterate(opt_info *o) {return(iterate_p_p(o->sc, o->v[4].fp(o->v[3].o1)));}
 static s7_pointer opt_p_p_f_string_to_number(opt_info *o) {return(string_to_number_p_p(o->sc, o->v[4].fp(o->v[3].o1)));}
 static s7_pointer opt_p_p_s_iterate_unchecked(opt_info *o) {s7_pointer iter = slot_value(o->v[1].p); return(iterator_next(iter)(o->sc, iter));}
-/* string_iterate built-in here if iterator_sequence is a string is about 12% faster, but currently we can have an unchecked iterator 
+/* string_iterate built-in here if iterator_sequence is a string is about 12% faster, but currently we can have an unchecked iterator
  *   that changes sequence type (via (set! L1 L2) where L1 and L2 are both iterators)
  */
 
@@ -76890,7 +76955,7 @@ static void op_named_let_a(s7_scheme *sc)
   s7_pointer data = cdr(sc->code);
   s7_pointer par1 = opt1_pair(data);                  /* cdaadr(args) == first par */
   sc->code = cddr(data);                              /* (vars ...) */
-  sc->args = fx_call(sc, cdr(par1));              
+  sc->args = fx_call(sc, cdr(par1));
   set_curlet(sc, make_let(sc, sc->curlet));           /* funclet(?) */
   sc->w = list_1_unchecked(sc, car(par1));            /* (list sym1), subsequent calls will need a normal list of pars in closure_args */
   sc->x = make_closure_unchecked(sc, sc->w, sc->code, T_CLOSURE, 1); /* picks up curlet (this is the funclet?) */
@@ -84378,7 +84443,7 @@ static goto_t op_dotimes_p(s7_scheme *sc)
 }
 
 static bool op_do_init_1(s7_scheme *sc)
-{ 
+{
   while (true)  /* at start, first value is the loop (for GC protection?), returning sc->value is the next value */
     {
       s7_pointer init;
@@ -92154,7 +92219,7 @@ static noreturn void eval_apply_error_nr(s7_scheme *sc)
 /* ---------------- eval ---------------- */
 static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 {
-  if (SHOW_EVAL_OPS) safe_print(fprintf(stderr, "  eval[%d]:, %s %s %s\n", 
+  if (SHOW_EVAL_OPS) safe_print(fprintf(stderr, "  eval[%d]:, %s %s %s\n",
 					__LINE__, op_names[first_op], display_truncated(sc->code), display_truncated(sc->args)));
   sc->cur_op = first_op;
   goto TOP_NO_POP;
@@ -94660,12 +94725,12 @@ static s7_pointer memory_usage(s7_scheme *sc)
       hlen += (hash_table_entries(v) * sizeof(hash_entry_t));
     }
     all_len += all_len;
-    add_slot_unchecked_with_id(sc, mu_let, 
+    add_slot_unchecked_with_id(sc, mu_let,
 			       make_symbol(sc, "hash-tables", 11),
 			       cons(sc, make_integer(sc, sc->hash_tables->loc), make_integer(sc, hlen)));
   }
   /* ports */
-  add_slot_unchecked_with_id(sc, mu_let, 
+  add_slot_unchecked_with_id(sc, mu_let,
 			     make_symbol(sc, "input-port-stack", 16),
 			     cons(sc, make_integer(sc, sc->input_port_stack_loc), make_integer(sc, sc->input_port_stack_size)));
   gp = sc->input_ports;
@@ -94674,7 +94739,7 @@ static s7_pointer memory_usage(s7_scheme *sc)
       s7_pointer v = gp->list[i];
       if (port_data(v)) len += port_data_size(v);
     }
-  add_slot_unchecked_with_id(sc, mu_let, 
+  add_slot_unchecked_with_id(sc, mu_let,
 			     make_symbol(sc, "input-ports", 11),
 			     cons(sc, make_integer(sc, sc->input_ports->loc), make_integer(sc, len)));
 
@@ -94684,7 +94749,7 @@ static s7_pointer memory_usage(s7_scheme *sc)
       s7_pointer v = gp->list[i];
       if (port_data(v)) len += port_data_size(v);
     }
-  add_slot_unchecked_with_id(sc, mu_let, 
+  add_slot_unchecked_with_id(sc, mu_let,
 			     make_symbol(sc, "input-string-ports", 18),
 			     cons(sc, make_integer(sc, sc->input_string_ports->loc), make_integer(sc, len)));
 
@@ -94694,13 +94759,13 @@ static s7_pointer memory_usage(s7_scheme *sc)
       s7_pointer v = gp->list[i];
       if (port_data(v)) len += port_data_size(v);
     }
-  add_slot_unchecked_with_id(sc, mu_let, 
+  add_slot_unchecked_with_id(sc, mu_let,
 			     make_symbol(sc, "output-ports", 12),
 			     cons(sc, make_integer(sc, sc->output_ports->loc), make_integer(sc, len)));
 #if S7_DEBUGGING
   i = 0;
   for (s7_pointer p = sc->format_ports; p; i++, p = (s7_pointer)port_next(p));
-  add_slot_unchecked_with_id(sc, mu_let, 
+  add_slot_unchecked_with_id(sc, mu_let,
 			     make_symbol(sc, "format-ports-allocated/free/inuse", 33),
 			     list_3(sc, make_integer(sc, sc->format_ports_allocated), make_integer(sc, i), make_integer(sc, sc->format_ports_allocated - i)));
 #endif
@@ -94710,14 +94775,14 @@ static s7_pointer memory_usage(s7_scheme *sc)
     if (is_continuation(gp->list[i]))
       len += continuation_stack_size(gp->list[i]);
   if (len > 0)
-    add_slot_unchecked_with_id(sc, mu_let, 
+    add_slot_unchecked_with_id(sc, mu_let,
 			       make_symbol(sc, "continuations", 13),
 			       cons(sc, make_integer(sc, sc->continuations->loc), make_integer(sc, len * sizeof(s7_pointer))));
   /* c-objects */
   if (sc->c_objects->loc > 0)
     add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "c-objects", 9), make_integer(sc, sc->c_objects->loc));
   if (sc->num_c_object_types > 0)
-    add_slot_unchecked_with_id(sc, mu_let, 
+    add_slot_unchecked_with_id(sc, mu_let,
 			       make_symbol(sc, "c-types", 7),
 			       cons(sc, make_integer(sc, sc->num_c_object_types),
 				    make_integer(sc, (sc->c_object_types_size * sizeof(c_object_t *)) + (sc->num_c_object_types * sizeof(c_object_t)))));
@@ -94734,6 +94799,12 @@ static s7_pointer memory_usage(s7_scheme *sc)
     block_t *b;
 #if S7_DEBUGGING
     s7_int num_blocks = 0;
+    s7_pointer ff, frees = make_big_list(sc, NUM_BLOCK_LISTS, sc->nil);
+    s7_pointer fa, allocs = make_big_list(sc, NUM_BLOCK_LISTS, sc->nil);
+    s7_pointer fb, borrows = make_big_list(sc, NUM_BLOCK_LISTS, sc->nil);
+    ff = frees;
+    fa = allocs;
+    fb = borrows;
 #endif
     for (i = 0, len = 0, sc->w = sc->nil; i < TOP_BLOCK_LIST; i++)
       {
@@ -94742,6 +94813,9 @@ static s7_pointer memory_usage(s7_scheme *sc)
 	len += ((sizeof(block_t) + (1LL << i)) * k);
 #if S7_DEBUGGING
 	num_blocks += k;
+	set_car(ff, make_integer(sc, sc->blocks_freed[i])); ff = cdr(ff);
+	set_car(fa, make_integer(sc, sc->blocks_mallocated[i])); fa = cdr(fa);
+	set_car(fb, make_integer(sc, sc->blocks_borrowed[i])); fb = cdr(fb);
 #endif
       }
     for (b = sc->block_lists[TOP_BLOCK_LIST], k = 0; b; b = block_next(b), k++)
@@ -94749,13 +94823,23 @@ static s7_pointer memory_usage(s7_scheme *sc)
     sc->w = cons(sc, make_integer(sc, k), sc->w);
 #if S7_DEBUGGING
     num_blocks += k;
-    add_slot_unchecked_with_id(sc, mu_let, 
+    set_car(ff, make_integer(sc, sc->blocks_freed[TOP_BLOCK_LIST]));
+    set_car(fa, make_integer(sc, sc->blocks_mallocated[TOP_BLOCK_LIST]));
+    set_car(fb, make_integer(sc, sc->blocks_borrowed[TOP_BLOCK_LIST]));
+    add_slot_unchecked_with_id(sc, mu_let,
 			       make_symbol(sc, "blocks-allocated/available/in-use", 33),
 			       list_3(sc, make_integer(sc, sc->blocks_allocated), make_integer(sc, num_blocks), make_integer(sc, sc->blocks_allocated - num_blocks)));
-#endif
+    add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "free-lists", 10),
+			       s7_inlet(sc, cons(sc, cons(sc, make_symbol(sc, "bytes", 5), kmg(sc, len)),
+						 list_4(sc, cons(sc, make_symbol(sc, "bins", 4), proper_list_reverse_in_place(sc, sc->w)),
+							cons(sc, make_symbol(sc, "allocs", 6), allocs),
+							cons(sc, make_symbol(sc, "frees", 5), frees),
+							cons(sc, make_symbol(sc, "borrows", 7), borrows)))));
+#else
     add_slot_unchecked_with_id(sc, mu_let, make_symbol(sc, "free-lists", 10),
 			       s7_inlet(sc, list_2(sc, cons(sc, make_symbol(sc, "bytes", 5), kmg(sc, len)),
 						   cons(sc, make_symbol(sc, "bins", 4), proper_list_reverse_in_place(sc, sc->w)))));
+#endif
     sc->w = sc->unused;
     add_slot_unchecked_with_id(sc, mu_let,
 			       make_symbol(sc, "approximate-s7-size", 19),
@@ -94772,9 +94856,9 @@ static s7_pointer sl_c_types(s7_scheme *sc)
 {
   s7_pointer res;
   sc->w = sc->nil;
-  for (int32_t i = 0; i < sc->num_c_object_types; i++)               /*   c-object type (tag) is i */
+  for (int32_t i = 0; i < sc->num_c_object_types; i++)           /* c-object type (tag) is i */
     sc->w = cons(sc, sc->c_object_types[i]->scheme_name, sc->w);
-  res = proper_list_reverse_in_place(sc, sc->w);                     /*   so car(types) has tag 0 */
+  res = proper_list_reverse_in_place(sc, sc->w);                 /* so car(types) has tag 0 */
   sc->w = sc->unused;
   return(res);
 }
@@ -97676,7 +97760,7 @@ s7_scheme *s7_init(void)
     sc->stack_size = INITIAL_STACK_SIZE;
   else sc->stack_size = STACK_RESIZE_TRIGGER * 2;
   sc->stack_resize_trigger = (s7_pointer *)(sc->stack_start + (INITIAL_STACK_SIZE - STACK_RESIZE_TRIGGER));
-  
+
   set_full_type(sc->stack, T_STACK);
   sc->max_stack_size = (1 << 30);
   stack_clear_flags(sc->stack);
@@ -98382,53 +98466,53 @@ int main(int argc, char **argv)
 /* --------------------------------------------------------------
  *           19.9   20.9   21.0   22.0   23.0   24.0   24.4
  * --------------------------------------------------------------
- * tpeak      148    115    114    108    105    102    102
+ * tpeak      148    115    114    108    105    102    103
  * tref      1081    691    687    463    459    464    410
- * index            1026   1016    973    967    972    970
+ * index            1026   1016    973    967    972    971
  * tmock            1177   1165   1057   1019   1032   1029
  * tvect     3408   2519   2464   1772   1669   1497   1454
- * tauto                          2562   2048   1729   1707
- * texit     1884   1930   1950   1778   1741   1770   1768
- * s7test           1873   1831   1818   1829   1830   1870
- * lt        2222   2187   2172   2150   2185   1950   1950
- * dup              3805   3788   2492   2239   2097   1996
- * thook     7651                 2590   2030   2046   2015
- * tread            2440   2421   2419   2408   2405   2256
- * tcopy            8035   5546   2539   2375   2386   2343
+ * tauto                          2562   2048   1729   1719  1742 [c_function_to_port]
+ * texit     1884   1930   1950   1778   1741   1770   1771
+ * s7test           1873   1831   1818   1829   1830   1899
+ * lt        2222   2187   2172   2150   2185   1950   1955
+ * dup              3805   3788   2492   2239   2097   2006
+ * thook     7651                 2590   2030   2046   2014
+ * tread            2440   2421   2419   2408   2405   2260
+ * tcopy            8035   5546   2539   2375   2386   2341
  * titer     3657   2865   2842   2641   2509   2449   2443
- * trclo     8031   2735   2574   2454   2445   2449   2470
- * tmat             3065   3042   2524   2578   2590   2512
+ * trclo     8031   2735   2574   2454   2445   2449   2474
+ * tmat             3065   3042   2524   2578   2590   2515
  * tload                          3046   2404   2566   2546
  * fbench    2933   2688   2583   2460   2430   2478   2573
  * tsort     3683   3105   3104   2856   2804   2858   2858
- * tio              3816   3752   3683   3620   3583   3132
- * tobj             4016   3970   3828   3577   3508   3453
- * teq              4068   4045   3536   3486   3544   3507
+ * tio              3816   3752   3683   3620   3583   3134
+ * tobj             4016   3970   3828   3577   3508   3455
+ * teq              4068   4045   3536   3486   3544   3512  3595 [object_to_port and callees]
  * tmac             3950   3873   3033   3677   3677   3683
- * tclo      6362   4787   4735   4390   4384   4474   4337
- * tcase            4960   4793   4439   4430   4439   4428
- * tlet      9166   7775   5640   4450   4427   4457   4487  4483
- * tfft             7820   7729   4755   4476   4536   4542
- * tstar            6139   5923   5519   4449   4550   4584  4556
+ * tclo      6362   4787   4735   4390   4384   4474   4345
+ * tcase            4960   4793   4439   4430   4439   4440
+ * tlet      9166   7775   5640   4450   4427   4457   4483
+ * tfft             7820   7729   4755   4476   4536   4544
+ * tstar            6139   5923   5519   4449   4550   4556
  * tmap             8869   8774   4489   4541   4586   4591
- * tshoot           5525   5447   5183   5055   5034   5055
- * tform            5357   5348   5307   5316   5084   5098
- * tstr      10.0   6880   6342   5488   5162   5180   5275
- * tnum             6348   6013   5433   5396   5409   5434
+ * tshoot           5525   5447   5183   5055   5034   5060
+ * tform            5357   5348   5307   5316   5084   5101
+ * tstr      10.0   6880   6342   5488   5162   5180   5289
+ * tnum             6348   6013   5433   5396   5409   5432
  * tgsl             8485   7802   6373   6282   6208   6181
  * tari      15.0   13.0   12.7   6827   6543   6278   6184
  * tlist     9219   7896   7546   6558   6240   6300   6306
- * tset                                  6260   6364   6377
+ * tset                                  6260   6364   6382
  * trec      19.5   6936   6922   6521   6588   6583   6584
- * tleft     11.1   10.4   10.2   7657   7479   7627   7613
- * tmisc                                 8142   7631   7676
- * tlamb                                 8003   7941   7950
- * tgc              11.9   11.1   8177   7857   7986   8010
- * thash            11.8   11.7   9734   9479   9526   9254
- * cb        12.9   11.2   11.0   9658   9564   9609   9656
+ * tleft     11.1   10.4   10.2   7657   7479   7627   7615
+ * tmisc                                 8142   7631   7694
+ * tlamb                                 8003   7941   7964
+ * tgc              11.9   11.1   8177   7857   7986   8012
+ * thash            11.8   11.7   9734   9479   9526   9258
+ * cb        12.9   11.2   11.0   9658   9564   9609   9661
  * tmap-hash                           1671.0 1467.0   10.3
  * tmv              16.0   15.4   14.7   14.5   14.4   11.9
- * tgen             11.2   11.4   12.0   12.1   12.2   12.4
+ * tgen             11.2   11.4   12.0   12.1   12.2   12.3
  * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1
  * timp             25.4   24.4   20.0   19.6   19.7   15.7
  * calls            36.7   37.5   37.0   37.5   37.1   37.2
@@ -98442,23 +98526,22 @@ int main(int argc, char **argv)
  * (define print-length (list 1 2)) (define (f) (with-let *s7* (+ print-length 1))) (display (f)) (newline) -- need a placeholder-let (or actual let) for *s7*?
  *   so (with-let *s7* ...) would make a let with whatever *s7* entries are needed? -> (let ((print-length (*s7* 'print-length))) ...)
  *   currently sc->s7_starlet is a let (make_s7_starlet) using g_s7_let_ref_fallback, so it assumes print-length above is undefined
- *   default to 80 if not in Snd
  * need some print-length/print-elements distinction for vector/pair etc [which to choose if both set?]
  * 73150 vars_opt_ok problem
  * values feeding safe func -- can't this be opt'd? (values 1) at least
- * perhaps fx_simple_catch? (if #t is error type, stack should end up ok?) and simple call/exit
  * if closure sig, add some way to have arg types checked by s7? (*s7* :check-signature?)
  * 0/1/2-arg-func types? [esp closure-args -- why save a list if let can recreate it? (defines?) but this can be changed in any case]
  *   need some counts here (eval:apply etc)
- * need counts for block_list[index] of allocs/frees + lines + total-sizes + (maybe) unheaped blocks + borrowings + what caused max
- *   :blocks-allocated/available/in-use (668672 652001 16671): maybe break up large blocks?
  * obj->str+:readable if #symbol?
  *   (define (f x) (let ((#symbol<a b> (+ x 1))) #symbol<a b>))
  *   (object->string f :readable) -> (lambda (x) (let (((symbol "a b") (+ x 1))) (symbol "a b")))
- *   obj->str :readable ignores local obj->str methods (t692)
+ *   obj->str :readable ignores local obj->str methods (t692), and should not output the symbol function -- this can't work
  * *s7* switch to turn off the quote->#_quote switch (and the rest?) -- or do it only in a macro body?
  *   or make (eq? x 'quote) -> (memq x '(quote #_quote))??
  * ((unlet) 'abs) should return #_abs without scanning unlet -> new let, also (let-ref (unlet) 'abs)
  *   symbol->value uses 'unlet -- ugly, symbol-initial-value opt?
- * no gensym: (#_:L :a)!
+ * easier access to closure-args (so thunk is nil? args) etc
+ * substring-uncopied?
+ * need a warning for invald-escape-function (and -> exit-function)
+ * tauto: why c_function_to_port 515000 times, also maybe expand to inline string_write_string here
  */
