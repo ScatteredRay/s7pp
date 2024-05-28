@@ -1337,7 +1337,7 @@ struct s7_scheme {
              stacktrace_symbol, string_append_symbol, string_copy_symbol, string_downcase_symbol, string_eq_symbol, string_fill_symbol,
              string_geq_symbol, string_gt_symbol, string_leq_symbol, string_lt_symbol, string_position_symbol, string_ref_symbol,
              string_set_symbol, string_symbol, string_to_number_symbol, string_to_symbol_symbol, string_upcase_symbol,
-             sublet_symbol, substring_symbol, subtract_symbol, subvector_symbol, subvector_position_symbol, subvector_vector_symbol,
+             sublet_symbol, substring_symbol, substring_uncopied_symbol, subtract_symbol, subvector_symbol, subvector_position_symbol, subvector_vector_symbol,
              symbol_symbol, symbol_to_dynamic_value_symbol, symbol_initial_value_symbol,
              symbol_to_keyword_symbol, symbol_to_string_symbol, symbol_to_value_symbol,
              tan_symbol, tanh_symbol, throw_symbol, string_to_byte_vector_symbol,
@@ -27496,7 +27496,7 @@ static s7_pointer g_substring(s7_scheme *sc, s7_pointer args)
 {
   #define H_substring "(substring str start (end (length str))) returns the portion of the string str between start and \
 end: (substring \"01234\" 1 2) -> \"1\""
-  #define Q_substring s7_make_circular_signature(sc, 2, 3, sc->is_string_symbol, sc->is_string_symbol, sc->is_integer_symbol)
+  #define Q_substring s7_make_signature(sc, 4, sc->is_string_symbol, sc->is_string_symbol, sc->is_integer_symbol, sc->is_integer_symbol)
 
   s7_pointer x, str = car(args);
   s7_int start = 0, end, len;
@@ -27520,6 +27520,10 @@ end: (substring \"01234\" 1 2) -> \"1\""
 
 static s7_pointer g_substring_uncopied(s7_scheme *sc, s7_pointer args)
 {
+  #define H_substring_uncopied "(substring-uncopied str start (end (length str))) returns a string sharing the portion of the string str between start and \
+end: (substring-uncopied \"01234\" 1 2) -> \"1\""
+  #define Q_substring_uncopied s7_make_signature(sc, 4, sc->is_string_symbol, sc->is_string_symbol, sc->is_integer_symbol, sc->is_integer_symbol)
+
   s7_pointer str = car(args);
   s7_int start = 0, end;
 
@@ -35303,6 +35307,8 @@ static void c_function_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, u
 {
   s7_pointer sym = c_function_name_to_symbol(sc, obj);
   s7_pointer local_val = lookup_unexamined(sc, sym); /* lookup here really needs the env where sym is defined */
+  s7_int len = c_function_name_length(obj);
+
   if ((!is_global(sym)) &&
       (initial_value(sym) != sc->undefined) &&
       ((use_write == P_READABLE) || ((local_val) && (local_val != initial_value(sym)))))
@@ -35311,12 +35317,26 @@ static void c_function_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, u
        *   is not accessible here, so we can't tell that the #_ value was used (and probably needed) in the original code.
        */
       port_write_string(port)(sc, "#_", 2, port);
-      port_write_string(port)(sc, c_function_name(obj), c_function_name_length(obj), port);
+      port_write_string(port)(sc, c_function_name(obj), len, port);
       return;
     }
-  if (c_function_name_length(obj) > 0)
-    port_write_string(port)(sc, c_function_name(obj), c_function_name_length(obj), port);
-  else port_write_string(port)(sc, "#<c-function>", 13, port);
+  if (is_string_port(port)) /* expand port_write_string -> string_write_string, 15 in tauto */
+    {
+      if (len > 0)
+	{
+	  if (port_position(port) + len < port_data_size(port))
+	    {
+	      memcpy((void *)(port_data(port) + port_position(port)), (const void *)c_function_name(obj), len);
+	      port_position(port) += len;
+	    }
+	  else string_write_string_resized(sc, c_function_name(obj), len, port);
+	}
+      else port_write_string(port)(sc, "#<c-function>", 13, port);
+    }
+  else
+    if (len > 0)
+      port_write_string(port)(sc, c_function_name(obj), len, port);
+    else port_write_string(port)(sc, "#<c-function>", 13, port);
 }
 
 static void c_macro_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, use_write_t unused_use_write, shared_info_t *unused_ci)
@@ -97200,6 +97220,7 @@ static void init_rootlet(s7_scheme *sc)
   sc->string_upcase_symbol =         defun("string-upcase",	string_upcase,		1, 0, false);
   sc->string_append_symbol =         defun("string-append",	string_append,		0, 0, true);
   sc->substring_symbol =             defun("substring",	        substring,		2, 1, false);
+  sc->substring_uncopied_symbol =    defun("substring-uncopied",substring_uncopied,	2, 1, false);
   sc->string_symbol =                defun("string",		string,			0, 0, true);
   sc->object_to_string_symbol =      defun("object->string",	object_to_string,	1, 2, false);
   sc->format_symbol =                defun("format",		format,			2, 0, true);
@@ -98471,7 +98492,7 @@ int main(int argc, char **argv)
  * index            1026   1016    973    967    972    971
  * tmock            1177   1165   1057   1019   1032   1029
  * tvect     3408   2519   2464   1772   1669   1497   1454
- * tauto                          2562   2048   1729   1719  1742 [c_function_to_port]
+ * tauto                          2562   2048   1729   1732
  * texit     1884   1930   1950   1778   1741   1770   1771
  * s7test           1873   1831   1818   1829   1830   1899
  * lt        2222   2187   2172   2150   2185   1950   1955
@@ -98497,7 +98518,7 @@ int main(int argc, char **argv)
  * tmap             8869   8774   4489   4541   4586   4591
  * tshoot           5525   5447   5183   5055   5034   5060
  * tform            5357   5348   5307   5316   5084   5101
- * tstr      10.0   6880   6342   5488   5162   5180   5289
+ * tstr      10.0   6880   6342   5488   5162   5180   5289  5195
  * tnum             6348   6013   5433   5396   5409   5432
  * tgsl             8485   7802   6373   6282   6208   6181
  * tari      15.0   13.0   12.7   6827   6543   6278   6184
@@ -98541,7 +98562,6 @@ int main(int argc, char **argv)
  * ((unlet) 'abs) should return #_abs without scanning unlet -> new let, also (let-ref (unlet) 'abs)
  *   symbol->value uses 'unlet -- ugly, symbol-initial-value opt?
  * easier access to closure-args (so thunk is nil? args) etc
- * substring-uncopied?
- * need a warning for invald-escape-function (and -> exit-function)
- * tauto: why c_function_to_port 515000 times, also maybe expand to inline string_write_string here
+ * substring-uncopied? need GC protection of orig as with vector or docs, doc/test
+ * need a warning for invalid-escape-function (and -> exit-function)
  */

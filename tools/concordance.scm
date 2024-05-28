@@ -51,7 +51,7 @@
 			       (set! last-c1 c1)))))
 		    (set! last-c c)
 		    (when (positive? cur-loc)
-		      (set! word (substring cur-word 0 cur-loc))
+		      (set! word (substring-uncopied cur-word 0 cur-loc)) ; hashing won't trigger a GC here, so this should be safe
 		      (hash-table-set! words word ; in non-code text we'd probably want string-downcase here and below
 				       (cons cur-line (or (hash-table-ref words word) ()))))
 		    (set! cur-loc 0))))))))))
