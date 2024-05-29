@@ -6075,12 +6075,9 @@ static const char *type_name_from_type(int32_t typ, article_t article)
 static s7_pointer find_let(s7_scheme *sc, s7_pointer obj)
 {
   if (is_let(obj)) return(obj);
+  if (has_closure_let(obj)) return(closure_let(obj));
   switch (type(obj))
     {
-    case T_MACRO:   case T_MACRO_STAR:
-    case T_BACRO:   case T_BACRO_STAR:
-    case T_CLOSURE: case T_CLOSURE_STAR:
-      return(closure_let(obj));
     case T_C_OBJECT:
       return(c_object_let(obj));
     case T_C_POINTER:
@@ -27520,8 +27517,8 @@ end: (substring \"01234\" 1 2) -> \"1\""
 
 static s7_pointer g_substring_uncopied(s7_scheme *sc, s7_pointer args)
 {
-  #define H_substring_uncopied "(substring-uncopied str start (end (length str))) returns a string sharing the portion of the string str between start and \
-end: (substring-uncopied \"01234\" 1 2) -> \"1\""
+  #define H_substring_uncopied "(substring-uncopied str start (end (length str))) returns an immutable string sharing the portion of the string str between start and \
+end: (substring-uncopied \"01234\" 1 2) -> \"1\".  substring-uncopied does not GC protect the original string; it is intended for very brief uses."
   #define Q_substring_uncopied s7_make_signature(sc, 4, sc->is_string_symbol, sc->is_string_symbol, sc->is_integer_symbol, sc->is_integer_symbol)
 
   s7_pointer str = car(args);
@@ -47124,17 +47121,12 @@ s7_pointer s7_typed_dilambda(s7_scheme *sc,
 /* -------------------------------- dilambda? -------------------------------- */
 bool s7_is_dilambda(s7_pointer obj)
 {
-  switch (type(obj))
-    {
-    case T_MACRO:   case T_MACRO_STAR:
-    case T_BACRO:   case T_BACRO_STAR:
-    case T_CLOSURE: case T_CLOSURE_STAR:
-      return(is_any_procedure(closure_setter_or_map_list(obj))); /* type >= T_CLOSURE (excludes goto/continuation) */
-    case T_C_FUNCTION: case T_C_RST_NO_REQ_FUNCTION: case T_C_FUNCTION_STAR:
-      return(is_any_procedure(c_function_setter(obj)));
-    case T_C_MACRO:
-      return(is_any_procedure(c_macro_setter(obj)));
-    }
+  if (has_closure_let(obj))
+    return(is_any_procedure(closure_setter_or_map_list(obj))); /* type >= T_CLOSURE (excludes goto/continuation) */
+  if (is_any_c_function(obj))
+    return(is_any_procedure(c_function_setter(obj)));          /* type >= T_C_FUNCTION_STAR */
+  if (is_c_macro(obj))
+    return(is_any_procedure(c_macro_setter(obj)));
   return(false);
 }
 
@@ -70783,7 +70775,8 @@ static void init_choosers(s7_scheme *sc)
   sc->string_equal_2c = make_function_with_class(sc, f, "string=?", g_string_equal_2c, 2, 0, false);
 
   /* substring */
-  sc->substring_uncopied = s7_make_safe_function(sc, "substring", g_substring_uncopied, 2, 1, false, NULL);
+  /* sc->substring_uncopied = s7_make_safe_function(sc, "substring", g_substring_uncopied, 2, 1, false, NULL); */ /* now exported to Scheme 28-May-24 */
+  sc->substring_uncopied = global_value(sc->substring_uncopied_symbol);
   s7_function_set_class(sc, sc->substring_uncopied, global_value(sc->substring_symbol));
 
   /* string>? */
@@ -70831,6 +70824,7 @@ static void init_choosers(s7_scheme *sc)
 
   /* also: directory->list substring with-input-from-file with-input-from-string with-output-to-file open-output-file open-input-file
    *   system load getenv file-mtime gensym directory? call-with-output-file delete-file call-with-input-file call-with-input-string open-input-string
+   *   length et al?
    */
 
   /* symbol->string */
@@ -80274,7 +80268,7 @@ static noreturn void no_setter_error_nr(s7_scheme *sc, s7_pointer obj)
   int32_t typ = type(obj);
   if (!is_pair(car(sc->code))) sc->code = cdr(sc->code);
 
-  if (type(caar(sc->code)) >= T_C_FUNCTION_STAR)
+  if (is_any_c_function(caar(sc->code)))
     error_nr(sc, sc->no_setter_symbol,
 	     set_elist_6(sc, wrap_string(sc, "~W (~A) does not have a setter: (set! (~W~{~^ ~S~}) ~S)", 55),
 			 caar(sc->code), sc->type_names[typ], caar(sc->code), cdar(sc->code), cadr(sc->code)));
@@ -96958,7 +96952,7 @@ static void init_rootlet(s7_scheme *sc)
   set_func_is_definer(sc->immutable_symbol);
   sc->is_immutable_symbol =          defun("immutable?",	is_immutable,		1, 1, false); /* added optional let arg 13-Oct-23 */
   sc->is_constant_symbol =           defun("constant?",	        is_constant,		1, 0, false);
-  sc->string_to_keyword_symbol =     defun("string->keyword",	string_to_keyword,      1, 0, false);
+  sc->string_to_keyword_symbol =     defun("string->keyword",	string_to_keyword,      1, 0, false); /* keyword->string is symbol->string */
   sc->symbol_to_keyword_symbol =     defun("symbol->keyword",	symbol_to_keyword,	1, 0, false);
   sc->keyword_to_symbol_symbol =     defun("keyword->symbol",	keyword_to_symbol,	1, 0, false);
 
@@ -97219,8 +97213,8 @@ static void init_rootlet(s7_scheme *sc)
   sc->string_downcase_symbol =       defun("string-downcase",	string_downcase,	1, 0, false);
   sc->string_upcase_symbol =         defun("string-upcase",	string_upcase,		1, 0, false);
   sc->string_append_symbol =         defun("string-append",	string_append,		0, 0, true);
-  sc->substring_symbol =             defun("substring",	        substring,		2, 1, false);
-  sc->substring_uncopied_symbol =    defun("substring-uncopied",substring_uncopied,	2, 1, false);
+  sc->substring_symbol =             defun("substring",	        substring,		1, 2, false);
+  sc->substring_uncopied_symbol =    defun("substring-uncopied",substring_uncopied,	1, 2, false);
   sc->string_symbol =                defun("string",		string,			0, 0, true);
   sc->object_to_string_symbol =      defun("object->string",	object_to_string,	1, 2, false);
   sc->format_symbol =                defun("format",		format,			2, 0, true);
@@ -98542,14 +98536,14 @@ int main(int argc, char **argv)
  * --------------------------------------------------------------
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
- * fx_chooser can't depend on the is_global bit because it sees args before local bindings reset that bit, get rid of these if possible
+ * fx_chooser can't depend on the is_global because it sees args before local bindings reset that bit, get rid of these if possible
  *   lots of is_global(sc->quote_symbol)
  * (define print-length (list 1 2)) (define (f) (with-let *s7* (+ print-length 1))) (display (f)) (newline) -- need a placeholder-let (or actual let) for *s7*?
  *   so (with-let *s7* ...) would make a let with whatever *s7* entries are needed? -> (let ((print-length (*s7* 'print-length))) ...)
  *   currently sc->s7_starlet is a let (make_s7_starlet) using g_s7_let_ref_fallback, so it assumes print-length above is undefined
  * need some print-length/print-elements distinction for vector/pair etc [which to choose if both set?]
- * 73150 vars_opt_ok problem
- * values feeding safe func -- can't this be opt'd? (values 1) at least
+ * 73313 vars_opt_ok problem
+ * values feeding safe func -- can't this be opt'd? (values 1) at least t695
  * if closure sig, add some way to have arg types checked by s7? (*s7* :check-signature?)
  * 0/1/2-arg-func types? [esp closure-args -- why save a list if let can recreate it? (defines?) but this can be changed in any case]
  *   need some counts here (eval:apply etc)
@@ -98562,6 +98556,5 @@ int main(int argc, char **argv)
  * ((unlet) 'abs) should return #_abs without scanning unlet -> new let, also (let-ref (unlet) 'abs)
  *   symbol->value uses 'unlet -- ugly, symbol-initial-value opt?
  * easier access to closure-args (so thunk is nil? args) etc
- * substring-uncopied? need GC protection of orig as with vector or docs, doc/test
- * need a warning for invalid-escape-function (and -> exit-function)
+ * g_arity_uncopied? i.e. using ulist, but not used much
  */
