@@ -6859,20 +6859,24 @@ static void sweep(s7_scheme *sc)
       }							\
 
   gp = sc->strings;
-  process_gc_list(liberate(sc, string_block(s1)))
-
+  process_gc_list(liberate(sc, string_block(s1)));
+#if 0  
+  fprintf(stderr, "--------------------------------------------------------------------------------\n");
+  for (s7_int i = 0; i < gp->loc; i++)
+    fprintf(stderr, "%s\n", string_value(gp->list[i]));
+#endif
   gp = sc->gensyms;
-  process_gc_list(remove_gensym_from_symbol_table(sc, s1); liberate(sc, gensym_block(s1)))
+  process_gc_list(remove_gensym_from_symbol_table(sc, s1); liberate(sc, gensym_block(s1)));
   if (gp->loc == 0) mark_function[T_SYMBOL] = mark_noop;
 
   gp = sc->undefineds;
-  process_gc_list(free(undefined_name(s1)))
+  process_gc_list(free(undefined_name(s1)));
 
   gp = sc->c_objects;
   process_gc_list((c_object_gc_free(sc, s1)) ? (void)(*(c_object_gc_free(sc, s1)))(sc, s1) : (void)(*(c_object_free(sc, s1)))(c_object_value(s1)))
 
   gp = sc->vectors;
-  process_gc_list(liberate(sc, vector_block(s1)))
+  process_gc_list(liberate(sc, vector_block(s1)));
 
   gp = sc->multivectors;
   process_gc_list(process_multivector(sc, s1));
@@ -33043,6 +33047,11 @@ static /* inline */ void symbol_to_port(s7_scheme *sc, s7_pointer obj, s7_pointe
   if ((!is_clean_symbol(obj)) &&
       (symbol_needs_slashification(sc, obj)))
     {
+      /* this can't work in general if use_write == P_READABLE:
+       *  (define f (apply lambda (list () (list 'let (list (list (symbol "a b") 3)) (symbol "a b"))))) ; (f) -> 3
+       *  prints "readably" as "(lambda () (let (((symbol \"a b\") 3)) (symbol \"a b\")))"
+       *  maybe add a special escape here: (*s7* 'unreadable-symbol->string) or *symbol-printer*? [used with #symbol for example]
+       */
       port_write_string(port)(sc, "(symbol \"", 9, port);
       slashify_string_to_port(sc, port, symbol_name(obj), symbol_name_length(obj), NOT_IN_QUOTES);
       port_write_string(port)(sc, "\")", 2, port);
@@ -47267,7 +47276,7 @@ s7_pointer s7_arity(s7_scheme *sc, s7_pointer x)
   return(sc->F);
 }
 
-static s7_pointer g_arity(s7_scheme *sc, s7_pointer args)
+static s7_pointer g_arity(s7_scheme *sc, s7_pointer args) /* arity-uncopied could use sc->ulist */
 {
   #define H_arity "(arity obj) the min and max number of args that obj can be applied to.  Returns #f if the object is not applicable."
   #define Q_arity s7_make_signature(sc, 2, s7_make_signature(sc, 2, sc->is_pair_symbol, sc->not_symbol), sc->T)
@@ -98536,25 +98545,20 @@ int main(int argc, char **argv)
  * --------------------------------------------------------------
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
- * fx_chooser can't depend on the is_global because it sees args before local bindings reset that bit, get rid of these if possible
- *   lots of is_global(sc->quote_symbol)
+ * fx_chooser can't depend on is_global because it sees args before possible local bindings, get rid of these if possible, lots of is_global(sc->quote_symbol)
  * (define print-length (list 1 2)) (define (f) (with-let *s7* (+ print-length 1))) (display (f)) (newline) -- need a placeholder-let (or actual let) for *s7*?
  *   so (with-let *s7* ...) would make a let with whatever *s7* entries are needed? -> (let ((print-length (*s7* 'print-length))) ...)
  *   currently sc->s7_starlet is a let (make_s7_starlet) using g_s7_let_ref_fallback, so it assumes print-length above is undefined
  * need some print-length/print-elements distinction for vector/pair etc [which to choose if both set?]
- * 73313 vars_opt_ok problem
+ * 73317 vars_opt_ok problem
  * values feeding safe func -- can't this be opt'd? (values 1) at least t695
  * if closure sig, add some way to have arg types checked by s7? (*s7* :check-signature?)
- * 0/1/2-arg-func types? [esp closure-args -- why save a list if let can recreate it? (defines?) but this can be changed in any case]
- *   need some counts here (eval:apply etc)
- * obj->str+:readable if #symbol?
- *   (define (f x) (let ((#symbol<a b> (+ x 1))) #symbol<a b>))
- *   (object->string f :readable) -> (lambda (x) (let (((symbol "a b") (+ x 1))) (symbol "a b")))
- *   obj->str :readable ignores local obj->str methods (t692), and should not output the symbol function -- this can't work
+ * 0/1/2-arg-func types? need some counts here (eval:apply etc)
  * *s7* switch to turn off the quote->#_quote switch (and the rest?) -- or do it only in a macro body?
  *   or make (eq? x 'quote) -> (memq x '(quote #_quote))??
  * ((unlet) 'abs) should return #_abs without scanning unlet -> new let, also (let-ref (unlet) 'abs)
  *   symbol->value uses 'unlet -- ugly, symbol-initial-value opt?
- * easier access to closure-args (so thunk is nil? args) etc
- * g_arity_uncopied? i.e. using ulist, but not used much
+ * easier access to closure-args (so thunk is (null? args) etc, s7_closure_args exists (also let/body))
+ *   let/body/args are mutable??
+ * *symbol-printer* (see symbol_to_port)
  */

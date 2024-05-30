@@ -192,14 +192,14 @@
       #t)
     (set! (hash-table-key-typer H) keytyp)
     (set! (hash-table-value-typer H) valtyp)
-    H))
+    (immutable! H)))
 
-(define-constant H_2 (make-hash-table 8 eq? (cons symbol? integer?)))
-(define-constant H_3 (make-hash-table 8 (cons equal? hash-code)))
-(define-constant H_4 (make-hash-table 8
-				      (let ((eqf (lambda (a b) (equal? a b)))
-					    (mapf (lambda (a) (hash-code a))))
-					(cons eqf mapf))))
+(define-constant H_2 (immutable! (make-hash-table 8 eq? (cons symbol? integer?))))
+(define-constant H_3 (immutable! (make-hash-table 8 (cons equal? hash-code))))
+(define-constant H_4 (immutable! (make-hash-table 8
+						  (let ((eqf (lambda (a b) (equal? a b)))
+							(mapf (lambda (a) (hash-code a))))
+						    (cons eqf mapf)))))
 (define-constant H_5 (let ((H (make-hash-table 8
 					       (let ((eqf (lambda (a b) (equal? a b)))
 						     (mapf (lambda (a) (hash-code a))))
@@ -214,10 +214,10 @@
 			 #t)
 		       (set! (hash-table-key-typer H) keytyp)
 		       (set! (hash-table-value-typer H) valtyp)
-		       H))
+		       (immutable! H)))
 (define-constant H_6 (let ((h (make-hash-table 8 eq? (cons symbol? hash-table?))))
 		       (hash-table-set! h 'a h)
-		       h))
+		       (immutable! h)))
 (define-constant L_6 (let ((L (inlet 'a #f))) (let-set! L 'a L) (immutable! L)))
 
 (define fvref float-vector-ref)
@@ -744,13 +744,13 @@
 		    (do ((i 0 (+ i 1)))
 			((= i 100))
 		      (varlet e (symbol "abc" (number->string i)) i)))
-			   e))
+		  (immutable! e)))
 (define big-hash (let ((e (hash-table)))
 		   (let-temporarily (((*s7* 'print-length) 80))
 		     (do ((i 0 (+ i 1)))
 			 ((= i 100))
 		       (hash-table-set! e (symbol "abc" (number->string i)) i)))
-		   e))
+		   (immutable! e)))
 
 (define-constant a1 (immutable! (let ((H (make-hash-table 8 #f (cons real? integer?)))) (set! (H +nan.0) 1) H)))
 (define-constant a2 (immutable! (inlet :a (hash-table 'b 1))))
@@ -788,7 +788,7 @@
 			 (do ((i 0 (+ i 1)))
 			     ((= i size))
 			   (hash-table-set! ht (symbol (format #f "a~D" i)) i))
-			 ht))
+			 (immutable! ht)))
 
 (define-constant fvset float-vector-set!)
 (define-constant htset hash-table-set!)
@@ -797,7 +797,8 @@
 (define max-stack (*s7* 'stack-top))
 (define last-error-type #f)
 (define old-definee #f)
-(define L0 (inlet 'a 1))
+(define-constant L0 (let ((a 1)) (immutable! 'a) (curlet)))
+(immutable! L0)
 
 (define (tp val) ; omits trailing " if val long and already a string
   (let ((str (object->string val)))
@@ -842,7 +843,7 @@
 			  'char-whitespace? 'assoc 'procedure? 'char<?
 			  'inexact->exact 'vector->list 'boolean? 'undefined? 'unspecified?
 			  'caar (if with-bignums '* 'ash) 'list-tail 'symbol->string 'string->symbol 'exact->inexact
-			  'object->string 'char>? 'symbol->value 'symbol-initial-value
+			  'object->string 'char>? 'symbol->value ;'symbol-initial-value -- needs GC protection normally
 			  'cadar 'integer-decode-float 'string-copy 'cdddr 'logand 'cadddr
 			  'with-input-from-string 'substring 'string->list 'char-upper-case?
 			  'hash-table-set! 'cddddr 'string<? 'dynamic-wind 'call-with-input-file 'error
@@ -1905,6 +1906,7 @@
       (set! error-code "")
 ;     (when (pair? x) (format *stderr* "x is pair, estr: ~S~%" estr))
       (set! x 0)
+#|
       (when (string-position "H_" str)
 	(if (string-position "H_1" str) (fill! H_1 #f))
 	(if (string-position "H_2" str) (fill! H_2 #f))
@@ -1912,6 +1914,7 @@
 	(if (string-position "H_4" str) (fill! H_4 #f))
 	(if (string-position "H_5" str) (fill! H_5 #f))
 	(when (string-position "H_6" str) (fill! H_6 #f) (hash-table-set! H_6 'a H_6)))
+|#
       )
 
     (define dots (vector "." "-" "+" "-" "." "-" "+" "-"))
@@ -1928,7 +1931,7 @@
 	    (set! n 0)
 	    (format *stderr* " ~A " (daytime))
 ;	    (format *stderr* " ~A " current-size)
-
+#|
 	    ;; these two tend to become seriously bloated -- maybe add setters
 	    (set! big-let (let ((e (inlet)))
 			    (let-temporarily (((*s7* 'print-length) 80))
@@ -1942,6 +1945,7 @@
 				   ((= i 100))
 				 (hash-table-set! e (symbol "abc" (number->string i)) i)))
 			     e))
+|#
 	    )
 	  (format *stderr* "~A" (vector-ref dots n)))
 
