@@ -5753,6 +5753,7 @@ default-random-state          the default arg for random
 most-positive-fixnum          if not using gmp, the most positive integer ("fixnum" comes from CL)
 most-negative-fixnum          as above, but negative
 number-separator              #\null
+symbol-printer                #f, a function to print symbols whose names contain unusual character
 
 safety                        0 (see below)
 undefined-identifier-warnings #f 
@@ -5889,6 +5890,10 @@ as opposed to "123321".  If the compile time flag WITH_NUMBER_SEPARATOR is set, 
 in a number (as long as it is between two digits), and the reader will ignore it.  The *features*
 list will have the entry 'number-separator if s7 was compiled with WITH_NUMBER_SEPARATOR defined.
 (Number separators don't work with bignums).
+</p>
+
+<p>(*s7* 'symbol-printer) is invoked by object-&gt;string when it has to print a symbol whose
+name can normally only be handled by the <a href="#weirdsymbols">symbol</a> function.
 </p>
 
 
@@ -6544,7 +6549,7 @@ sequences in its argument, or nil.
 </div>
 
 
-<div class="indented">
+<div id="weirdsymbols" class="indented">
 
 <p>s7 and Snd use "*" in a variable name, *features* for example, to indicate
 that the variable is predefined.  It may occur unprotected in a macro, for
@@ -6619,6 +6624,25 @@ making it possible to use odd names more widely:
 &gt; (let ((#symbol&lt;a b c&gt; 32)) (+ #symbol&lt;a b c&gt; 1))
 <em class="gray">33</em>
 </pre>
+
+<p>But there's a problem: if we try to call object-&gt;string with :readable
+on these symbol tokens, it does not know that we want it to use our "#symbol&lt;...&gt;"
+reader-macro.  We need to set the *s7* field <code>'symbol-printer</code>:
+</p>
+
+<pre class="indented">
+&gt; (define f (apply lambda (list () (list 'let (list (list (symbol "a b") 3)) (symbol "a b")))))
+<em class="gray">f</em>
+&gt; (f)
+<em class="gray">3</em>
+&gt; (object-&gt;string f :readable)
+<em class="gray">"(lambda () (let (((symbol \"a b\") 3)) (symbol \"a b\")))"</em> ; not actually readable!
+&gt; (set! (*s7* 'symbol-printer) (lambda (obj) (string-append "#symbol&lt;" (symbol-&gt;string obj) "&gt;")))
+<em class="gray">#&lt;lambda (obj)&gt;</em>
+&gt; (object-&gt;string f :readable)
+<em class="gray">"(lambda () (let ((#symbol&lt;a b&gt; 3)) #symbol&lt;a b&gt;))"</em>
+</pre>
+
 
 <p>
 The <code>symbol</code> function

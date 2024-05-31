@@ -1162,7 +1162,7 @@ struct s7_scheme {
   s7_double default_rationalize_error, equivalent_float_epsilon, hash_table_float_epsilon;
   s7_int default_hash_table_length, initial_string_port_length, print_length, objstr_max_len, history_size, true_history_size, output_file_port_data_size;
   s7_int max_vector_length, max_string_length, max_list_length, max_vector_dimensions, max_format_length, max_port_data_size, rec_loc, rec_len, show_stack_limit;
-  s7_pointer stacktrace_defaults;
+  s7_pointer stacktrace_defaults, symbol_printer;
 
   s7_pointer rec_stack, rec_testp, rec_f1p, rec_f2p, rec_f3p, rec_f4p, rec_f5p, rec_f6p, rec_f7p, rec_f8p, rec_f9p;
   s7_pointer rec_resp, rec_slot1, rec_slot2, rec_slot3, rec_p1, rec_p2;
@@ -3144,7 +3144,7 @@ static void symbol_set_id(s7_pointer p, s7_int id)
 #define symbol_type(p)                 (block_size(symbol_info(p)) & 0xff)                    /* boolean function bool type */
 #define symbol_set_type(p, Type)       block_size(symbol_info(p)) = ((block_size(symbol_info(p)) & ~0xff) | ((Type) & 0xff))
 #define symbol_clear_type(p)           block_size(symbol_info(p)) = 0
-#define s7_starlet_symbol(p)           ((uint8_t)((block_size(symbol_info(p)) >> 8) & 0xff))  /* *s7* id */
+#define s7_starlet_symbol_id(p)        ((uint8_t)((block_size(symbol_info(p)) >> 8) & 0xff))  /* *s7* id */
 #define s7_starlet_symbol_set(p, F)    block_size(symbol_info(p)) = ((block_size(symbol_info(p)) & ~0xff00) | (((F) & 0xff) << 8))
 
 #define REPORT_ROOTLET_REDEF 0
@@ -4623,32 +4623,31 @@ static bool is_h_optimized(s7_pointer p)
 }
 
 /* if this changes, remember to change lint.scm */
-typedef enum {SL_NO_FIELD=0, SL_STACK_TOP, SL_STACK_SIZE, SL_STACKTRACE_DEFAULTS, SL_HEAP_SIZE, SL_FREE_HEAP_SIZE,
-              SL_GC_FREED, SL_GC_PROTECTED_OBJECTS, SL_GC_TOTAL_FREED, SL_GC_INFO, SL_FILE_NAMES, SL_FILENAMES, SL_ROOTLET_SIZE, SL_C_TYPES,
-              SL_SAFETY, SL_UNDEFINED_IDENTIFIER_WARNINGS, SL_UNDEFINED_CONSTANT_WARNINGS, SL_GC_STATS, SL_MAX_HEAP_SIZE,
-	      SL_MAX_PORT_DATA_SIZE, SL_MAX_STACK_SIZE, SL_CPU_TIME, SL_CATCHES, SL_STACK, SL_MAJOR_VERSION, SL_MINOR_VERSION,
-	      SL_MAX_STRING_LENGTH, SL_MAX_FORMAT_LENGTH, SL_MAX_LIST_LENGTH, SL_MAX_VECTOR_LENGTH, SL_MAX_VECTOR_DIMENSIONS,
-	      SL_DEFAULT_HASH_TABLE_LENGTH, SL_INITIAL_STRING_PORT_LENGTH, SL_DEFAULT_RATIONALIZE_ERROR,
-	      SL_DEFAULT_RANDOM_STATE, SL_EQUIVALENT_FLOAT_EPSILON, SL_HASH_TABLE_FLOAT_EPSILON, SL_PRINT_LENGTH,
-	      SL_BIGNUM_PRECISION, SL_MEMORY_USAGE, SL_FLOAT_FORMAT_PRECISION, SL_HISTORY, SL_HISTORY_ENABLED,
-	      SL_HISTORY_SIZE, SL_PROFILE, SL_PROFILE_INFO, SL_PROFILE_PREFIX, SL_AUTOLOADING, SL_ACCEPT_ALL_KEYWORD_ARGUMENTS,
-	      SL_MUFFLE_WARNINGS, SL_MOST_POSITIVE_FIXNUM, SL_MOST_NEGATIVE_FIXNUM, SL_OUTPUT_FILE_PORT_DATA_SIZE, SL_DEBUG, SL_VERSION,
-	      SL_GC_TEMPS_SIZE, SL_GC_RESIZE_HEAP_FRACTION, SL_GC_RESIZE_HEAP_BY_4_FRACTION, SL_OPENLETS, SL_EXPANSIONS,
-	      SL_NUMBER_SEPARATOR, SL_NUM_FIELDS} s7_starlet_t;
+typedef enum {SL_NO_FIELD=0, SL_ACCEPT_ALL_KEYWORD_ARGUMENTS, SL_AUTOLOADING, SL_BIGNUM_PRECISION, SL_CATCHES, SL_CPU_TIME, SL_C_TYPES, 
+	      SL_DEBUG, SL_DEFAULT_HASH_TABLE_LENGTH, SL_DEFAULT_RANDOM_STATE, SL_DEFAULT_RATIONALIZE_ERROR, SL_EQUIVALENT_FLOAT_EPSILON, 
+	      SL_EXPANSIONS, SL_FILENAMES, SL_FILE_NAMES, SL_FLOAT_FORMAT_PRECISION, SL_FREE_HEAP_SIZE, SL_GC_FREED, SL_GC_INFO, 
+	      SL_GC_PROTECTED_OBJECTS, SL_GC_RESIZE_HEAP_BY_4_FRACTION, SL_GC_RESIZE_HEAP_FRACTION, SL_GC_STATS, SL_GC_TEMPS_SIZE, 
+	      SL_GC_TOTAL_FREED, SL_HASH_TABLE_FLOAT_EPSILON, SL_HEAP_SIZE, SL_HISTORY, SL_HISTORY_ENABLED, SL_HISTORY_SIZE, 
+	      SL_INITIAL_STRING_PORT_LENGTH, SL_MAJOR_VERSION, SL_MAX_FORMAT_LENGTH, SL_MAX_HEAP_SIZE, SL_MAX_LIST_LENGTH, 
+	      SL_MAX_PORT_DATA_SIZE, SL_MAX_STACK_SIZE, SL_MAX_STRING_LENGTH, SL_MAX_VECTOR_DIMENSIONS, SL_MAX_VECTOR_LENGTH, 
+	      SL_MEMORY_USAGE, SL_MINOR_VERSION, SL_MOST_NEGATIVE_FIXNUM, SL_MOST_POSITIVE_FIXNUM, SL_MUFFLE_WARNINGS, 
+	      SL_NUMBER_SEPARATOR, SL_OPENLETS, SL_OUTPUT_FILE_PORT_DATA_SIZE, SL_PRINT_LENGTH, SL_PROFILE, SL_PROFILE_INFO, 
+	      SL_PROFILE_PREFIX, SL_ROOTLET_SIZE, SL_SAFETY, SL_STACK, SL_STACKTRACE_DEFAULTS, SL_STACK_SIZE, SL_STACK_TOP, 
+	      SL_SYMBOL_PRINTER, SL_UNDEFINED_CONSTANT_WARNINGS, SL_UNDEFINED_IDENTIFIER_WARNINGS, SL_VERSION, 
+	      SL_NUM_FIELDS} s7_starlet_t;
 
 static const char *s7_starlet_names[SL_NUM_FIELDS] =
-  {"no-field", "stack-top", "stack-size", "stacktrace-defaults", "heap-size", "free-heap-size",
-   "gc-freed", "gc-protected-objects", "gc-total-freed", "gc-info", "file-names", "filenames", "rootlet-size", "c-types",
-   "safety", "undefined-identifier-warnings", "undefined-constant-warnings", "gc-stats", "max-heap-size",
-   "max-port-data-size", "max-stack-size", "cpu-time", "catches", "stack", "major-version", "minor-version",
-   "max-string-length", "max-format-length", "max-list-length", "max-vector-length", "max-vector-dimensions",
-   "default-hash-table-length", "initial-string-port-length", "default-rationalize-error",
-   "default-random-state", "equivalent-float-epsilon", "hash-table-float-epsilon", "print-length",
-   "bignum-precision", "memory-usage", "float-format-precision", "history", "history-enabled",
-   "history-size", "profile", "profile-info", "profile-prefix", "autoloading?", "accept-all-keyword-arguments",
-   "muffle-warnings?", "most-positive-fixnum", "most-negative-fixnum", "output-port-data-size", "debug", "version",
-   "gc-temps-size", "gc-resize-heap-fraction", "gc-resize-heap-by-4-fraction", "openlets", "expansions?",
-   "number-separator"};
+  {"no-field", "accept-all-keyword-arguments", "autoloading?", "bignum-precision", "catches", "cpu-time", "c-types", 
+   "debug", "default-hash-table-length", "default-random-state", "default-rationalize-error", "equivalent-float-epsilon", 
+   "expansions?", "filenames", "file-names", "float-format-precision", "free-heap-size", "gc-freed", "gc-info", 
+   "gc-protected-objects", "gc-resize-heap-by-4-fraction", "gc-resize-heap-fraction", "gc-stats", "gc-temps-size", 
+   "gc-total-freed", "hash-table-float-epsilon", "heap-size", "history", "history-enabled", "history-size", 
+   "initial-string-port-length", "major-version", "max-format-length", "max-heap-size", "max-list-length", 
+   "max-port-data-size", "max-stack-size", "max-string-length", "max-vector-dimensions", "max-vector-length", 
+   "memory-usage", "minor-version", "most-negative-fixnum", "most-positive-fixnum", "muffle-warnings?", 
+   "number-separator", "openlets", "output-port-data-size", "print-length", "profile", "profile-info", 
+   "profile-prefix", "rootlet-size", "safety", "stack", "stacktrace-defaults", "stack-size", "stack-top", 
+   "symbol-printer", "undefined-constant-warnings", "undefined-identifier-warnings", "version"};
 
 static s7_pointer object_to_string_truncated(s7_scheme *sc, s7_pointer p);
 static const char *type_name(s7_scheme *sc, s7_pointer arg, article_t article);
@@ -7632,6 +7631,7 @@ static int64_t gc(s7_scheme *sc)
   mark_vector(sc->protected_setters);
   set_mark(sc->protected_setter_symbols);
   if ((is_symbol(sc->profile_prefix)) && (is_gensym(sc->profile_prefix))) set_mark(sc->profile_prefix);
+  gc_mark(sc->symbol_printer);
 
   /* protect recent allocations using the free_heap cells above the current free_heap_top (if any).
    * cells above sc->free_heap_top might be malloc'd garbage (after heap reallocation), so we keep track of
@@ -10839,7 +10839,7 @@ symbol sym in the given let: (let ((x 32)) (symbol->value 'x)) -> 32"
 	    return(method_or_bust(sc, cadr(args), sc->symbol_to_value_symbol, args, a_let_string, 2)); /* not local_let */
 	}
       if (local_let == sc->s7_starlet)
-	return(s7_starlet(sc, s7_starlet_symbol(sym)));
+	return(s7_starlet(sc, s7_starlet_symbol_id(sym)));
       if (is_unlet(local_let))
 	return(initial_value(sym));
 
@@ -11397,7 +11397,7 @@ Only the let is searched if ignore-globals is not #f."
 	  sym = keyword_symbol(sym);             /* (defined? :print-length *s7*) */
 	}
       if (e == sc->s7_starlet)
-	return(make_boolean(sc, s7_starlet_symbol(sym) != SL_NO_FIELD));
+	return(make_boolean(sc, s7_starlet_symbol_id(sym) != SL_NO_FIELD));
       if (is_pair(cddr(args)))
 	{
 	  b = caddr(args);
@@ -33043,19 +33043,26 @@ static bool symbol_needs_slashification(s7_scheme *sc, s7_pointer obj)
 
 static /* inline */ void symbol_to_port(s7_scheme *sc, s7_pointer obj, s7_pointer port, use_write_t use_write, shared_info_t *unused_ci)
 {
-  /* I think this is the only place we print a symbol's name; ci is needed to be a display_function, it is not used */
+  /* I think this is the only place we print a symbol's name */
   if ((!is_clean_symbol(obj)) &&
       (symbol_needs_slashification(sc, obj)))
     {
       /* this can't work in general if use_write == P_READABLE:
-       *  (define f (apply lambda (list () (list 'let (list (list (symbol "a b") 3)) (symbol "a b"))))) ; (f) -> 3
+       *    (define f (apply lambda (list () (list 'let (list (list (symbol "a b") 3)) (symbol "a b"))))) ; (f) -> 3
        *  prints "readably" as "(lambda () (let (((symbol \"a b\") 3)) (symbol \"a b\")))"
-       *  maybe add a special escape here: (*s7* 'unreadable-symbol->string) or *symbol-printer*? [used with #symbol for example]
+       *  so, 30-May-24 added (*s7* 'symbol-printer).
        */
-      port_write_string(port)(sc, "(symbol \"", 9, port);
-      slashify_string_to_port(sc, port, symbol_name(obj), symbol_name_length(obj), NOT_IN_QUOTES);
-      port_write_string(port)(sc, "\")", 2, port);
-    }
+      if (is_any_procedure(sc->symbol_printer)) /* we see P_WRITE here */
+	{
+	  s7_pointer res = s7_call(sc, sc->symbol_printer, set_plist_1(sc, obj)); /* res should be a string */
+	  port_write_string(port)(sc, string_value(res), string_length(res), port);
+	}
+      else
+	{
+	  port_write_string(port)(sc, "(symbol \"", 9, port);
+	  slashify_string_to_port(sc, port, symbol_name(obj), symbol_name_length(obj), NOT_IN_QUOTES);
+	  port_write_string(port)(sc, "\")", 2, port);
+	}}
   else
     {
       char c = '\0';
@@ -71941,7 +71948,7 @@ static opt_t optimize_func_one_arg(s7_scheme *sc, s7_pointer expr, s7_pointer fu
 	  if (func == sc->s7_starlet)                   /* (*s7* ...), sc->s7_starlet is a let */
 	    {
 	      set_safe_optimize_op(expr, OP_IMPLICIT_S7_STARLET_REF_S);
-	      set_opt3_int(expr, s7_starlet_symbol(sym));
+	      set_opt3_int(expr, s7_starlet_symbol_id(sym));
 	      return(OPT_T);
 	    }
 	  set_opt3_con(expr, sym);
@@ -77829,7 +77836,7 @@ static void check_let_temporarily(s7_scheme *sc)
 		(is_null(cdar(code))))
 	      {
 		if ((is_quoted_symbol(cadar(var))) &&
-		    (s7_starlet_symbol(cadr(cadar(var))) == SL_OPENLETS)) /* (cadr(cadar(var)) == make_symbol_with_strlen(sc, "openlets"))) */
+		    (s7_starlet_symbol_id(cadr(cadar(var))) == SL_OPENLETS)) /* (cadr(cadar(var)) == make_symbol_with_strlen(sc, "openlets"))) */
 		  {
 		    pair_set_syntax_op(form, OP_LET_TEMP_S7_DIRECT);
 		    set_opt1_pair(form, cdr(var));
@@ -78005,9 +78012,9 @@ static bool op_let_temp_s7(s7_scheme *sc) /* all entries are of the form ((*s7* 
   for (p = car(code); is_pair(p); p = cdr(p))
     {
       s7_pointer old_value, field = cadadr(caar(p)); /* p: (((*s7* 'expansions?) #f)) -- no keywords here (see check_let_temporarily) */
-      if (s7_starlet_immutable_field[s7_starlet_symbol(field)])
+      if (s7_starlet_immutable_field[s7_starlet_symbol_id(field)])
 	immutable_object_error_nr(sc, set_elist_2(sc, wrap_string(sc, "let-temporarily: can't set! (*s7* '~S)", 38), field));
-      old_value = s7_starlet(sc, s7_starlet_symbol(field));
+      old_value = s7_starlet(sc, s7_starlet_symbol_id(field));
       push_stack(sc, OP_LET_TEMP_S7_UNWIND, old_value, field);
     }
   for (p = car(code); is_pair(p); p = cdr(p), end += 4)
@@ -80051,7 +80058,7 @@ static void check_set(s7_scheme *sc)
 			    s7_pointer sym = (is_symbol(index)) ?
 			                       ((is_keyword(index)) ? keyword_symbol(index) : index) :
                                                ((is_quoted_symbol(index)) ? cadr(index) : index);
-			    if ((is_symbol(sym)) && (s7_starlet_symbol(sym) != SL_NO_FIELD))
+			    if ((is_symbol(sym)) && (s7_starlet_symbol_id(sym) != SL_NO_FIELD))
 			      {
 				/* perhaps preset field -> op_print_length_set[misc?]|safety[tstar] etc, most (timing test) cases are just heap-size called once */
 				set_safe_optimize_op(form, OP_IMPLICIT_S7_STARLET_SET);
@@ -94496,7 +94503,7 @@ static s7_pointer make_s7_starlet(s7_scheme *sc)  /* *s7* is semipermanent -- 20
   set_immutable_slot(slot2);
   set_immutable_let(x);
   sc->s7_starlet_symbol = s7_define_constant(sc, "*s7*", s7_openlet(sc, x)); /* define_constant returns the symbol */
-  for (int32_t i = SL_STACK_TOP; i < SL_NUM_FIELDS; i++)
+  for (int32_t i = 1; i < (int32_t)SL_NUM_FIELDS; i++)
     {
       s7_pointer sym = make_symbol_with_strlen(sc, s7_starlet_names[i]);
       s7_starlet_symbol_set(sym, (s7_starlet_t)i); /* evaluates sym twice */
@@ -95021,6 +95028,7 @@ static s7_pointer s7_starlet(s7_scheme *sc, s7_int choice)
     case SL_STACKTRACE_DEFAULTS:           return(copy_proper_list(sc, sc->stacktrace_defaults)); /* if not copied, we can set! entries directly to garbage */
     case SL_STACK_SIZE:                    return(make_integer(sc, sc->stack_size));
     case SL_STACK_TOP:                     return(make_integer(sc, (sc->stack_end - sc->stack_start) / 4));
+    case SL_SYMBOL_PRINTER:                return(sc->symbol_printer);
     case SL_UNDEFINED_CONSTANT_WARNINGS:   return(make_boolean(sc, sc->undefined_constant_warnings));
     case SL_UNDEFINED_IDENTIFIER_WARNINGS: return(make_boolean(sc, sc->undefined_identifier_warnings));
     case SL_VERSION:                       return(s7_make_string(sc, "s7 " S7_VERSION ", " S7_DATE));
@@ -95034,8 +95042,8 @@ s7_pointer s7_starlet_ref(s7_scheme *sc, s7_pointer sym) /* s7.h, not used here 
     {
       if (is_keyword(sym))
 	sym = keyword_symbol(sym);
-      if (s7_starlet_symbol(sym) != SL_NO_FIELD)
-	return(s7_starlet(sc, s7_starlet_symbol(sym)));
+      if (s7_starlet_symbol_id(sym) != SL_NO_FIELD)
+	return(s7_starlet(sc, s7_starlet_symbol_id(sym)));
     }
   return(sc->undefined);
 }
@@ -95049,7 +95057,7 @@ static s7_pointer g_s7_starlet_ref_fallback(s7_scheme *sc, s7_pointer args)
     sole_arg_wrong_type_error_nr(sc, sc->let_ref_symbol, sym, sc->type_names[T_SYMBOL]);
   if (is_keyword(sym))
     sym = keyword_symbol(sym);
-  return(s7_starlet(sc, s7_starlet_symbol(sym)));
+  return(s7_starlet(sc, s7_starlet_symbol_id(sym)));
 }
 
 static s7_pointer s7_starlet_iterate(s7_scheme *sc, s7_pointer iterator)
@@ -95067,7 +95075,7 @@ static s7_pointer s7_starlet_iterate(s7_scheme *sc, s7_pointer iterator)
   else
     {
       s7_pointer osw = sc->w;  /* protect against s7_starlet list making */
-      value = s7_starlet(sc, s7_starlet_symbol(symbol));
+      value = s7_starlet(sc, s7_starlet_symbol_id(symbol));
       sc->w = osw;
     }
   if (iterator_let_cons(iterator))
@@ -95292,7 +95300,7 @@ static s7_pointer s7_starlet_set_1(s7_scheme *sc, s7_pointer sym, s7_pointer val
   if (is_keyword(sym))
     sym = keyword_symbol(sym);
 
-  switch (s7_starlet_symbol(sym))
+  switch (s7_starlet_symbol_id(sym))
     {
     case SL_ACCEPT_ALL_KEYWORD_ARGUMENTS:
       if (!is_boolean(val)) s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_BOOLEAN]);
@@ -95469,6 +95477,20 @@ static s7_pointer s7_starlet_set_1(s7_scheme *sc, s7_pointer sym, s7_pointer val
     case SL_STACK_TOP:
       sl_unsettable_error_nr(sc, sym);
 
+    case SL_SYMBOL_PRINTER:
+      if (val != sc->F)
+	{
+	  if (!is_any_procedure(val))
+	    error_nr(sc, sc->wrong_type_arg_symbol,
+		     set_elist_4(sc, wrap_string(sc, "(set! (*s7* '~A) ~S): new value is ~A but should be a function or #f", 68), 
+				 sym, val, object_type_name(sc, val)));
+	  if (!s7_is_aritable(sc, val, 1))
+	    error_nr(sc, sc->wrong_type_arg_symbol,
+		     set_elist_2(sc, wrap_string(sc, "(*s7* 'symbol-printer) function, ~A, should take one argument", 61), val));
+	}
+      sc->symbol_printer = val;
+      return(val);
+
     case SL_UNDEFINED_CONSTANT_WARNINGS:
       if (!is_boolean(val)) s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_BOOLEAN]);
       sc->undefined_constant_warnings = s7_boolean(sc, val);
@@ -95495,7 +95517,7 @@ s7_pointer s7_starlet_set(s7_scheme *sc, s7_pointer sym, s7_pointer new_value)
     {
       if (is_keyword(sym))
 	sym = keyword_symbol(sym);
-      if (s7_starlet_symbol(sym) != SL_NO_FIELD)
+      if (s7_starlet_symbol_id(sym) != SL_NO_FIELD)
 	return(s7_starlet_set_1(sc, sym, new_value));
     }
   return(sc->undefined);
@@ -97863,6 +97885,7 @@ s7_scheme *s7_init(void)
   sc->map_call_ctr = 0;
   sc->syms_tag = 0;
   sc->syms_tag2 = 0;
+  sc->symbol_printer = sc->F;
   sc->class_name_symbol = make_symbol(sc, "class-name", 10);
   sc->name_symbol = make_symbol(sc, "name", 4);
   sc->trace_in_symbol = make_symbol(sc, "trace-in", 8);
@@ -98560,5 +98583,4 @@ int main(int argc, char **argv)
  *   symbol->value uses 'unlet -- ugly, symbol-initial-value opt?
  * easier access to closure-args (so thunk is (null? args) etc, s7_closure_args exists (also let/body))
  *   let/body/args are mutable??
- * *symbol-printer* (see symbol_to_port)
  */

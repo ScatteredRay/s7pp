@@ -1,10 +1,10 @@
 #ifndef S7_H
 #define S7_H
 
-#define S7_VERSION "10.10"
-#define S7_DATE "31-May-2024"
+#define S7_VERSION "10.11"
+#define S7_DATE "1-June-2024"
 #define S7_MAJOR_VERSION 10
-#define S7_MINOR_VERSION 10
+#define S7_MINOR_VERSION 11
 
 #include <stdint.h>           /* for int64_t */
 
@@ -908,6 +908,7 @@ bool s7_is_bignum(s7_pointer obj);
  *
  *        s7 changes
  *
+ * 31-May:    *s7* 'symbol-printer.
  * 24-May:    symbol-initial-value, s7_symbol_initial_value, and setters.
  * 24-Apr:    port-string.
  * 8-Jan-23:  s7_gc_protect_2_via_stack.
