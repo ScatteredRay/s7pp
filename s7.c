@@ -1384,7 +1384,7 @@ struct s7_scheme {
              list_0, list_1, list_2, list_3, list_4, list_set_i, hash_table_ref_2, hash_table_2, list_ref_at_0, list_ref_at_1, list_ref_at_2,
              format_f, format_no_column, format_just_control_string, format_as_objstr, values_uncopied, int_log2,
              memq_2, memq_3, memq_4, memq_any, tree_set_memq_syms, simple_inlet, sublet_curlet, profile_out, simple_list_values,
-             simple_let_ref, simple_let_set, geq_2, add_i_random, is_defined_in_rootlet;
+             simple_let_ref, simple_let_set, unlet_ref, geq_2, add_i_random, is_defined_in_rootlet;
 
   s7_pointer multiply_2, invert_1, invert_x, divide_2, divide_by_2, max_2, min_2, max_3, min_3,
              num_eq_2, num_eq_xi, num_eq_ix, less_xi, less_xf, less_x0, less_2, greater_xi, greater_xf, greater_2,
@@ -10360,6 +10360,8 @@ static inline s7_pointer g_simple_let_ref(s7_scheme *sc, s7_pointer args)
   return(let_ref_p_pp(sc, let_outlet(lt), sym));
 }
 
+static inline s7_pointer g_unlet_ref(s7_scheme *sc, s7_pointer args) {return(initial_value(cadr(args)));}
+
 static s7_pointer let_ref_chooser(s7_scheme *sc, s7_pointer f, int32_t unused_args, s7_pointer expr)
 {
   if (optimize_op(expr) == HOP_SAFE_C_opSq_C)
@@ -10372,6 +10374,8 @@ static s7_pointer let_ref_chooser(s7_scheme *sc, s7_pointer f, int32_t unused_ar
 	  set_opt3_sym(cdr(expr), cadr(arg2));
 	  return(sc->simple_let_ref);
 	}}
+  if ((is_pair(cadr(expr))) && (caadr(expr) == sc->unlet_symbol))
+    return(sc->unlet_ref);
   return(f);
 }
 
@@ -10425,14 +10429,13 @@ static s7_pointer let_set_1(s7_scheme *sc, s7_pointer let, s7_pointer symbol, s7
       if (is_syntax(slot_value(slot)))
 	wrong_type_error_nr(sc, sc->let_set_symbol, 2, symbol, wrap_string(sc, "a non-syntactic symbol", 22));
       if (is_immutable(slot))
-	immutable_object_error_nr(sc, set_elist_4(sc, wrap_string(sc, "~S is immutable in (let-set! (rootlet) '~S ~S)", 46),
-						  symbol, symbol, value)); /* also (set! (with-let...)...) */
+	immutable_object_error_nr(sc, set_elist_2(sc, wrap_string(sc, "~S is immutable in (rootlet)", 28), symbol)); /* also (set! (with-let...)...) */
       symbol_increment_ctr(symbol);
       slot_set_value(slot, (slot_has_setter(slot)) ? call_setter(sc, slot, value) : value);
       return(slot_value(slot));
     }
   if (is_unlet(let))
-    immutable_object_error_nr(sc, set_elist_3(sc, wrap_string(sc, "unlet is immutable: (set! ((unlet) '~S) ~S)", 43), symbol, value));
+    immutable_object_error_nr(sc, set_elist_2(sc, wrap_string(sc, "~S is immutable in (unlet)", 26), symbol));
   if (let_id(let) == symbol_id(symbol))
    {
      s7_pointer slot = local_slot(symbol);
@@ -33055,6 +33058,9 @@ static /* inline */ void symbol_to_port(s7_scheme *sc, s7_pointer obj, s7_pointe
       if (is_any_procedure(sc->symbol_printer)) /* we see P_WRITE here */
 	{
 	  s7_pointer res = s7_call(sc, sc->symbol_printer, set_plist_1(sc, obj)); /* res should be a string */
+	  if (!is_string(res))
+	    error_nr(sc, sc->wrong_type_arg_symbol,
+		     set_elist_2(sc, wrap_string(sc, "(*s7* 'symbol-printer) should return a string: ~S", 49), res));
 	  port_write_string(port)(sc, string_value(res), string_length(res), port);
 	}
       else
@@ -64119,6 +64125,8 @@ static void use_slot_ref(s7_scheme *sc, opt_info *opc, s7_pointer let, s7_pointe
     }
 }
 
+static s7_pointer opt_p_unlet_ref(opt_info *o) {return(initial_value(o->v[1].p));}
+
 static bool p_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer car_x, int32_t pstart)
 {
   s7_pointer slot, arg1, arg2;
@@ -64233,6 +64241,13 @@ static bool p_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	      sc->pc = pstart;
 	      return_false(sc, car_x);
 	    }}
+      if ((car(car_x) == sc->let_ref_symbol) && (is_pair(arg1)) && (car(arg1) == sc->unlet_symbol) && /* (let-ref (unlet) :abs) */
+	  ((is_symbol_and_keyword(arg2)) || ((is_quoted_symbol(arg2)))))
+	{
+	  opc->v[0].fp = opt_p_unlet_ref;
+	  opc->v[1].p = (is_pair(arg2)) ? cadr(arg2) : keyword_symbol(arg2);
+	  return_true(sc, car_x);
+	}
       if (cell_optimize(sc, cdr(car_x)))
 	{
 	  if (is_symbol(arg2))
@@ -68203,7 +68218,20 @@ static bool cell_optimize_1(s7_scheme *sc, s7_pointer expr)
 		  let = car(head);
 		  sym = cadr(head);
 		}
-	      else return_false(sc, car_x);
+	      else
+		if ((car(head) == sc->unlet_symbol) && (is_pair(cdr(car_x)))) /* ((unlet) :abs) */
+		  {
+		    sym = cadr(car_x);
+		    if ((is_symbol_and_keyword(sym)) || (is_quoted_symbol(sym)))
+		      {
+			opt_info *opc = alloc_opt_info(sc);
+			opc->v[0].fp = opt_p_unlet_ref;
+			opc->v[1].p = (is_pair(sym)) ? cadr(sym) : keyword_symbol(sym);
+			return_true(sc, car_x);
+		      }
+		    return_false(sc, car_x);
+		  }
+		else return_false(sc, car_x);
 	    if ((is_symbol(let)) && ((is_symbol_and_keyword(sym)) || (is_quoted_symbol(sym))))
 	      {
 		slot = s7_slot(sc, let);
@@ -70970,6 +70998,7 @@ static void init_choosers(s7_scheme *sc)
   /* let-ref */
   f = set_function_chooser(sc->let_ref_symbol, let_ref_chooser);
   sc->simple_let_ref = make_function_with_class(sc, f, "let-ref", g_simple_let_ref, 2, 0, false);
+  sc->unlet_ref = make_function_with_class(sc, f, "let-ref", g_unlet_ref, 2, 0, false);
 
   /* let-set */
   f = set_function_chooser(sc->let_set_symbol, let_set_chooser);
@@ -98511,7 +98540,7 @@ int main(int argc, char **argv)
 #endif
 
 /* --------------------------------------------------------------
- *           19.9   20.9   21.0   22.0   23.0   24.0   24.4
+ *           19.0   20.9   21.0   22.0   23.0   24.0   24.4
  * --------------------------------------------------------------
  * tpeak      148    115    114    108    105    102    103
  * tref      1081    691    687    463    459    464    410
@@ -98538,7 +98567,7 @@ int main(int argc, char **argv)
  * tmac             3950   3873   3033   3677   3677   3683
  * tclo      6362   4787   4735   4390   4384   4474   4345
  * tcase            4960   4793   4439   4430   4439   4440
- * tlet      9166   7775   5640   4450   4427   4457   4483
+ * tlet      11.0   8970   6974   5609   5980   5965   4546
  * tfft             7820   7729   4755   4476   4536   4544
  * tstar            6139   5923   5519   4449   4550   4556
  * tmap             8869   8774   4489   4541   4586   4591
@@ -98579,8 +98608,7 @@ int main(int argc, char **argv)
  * 0/1/2-arg-func types? need some counts here (eval:apply etc)
  * *s7* switch to turn off the quote->#_quote switch (and the rest?) -- or do it only in a macro body?
  *   or make (eq? x 'quote) -> (memq x '(quote #_quote))??
- * ((unlet) 'abs) should return #_abs without scanning unlet -> new let, also (let-ref (unlet) 'abs)
- *   symbol->value uses 'unlet -- ugly, symbol-initial-value opt?
+ * symbol->value uses 'unlet -- ugly, symbol-initial-value opt via symbol->value chooser? (like let-ref)
  * easier access to closure-args (so thunk is (null? args) etc, s7_closure_args exists (also let/body))
  *   let/body/args are mutable??
  */

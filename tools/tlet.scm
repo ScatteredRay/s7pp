@@ -340,6 +340,35 @@ total: 55.001
   (test82)
   )
 
+(let ()
+  (define (f1)
+    (do ((i 0 (+ i 1)))
+	((= i 100000))
+      (unless (eq? (let-ref (unlet) :abs) #_abs) ; 758 g_unlet 740!! -> 5 (opt_p_unlet_ref)
+	(display "oops\n"))))
+  (f1)
+  
+  (define (f2)
+    (do ((i 0 (+ i 1)))
+	((= i 100000))
+      (unless (eq? ((unlet) :abs) #_abs) ; 792 unlet 740, eval 23 -> 8 (opt_p_unlet_ref)
+	(display "oops\n"))))
+  (f2)
+  
+  (define (f3)
+    (do ((i 0 (+ i 1)))
+	((= i 100000))
+      (unless (eq? (let-ref (rootlet) :abs) #_abs) ; 13 goes through rootlet
+	(display "oops\n"))))
+  (f3)
+  
+  (define (f4)
+    (do ((i 0 (+ i 1)))
+	((= i 100000))
+      (unless (eq? ((rootlet) :abs) #_abs) ; 47
+	(display "oops\n"))))
+  (f4))
+
 (when (> (*s7* 'profile) 0)
   (show-profile 200))
 (exit)
