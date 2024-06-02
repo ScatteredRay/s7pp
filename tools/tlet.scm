@@ -351,21 +351,21 @@ total: 55.001
   (define (f2)
     (do ((i 0 (+ i 1)))
 	((= i 100000))
-      (unless (eq? ((unlet) :abs) #_abs) ; 792 unlet 740, eval 23 -> 8 (opt_p_unlet_ref)
+      (unless (eq? ((unlet) :abs) #_abs) ; 792 unlet 740, eval 23 -> 8 (opt_p_unlet_ref) -> 7 direct
 	(display "oops\n"))))
   (f2)
   
   (define (f3)
     (do ((i 0 (+ i 1)))
 	((= i 100000))
-      (unless (eq? (let-ref (rootlet) :abs) #_abs) ; 13 goes through rootlet
+      (unless (eq? (let-ref (rootlet) :abs) #_abs) ; 13 goes through rootlet -> 5 direct
 	(display "oops\n"))))
   (f3)
   
   (define (f4)
     (do ((i 0 (+ i 1)))
 	((= i 100000))
-      (unless (eq? ((rootlet) :abs) #_abs) ; 47
+      (unless (eq? ((rootlet) :abs) #_abs) ; 47 -> 8 direct
 	(display "oops\n"))))
   (f4))
 

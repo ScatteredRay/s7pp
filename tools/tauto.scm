@@ -17,7 +17,7 @@
 		  *unbound-variable-hook* *load-hook* *rootlet-redefinition-hook* *missing-close-paren-hook* *read-error-hook*
 		  tree-count ; signature is kinda silly here
 		  c-define-1 apropos map-values trace-in profile-in
-		  define-expansion
+		  define-expansion substring-uncopied ; this because errmsg has "substring" not "substring-uncopied"
 		  heap-scan heap-analyze heap-holders heap-holder
 		  check check-funcs type-ok
 		  show-stack trace-in profile-in apply call-with-exit

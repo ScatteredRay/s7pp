@@ -1384,7 +1384,7 @@ struct s7_scheme {
              list_0, list_1, list_2, list_3, list_4, list_set_i, hash_table_ref_2, hash_table_2, list_ref_at_0, list_ref_at_1, list_ref_at_2,
              format_f, format_no_column, format_just_control_string, format_as_objstr, values_uncopied, int_log2,
              memq_2, memq_3, memq_4, memq_any, tree_set_memq_syms, simple_inlet, sublet_curlet, profile_out, simple_list_values,
-             simple_let_ref, simple_let_set, unlet_ref, geq_2, add_i_random, is_defined_in_rootlet;
+             simple_let_ref, simple_let_set, unlet_ref, sv_unlet_ref, rootlet_ref, geq_2, add_i_random, is_defined_in_rootlet;
 
   s7_pointer multiply_2, invert_1, invert_x, divide_2, divide_by_2, max_2, min_2, max_3, min_3,
              num_eq_2, num_eq_xi, num_eq_ix, less_xi, less_xf, less_x0, less_2, greater_xi, greater_xf, greater_2,
@@ -1917,7 +1917,7 @@ static void init_types(void)
   t_freeze_p[T_UNDEFINED] = true;
   t_freeze_p[T_C_OBJECT] = true;
   t_freeze_p[T_HASH_TABLE] = true;
-  t_freeze_p[T_C_FUNCTION] = true;
+  t_freeze_p[T_C_FUNCTION] = true; t_freeze_p[T_C_FUNCTION_STAR] = true; t_freeze_p[T_C_RST_NO_REQ_FUNCTION] = true;
   t_freeze_p[T_CONTINUATION] = true;
   t_freeze_p[T_INPUT_PORT] = true; t_freeze_p[T_OUTPUT_PORT] = true;
 #if WITH_GMP
@@ -10360,22 +10360,22 @@ static inline s7_pointer g_simple_let_ref(s7_scheme *sc, s7_pointer args)
   return(let_ref_p_pp(sc, let_outlet(lt), sym));
 }
 
-static inline s7_pointer g_unlet_ref(s7_scheme *sc, s7_pointer args) {return(initial_value(cadr(args)));}
+static s7_pointer g_unlet_ref(s7_scheme *sc, s7_pointer args) {return(initial_value(cadr(args)));}
+static s7_pointer g_rootlet_ref(s7_scheme *sc, s7_pointer args) {return(global_value(cadr(args)));}
 
 static s7_pointer let_ref_chooser(s7_scheme *sc, s7_pointer f, int32_t unused_args, s7_pointer expr)
 {
-  if (optimize_op(expr) == HOP_SAFE_C_opSq_C)
+  s7_pointer arg1 = cadr(expr), arg2 = caddr(expr);
+  if ((is_pair(arg1)) && (is_quoted_symbol(arg2)) && (!is_keyword(cadr(arg2))))
     {
-      s7_pointer arg1 = cadr(expr), arg2 = caddr(expr);
-      if ((car(arg1) == sc->cdr_symbol) &&
-	  (is_quoted_symbol(arg2)) &&
-	  (!is_possibly_constant(cadr(arg2))))
+      if ((optimize_op(expr) == HOP_SAFE_C_opSq_C) && (car(arg1) == sc->cdr_symbol))
 	{
 	  set_opt3_sym(cdr(expr), cadr(arg2));
 	  return(sc->simple_let_ref);
-	}}
-  if ((is_pair(cadr(expr))) && (caadr(expr) == sc->unlet_symbol))
-    return(sc->unlet_ref);
+	}
+      if (car(arg1) == sc->unlet_symbol) return(sc->unlet_ref);
+      if (car(arg1) == sc->rootlet_symbol) return(sc->rootlet_ref);
+    }
   return(f);
 }
 
@@ -10830,22 +10830,15 @@ symbol sym in the given let: (let ((x 32)) (symbol->value 'x)) -> 32"
   if (is_not_null(cdr(args)))
     {
       s7_pointer local_let = cadr(args);
-      if (local_let == sc->unlet_symbol) /* perhaps #<unlet> rather than passing 'unlet to symbol->value? */
-	return(initial_value(sym));
-      if (local_let == sc->rootlet)
-	return((is_slot(global_slot(sym))) ? global_value(sym) : sc->undefined);
-
       if (!is_let(local_let))
 	{
 	  local_let = find_let(sc, local_let);
 	  if (!is_let(local_let))
 	    return(method_or_bust(sc, cadr(args), sc->symbol_to_value_symbol, args, a_let_string, 2)); /* not local_let */
 	}
-      if (local_let == sc->s7_starlet)
-	return(s7_starlet(sc, s7_starlet_symbol_id(sym)));
-      if (is_unlet(local_let))
-	return(initial_value(sym));
-
+      if (local_let == sc->rootlet) return((is_slot(global_slot(sym))) ? global_value(sym) : sc->undefined);
+      if (is_unlet(local_let)) return(initial_value(sym));
+      if (local_let == sc->s7_starlet) return(s7_starlet(sc, s7_starlet_symbol_id(sym)));
       return(s7_symbol_local_value(sc, sym, local_let));
     }
   if (is_global(sym))
@@ -10859,6 +10852,16 @@ s7_pointer s7_symbol_set_value(s7_scheme *sc, s7_pointer sym, s7_pointer val)
   if (is_slot(x))
     slot_set_value(x, val); /* with_hook? */
   return(val);
+}
+
+static s7_pointer g_sv_unlet_ref(s7_scheme *sc, s7_pointer args) {return(initial_value(car(args)));}
+
+static s7_pointer symbol_to_value_chooser(s7_scheme *sc, s7_pointer f, int32_t unused_args, s7_pointer expr)
+{
+  s7_pointer arg1 = cadr(expr), arg2 = (is_pair(cddr(expr))) ? caddr(expr) : sc->F;
+  if ((is_quoted_symbol(arg1)) && (!is_keyword(cadr(arg1))) && (is_pair(arg2)) && (car(arg2) == sc->unlet_symbol))
+    return(sc->sv_unlet_ref);
+  return(f);
 }
 
 
@@ -64125,7 +64128,8 @@ static void use_slot_ref(s7_scheme *sc, opt_info *opc, s7_pointer let, s7_pointe
     }
 }
 
-static s7_pointer opt_p_unlet_ref(opt_info *o) {return(initial_value(o->v[1].p));}
+static s7_pointer opt_p_unlet_ref(opt_info *o) {return(o->v[1].p);}
+static s7_pointer opt_p_rootlet_ref(opt_info *o) {return(global_value(o->v[1].p));}
 
 static bool p_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer car_x, int32_t pstart)
 {
@@ -64241,12 +64245,20 @@ static bool p_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	      sc->pc = pstart;
 	      return_false(sc, car_x);
 	    }}
-      if ((car(car_x) == sc->let_ref_symbol) && (is_pair(arg1)) && (car(arg1) == sc->unlet_symbol) && /* (let-ref (unlet) :abs) */
-	  ((is_symbol_and_keyword(arg2)) || ((is_quoted_symbol(arg2)))))
+      if ((car(car_x) == sc->let_ref_symbol) && (is_pair(arg1)) && ((is_symbol_and_keyword(arg2)) || ((is_quoted_symbol(arg2)))))
 	{
-	  opc->v[0].fp = opt_p_unlet_ref;
-	  opc->v[1].p = (is_pair(arg2)) ? cadr(arg2) : keyword_symbol(arg2);
-	  return_true(sc, car_x);
+	  if (car(arg1) == sc->unlet_symbol) /* (let-ref (unlet) :abs) */
+	    {
+	      opc->v[0].fp = opt_p_unlet_ref;
+	      opc->v[1].p = initial_value((is_pair(arg2)) ? cadr(arg2) : keyword_symbol(arg2));
+	      return_true(sc, car_x);
+	    }
+	  if (car(arg1) == sc->rootlet_symbol)
+	    {
+	      opc->v[0].fp = opt_p_rootlet_ref;
+	      opc->v[1].p = (is_pair(arg2)) ? cadr(arg2) : keyword_symbol(arg2);
+	      return_true(sc, car_x);
+	    }
 	}
       if (cell_optimize(sc, cdr(car_x)))
 	{
@@ -68219,14 +68231,15 @@ static bool cell_optimize_1(s7_scheme *sc, s7_pointer expr)
 		  sym = cadr(head);
 		}
 	      else
-		if ((car(head) == sc->unlet_symbol) && (is_pair(cdr(car_x)))) /* ((unlet) :abs) */
+		if (((car(head) == sc->unlet_symbol) || (car(head) == sc->rootlet_symbol)) && (is_pair(cdr(car_x)))) /* ((unlet) :abs) */
 		  {
 		    sym = cadr(car_x);
 		    if ((is_symbol_and_keyword(sym)) || (is_quoted_symbol(sym)))
 		      {
 			opt_info *opc = alloc_opt_info(sc);
-			opc->v[0].fp = opt_p_unlet_ref;
-			opc->v[1].p = (is_pair(sym)) ? cadr(sym) : keyword_symbol(sym);
+			sym = (is_pair(sym)) ? cadr(sym) : keyword_symbol(sym);
+			opc->v[0].fp = (car(head) == sc->unlet_symbol) ? opt_p_unlet_ref : opt_p_rootlet_ref;
+			opc->v[1].p = (car(head) == sc->unlet_symbol) ? initial_value(sym) : sym;
 			return_true(sc, car_x);
 		      }
 		    return_false(sc, car_x);
@@ -70819,7 +70832,7 @@ static void init_choosers(s7_scheme *sc)
   sc->string_equal_2c = make_function_with_class(sc, f, "string=?", g_string_equal_2c, 2, 0, false);
 
   /* substring */
-  /* sc->substring_uncopied = s7_make_safe_function(sc, "substring", g_substring_uncopied, 2, 1, false, NULL); */ /* now exported to Scheme 28-May-24 */
+  /* sc->substring_uncopied = s7_make_safe_function(sc, "substring", g_substring_uncopied, 1, 2, false, NULL); */ /* now exported to Scheme 28-May-24 */
   sc->substring_uncopied = global_value(sc->substring_uncopied_symbol);
   s7_function_set_class(sc, sc->substring_uncopied, global_value(sc->substring_symbol));
 
@@ -70875,6 +70888,10 @@ static void init_choosers(s7_scheme *sc)
   f = global_value(sc->symbol_to_string_symbol);
   sc->symbol_to_string_uncopied = s7_make_safe_function(sc, "symbol->string", g_symbol_to_string_uncopied, 1, 0, false, NULL);
   s7_function_set_class(sc, sc->symbol_to_string_uncopied, f);
+
+  /* symbol->value */
+  set_function_chooser(sc->symbol_to_value_symbol, symbol_to_value_chooser);
+  sc->sv_unlet_ref = make_function_with_class(sc, f, "symbol->value", g_sv_unlet_ref, 1, 1, false);
 
   /* display */
   f = set_function_chooser(sc->display_symbol, display_chooser);
@@ -70999,6 +71016,7 @@ static void init_choosers(s7_scheme *sc)
   f = set_function_chooser(sc->let_ref_symbol, let_ref_chooser);
   sc->simple_let_ref = make_function_with_class(sc, f, "let-ref", g_simple_let_ref, 2, 0, false);
   sc->unlet_ref = make_function_with_class(sc, f, "let-ref", g_unlet_ref, 2, 0, false);
+  sc->rootlet_ref = make_function_with_class(sc, f, "let-ref", g_rootlet_ref, 2, 0, false);
 
   /* let-set */
   f = set_function_chooser(sc->let_set_symbol, let_set_chooser);
@@ -71288,7 +71306,7 @@ static opt_t optimize_thunk(s7_scheme *sc, s7_pointer expr, s7_pointer func, int
       if (c_function_min_args(func) != 0)
 	return(OPT_F);
       if ((hop == 0) && (symbol_id(car(expr)) == 0)) hop = 1;
-      if (is_safe_procedure(func))
+      if ((is_safe_procedure(func)) || (c_function_call(func) == s7_values))
 	{
 	  set_safe_optimize_op(expr, hop + OP_SAFE_C_NC);
 	  choose_c_function(sc, expr, func, 0);
@@ -71571,7 +71589,7 @@ static opt_t optimize_c_function_one_arg(s7_scheme *sc, s7_pointer expr, s7_poin
   if (SHOW_EVAL_OPS) fprintf(stderr, "  %s[%d]: %s %d %d\n", __func__, __LINE__, display_truncated(expr), func_is_safe, pairs);
   if (pairs == 0)
     {
-      if (func_is_safe)                /* safe c function */
+      if ((func_is_safe) || (c_function_call(func) == s7_values))                /* safe c function */
 	{
 	  set_safe_optimize_op(expr, hop + ((symbols == 0) ? OP_SAFE_C_NC : OP_SAFE_C_S));
 	  choose_c_function(sc, expr, func, 1);
@@ -80135,7 +80153,7 @@ static void check_set(s7_scheme *sc)
 		((is_quote(car(value))) && (is_pair(cdr(value))))) /* (quote . 1) ? */
 	      {
 		pair_set_syntax_op(form, OP_SET_S_C);
-		set_opt2_con(code, (is_pair(value)) ? cadr(value) : value);
+		set_opt1_con(code, (is_pair(value)) ? cadr(value) : value); /* collision if ((values set!) x 32) code: (x 32) value: 32, opt2: fx_s, opt1|3 is free */
 	      }
 	    else
 	      {
@@ -80221,7 +80239,7 @@ static void op_set_s_c(s7_scheme *sc)
   s7_pointer slot = T_Slt(s7_slot(sc, cadr(sc->code)));
   if (is_immutable(slot))
     immutable_object_error_nr(sc, set_elist_3(sc, wrap_string(sc, "~S, but ~S is immutable", 23), sc->code, cadr(sc->code)));
-  slot_set_value(slot, sc->value = opt2_con(cdr(sc->code)));
+  slot_set_value(slot, sc->value = opt1_con(cdr(sc->code)));
 }
 
 static inline void op_set_s_s(s7_scheme *sc)
@@ -91488,7 +91506,7 @@ static bool op_unknown_s(s7_scheme *sc)
       if (!(c_function_is_aritable(f, 1))) break;
     case T_C_RST_NO_REQ_FUNCTION:
       set_c_function(code, f);
-      if (is_safe_procedure(f))
+      if ((is_safe_procedure(f)) || (c_function_call(f) == s7_values))
 	{
 	  set_optimize_op(code, OP_SAFE_C_S);
 	  sc->value = fx_c_s(sc, sc->code);
@@ -98545,52 +98563,52 @@ int main(int argc, char **argv)
  * tpeak      148    115    114    108    105    102    103
  * tref      1081    691    687    463    459    464    410
  * index            1026   1016    973    967    972    971
- * tmock            1177   1165   1057   1019   1032   1029
+ * tmock            1177   1165   1057   1019   1032   1025
  * tvect     3408   2519   2464   1772   1669   1497   1454
- * tauto                          2562   2048   1729   1732
- * texit     1884   1930   1950   1778   1741   1770   1771
- * s7test           1873   1831   1818   1829   1830   1899
- * lt        2222   2187   2172   2150   2185   1950   1955
- * dup              3805   3788   2492   2239   2097   2006
- * thook     7651                 2590   2030   2046   2014
+ * tauto                          2562   2048   1729   1731
+ * texit     1884   1930   1950   1778   1741   1770   1770
+ * s7test           1873   1831   1818   1829   1830   1875
+ * lt        2222   2187   2172   2150   2185   1950   1950
+ * dup              3805   3788   2492   2239   2097   2003
+ * thook     7651                 2590   2030   2046   2009
  * tread            2440   2421   2419   2408   2405   2260
  * tcopy            8035   5546   2539   2375   2386   2341
  * titer     3657   2865   2842   2641   2509   2449   2443
- * trclo     8031   2735   2574   2454   2445   2449   2474
+ * trclo     8031   2735   2574   2454   2445   2449   2453
  * tmat             3065   3042   2524   2578   2590   2515
- * tload                          3046   2404   2566   2546
+ * tload                          3046   2404   2566   2534
  * fbench    2933   2688   2583   2460   2430   2478   2573
  * tsort     3683   3105   3104   2856   2804   2858   2858
- * tio              3816   3752   3683   3620   3583   3134
- * tobj             4016   3970   3828   3577   3508   3455
- * teq              4068   4045   3536   3486   3544   3512  3595 [object_to_port and callees]
+ * tio              3816   3752   3683   3620   3583   3127
+ * tobj             4016   3970   3828   3577   3508   3452
+ * teq              4068   4045   3536   3486   3544   3595
  * tmac             3950   3873   3033   3677   3677   3683
  * tclo      6362   4787   4735   4390   4384   4474   4345
- * tcase            4960   4793   4439   4430   4439   4440
- * tlet      11.0   8970   6974   5609   5980   5965   4546
+ * tcase            4960   4793   4439   4430   4439   4430
+ * tlet      11.0   8970   6974   5609   5980   5965   4500
  * tfft             7820   7729   4755   4476   4536   4544
- * tstar            6139   5923   5519   4449   4550   4556
- * tmap             8869   8774   4489   4541   4586   4591
+ * tstar            6139   5923   5519   4449   4550   4535
+ * tmap             8869   8774   4489   4541   4586   4590
  * tshoot           5525   5447   5183   5055   5034   5060
- * tform            5357   5348   5307   5316   5084   5101
- * tstr      10.0   6880   6342   5488   5162   5180   5289  5195
+ * tform            5357   5348   5307   5316   5084   5098
+ * tstr      10.0   6880   6342   5488   5162   5180   5195
  * tnum             6348   6013   5433   5396   5409   5432
  * tgsl             8485   7802   6373   6282   6208   6181
  * tari      15.0   13.0   12.7   6827   6543   6278   6184
  * tlist     9219   7896   7546   6558   6240   6300   6306
- * tset                                  6260   6364   6382
+ * tset                                  6260   6364   6308
  * trec      19.5   6936   6922   6521   6588   6583   6584
  * tleft     11.1   10.4   10.2   7657   7479   7627   7615
  * tmisc                                 8142   7631   7694
- * tlamb                                 8003   7941   7964
+ * tlamb                                 8003   7941   7956
  * tgc              11.9   11.1   8177   7857   7986   8012
- * thash            11.8   11.7   9734   9479   9526   9258
- * cb        12.9   11.2   11.0   9658   9564   9609   9661
+ * thash            11.8   11.7   9734   9479   9526   9256
+ * cb        12.9   11.2   11.0   9658   9564   9609   9654
  * tmap-hash                           1671.0 1467.0   10.3
  * tmv              16.0   15.4   14.7   14.5   14.4   11.9
  * tgen             11.2   11.4   12.0   12.1   12.2   12.3
  * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1
- * timp             25.4   24.4   20.0   19.6   19.7   15.7
+ * timp             25.4   24.4   20.0   19.6   19.7   15.6
  * calls            36.7   37.5   37.0   37.5   37.1   37.2
  * sg                             55.9   55.8   55.4   55.4
  * tbig            177.4  175.8  156.5  148.1  146.2  146.1
@@ -98603,12 +98621,13 @@ int main(int argc, char **argv)
  *   currently sc->s7_starlet is a let (make_s7_starlet) using g_s7_let_ref_fallback, so it assumes print-length above is undefined
  * need some print-length/print-elements distinction for vector/pair etc [which to choose if both set?]
  * 73317 vars_opt_ok problem
- * values feeding safe func -- can't this be opt'd? (values 1) at least t695
+ * values opts: t695
  * if closure sig, add some way to have arg types checked by s7? (*s7* :check-signature?)
  * 0/1/2-arg-func types? need some counts here (eval:apply etc)
+ *   split T_C_FUNCTION into that+T_C_THUNK
  * *s7* switch to turn off the quote->#_quote switch (and the rest?) -- or do it only in a macro body?
  *   or make (eq? x 'quote) -> (memq x '(quote #_quote))??
- * symbol->value uses 'unlet -- ugly, symbol-initial-value opt via symbol->value chooser? (like let-ref)
  * easier access to closure-args (so thunk is (null? args) etc, s7_closure_args exists (also let/body))
  *   let/body/args are mutable??
+ * t725: check immutable objs
  */
