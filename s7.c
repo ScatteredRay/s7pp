@@ -64131,7 +64131,7 @@ static void use_slot_ref(s7_scheme *sc, opt_info *opc, s7_pointer let, s7_pointe
 static s7_pointer opt_p_unlet_ref(opt_info *o) {return(o->v[1].p);}
 static s7_pointer opt_p_rootlet_ref(opt_info *o) {return(global_value(o->v[1].p));}
 
-static bool opt_unlet_rootlet_ref(s7_scheme *sc, opt_info *opc, s7_pointer arg1, s7_pointer sym)
+static bool opt_unlet_rootlet_ref(s7_scheme *sc, opt_info *opc, s7_pointer arg1, s7_pointer sym, s7_pointer car_x)
 {
   if (car(arg1) == sc->rootlet_symbol)
     {
@@ -64268,7 +64268,7 @@ static bool p_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
       if ((car(car_x) == sc->let_ref_symbol) && (is_pair(arg1)) && 
 	  ((is_symbol_and_keyword(arg2)) || ((is_quoted_symbol(arg2)))) &&
 	  ((car(arg1) == sc->unlet_symbol) || (car(arg1) == sc->rootlet_symbol)))
-	return(opt_unlet_rootlet_ref(sc, opc, arg1, (is_pair(arg2)) ? cadr(arg2) : keyword_symbol(arg2)));
+	return(opt_unlet_rootlet_ref(sc, opc, arg1, (is_pair(arg2)) ? cadr(arg2) : keyword_symbol(arg2), car_x));
 
       if (cell_optimize(sc, cdr(car_x)))
 	{
@@ -68244,7 +68244,7 @@ static bool cell_optimize_1(s7_scheme *sc, s7_pointer expr)
 		  {
 		    sym = cadr(car_x);
 		    if ((is_symbol_and_keyword(sym)) || (is_quoted_symbol(sym)))
-		      return(opt_unlet_rootlet_ref(sc, alloc_opt_info(sc), head, (is_pair(sym)) ? cadr(sym) : keyword_symbol(sym)));
+		      return(opt_unlet_rootlet_ref(sc, alloc_opt_info(sc), head, (is_pair(sym)) ? cadr(sym) : keyword_symbol(sym), car_x));
 		    return_false(sc, car_x);
 		  }
 		else return_false(sc, car_x);
@@ -98632,4 +98632,12 @@ int main(int argc, char **argv)
  *   or make (eq? x 'quote) -> (memq x '(quote #_quote))??
  * easier access to closure-args (so thunk is (null? args) etc, s7_closure_args exists (also let/body))
  *   let/body/args are mutable??
+ * opt: call/exit, tc+fx cases: opt_p_fx_any, clo_na_to_na
+ * unlet: (outlet (unlet)) is (curlet)
+ * (set! curlet rootlet) (curlet): (rootlet) -- (let ((abs 32)) (set! curlet rootlet) (let-ref (curlet) 'abs)) abs!
+ *    rootlet also, but unlet is immutable: (set! unlet curlet) error: can't set! unlet (it is immutable)
+ *    (let () (set! (outlet (rootlet)) (curlet))): (inlet)
+ *    (set! #_curlet #_rootlet): error: set! can't change curlet (a c-function), (set! curlet rootlet) but
+ *    (set! curlet rootlet) is ok? returns rootlet (so error msg above is misleading)
+ *    (set! abs floor) (abs 3.1) 3 -- does this confuse the optimizer?
  */
