@@ -5390,10 +5390,10 @@ to work right in this context).
 </pre>
 <p>
 <b>substring-uncopied</b> exists because there are cases where you want substring, but don't need a copy made
-of the string.  It does not GC protect the original string, but obviously depends on it; it is intended
+of the string.  <code>substring-uncopied</code> does not GC protect the original string, but obviously depends on it; it is intended
 for very brief uses where there is no chance that the GC will be called.  Normally the optimizer can
-find these cases, so for example, there's no need to use substring-uncopied in <code>(string-length (substring str 1))</code>.
-
+find these cases, so for example, there's no need to use <code>substring-uncopied</code> in <code>(string-length (substring str 1))</code>.
+</p>
 
 <div class="separator"></div>
 

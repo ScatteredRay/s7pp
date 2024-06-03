@@ -31527,7 +31527,7 @@ static s7_pointer g_eval_string(s7_scheme *sc, s7_pointer args)
  	wrong_type_error_nr(sc, sc->eval_string_symbol, 2, e, a_let_string);
       set_curlet(sc, e);
     }
-  sc->temp3 = sc->args; /* see t101-aux-17.scm */
+  sc->temp3 = sc->args; /* see t101-17.scm */
   push_stack(sc, OP_EVAL_STRING, args, sc->code);
   port = open_and_protect_input_string(sc, str);
   push_input_port(sc, port);
@@ -64131,6 +64131,25 @@ static void use_slot_ref(s7_scheme *sc, opt_info *opc, s7_pointer let, s7_pointe
 static s7_pointer opt_p_unlet_ref(opt_info *o) {return(o->v[1].p);}
 static s7_pointer opt_p_rootlet_ref(opt_info *o) {return(global_value(o->v[1].p));}
 
+static bool opt_unlet_rootlet_ref(s7_scheme *sc, opt_info *opc, s7_pointer arg1, s7_pointer sym)
+{
+  if (car(arg1) == sc->rootlet_symbol)
+    {
+      if (!is_slot(global_slot(sym)))
+	{
+	  opc->v[0].fp = opt_p_c;
+	  opc->v[1].p = sc->undefined;
+	  return_true(sc, car_x);
+	}
+      opc->v[0].fp = opt_p_rootlet_ref;
+      opc->v[1].p = sym;
+      return_true(sc, car_x);
+    }
+  opc->v[0].fp = opt_p_unlet_ref;
+  opc->v[1].p = initial_value(sym);
+  return_true(sc, car_x);
+}
+
 static bool p_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer car_x, int32_t pstart)
 {
   s7_pointer slot, arg1, arg2;
@@ -64245,21 +64264,12 @@ static bool p_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	      sc->pc = pstart;
 	      return_false(sc, car_x);
 	    }}
-      if ((car(car_x) == sc->let_ref_symbol) && (is_pair(arg1)) && ((is_symbol_and_keyword(arg2)) || ((is_quoted_symbol(arg2)))))
-	{
-	  if (car(arg1) == sc->unlet_symbol) /* (let-ref (unlet) :abs) */
-	    {
-	      opc->v[0].fp = opt_p_unlet_ref;
-	      opc->v[1].p = initial_value((is_pair(arg2)) ? cadr(arg2) : keyword_symbol(arg2));
-	      return_true(sc, car_x);
-	    }
-	  if (car(arg1) == sc->rootlet_symbol)
-	    {
-	      opc->v[0].fp = opt_p_rootlet_ref;
-	      opc->v[1].p = (is_pair(arg2)) ? cadr(arg2) : keyword_symbol(arg2);
-	      return_true(sc, car_x);
-	    }
-	}
+
+      if ((car(car_x) == sc->let_ref_symbol) && (is_pair(arg1)) && 
+	  ((is_symbol_and_keyword(arg2)) || ((is_quoted_symbol(arg2)))) &&
+	  ((car(arg1) == sc->unlet_symbol) || (car(arg1) == sc->rootlet_symbol)))
+	return(opt_unlet_rootlet_ref(sc, opc, arg1, (is_pair(arg2)) ? cadr(arg2) : keyword_symbol(arg2)));
+
       if (cell_optimize(sc, cdr(car_x)))
 	{
 	  if (is_symbol(arg2))
@@ -65252,9 +65262,8 @@ static s7_pointer opt_p_fx_any(opt_info *o) {return(o->v[1].call(o->sc, o->v[2].
 
 static bool p_fx_any_ok(s7_scheme *sc, opt_info *opc, s7_pointer x)
 {
-  s7_function f = (has_fx(x)) ? fx_proc(x) : fx_choose(sc, x, sc->curlet, let_symbol_is_safe);
-  if (!f)
-    return_false(sc, x);
+  s7_function f = (has_fx(car(x))) ? fx_proc(car(x)) : NULL; /* fx_choose(sc, car(x), sc->curlet, let_symbol_is_safe); */
+  if (!f) return_false(sc, x);
   opc->v[0].fp = opt_p_fx_any;
   opc->v[1].call = f;
   opc->v[2].p = car(x);
@@ -65682,7 +65691,7 @@ static bool check_type_uncertainty(s7_scheme *sc, s7_pointer target, s7_pointer 
   /* if we're optimizing do, sc->code is (sometimes) ((vars...) (end...) car_x) where car_x is the do body, but it can also be for-each etc */
 
   /* maybe the type uncertainty is not a problem */
-  if ((is_pair(code)) &&      /* t101-aux-14: (vector-set! !v! 0 (do ((x (list 1 2 3) (cdr x)) (j -1)) ((null? x) j) (set! j (car x)))) */
+  if ((is_pair(code)) &&      /* t101-14: (vector-set! !v! 0 (do ((x (list 1 2 3) (cdr x)) (j -1)) ((null? x) j) (set! j (car x)))) */
       (is_pair(car(code))) &&
       (is_pair(cdr(code))) && /* weird that code sometimes has nothing to do with car_x -- tree_memq below for reality check */
       (is_pair(cadr(code))))
@@ -68235,13 +68244,7 @@ static bool cell_optimize_1(s7_scheme *sc, s7_pointer expr)
 		  {
 		    sym = cadr(car_x);
 		    if ((is_symbol_and_keyword(sym)) || (is_quoted_symbol(sym)))
-		      {
-			opt_info *opc = alloc_opt_info(sc);
-			sym = (is_pair(sym)) ? cadr(sym) : keyword_symbol(sym);
-			opc->v[0].fp = (car(head) == sc->unlet_symbol) ? opt_p_unlet_ref : opt_p_rootlet_ref;
-			opc->v[1].p = (car(head) == sc->unlet_symbol) ? initial_value(sym) : sym;
-			return_true(sc, car_x);
-		      }
+		      return(opt_unlet_rootlet_ref(sc, alloc_opt_info(sc), head, (is_pair(sym)) ? cadr(sym) : keyword_symbol(sym)));
 		    return_false(sc, car_x);
 		  }
 		else return_false(sc, car_x);
@@ -69258,7 +69261,7 @@ static Inline bool inline_op_for_each_2(s7_scheme *sc) /* called once in eval, l
   if (!is_pair(lst))  /* '(1 2 . 3) as arg? -- counter_list can be anything here */
     {
       sc->value = sc->unspecified;
-      /* free_cell(sc, c); */ /* unsafe? t101-aux-2|4|6|7|9|18|26|34|38 */ /* not sc->args = sc->nil; */
+      /* free_cell(sc, c); */ /* unsafe? t101-2|4|6|7|9|18|26|34|38 */ /* not sc->args = sc->nil; */
       return(true);
     }
   counter_set_list(c, cdr(lst));
@@ -77156,7 +77159,7 @@ static void op_let_a_a_new(s7_scheme *sc)
   binding = opt2_pair(sc->code);
   set_curlet(sc, inline_make_let_with_slot(sc, sc->curlet, car(binding), fx_call(sc, cdr(binding))));
   sc->value = fx_call(sc, cdr(sc->code));
-  /* free_cell(sc, sc->curlet); *//* t101-aux-3 and t725+unlet */ /* don't free let_slots here unless checked first (can be null after fx_call above?) */
+  /* free_cell(sc, sc->curlet); *//* t101-3 and t725+unlet */ /* don't free let_slots here unless checked first (can be null after fx_call above?) */
   /* upon return, we continue, so sc->curlet should be ok */
 }
 
@@ -77612,6 +77615,7 @@ static void op_named_let_star(s7_scheme *sc)
 static void op_let_star2(s7_scheme *sc)
 {
   s7_pointer code = cdr(sc->code);
+  /* check_stack_size(sc); */ /* t101-42 but commented out */
   push_stack(sc, OP_LET_STAR1, code, car(code));
   sc->code = opt2_con(code);
 }
@@ -78062,6 +78066,7 @@ static bool op_let_temp_s7(s7_scheme *sc) /* all entries are of the form ((*s7* 
       if (s7_starlet_immutable_field[s7_starlet_symbol_id(field)])
 	immutable_object_error_nr(sc, set_elist_2(sc, wrap_string(sc, "let-temporarily: can't set! (*s7* '~S)", 38), field));
       old_value = s7_starlet(sc, s7_starlet_symbol_id(field));
+      /* check_stack_size(sc); */ /* t101-42 but commented out (probably the #symbol stuff) */
       push_stack(sc, OP_LET_TEMP_S7_UNWIND, old_value, field);
     }
   for (p = car(code); is_pair(p); p = cdr(p), end += 4)
@@ -83754,11 +83759,11 @@ static bool op_safe_dotimes_step_o(s7_scheme *sc)
     {
       sc->value = sc->T;
       sc->code = cdadr(sc->code);
-      return(true);
+      return(true); /* goto DO_END_CLAUSES */
     }
   push_stack_direct(sc, OP_SAFE_DOTIMES_STEP_O);
   sc->code = opt2_pair(sc->code);
-  return(false);
+  return(false); /* goto EVAL */
 }
 
 static /* inline */ bool op_dotimes_step_o(s7_scheme *sc) /* called once in eval, mat(10+6), num(7+1) */
@@ -84299,7 +84304,7 @@ static goto_t op_safe_dotimes(s7_scheme *sc)
 
 	  /* safe_dotimes: (car(body) is known to be a pair here)
 	   *   if 1-expr body look for syntactic case, if let(*) goto do_let, else opt_dotimes
-	   *       if they are unhappy, got safe_dotimes_step_o
+	   *       if they are unhappy, goto safe_dotimes_step_o
 	   *   else goto opt_dotimes then safe_dotimes_step_o
 	   *   if multi-line body, check opt_dotimes, then safe_dotimes_step
 	   */
@@ -84629,7 +84634,7 @@ static goto_t op_do_end_true(s7_scheme *sc)
    * multiple-value end-test result is ok
    */
   sc->code = T_Lst(cddr(sc->args));   /* result expr (a list -- implicit begin) */
-  /* unsafe: free_cell(sc, sc->args); */ /* t101-aux-8|13 */
+  /* unsafe: free_cell(sc, sc->args); */ /* t101-8|13 */
   sc->args = sc->nil;
   if (is_null(sc->code))
     {
@@ -98623,11 +98628,8 @@ int main(int argc, char **argv)
  * 73317 vars_opt_ok problem
  * values opts: t695
  * if closure sig, add some way to have arg types checked by s7? (*s7* :check-signature?)
- * 0/1/2-arg-func types? need some counts here (eval:apply etc)
- *   split T_C_FUNCTION into that+T_C_THUNK
  * *s7* switch to turn off the quote->#_quote switch (and the rest?) -- or do it only in a macro body?
  *   or make (eq? x 'quote) -> (memq x '(quote #_quote))??
  * easier access to closure-args (so thunk is (null? args) etc, s7_closure_args exists (also let/body))
  *   let/body/args are mutable??
- * t725: check immutable objs
  */
