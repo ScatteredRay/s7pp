@@ -7012,7 +7012,7 @@ static void add_gensym(s7_scheme *sc, s7_pointer p)
 #define add_multivector(sc, p)       add_to_gc_list(sc->multivectors, p)
 #define add_weak_ref(sc, p)          add_to_gc_list(sc->weak_refs, p)
 #define add_weak_hash_iterator(sc, p) add_to_gc_list(sc->weak_hash_iterators, p)
-#define add_opt1_func(sc, p) do {if (!opt1_func_listed(p)) add_to_gc_list(sc->opt1_funcs, p); set_opt1_func_listed(p);} while (0)
+#define add_opt1_func(sc, p) do {if (!opt1_func_listed(p)) add_to_gc_list(sc->opt1_funcs, p); set_opt1_func_listed(p);} while (0) /* called by set_opt1_lambda_add */
 
 #if WITH_GMP
 #define add_big_integer(sc, p)       add_to_gc_list(sc->big_integers, p)
@@ -53662,7 +53662,7 @@ static s7_pointer implicit_index(s7_scheme *sc, s7_pointer obj, s7_pointer indic
 
     case T_CLOSURE: case T_CLOSURE_STAR:
       if (!is_safe_closure(obj))               /* s7_call can't work in general with unsafe stuff */
-	error_nr(sc, sc->syntax_error_symbol,
+	error_nr(sc, sc->syntax_error_symbol,  /* ((list (lambda (x) (values x x))) 0 1) */
 		 set_elist_3(sc, wrap_string(sc, "can't call a (possibly unsafe) function implicitly: ~S ~S", 57), obj, indices));
       check_stack_size(sc);
       sc->temp10 = indices; /* (needs_copied_args(obj)) ? copy_proper_list(sc, indices) : indices; */ /* s7_call copies and this is safe? 2-Oct-22 (and below) */
@@ -53672,7 +53672,7 @@ static s7_pointer implicit_index(s7_scheme *sc, s7_pointer obj, s7_pointer indic
       /* if mv: sc->value = splice_in_values(sc, multiple_value(sc->value)); */
       return(sc->value);
 
-    case T_C_FUNCTION:
+    case T_C_FUNCTION: /* probably something like ((list abs) 0 -1) */
       return(apply_c_function_unopt(sc, obj, indices));
 
     case T_C_RST_NO_REQ_FUNCTION:
@@ -65262,7 +65262,12 @@ static s7_pointer opt_p_fx_any(opt_info *o) {return(o->v[1].call(o->sc, o->v[2].
 
 static bool p_fx_any_ok(s7_scheme *sc, opt_info *opc, s7_pointer x)
 {
-  s7_function f = (has_fx(car(x))) ? fx_proc(car(x)) : NULL; /* fx_choose(sc, car(x), sc->curlet, let_symbol_is_safe); */
+  s7_function f = ((is_pair(car(x))) && (has_fx(car(x)))) ? fx_proc(car(x)) : NULL;
+  /* if (!f) f = ((is_pair(car(x))) && (is_pair(cdar(x))) && (has_fx(cdar(x)))) ? fx_proc(cdar(x)) : NULL; else fprintf(stderr, "use car\n"); */
+#if 0
+  fprintf(stderr, "car(x): %s %d %s %p\n", display(car(x)), has_fx(car(x)), describe_type_bits(sc, car(x)), f);
+  fprintf(stderr, "cdar(x): %s %d %s %p\n", display(cdar(x)), has_fx(cdar(x)), describe_type_bits(sc, cdar(x)), f);
+#endif
   if (!f) return_false(sc, x);
   opc->v[0].fp = opt_p_fx_any;
   opc->v[1].call = f;
@@ -92109,7 +92114,7 @@ static bool op_unknown_np(s7_scheme *sc)
 
     case T_CLOSURE:
       if ((!has_methods(f)) &&
-	  (closure_arity_to_int(sc, f) == num_args))
+	  (closure_arity_to_int(sc, f) == num_args)) /* if values clo as arg, we need to know how many values etc */
 	{
 	  int32_t hop = (is_immutable_and_stable(sc, car(code))) ? 1 : 0;
 	  switch (num_args)
@@ -98633,6 +98638,8 @@ int main(int argc, char **argv)
  * easier access to closure-args (so thunk is (null? args) etc, s7_closure_args exists (also let/body))
  *   let/body/args are mutable??
  * opt: call/exit, tc+fx cases: opt_p_fx_any, clo_na_to_na
+ *   no fx_values* 7 t695 cases work now, rest need new ops like op_c_sc or clo+values etc
+ *   can opt_p_fx_any see the tc cases?
  * unlet: (outlet (unlet)) is (curlet)
  * (set! curlet rootlet) (curlet): (rootlet) -- (let ((abs 32)) (set! curlet rootlet) (let-ref (curlet) 'abs)) abs!
  *    rootlet also, but unlet is immutable: (set! unlet curlet) error: can't set! unlet (it is immutable)
