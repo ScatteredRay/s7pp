@@ -130,10 +130,10 @@
 	 (list "repl" "thash.scm")
 	 (list "repl" "cb.scm")
 	 (list "repl" "tmap-hash.scm")
-	 (list "repl" "tmv.scm")
 	 (list "snd -noinit" "tgen.scm")    ; repl here + cload sndlib was slower
 	 (list "snd -noinit" "tall.scm")
 	 (list "repl" "timp.scm")
+	 (list "repl" "tmv.scm")
 	 (list "snd -l" "snd-test.scm")
 	 (list "snd -l" "full-snd-test.scm")
 	 (list "repl" "tbig.scm")

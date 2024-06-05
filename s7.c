@@ -1382,9 +1382,9 @@ struct s7_scheme {
              vector_ref_2, vector_ref_3, vector_set_3, vector_set_4, read_char_1, dynamic_wind_unchecked, dynamic_wind_body, dynamic_wind_init, append_2,
              fv_ref_2, fv_ref_3, fv_set_3, fv_set_unchecked, iv_ref_2, iv_ref_3, iv_set_3, bv_ref_2, bv_ref_3, bv_set_3, vector_2, vector_3,
              list_0, list_1, list_2, list_3, list_4, list_set_i, hash_table_ref_2, hash_table_2, list_ref_at_0, list_ref_at_1, list_ref_at_2,
-             format_f, format_no_column, format_just_control_string, format_as_objstr, values_uncopied, int_log2,
+             format_f, format_no_column, format_just_control_string, format_as_objstr, values_uncopied, int_log2, 
              memq_2, memq_3, memq_4, memq_any, tree_set_memq_syms, simple_inlet, sublet_curlet, profile_out, simple_list_values,
-             simple_let_ref, simple_let_set, unlet_ref, sv_unlet_ref, rootlet_ref, geq_2, add_i_random, is_defined_in_rootlet;
+             simple_let_ref, simple_let_set, sv_unlet_ref, rootlet_ref, geq_2, add_i_random, is_defined_in_rootlet;
 
   s7_pointer multiply_2, invert_1, invert_x, divide_2, divide_by_2, max_2, min_2, max_3, min_3,
              num_eq_2, num_eq_xi, num_eq_ix, less_xi, less_xf, less_x0, less_2, greater_xi, greater_xf, greater_2,
@@ -10360,7 +10360,6 @@ static inline s7_pointer g_simple_let_ref(s7_scheme *sc, s7_pointer args)
   return(let_ref_p_pp(sc, let_outlet(lt), sym));
 }
 
-static s7_pointer g_unlet_ref(s7_scheme *sc, s7_pointer args) {return(initial_value(cadr(args)));}
 static s7_pointer g_rootlet_ref(s7_scheme *sc, s7_pointer args) {return(global_value(cadr(args)));}
 
 static s7_pointer let_ref_chooser(s7_scheme *sc, s7_pointer f, int32_t unused_args, s7_pointer expr)
@@ -10373,7 +10372,6 @@ static s7_pointer let_ref_chooser(s7_scheme *sc, s7_pointer f, int32_t unused_ar
 	  set_opt3_sym(cdr(expr), cadr(arg2));
 	  return(sc->simple_let_ref);
 	}
-      if (car(arg1) == sc->unlet_symbol) return(sc->unlet_ref);
       if (car(arg1) == sc->rootlet_symbol) return(sc->rootlet_ref);
     }
   return(f);
@@ -10657,16 +10655,13 @@ s7_pointer s7_set_curlet(s7_scheme *sc, s7_pointer e)
 
 
 /* -------------------------------- outlet -------------------------------- */
-s7_pointer s7_outlet(s7_scheme *sc, s7_pointer let)
-{
-  return(let_outlet(let));
-}
+s7_pointer s7_outlet(s7_scheme *sc, s7_pointer let) {return(let_outlet(let));}
 
 static s7_pointer outlet_p_p(s7_scheme *sc, s7_pointer let)
 {
   if (!is_let(let))
     sole_arg_wrong_type_error_nr(sc, sc->outlet_symbol, let, a_let_string); /* not a method call here! */
-  return((let == sc->rootlet) ? sc->rootlet : let_outlet(let));
+  return((let == sc->rootlet) ? sc->rootlet : let_outlet(let)); /* rootlet check is needed(!) */
 }
 
 static s7_pointer g_outlet(s7_scheme *sc, s7_pointer args)
@@ -10675,7 +10670,6 @@ static s7_pointer g_outlet(s7_scheme *sc, s7_pointer args)
   #define Q_outlet s7_make_signature(sc, 2, sc->is_let_symbol, sc->is_let_symbol)
   return(outlet_p_p(sc, car(args)));
 }
-
 
 static s7_pointer g_set_outlet(s7_scheme *sc, s7_pointer args)
 {
@@ -10859,7 +10853,7 @@ static s7_pointer g_sv_unlet_ref(s7_scheme *sc, s7_pointer args) {return(initial
 static s7_pointer symbol_to_value_chooser(s7_scheme *sc, s7_pointer f, int32_t unused_args, s7_pointer expr)
 {
   s7_pointer arg1 = cadr(expr), arg2 = (is_pair(cddr(expr))) ? caddr(expr) : sc->F;
-  if ((is_quoted_symbol(arg1)) && (!is_keyword(cadr(arg1))) && (is_pair(arg2)) && (car(arg2) == sc->unlet_symbol))
+  if ((is_quoted_symbol(arg1)) && (!is_keyword(cadr(arg1))) && (is_pair(arg2)) && (car(arg2) == sc->unlet_symbol)) /* old-style (obsolete) unlet as third arg(!) */
     return(sc->sv_unlet_ref);
   return(f);
 }
@@ -70996,7 +70990,7 @@ static void init_choosers(s7_scheme *sc)
   set_function_chooser(sc->member_symbol, member_chooser);
 
   /* memq */
-  f = set_function_chooser(sc->memq_symbol, memq_chooser);  /* is pure-s7, use member here */
+  f = set_function_chooser(sc->memq_symbol, memq_chooser);  /* in pure-s7, use member here */
   sc->memq_2 = make_function_with_class(sc, f, "memq", g_memq_2, 2, 0, false);
   sc->memq_3 = make_function_with_class(sc, f, "memq", g_memq_3, 2, 0, false);
   sc->memq_4 = make_function_with_class(sc, f, "memq", g_memq_4, 2, 0, false);
@@ -71023,7 +71017,6 @@ static void init_choosers(s7_scheme *sc)
   /* let-ref */
   f = set_function_chooser(sc->let_ref_symbol, let_ref_chooser);
   sc->simple_let_ref = make_function_with_class(sc, f, "let-ref", g_simple_let_ref, 2, 0, false);
-  sc->unlet_ref = make_function_with_class(sc, f, "let-ref", g_unlet_ref, 2, 0, false);
   sc->rootlet_ref = make_function_with_class(sc, f, "let-ref", g_rootlet_ref, 2, 0, false);
 
   /* let-set */
@@ -98568,60 +98561,60 @@ int main(int argc, char **argv)
 #endif
 
 /* --------------------------------------------------------------
- *           19.0   20.9   21.0   22.0   23.0   24.0   24.4
+ *           19.0   21.0   22.0   23.0   24.0   24.4
  * --------------------------------------------------------------
- * tpeak      148    115    114    108    105    102    103
- * tref      1081    691    687    463    459    464    410
- * index            1026   1016    973    967    972    971
- * tmock            1177   1165   1057   1019   1032   1025
- * tvect     3408   2519   2464   1772   1669   1497   1454
- * tauto                          2562   2048   1729   1731
- * texit     1884   1930   1950   1778   1741   1770   1770
- * s7test           1873   1831   1818   1829   1830   1875
- * lt        2222   2187   2172   2150   2185   1950   1950
- * dup              3805   3788   2492   2239   2097   2003
- * thook     7651                 2590   2030   2046   2009
- * tread            2440   2421   2419   2408   2405   2260
- * tcopy            8035   5546   2539   2375   2386   2341
- * titer     3657   2865   2842   2641   2509   2449   2443
- * trclo     8031   2735   2574   2454   2445   2449   2453
- * tmat             3065   3042   2524   2578   2590   2515
- * tload                          3046   2404   2566   2534
- * fbench    2933   2688   2583   2460   2430   2478   2573
- * tsort     3683   3105   3104   2856   2804   2858   2858
- * tio              3816   3752   3683   3620   3583   3127
- * tobj             4016   3970   3828   3577   3508   3452
- * teq              4068   4045   3536   3486   3544   3595
- * tmac             3950   3873   3033   3677   3677   3683
- * tclo      6362   4787   4735   4390   4384   4474   4345
- * tcase            4960   4793   4439   4430   4439   4430
- * tlet      11.0   8970   6974   5609   5980   5965   4500
- * tfft             7820   7729   4755   4476   4536   4544
- * tstar            6139   5923   5519   4449   4550   4535
- * tmap             8869   8774   4489   4541   4586   4590
- * tshoot           5525   5447   5183   5055   5034   5060
- * tform            5357   5348   5307   5316   5084   5098
- * tstr      10.0   6880   6342   5488   5162   5180   5195
- * tnum             6348   6013   5433   5396   5409   5432
- * tgsl             8485   7802   6373   6282   6208   6181
- * tari      15.0   13.0   12.7   6827   6543   6278   6184
- * tlist     9219   7896   7546   6558   6240   6300   6306
- * tset                                  6260   6364   6308
- * trec      19.5   6936   6922   6521   6588   6583   6584
- * tleft     11.1   10.4   10.2   7657   7479   7627   7615
- * tmisc                                 8142   7631   7694
- * tlamb                                 8003   7941   7956
- * tgc              11.9   11.1   8177   7857   7986   8012
- * thash            11.8   11.7   9734   9479   9526   9256
- * cb        12.9   11.2   11.0   9658   9564   9609   9654
- * tmap-hash                           1671.0 1467.0   10.3
- * tmv              16.0   15.4   14.7   14.5   14.4   11.9
- * tgen             11.2   11.4   12.0   12.1   12.2   12.3
- * tall      15.9   15.6   15.6   15.6   15.6   15.1   15.1
- * timp             25.4   24.4   20.0   19.6   19.7   15.6
- * calls            36.7   37.5   37.0   37.5   37.1   37.2
- * sg                             55.9   55.8   55.4   55.4
- * tbig            177.4  175.8  156.5  148.1  146.2  146.1
+ * tpeak      148    114    108    105    102    103
+ * tref      1081    687    463    459    464    410
+ * index            1016    973    967    972    971
+ * tmock            1165   1057   1019   1032   1025
+ * tvect     3408   2464   1772   1669   1497   1454
+ * tauto                   2562   2048   1729   1731
+ * texit     1884   1950   1778   1741   1770   1770
+ * s7test           1831   1818   1829   1830   1875
+ * lt        2222   2172   2150   2185   1950   1950
+ * dup              3788   2492   2239   2097   2003
+ * thook     7651          2590   2030   2046   2009
+ * tread            2421   2419   2408   2405   2260
+ * tcopy            5546   2539   2375   2386   2341
+ * titer     3657   2842   2641   2509   2449   2443
+ * trclo     8031   2574   2454   2445   2449   2453
+ * tmat             3042   2524   2578   2590   2515
+ * tload                   3046   2404   2566   2534
+ * fbench    2933   2583   2460   2430   2478   2573
+ * tsort     3683   3104   2856   2804   2858   2858
+ * tio              3752   3683   3620   3583   3127
+ * tobj             3970   3828   3577   3508   3452
+ * teq              4045   3536   3486   3544   3595
+ * tmac             3873   3033   3677   3677   3683
+ * tclo      6362   4735   4390   4384   4474   4345
+ * tcase            4793   4439   4430   4439   4430
+ * tlet      11.0   6974   5609   5980   5965   4500
+ * tfft             7729   4755   4476   4536   4544
+ * tstar            5923   5519   4449   4550   4535
+ * tmap             8774   4489   4541   4586   4590
+ * tshoot           5447   5183   5055   5034   5060
+ * tform            5348   5307   5316   5084   5098
+ * tstr      10.0   6342   5488   5162   5180   5195
+ * tnum             6013   5433   5396   5409   5432
+ * tgsl             7802   6373   6282   6208   6181
+ * tari      15.0   12.7   6827   6543   6278   6184
+ * tlist     9219   7546   6558   6240   6300   6306
+ * tset                           6260   6364   6308
+ * trec      19.5   6922   6521   6588   6583   6584
+ * tleft     11.1   10.2   7657   7479   7627   7615
+ * tmisc                          8142   7631   7694
+ * tlamb                          8003   7941   7956
+ * tgc              11.1   8177   7857   7986   8012
+ * thash            11.7   9734   9479   9526   9256
+ * cb        12.9   11.0   9658   9564   9609   9654
+ * tmap-hash                    1671.0 1467.0   10.3
+ * tgen             11.4   12.0   12.1   12.2   12.3
+ * tall      15.9   15.6   15.6   15.6   15.1   15.1
+ * timp             24.4   20.0   19.6   19.7   15.6
+ * tmv              21.9   21.1   20.7   20.6   17.6
+ * calls            37.5   37.0   37.5   37.1   37.2
+ * sg                      55.9   55.8   55.4   55.4
+ * tbig            175.8  156.5  148.1  146.2  146.1
  * --------------------------------------------------------------
  *
  * snd-region|select: (since we can't check for consistency when set), should there be more elaborate writable checks for default-output-header|sample-type?
@@ -98634,17 +98627,17 @@ int main(int argc, char **argv)
  * values opts: t695
  * if closure sig, add some way to have arg types checked by s7? (*s7* :check-signature?)
  * *s7* switch to turn off the quote->#_quote switch (and the rest?) -- or do it only in a macro body?
- *   or make (eq? x 'quote) -> (memq x '(quote #_quote))??
- * easier access to closure-args (so thunk is (null? args) etc, s7_closure_args exists (also let/body))
- *   let/body/args are mutable??
+ * easier access to closure-args (so thunk is (null? args) etc, s7_closure_args exists (also let/body
  * opt: call/exit, tc+fx cases: opt_p_fx_any, clo_na_to_na
- *   no fx_values* 7 t695 cases work now, rest need new ops like op_c_sc or clo+values etc
- *   can opt_p_fx_any see the tc cases?
- * unlet: (outlet (unlet)) is (curlet)
+ *   tmv: no fx_values* rest need new ops like op_c_sc or clo+values etc, 927 ops currently
+ * all the (non-opt) unlet cases added are pointless -- outlet symbol->value let-ref|set -- how to avoid calling (unlet)?
+ *   need to tie these into opt (outlet etc), and find some way to skip (unlet)
+ *   maybe change unlet to just return an is_unlet let except when an arg to with-let? or fxify the unlet accessor for that? or unlet-chooser for this?
+ *   can outlet_chooser set its argument's fn_proc? -- like substring_uncopied? set_c_function(arg) to unlet_uncopied
  * (set! curlet rootlet) (curlet): (rootlet) -- (let ((abs 32)) (set! curlet rootlet) (let-ref (curlet) 'abs)) abs!
  *    rootlet also, but unlet is immutable: (set! unlet curlet) error: can't set! unlet (it is immutable)
  *    (let () (set! (outlet (rootlet)) (curlet))): (inlet)
  *    (set! #_curlet #_rootlet): error: set! can't change curlet (a c-function), (set! curlet rootlet) but
  *    (set! curlet rootlet) is ok? returns rootlet (so error msg above is misleading)
- *    (set! abs floor) (abs 3.1) 3 -- does this confuse the optimizer?
+ *    maybe mark in code that initial_value is in use?
  */

@@ -79,6 +79,123 @@
 
 (define len 1000000)
 
+(define (f0) ; 45 opt_dotimes values_p
+  (do ((i 0 (+ i 1)))
+      ((= i len))
+    (unless (eq? (values) #<unspecified>)
+      (display "oops\n"))))
+;(f0)
+
+(define (f01) ; 40 opt_dotimes values_p_p
+  (do ((i 0 (+ i 1)))
+      ((= i len))
+    (unless (= (values i) i)
+      (display "oops\n"))))
+;(f01)
+
+(define (f1 x) (+ x 1))
+(define (f02) ; 87 eval + fx_safe_closure_s_to_add1 -> 49 opt_dotimes + fx... (using cdr)??
+  (do ((i 0 (+ i 1)))
+      ((= i len))
+    (f1 i)))
+;(f02)
+
+(define (f021) ; 129 opt_dotimes fx_safe_closure_a_to_sc (using car)
+  (do ((i 0 (+ i 1)))
+      ((= i len))
+    (unless (= (f1 (abs i)) (+ i 1))
+      (display "oops\n"))))
+;(f021)
+
+(define (f0211) ; 95 using car
+  (do ((i 0 (+ i 1)))
+      ((= i len))
+    (f1 (abs i))))
+;(f0211)
+
+(define (sum-1 n)
+  (let loop ((i n) (sum 0))
+    (if (< i 0)
+        sum
+        (loop (- i 1) (+ i sum)))))
+
+(define (f0212) ; 1435 op_tc_if_a_z_laa int+bool_optimize on every call!
+  (do ((i 0 (+ i 1)))
+      ((= i len))
+    (unless (= (f1 (sum-1 3)) 7) ;(+ (+ 3 2 1) 1)
+      (display (f1 (sum-1 3))))))
+;(f0212)
+
+(define (f2) ; 179 op_c_s+list->fn_proc->eval+op_safe_closure_p_a! -> 119 if safe -> values_p_p, need to use opt1_con in op_set_s_c
+             ;   eval=op_safe_closure_a_to_sc -- fx is called by eval! op_safe_dotimes->step_o
+             ; -> 81 opt_dotimes using car as above
+  (do ((i 0 (+ i 1)))
+      ((= i len))
+    (f1 (values i))))
+;(f2)
+
+(define (f022) ; 115 opt_dotimes fx_safe_closure_a_to_sc (using car)
+  (do ((i 0 (+ i 1)))
+      ((= i len))
+    (unless (= (f1 (values i)) (+ i 1))
+      (display "oops\n"))))
+;(f022)
+
+(define (f3 x) (values x 1))
+(define (f4) ; 221 splice-in-values+eval+gc op_c_aa+op_closure_s_o: op_c_aa_unprotected if symbol\constant args? or better op_c_sc but is it worth an op?
+  (do ((i 0 (+ i 1)))
+      ((= i len))
+    (f3 i)))
+;(f4)
+
+(define (f5 x y) (+ x y))
+
+(define (f6) ; 659 eval+gc+splice+add_p_pp  op_c_aa+closure_s_o->eval_args et al!  op_safe_closure_p?
+  (do ((i 0 (+ i 1)))
+      ((= i len))
+    (f5 (f3 i))))
+;(f6)
+
+(define (f7) ; 394 same calls as above, op_c_aa as before
+  (do ((i 0 (+ i 1)))
+      ((= i len))
+    (+ 1 (f3 i))))
+;(f7)
+
+(define (f8 . args) (apply + args))
+(define (f9) ; 1114 same as above
+  (do ((i 0 (+ i 1)))
+      ((= i len))
+    (f8 (f3 i) (f3 (+ i 1)))))
+;(f9)
+;(display (f8 (f3 2) (f3 3))) (newline) ; 7
+
+(define (f10) ; 319 same as above
+  (do ((i 0 (+ i 1)))
+      ((= i len))
+    (+ 1 (values i 1))))
+;(f10)
+
+(define (f11) ; 984
+  (do ((i 0 (+ i 1)))
+      ((= i len))
+    (unless (= (+ 1 (values 2 (f3 i) 4)) (+ 8 i))
+      (display "oops\n"))))
+;(f11)
+
+#|
+291,046,404  s7.c:eval.isra.0 [/home/bil/motif-snd/repl]
+153,803,537  s7.c:add_p_pp [/home/bil/motif-snd/repl]
+ 95,000,606  s7.c:op_any_c_np_mv [/home/bil/motif-snd/repl]
+ 95,000,000  s7.c:splice_in_values [/home/bil/motif-snd/repl]
+ 93,751,344  s7.c:gc.isra.0 [/home/bil/motif-snd/repl]
+ 68,000,006  s7.c:op_any_c_np [/home/bil/motif-snd/repl]
+ 57,000,000  s7.c:g_add [/home/bil/motif-snd/repl]
+ 45,000,000  s7.c:copy_proper_list.part.0 [/home/bil/motif-snd/repl]
+ 23,000,583  /usr/include/x86_64-linux-gnu/bits/string_fortified.h:eval.isra.0
+ 16,000,000  s7.c:g_num_eq_2 [/home/bil/motif-snd/repl]
+|#
+
 (define (faddc) ; [607] -> [508 (no pair_append)] -> [384]
   (do ((i 0 (+ i 1)))
       ((= i len))
@@ -276,6 +393,22 @@
 
 (define (all-tests)
   (mvtest)
+
+  (f0)
+  (f01)
+  (f02)
+  (f021)
+  (f0211)
+  (f0212)
+  (f2)
+  (f022)
+  (f4)
+  (f6)
+  (f7)
+  (f9)
+  (f10)
+  (f11)
+
   (faddc)
   (fadds)
   (fadda)
@@ -300,8 +433,10 @@
 
 (all-tests)
 
+#|
 (when (provided? 'debugging)
   (display ((*s7* 'memory-usage) 'safe-lists))
   (newline))
+|#
 
 (exit)
