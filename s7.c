@@ -1382,9 +1382,9 @@ struct s7_scheme {
              vector_ref_2, vector_ref_3, vector_set_3, vector_set_4, read_char_1, dynamic_wind_unchecked, dynamic_wind_body, dynamic_wind_init, append_2,
              fv_ref_2, fv_ref_3, fv_set_3, fv_set_unchecked, iv_ref_2, iv_ref_3, iv_set_3, bv_ref_2, bv_ref_3, bv_set_3, vector_2, vector_3,
              list_0, list_1, list_2, list_3, list_4, list_set_i, hash_table_ref_2, hash_table_2, list_ref_at_0, list_ref_at_1, list_ref_at_2,
-             format_f, format_no_column, format_just_control_string, format_as_objstr, values_uncopied, int_log2, 
+             format_f, format_no_column, format_just_control_string, format_as_objstr, values_uncopied, int_log2, unlet_disabled, unlet_ref, outlet_unlet,
              memq_2, memq_3, memq_4, memq_any, tree_set_memq_syms, simple_inlet, sublet_curlet, profile_out, simple_list_values,
-             simple_let_ref, simple_let_set, sv_unlet_ref, rootlet_ref, geq_2, add_i_random, is_defined_in_rootlet;
+             simple_let_ref, simple_let_set, sv_unlet_ref, unlet_set, rootlet_ref, geq_2, add_i_random, is_defined_in_rootlet, is_defined_in_unlet;
 
   s7_pointer multiply_2, invert_1, invert_x, divide_2, divide_by_2, max_2, min_2, max_3, min_3,
              num_eq_2, num_eq_xi, num_eq_ix, less_xi, less_xf, less_x0, less_2, greater_xi, greater_xf, greater_2,
@@ -4251,7 +4251,7 @@ enum {OP_UNOPT, OP_GC_PROTECT, /* must be an even number of ops here, op_gc_prot
       OP_SAFE_CLOSURE_STAR_NA, HOP_SAFE_CLOSURE_STAR_NA, OP_SAFE_CLOSURE_STAR_NA_0, HOP_SAFE_CLOSURE_STAR_NA_0,
       OP_SAFE_CLOSURE_STAR_NA_1, HOP_SAFE_CLOSURE_STAR_NA_1, OP_SAFE_CLOSURE_STAR_NA_2, HOP_SAFE_CLOSURE_STAR_NA_2,
 
-      OP_C_SS, HOP_C_SS, OP_C_S, HOP_C_S, OP_READ_S, HOP_READ_S, OP_C_P, HOP_C_P, OP_C_AP, HOP_C_AP,
+      OP_C_SS, HOP_C_SS, OP_C_S, HOP_C_S, OP_C_SC, HOP_C_SC, OP_READ_S, HOP_READ_S, OP_C_P, HOP_C_P, OP_C_AP, HOP_C_AP,
       OP_C_A, HOP_C_A, OP_C_AA, HOP_C_AA, OP_C, HOP_C, OP_C_NC, HOP_C_NC, OP_C_NA, HOP_C_NA,
 
       OP_CL_S, HOP_CL_S, OP_CL_SS, HOP_CL_SS, OP_CL_A, HOP_CL_A, OP_CL_AA, HOP_CL_AA,
@@ -4469,7 +4469,7 @@ static const char* op_names[NUM_OPS] =
       "safe_closure*_na", "h_safe_closure*_na", "safe_closure*_na_0", "h_safe_closure*_na_0",
       "safe_closure*_na_1", "h_safe_closure*_na_1", "safe_closure*_na_2", "h_safe_closure*_na_2",
 
-      "c_ss", "h_c_ss", "c_s", "h_c_s", "read_s", "h_read_s", "c_p", "h_c_p", "c_ap", "h_c_ap",
+      "c_ss", "h_c_ss", "c_s", "h_c_s", "c_sc", "h_c_sc", "read_s", "h_read_s", "c_p", "h_c_p", "c_ap", "h_c_ap",
       "c_a", "h_c_a", "c_aa", "h_c_aa", "c", "h_c", "c_nc", "h_c_nc", "c_na", "h_c_na",
 
       "cl_s", "h_cl_s", "cl_ss", "h_cl_ss", "cl_a", "h_cl_a", "cl_aa", "h_cl_aa",
@@ -4623,30 +4623,30 @@ static bool is_h_optimized(s7_pointer p)
 }
 
 /* if this changes, remember to change lint.scm */
-typedef enum {SL_NO_FIELD=0, SL_ACCEPT_ALL_KEYWORD_ARGUMENTS, SL_AUTOLOADING, SL_BIGNUM_PRECISION, SL_CATCHES, SL_CPU_TIME, SL_C_TYPES, 
-	      SL_DEBUG, SL_DEFAULT_HASH_TABLE_LENGTH, SL_DEFAULT_RANDOM_STATE, SL_DEFAULT_RATIONALIZE_ERROR, SL_EQUIVALENT_FLOAT_EPSILON, 
-	      SL_EXPANSIONS, SL_FILENAMES, SL_FILE_NAMES, SL_FLOAT_FORMAT_PRECISION, SL_FREE_HEAP_SIZE, SL_GC_FREED, SL_GC_INFO, 
-	      SL_GC_PROTECTED_OBJECTS, SL_GC_RESIZE_HEAP_BY_4_FRACTION, SL_GC_RESIZE_HEAP_FRACTION, SL_GC_STATS, SL_GC_TEMPS_SIZE, 
-	      SL_GC_TOTAL_FREED, SL_HASH_TABLE_FLOAT_EPSILON, SL_HEAP_SIZE, SL_HISTORY, SL_HISTORY_ENABLED, SL_HISTORY_SIZE, 
-	      SL_INITIAL_STRING_PORT_LENGTH, SL_MAJOR_VERSION, SL_MAX_FORMAT_LENGTH, SL_MAX_HEAP_SIZE, SL_MAX_LIST_LENGTH, 
-	      SL_MAX_PORT_DATA_SIZE, SL_MAX_STACK_SIZE, SL_MAX_STRING_LENGTH, SL_MAX_VECTOR_DIMENSIONS, SL_MAX_VECTOR_LENGTH, 
-	      SL_MEMORY_USAGE, SL_MINOR_VERSION, SL_MOST_NEGATIVE_FIXNUM, SL_MOST_POSITIVE_FIXNUM, SL_MUFFLE_WARNINGS, 
-	      SL_NUMBER_SEPARATOR, SL_OPENLETS, SL_OUTPUT_FILE_PORT_DATA_SIZE, SL_PRINT_LENGTH, SL_PROFILE, SL_PROFILE_INFO, 
-	      SL_PROFILE_PREFIX, SL_ROOTLET_SIZE, SL_SAFETY, SL_STACK, SL_STACKTRACE_DEFAULTS, SL_STACK_SIZE, SL_STACK_TOP, 
-	      SL_SYMBOL_PRINTER, SL_UNDEFINED_CONSTANT_WARNINGS, SL_UNDEFINED_IDENTIFIER_WARNINGS, SL_VERSION, 
+typedef enum {SL_NO_FIELD=0, SL_ACCEPT_ALL_KEYWORD_ARGUMENTS, SL_AUTOLOADING, SL_BIGNUM_PRECISION, SL_CATCHES, SL_CPU_TIME, SL_C_TYPES,
+	      SL_DEBUG, SL_DEFAULT_HASH_TABLE_LENGTH, SL_DEFAULT_RANDOM_STATE, SL_DEFAULT_RATIONALIZE_ERROR, SL_EQUIVALENT_FLOAT_EPSILON,
+	      SL_EXPANSIONS, SL_FILENAMES, SL_FILE_NAMES, SL_FLOAT_FORMAT_PRECISION, SL_FREE_HEAP_SIZE, SL_GC_FREED, SL_GC_INFO,
+	      SL_GC_PROTECTED_OBJECTS, SL_GC_RESIZE_HEAP_BY_4_FRACTION, SL_GC_RESIZE_HEAP_FRACTION, SL_GC_STATS, SL_GC_TEMPS_SIZE,
+	      SL_GC_TOTAL_FREED, SL_HASH_TABLE_FLOAT_EPSILON, SL_HEAP_SIZE, SL_HISTORY, SL_HISTORY_ENABLED, SL_HISTORY_SIZE,
+	      SL_INITIAL_STRING_PORT_LENGTH, SL_MAJOR_VERSION, SL_MAX_FORMAT_LENGTH, SL_MAX_HEAP_SIZE, SL_MAX_LIST_LENGTH,
+	      SL_MAX_PORT_DATA_SIZE, SL_MAX_STACK_SIZE, SL_MAX_STRING_LENGTH, SL_MAX_VECTOR_DIMENSIONS, SL_MAX_VECTOR_LENGTH,
+	      SL_MEMORY_USAGE, SL_MINOR_VERSION, SL_MOST_NEGATIVE_FIXNUM, SL_MOST_POSITIVE_FIXNUM, SL_MUFFLE_WARNINGS,
+	      SL_NUMBER_SEPARATOR, SL_OPENLETS, SL_OUTPUT_FILE_PORT_DATA_SIZE, SL_PRINT_LENGTH, SL_PROFILE, SL_PROFILE_INFO,
+	      SL_PROFILE_PREFIX, SL_ROOTLET_SIZE, SL_SAFETY, SL_STACK, SL_STACKTRACE_DEFAULTS, SL_STACK_SIZE, SL_STACK_TOP,
+	      SL_SYMBOL_PRINTER, SL_UNDEFINED_CONSTANT_WARNINGS, SL_UNDEFINED_IDENTIFIER_WARNINGS, SL_VERSION,
 	      SL_NUM_FIELDS} s7_starlet_t;
 
 static const char *s7_starlet_names[SL_NUM_FIELDS] =
-  {"no-field", "accept-all-keyword-arguments", "autoloading?", "bignum-precision", "catches", "cpu-time", "c-types", 
-   "debug", "default-hash-table-length", "default-random-state", "default-rationalize-error", "equivalent-float-epsilon", 
-   "expansions?", "filenames", "file-names", "float-format-precision", "free-heap-size", "gc-freed", "gc-info", 
-   "gc-protected-objects", "gc-resize-heap-by-4-fraction", "gc-resize-heap-fraction", "gc-stats", "gc-temps-size", 
-   "gc-total-freed", "hash-table-float-epsilon", "heap-size", "history", "history-enabled", "history-size", 
-   "initial-string-port-length", "major-version", "max-format-length", "max-heap-size", "max-list-length", 
-   "max-port-data-size", "max-stack-size", "max-string-length", "max-vector-dimensions", "max-vector-length", 
-   "memory-usage", "minor-version", "most-negative-fixnum", "most-positive-fixnum", "muffle-warnings?", 
-   "number-separator", "openlets", "output-port-data-size", "print-length", "profile", "profile-info", 
-   "profile-prefix", "rootlet-size", "safety", "stack", "stacktrace-defaults", "stack-size", "stack-top", 
+  {"no-field", "accept-all-keyword-arguments", "autoloading?", "bignum-precision", "catches", "cpu-time", "c-types",
+   "debug", "default-hash-table-length", "default-random-state", "default-rationalize-error", "equivalent-float-epsilon",
+   "expansions?", "filenames", "file-names", "float-format-precision", "free-heap-size", "gc-freed", "gc-info",
+   "gc-protected-objects", "gc-resize-heap-by-4-fraction", "gc-resize-heap-fraction", "gc-stats", "gc-temps-size",
+   "gc-total-freed", "hash-table-float-epsilon", "heap-size", "history", "history-enabled", "history-size",
+   "initial-string-port-length", "major-version", "max-format-length", "max-heap-size", "max-list-length",
+   "max-port-data-size", "max-stack-size", "max-string-length", "max-vector-dimensions", "max-vector-length",
+   "memory-usage", "minor-version", "most-negative-fixnum", "most-positive-fixnum", "muffle-warnings?",
+   "number-separator", "openlets", "output-port-data-size", "print-length", "profile", "profile-info",
+   "profile-prefix", "rootlet-size", "safety", "stack", "stacktrace-defaults", "stack-size", "stack-top",
    "symbol-printer", "undefined-constant-warnings", "undefined-identifier-warnings", "version"};
 
 static s7_pointer object_to_string_truncated(s7_scheme *sc, s7_pointer p);
@@ -6859,7 +6859,7 @@ static void sweep(s7_scheme *sc)
 
   gp = sc->strings;
   process_gc_list(liberate(sc, string_block(s1)));
-#if 0  
+#if 0
   fprintf(stderr, "--------------------------------------------------------------------------------\n");
   for (s7_int i = 0; i < gp->loc; i++)
     fprintf(stderr, "%s\n", string_value(gp->list[i]));
@@ -10361,6 +10361,7 @@ static inline s7_pointer g_simple_let_ref(s7_scheme *sc, s7_pointer args)
 }
 
 static s7_pointer g_rootlet_ref(s7_scheme *sc, s7_pointer args) {return(global_value(cadr(args)));}
+static s7_pointer g_unlet_ref(s7_scheme *sc, s7_pointer args) {return(initial_value(cadr(args)));}
 
 static s7_pointer let_ref_chooser(s7_scheme *sc, s7_pointer f, int32_t unused_args, s7_pointer expr)
 {
@@ -10373,6 +10374,11 @@ static s7_pointer let_ref_chooser(s7_scheme *sc, s7_pointer f, int32_t unused_ar
 	  return(sc->simple_let_ref);
 	}
       if (car(arg1) == sc->rootlet_symbol) return(sc->rootlet_ref);
+      if (car(arg1) == sc->unlet_symbol)
+	{
+	  set_c_function(arg1, sc->unlet_disabled);
+	  return(sc->unlet_ref);
+	}
     }
   return(f);
 }
@@ -10518,6 +10524,12 @@ static s7_pointer g_simple_let_set(s7_scheme *sc, s7_pointer args)
   return(slot_value(y));
 }
 
+static s7_pointer g_unlet_set(s7_scheme *sc, s7_pointer args)
+{
+  immutable_object_error_nr(sc, set_elist_2(sc, wrap_string(sc, "~S is immutable in (unlet)", 26), cadr(args)));
+  return(sc->F);
+}
+
 static s7_pointer let_set_chooser(s7_scheme *sc, s7_pointer f, int32_t unused_args, s7_pointer expr)
 {
   if (optimize_op(expr) == HOP_SAFE_C_opSq_CS)
@@ -10528,6 +10540,11 @@ static s7_pointer let_set_chooser(s7_scheme *sc, s7_pointer f, int32_t unused_ar
 	  (!is_possibly_constant(cadr(arg2))) &&
 	  (!is_possibly_constant(arg3)))
 	return(sc->simple_let_set);
+      if (car(arg1) == sc->unlet_symbol)
+	{
+	  set_c_function(arg1, sc->unlet_disabled);
+	  return(sc->unlet_set);
+	}
     }
   return(f);
 }
@@ -10664,11 +10681,24 @@ static s7_pointer outlet_p_p(s7_scheme *sc, s7_pointer let)
   return((let == sc->rootlet) ? sc->rootlet : let_outlet(let)); /* rootlet check is needed(!) */
 }
 
+static s7_pointer g_unlet_disabled(s7_scheme *sc, s7_pointer args) {return(sc->F);}
+static s7_pointer g_outlet_unlet(s7_scheme *sc, s7_pointer args) {return(sc->curlet);}
+
 static s7_pointer g_outlet(s7_scheme *sc, s7_pointer args)
 {
   #define H_outlet "(outlet let) is the environment that contains let."
   #define Q_outlet s7_make_signature(sc, 2, sc->is_let_symbol, sc->is_let_symbol)
   return(outlet_p_p(sc, car(args)));
+}
+
+static s7_pointer outlet_chooser(s7_scheme *sc, s7_pointer f, int32_t num_args, s7_pointer expr)
+{
+  if ((num_args == 1) && (is_pair(cadr(expr))) && (caadr(expr) == sc->unlet_symbol))
+    {
+      set_c_function(cadr(expr), sc->unlet_disabled);
+      return(sc->outlet_unlet);
+    }
+  return(f);
 }
 
 static s7_pointer g_set_outlet(s7_scheme *sc, s7_pointer args)
@@ -10854,7 +10884,10 @@ static s7_pointer symbol_to_value_chooser(s7_scheme *sc, s7_pointer f, int32_t u
 {
   s7_pointer arg1 = cadr(expr), arg2 = (is_pair(cddr(expr))) ? caddr(expr) : sc->F;
   if ((is_quoted_symbol(arg1)) && (!is_keyword(cadr(arg1))) && (is_pair(arg2)) && (car(arg2) == sc->unlet_symbol)) /* old-style (obsolete) unlet as third arg(!) */
-    return(sc->sv_unlet_ref);
+    {
+      set_c_function(arg2, sc->unlet_disabled);
+      return(sc->sv_unlet_ref);
+    }
   return(f);
 }
 
@@ -11419,6 +11452,8 @@ Only the let is searched if ignore-globals is not #f."
   return((is_global(sym)) ? sc->T : make_boolean(sc, is_slot(s7_slot(sc, sym))));
 }
 
+static s7_pointer g_is_defined_in_unlet(s7_scheme *sc, s7_pointer args) {return(make_boolean(sc, initial_value(car(args)) != sc->undefined));}
+
 static s7_pointer g_is_defined_in_rootlet(s7_scheme *sc, s7_pointer args) /* aimed at lint.scm */
 {
   /* called because is_defined_chooser below noticed arg2=(rootlet) and no arg3 and arg1 is a normal symbol (not a keyword).
@@ -11433,13 +11468,21 @@ static s7_pointer g_is_defined_in_rootlet(s7_scheme *sc, s7_pointer args) /* aim
 
 static s7_pointer is_defined_chooser(s7_scheme *sc, s7_pointer f, int32_t args, s7_pointer expr)
 {
-  if ((args == 2) && (is_normal_symbol(cadr(expr)))) /* i.e. not a keyword */
+  if (args == 2)
     {
       s7_pointer e = caddr(expr);
-      if ((is_pair(e)) && (is_null(cdr(e))) && (car(e) == sc->rootlet_symbol))
+      if ((is_pair(e)) && (is_null(cdr(e))))
 	{
-	  set_safe_optimize_op(expr, HOP_SAFE_C_NC);
-	  return(sc->is_defined_in_rootlet);
+	  if ((car(e) == sc->rootlet_symbol) && (is_normal_symbol(cadr(expr)))) /* i.e. not a keyword */
+	    {
+	      set_safe_optimize_op(expr, HOP_SAFE_C_NC);
+	      return(sc->is_defined_in_rootlet);
+	    }
+	  if (car(e) == sc->unlet_symbol)
+	    {
+	      set_c_function(e, sc->unlet_disabled);
+	      return(sc->is_defined_in_unlet);
+	    }
 	}}
   return(f);
 }
@@ -64259,7 +64302,7 @@ static bool p_pp_ok(s7_scheme *sc, opt_info *opc, s7_pointer s_func, s7_pointer 
 	      return_false(sc, car_x);
 	    }}
 
-      if ((car(car_x) == sc->let_ref_symbol) && (is_pair(arg1)) && 
+      if ((car(car_x) == sc->let_ref_symbol) && (is_pair(arg1)) &&
 	  ((is_symbol_and_keyword(arg2)) || ((is_quoted_symbol(arg2)))) &&
 	  ((car(arg1) == sc->unlet_symbol) || (car(arg1) == sc->rootlet_symbol)))
 	return(opt_unlet_rootlet_ref(sc, opc, arg1, (is_pair(arg2)) ? cadr(arg2) : keyword_symbol(arg2), car_x));
@@ -70806,6 +70849,7 @@ static void init_choosers(s7_scheme *sc)
   /* defined? */
   f = set_function_chooser(sc->is_defined_symbol, is_defined_chooser);
   sc->is_defined_in_rootlet = make_function_with_class(sc, f, "defined?", g_is_defined_in_rootlet, 2, 0, false);
+  sc->is_defined_in_unlet = make_function_with_class(sc, f, "defined?", g_is_defined_in_unlet, 2, 0, false);
 
   /* char=? */
   f = set_function_chooser(sc->char_eq_symbol, char_equal_chooser);
@@ -71006,6 +71050,11 @@ static void init_choosers(s7_scheme *sc)
   sc->dynamic_wind_body = make_unsafe_function_with_class(sc, f, "dynamic-wind", g_dynamic_wind_body, 3, 0, false);
   sc->dynamic_wind_init = make_unsafe_function_with_class(sc, f, "dynamic-wind", g_dynamic_wind_init, 3, 0, false);
 
+  /* outlet */
+  f = set_function_chooser(sc->outlet_symbol, outlet_chooser);
+  sc->unlet_disabled = make_function_with_class(sc, f, "unlet", g_unlet_disabled, 0, 0, false);
+  sc->outlet_unlet = make_function_with_class(sc, f, "outlet", g_outlet_unlet, 1, 0, false);
+
   /* inlet */
   f = set_function_chooser(sc->inlet_symbol, inlet_chooser);
   sc->simple_inlet = make_function_with_class(sc, f, "inlet", g_simple_inlet, 0, 0, true);
@@ -71018,10 +71067,12 @@ static void init_choosers(s7_scheme *sc)
   f = set_function_chooser(sc->let_ref_symbol, let_ref_chooser);
   sc->simple_let_ref = make_function_with_class(sc, f, "let-ref", g_simple_let_ref, 2, 0, false);
   sc->rootlet_ref = make_function_with_class(sc, f, "let-ref", g_rootlet_ref, 2, 0, false);
+  sc->unlet_ref = make_function_with_class(sc, f, "let-ref", g_unlet_ref, 2, 0, false);
 
   /* let-set */
   f = set_function_chooser(sc->let_set_symbol, let_set_chooser);
   sc->simple_let_set = make_function_with_class(sc, f, "let-set!", g_simple_let_set, 3, 0, false);
+  sc->unlet_set = make_function_with_class(sc, f, "let-set!", g_unlet_set, 3, 0, false);
 
   /* values */
   f = set_function_chooser(sc->values_symbol, values_chooser);
@@ -72213,7 +72264,11 @@ static opt_t optimize_func_two_args(s7_scheme *sc, s7_pointer expr, s7_pointer f
 			  set_optimize_op(expr, hop + OP_SAFE_C_CS);
 			}}
 		  return(OPT_T);
-		}}
+		}
+	      else
+		if ((symbols == 1) && (is_normal_symbol(arg1))) /* arg2 must be constant since pairs==0 */
+		  set_optimize_op(expr, hop + OP_C_SC);
+	    }
 	  return(OPT_F);
 	}
 
@@ -90026,6 +90081,12 @@ static inline void op_c_ss(s7_scheme *sc)
   sc->value = fn_proc(sc->code)(sc, sc->args);
 }
 
+static void op_c_sc(s7_scheme *sc)
+{
+  sc->args = list_2(sc, lookup(sc, cadr(sc->code)), caddr(sc->code));
+  sc->value = fn_proc(sc->code)(sc, sc->args);
+}
+
 static void op_c_ap(s7_scheme *sc)
 {
   sc->args = fx_call(sc, cdr(sc->code));
@@ -92639,6 +92700,9 @@ static s7_pointer eval(s7_scheme *sc, opcode_t first_op)
 
 	case OP_C_SS: if (!c_function_is_ok(sc, sc->code)) break;
 	case HOP_C_SS: op_c_ss(sc); continue;
+
+	case OP_C_SC: if (!c_function_is_ok(sc, sc->code)) break;
+	case HOP_C_SC: op_c_sc(sc); continue;
 
 	case OP_C_AP: if (!c_function_is_ok(sc, sc->code)) break;
 	case HOP_C_AP: op_c_ap(sc); goto EVAL;
@@ -95532,7 +95596,7 @@ static s7_pointer s7_starlet_set_1(s7_scheme *sc, s7_pointer sym, s7_pointer val
 	{
 	  if (!is_any_procedure(val))
 	    error_nr(sc, sc->wrong_type_arg_symbol,
-		     set_elist_4(sc, wrap_string(sc, "(set! (*s7* '~A) ~S): new value is ~A but should be a function or #f", 68), 
+		     set_elist_4(sc, wrap_string(sc, "(set! (*s7* '~A) ~S): new value is ~A but should be a function or #f", 68),
 				 sym, val, object_type_name(sc, val)));
 	  if (!s7_is_aritable(sc, val, 1))
 	    error_nr(sc, sc->wrong_type_arg_symbol,
@@ -98187,7 +98251,7 @@ s7_scheme *s7_init(void)
   s7_define_function(sc, "report-missed-calls", g_report_missed_calls, 0, 0, false, NULL); /* tc/recur tests in s7test.scm */
   if (strcmp(op_names[HOP_SAFE_C_PP], "h_safe_c_pp") != 0) fprintf(stderr, "c op_name: %s\n", op_names[HOP_SAFE_C_PP]);
   if (strcmp(op_names[OP_SET_WITH_LET_2], "set_with_let_2") != 0) fprintf(stderr, "set op_name: %s\n", op_names[OP_SET_WITH_LET_2]);
-  if (NUM_OPS != 927) fprintf(stderr, "size: cell: %d, block: %d, max op: %d, opt: %d\n", (int)sizeof(s7_cell), (int)sizeof(block_t), NUM_OPS, (int)sizeof(opt_info));
+  if (NUM_OPS != 929) fprintf(stderr, "size: cell: %d, block: %d, max op: %d, opt: %d\n", (int)sizeof(s7_cell), (int)sizeof(block_t), NUM_OPS, (int)sizeof(opt_info));
   /* cell size: 48, 120 if debugging, block size: 40, opt: 128 or 280 */
   if (false) gdb_break();
 #endif
@@ -98611,7 +98675,7 @@ int main(int argc, char **argv)
  * tgen             11.4   12.0   12.1   12.2   12.3
  * tall      15.9   15.6   15.6   15.6   15.1   15.1
  * timp             24.4   20.0   19.6   19.7   15.6
- * tmv              21.9   21.1   20.7   20.6   17.6
+ * tmv              21.9   21.1   20.7   20.6   17.4
  * calls            37.5   37.0   37.5   37.1   37.2
  * sg                      55.9   55.8   55.4   55.4
  * tbig            175.8  156.5  148.1  146.2  146.1
@@ -98625,19 +98689,9 @@ int main(int argc, char **argv)
  * need some print-length/print-elements distinction for vector/pair etc [which to choose if both set?]
  * 73317 vars_opt_ok problem
  * values opts: t695
- * if closure sig, add some way to have arg types checked by s7? (*s7* :check-signature?)
+ * if closure signature exists, add some way to have arg types checked by s7? (*s7* :check-signature?)
  * *s7* switch to turn off the quote->#_quote switch (and the rest?) -- or do it only in a macro body?
  * easier access to closure-args (so thunk is (null? args) etc, s7_closure_args exists (also let/body
- * opt: call/exit, tc+fx cases: opt_p_fx_any, clo_na_to_na
- *   tmv: no fx_values* rest need new ops like op_c_sc or clo+values etc, 927 ops currently
- * all the (non-opt) unlet cases added are pointless -- outlet symbol->value let-ref|set -- how to avoid calling (unlet)?
- *   need to tie these into opt (outlet etc), and find some way to skip (unlet)
- *   maybe change unlet to just return an is_unlet let except when an arg to with-let? or fxify the unlet accessor for that? or unlet-chooser for this?
- *   can outlet_chooser set its argument's fn_proc? -- like substring_uncopied? set_c_function(arg) to unlet_uncopied
- * (set! curlet rootlet) (curlet): (rootlet) -- (let ((abs 32)) (set! curlet rootlet) (let-ref (curlet) 'abs)) abs!
- *    rootlet also, but unlet is immutable: (set! unlet curlet) error: can't set! unlet (it is immutable)
- *    (let () (set! (outlet (rootlet)) (curlet))): (inlet)
- *    (set! #_curlet #_rootlet): error: set! can't change curlet (a c-function), (set! curlet rootlet) but
- *    (set! curlet rootlet) is ok? returns rootlet (so error msg above is misleading)
- *    maybe mark in code that initial_value is in use?
+ * opt: call/exit, tc+fx cases: opt_p_fx_any, clo_na_to_na, tmv: clo+values etc
+ * (set! #_curlet #_rootlet): error: set! can't change curlet (a c-function), (set! curlet rootlet), maybe mark in code that initial_value is in use?
  */
