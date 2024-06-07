@@ -137,14 +137,14 @@
 	      nan? negative? not null? number->string number? numerator
 	      object->let object->string odd? openlet? or outlet output-port? owlet
 	      pair-line-number pair-filename pair? port-closed? port-filename port-line-number positive? documentation
-	      setter signature procedure-source procedure? proper-list? provided?
+	      setter signature procedure-arglist procedure-source procedure? proper-list? provided?
 	      quasiquote quote quotient
 	      random-state random-state->list random-state? rational? rationalize real-part real? remainder reverse rootlet round
 	      sequence? sin sinh square sqrt stacktrace string string->list string->number string->symbol string->keyword string-append
 	      string-ci<=? string-ci<? string-ci=? string-ci>=? string-ci>? string-downcase string-length
 	      string-position string-ref string-upcase string<=? string<? string=? string>=? string>? string?
 	      sublet substring subvector? subvector-position subvector-vector
-	      symbol symbol->dynamic-value symbol->keyword symbol->string symbol->value symbol? syntax?
+	      symbol symbol->dynamic-value symbol-initial-value symbol->keyword symbol->string symbol->value symbol? syntax?
 	      tan tanh tree-leaves tree-memq tree-set-memq tree-count tree-cyclic? truncate type-of
 	      unless unspecified? undefined?
 	      values vector vector-append vector->list vector-dimensions vector-dimension vector-rank vector-length vector-ref vector-typer vector?
@@ -199,8 +199,8 @@
 			         byte-vector make-byte-vector hash-table  make-hash-table hash-table-ref hash-table-key-typer hash-table-value-typer
 			         hash-table-set! hash-table-entries cyclic-sequences call/cc call-with-current-continuation
 			         call-with-exit load autoload eval eval-string apply for-each map dynamic-wind values
-			         catch throw error documentation signature help procedure-source funclet
-			         setter arity aritable? not eq? eqv? equal? equivalent? gc emergency-exit
+			         catch throw error documentation signature help procedure-arglist procedure-source funclet
+			         setter arity aritable? not eq? eqv? equal? equivalent? gc emergency-exit symbol-initial-value
 			         exit dilambda make-hook hook-functions stacktrace tree-leaves tree-memq object->let
 				 getenv directory? file-exists? type-of immutable! immutable? byte-vector-set! syntax?
 				 list-values apply-values unquote set-current-output-port unspecified? undefined? byte-vector-ref
@@ -10877,7 +10877,7 @@
 					history-size profile profile-info profile-prefix autoloading? accept-all-keyword-arguments
 					muffle-warnings? most-positive-fixnum most-negative-fixnum output-port-data-size debug version
 					gc-temps-size gc-resize-heap-fraction gc-resize-heap-by-4-fraction openlets expansions?
-					number-separator symbol-printer))
+					number-separator symbol-quote? symbol-printer))
 			    h)))
 	   (lambda (caller head form env)
 	     (if (len=2? form)

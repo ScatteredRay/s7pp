@@ -1154,7 +1154,7 @@ struct s7_scheme {
   uint32_t gc_stats, gensym_counter, f_class, add_class, multiply_class, subtract_class, num_eq_class;
   int32_t format_column, error_argnum;
   uint64_t capture_let_counter;
-  bool short_print, is_autoloading, in_with_let, object_out_locked, has_openlets, is_expanding, accept_all_keyword_arguments, muffle_warnings;
+  bool short_print, is_autoloading, in_with_let, object_out_locked, has_openlets, is_expanding, accept_all_keyword_arguments, muffle_warnings, symbol_quote;
   bool got_tc, got_rec, not_tc;
   s7_int rec_tc_args, continuation_counter;
   int64_t let_number;
@@ -1295,7 +1295,7 @@ struct s7_scheme {
              denominator_symbol, dilambda_symbol, display_symbol, divide_symbol, documentation_symbol, dynamic_wind_symbol, dynamic_unwind_symbol,
              num_eq_symbol, error_symbol, eval_string_symbol, eval_symbol, exact_to_inexact_symbol, exit_symbol, exp_symbol, expt_symbol,
              features_symbol, file__symbol, fill_symbol, float_vector_ref_symbol, float_vector_set_symbol, float_vector_symbol, floor_symbol,
-             flush_output_port_symbol, for_each_symbol, format_symbol, funclet_symbol, _function__symbol,
+             flush_output_port_symbol, for_each_symbol, format_symbol, funclet_symbol, _function__symbol, procedure_arglist_symbol,
              gc_symbol, gcd_symbol, gensym_symbol, geq_symbol, get_output_string_symbol, gt_symbol,
              hash_table_entries_symbol, hash_table_key_typer_symbol, hash_table_ref_symbol, hash_table_set_symbol, hash_table_symbol,
              hash_table_value_typer_symbol, help_symbol,
@@ -4633,7 +4633,7 @@ typedef enum {SL_NO_FIELD=0, SL_ACCEPT_ALL_KEYWORD_ARGUMENTS, SL_AUTOLOADING, SL
 	      SL_MEMORY_USAGE, SL_MINOR_VERSION, SL_MOST_NEGATIVE_FIXNUM, SL_MOST_POSITIVE_FIXNUM, SL_MUFFLE_WARNINGS,
 	      SL_NUMBER_SEPARATOR, SL_OPENLETS, SL_OUTPUT_FILE_PORT_DATA_SIZE, SL_PRINT_LENGTH, SL_PROFILE, SL_PROFILE_INFO,
 	      SL_PROFILE_PREFIX, SL_ROOTLET_SIZE, SL_SAFETY, SL_STACK, SL_STACKTRACE_DEFAULTS, SL_STACK_SIZE, SL_STACK_TOP,
-	      SL_SYMBOL_PRINTER, SL_UNDEFINED_CONSTANT_WARNINGS, SL_UNDEFINED_IDENTIFIER_WARNINGS, SL_VERSION,
+	      SL_SYMBOL_QUOTE, SL_SYMBOL_PRINTER, SL_UNDEFINED_CONSTANT_WARNINGS, SL_UNDEFINED_IDENTIFIER_WARNINGS, SL_VERSION,
 	      SL_NUM_FIELDS} s7_starlet_t;
 
 static const char *s7_starlet_names[SL_NUM_FIELDS] =
@@ -4647,7 +4647,7 @@ static const char *s7_starlet_names[SL_NUM_FIELDS] =
    "memory-usage", "minor-version", "most-negative-fixnum", "most-positive-fixnum", "muffle-warnings?",
    "number-separator", "openlets", "output-port-data-size", "print-length", "profile", "profile-info",
    "profile-prefix", "rootlet-size", "safety", "stack", "stacktrace-defaults", "stack-size", "stack-top",
-   "symbol-printer", "undefined-constant-warnings", "undefined-identifier-warnings", "version"};
+   "symbol-quote?", "symbol-printer", "undefined-constant-warnings", "undefined-identifier-warnings", "version"};
 
 static s7_pointer object_to_string_truncated(s7_scheme *sc, s7_pointer p);
 static const char *type_name(s7_scheme *sc, s7_pointer arg, article_t article);
@@ -46038,6 +46038,22 @@ s7_pointer s7_closure_let(s7_scheme *sc, s7_pointer p)  {return((has_closure_let
 s7_pointer s7_closure_args(s7_scheme *sc, s7_pointer p) {return((has_closure_let(p)) ? closure_args(p) : sc->nil);}
 
 
+/* -------------------------------- procedure-arglist -------------------------------- */
+static s7_pointer g_procedure_arglist(s7_scheme *sc, s7_pointer args)
+{
+  #define H_procedure_arglist "(procedure-arglist func) returns func's arglist"
+  #define Q_procedure_arglist s7_make_signature(sc, 2, \
+                               s7_make_signature(sc, 2, sc->is_list_symbol, sc->is_symbol_symbol), \
+                               s7_make_signature(sc, 2, sc->is_procedure_symbol, sc->is_macro_symbol))
+  s7_pointer p = car(args);
+  if (has_closure_let(p)) return(closure_args(p));
+  check_method(sc, p, sc->procedure_arglist_symbol, set_plist_1(sc, p));
+  error_nr(sc, sc->wrong_type_arg_symbol,
+	   set_elist_2(sc, wrap_string(sc, "procedure-arglist argument, ~S, is not a function", 48), p));
+  return(sc->nil); /* never hit */
+}
+
+
 /* -------------------------------- procedure-source -------------------------------- */
 static s7_pointer procedure_type_to_symbol(s7_scheme *sc, int32_t type)
 {
@@ -72267,8 +72283,10 @@ static opt_t optimize_func_two_args(s7_scheme *sc, s7_pointer expr, s7_pointer f
 		}
 	      else
 		if ((symbols == 1) && (is_normal_symbol(arg1))) /* arg2 must be constant since pairs==0 */
-		  set_optimize_op(expr, hop + OP_C_SC);
-	    }
+		  {
+		    set_optimize_op(expr, hop + OP_C_SC);
+		    set_opt3_con(cdr(expr), arg2); /* a very small optimization! */
+		  }}
 	  return(OPT_F);
 	}
 
@@ -80115,7 +80133,8 @@ static void check_set(s7_scheme *sc)
     }
   else
     if (!is_symbol(settee))                                          /* (set! 12345 1) */
-      error_nr(sc, sc->syntax_error_symbol,                          /* (set! #_abs 32) -> "error: set! can't change abs (a c-function), (set! abs 32)" */
+      error_nr(sc, sc->syntax_error_symbol,                          /* (set! #_abs 32) -> "error: set! can't change #_abs (a c-function)" */
+	       (is_c_function(settee)) ? set_elist_2(sc, wrap_string(sc, "set! can't change #_~S (a c-function)", 37), settee) : 
 	       set_elist_4(sc, wrap_string(sc, "set! can't change ~S (~A), ~S", 29), settee, sc->type_names[type(settee)], form));
 
     else
@@ -90083,7 +90102,7 @@ static inline void op_c_ss(s7_scheme *sc)
 
 static void op_c_sc(s7_scheme *sc)
 {
-  sc->args = list_2(sc, lookup(sc, cadr(sc->code)), caddr(sc->code));
+  sc->args = list_2(sc, lookup(sc, cadr(sc->code)), opt3_con(cdr(sc->code))); /* caddr(sc->code)) */
   sc->value = fn_proc(sc->code)(sc, sc->args);
 }
 
@@ -91325,7 +91344,7 @@ static bool op_read_quote(s7_scheme *sc) /* '<datum> -> (#_quote <datum) in s7, 
   if ((sc->safety > IMMUTABLE_VECTOR_SAFETY) &&
       ((is_pair(sc->value)) || (is_any_vector(sc->value)) || (is_string(sc->value))))
     set_immutable(sc->value);
-  sc->value = list_2(sc, sc->quote_function, sc->value);
+  sc->value = list_2(sc, (sc->symbol_quote) ? sc->quote_symbol : sc->quote_function, sc->value);
   return(stack_top_op(sc) != OP_READ_LIST);
 }
 
@@ -95142,6 +95161,7 @@ static s7_pointer s7_starlet(s7_scheme *sc, s7_int choice)
     case SL_STACKTRACE_DEFAULTS:           return(copy_proper_list(sc, sc->stacktrace_defaults)); /* if not copied, we can set! entries directly to garbage */
     case SL_STACK_SIZE:                    return(make_integer(sc, sc->stack_size));
     case SL_STACK_TOP:                     return(make_integer(sc, (sc->stack_end - sc->stack_start) / 4));
+    case SL_SYMBOL_QUOTE:                  return(make_boolean(sc, sc->symbol_quote));
     case SL_SYMBOL_PRINTER:                return(sc->symbol_printer);
     case SL_UNDEFINED_CONSTANT_WARNINGS:   return(make_boolean(sc, sc->undefined_constant_warnings));
     case SL_UNDEFINED_IDENTIFIER_WARNINGS: return(make_boolean(sc, sc->undefined_identifier_warnings));
@@ -95603,6 +95623,11 @@ static s7_pointer s7_starlet_set_1(s7_scheme *sc, s7_pointer sym, s7_pointer val
 		     set_elist_2(sc, wrap_string(sc, "(*s7* 'symbol-printer) function, ~A, should take one argument", 61), val));
 	}
       sc->symbol_printer = val;
+      return(val);
+
+    case SL_SYMBOL_QUOTE:
+      if (!is_boolean(val)) s7_starlet_wrong_type_error_nr(sc, sym, val, sc->type_names[T_BOOLEAN]);
+      sc->symbol_quote = s7_boolean(sc, val);
       return(val);
 
     case SL_UNDEFINED_CONSTANT_WARNINGS:
@@ -97523,6 +97548,7 @@ static void init_rootlet(s7_scheme *sc)
   sc->signature_symbol =             defun("signature",         signature,	        1, 0, false);
   sc->help_symbol =                  defun("help",		help,			1, 0, false);
   sc->procedure_source_symbol =      defun("procedure-source",  procedure_source,	1, 0, false);
+  sc->procedure_arglist_symbol =     defun("procedure-arglist", procedure_arglist,      1, 0, false);
   sc->funclet_symbol =               defun("funclet",		funclet,		1, 0, false);
   sc->_function__symbol =            defun("*function*",        function,	        0, 2, false);
   sc->dilambda_symbol =              defun("dilambda",          dilambda,               2, 0, false);
@@ -97742,6 +97768,7 @@ s7_scheme *s7_init(void)
   sc->is_expanding = true;
   sc->accept_all_keyword_arguments = false;
   sc->muffle_warnings = false;
+  sc->symbol_quote = false;
   sc->initial_string_port_length = 128;
   sc->format_depth = -1;
   sc->singletons = (s7_pointer *)Calloc(256, sizeof(s7_pointer));
@@ -98688,10 +98715,6 @@ int main(int argc, char **argv)
  *   currently sc->s7_starlet is a let (make_s7_starlet) using g_s7_let_ref_fallback, so it assumes print-length above is undefined
  * need some print-length/print-elements distinction for vector/pair etc [which to choose if both set?]
  * 73317 vars_opt_ok problem
- * values opts: t695
  * if closure signature exists, add some way to have arg types checked by s7? (*s7* :check-signature?)
- * *s7* switch to turn off the quote->#_quote switch (and the rest?) -- or do it only in a macro body?
- * easier access to closure-args (so thunk is (null? args) etc, s7_closure_args exists (also let/body
- * opt: call/exit, tc+fx cases: opt_p_fx_any, clo_na_to_na, tmv: clo+values etc
- * (set! #_curlet #_rootlet): error: set! can't change curlet (a c-function), (set! curlet rootlet), maybe mark in code that initial_value is in use?
+ * opt_p_fx_any, clo_na_to_na, tmv: clo+values etc
  */

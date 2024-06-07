@@ -4106,6 +4106,7 @@ result = s7_call(s7, hook, s7_list(s7, 2, s7_make_integer(s7, 1), s7_make_intege
 (<em class=def id="aritablep">aritable?</em> obj num-args)
 (funclet proc)
 (<em class=def id="proceduresource">procedure-source</em> proc)
+(<em class=def id="procedurearglist">procedure-arglist</em> proc)
 </pre>
 
 <p>
@@ -4129,6 +4130,9 @@ a procedure's environment.
 <pre class="indented">
 (define (procedure-arglist f) (cadr (procedure-source f)))
 </pre>
+<p><b>procedure-arglist</b> returns the procedure's argument list.
+"procedure" here refers to functions and macros defined in s7, not built-in procedures.
+</p>
 
 <p>
 <b>documentation</b> returns the documentation string associated with a procedure.  This is normally
@@ -5753,6 +5757,7 @@ default-random-state          the default arg for random
 most-positive-fixnum          if not using gmp, the most positive integer ("fixnum" comes from CL)
 most-negative-fixnum          as above, but negative
 number-separator              #\null
+symbol-quote?                 #f, so in (quote x) "quote" is a #_quote (a c-function); set to #t to get quote as a symbol
 symbol-printer                #f, a function to print symbols whose names contain unusual character
 
 safety                        0 (see below)
@@ -6871,6 +6876,7 @@ s7-postlude.scm can be empty.  My version of s7-prelude.scm is:
 (define (current-second) (floor (*s7* 'cpu-time)))
 (define make-bytevector make-byte-vector)
 (define bytevector-u8-set! byte-vector-set!)
+(set! (*s7* 'symbol-quote?) #t)
 </pre>
 <p>
 If you want to run gcbench, add the define-record-type macro from r7rs.scm.
