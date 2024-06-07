@@ -204,14 +204,36 @@ void WriteTemplate(s7_pointer ptr, FILE* out, s7_scheme* s7)
     }
 }
 
+int errorCode = 0;
+
+s7_pointer error_handler(s7_scheme* sc, s7_pointer args) {
+    static bool bColors = false; // We need to check terminal capabilities.
+    if(bColors) {
+        fprintf(stderr, "\033[1;31m");
+    }
+    fprintf(stderr, "Error! %s", s7_object_to_c_string(sc, s7_car(args)));
+    errorCode = -1;
+    if(bColors) {
+        fprintf(stderr, "\033[0m");
+    }
+    fprintf(stderr, "\n");
+    return s7_unspecified(sc);
+}
+
+void InitInterpreter(s7_scheme* sc) {
+    s7_define_function(sc, "s7pp-error-handler", error_handler, 1, 0, false, "s7pp error handler");
+    s7_eval_c_string(sc, "(set! (hook-functions *error-hook*) (list (lambda (hook) (s7pp-error-handler (apply format #f (hook 'data))) (set! (hook 'result) 'our-error))))");
+}
+
 int main(int argc, char** argv)
 {
-    s7_scheme* s7;
-    s7 = s7_init();
+    s7_scheme* sc;
+    sc = s7_init();
     if(argc < 2 || argc > 3) {
         PrintUsage();
         return 0;
     }
+    InitInterpreter(sc);
     FILE* out = stdout;
     FILE* outfile = 0;
     if(argc == 3) {
@@ -225,9 +247,9 @@ int main(int argc, char** argv)
             fclose(outfile);
         return -1;
     }
-    ParseSource(source, out, s7);
+    ParseSource(source, out, sc);
     ReleaseSource(source);
     if(outfile)
         fclose(outfile);
-    return 0;
+    return errorCode;
 }
