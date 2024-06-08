@@ -1,3 +1,5 @@
+(provide 'utils.scm)
+
 ;; From stuff.scm
 (define-macro (while test . body)      ; while loop with predefined break and continue
   `(call-with-exit
