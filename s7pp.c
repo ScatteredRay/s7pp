@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <assert.h>
 #include <malloc.h>
+#include <string.h>
 
 void PrintUsage()
 {
@@ -206,14 +207,16 @@ void WriteTemplate(s7_pointer ptr, FILE* out, s7_scheme* s7)
 
 int errorCode = 0;
 
+// We should really check terminal capabilities.
+bool printColors = false;
+
 s7_pointer error_handler(s7_scheme* sc, s7_pointer args) {
-    static bool bColors = false; // We need to check terminal capabilities.
-    if(bColors) {
+    if(printColors) {
         fprintf(stderr, "\033[1;31m");
     }
     fprintf(stderr, "Error! %s", s7_object_to_c_string(sc, s7_car(args)));
     errorCode = -1;
-    if(bColors) {
+    if(printColors) {
         fprintf(stderr, "\033[0m");
     }
     fprintf(stderr, "\n");
@@ -229,17 +232,47 @@ int main(int argc, char** argv)
 {
     s7_scheme* sc;
     sc = s7_init();
-    if(argc < 2 || argc > 3) {
+    if(argc < 2) {
+        PrintUsage();
+        return 0;
+    }
+
+    // Pop exe name
+    argc--;
+    argv++;
+
+    while(argc > 0) {
+        if(strcmp(argv[0], "--color") == 0) {
+            printColors = true;
+        }
+        else if(strcmp(argv[0], "--load-path") == 0) {
+            if(argc <= 1) {
+                fprintf(stderr, "--load-path expects a path\n\n");
+                PrintUsage();
+                return -1;
+            }
+            argc--;
+            argv++;
+            s7_add_to_load_path(sc, argv[0]);
+        }
+        else {
+            break;
+        }
+        argc--;
+        argv++;
+    }
+
+    if(argc > 2) {
         PrintUsage();
         return 0;
     }
     InitInterpreter(sc);
     FILE* out = stdout;
     FILE* outfile = 0;
-    if(argc == 3) {
-        out = outfile = fopen(argv[2], "w");
+    if(argc == 2) {
+        out = outfile = fopen(argv[1], "w");
     }
-    char* filename = argv[1];
+    char* filename = argv[0];
     char* source = GetSource(filename);
     if(!source) {
         PrintUsage();
